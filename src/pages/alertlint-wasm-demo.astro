@@ -1,0 +1,309 @@
+---
+/**
+ * AlertLint WASM PoC — human-facing proof that the JS → Go(WASM) → JSON pipeline
+ * works end-to-end in the browser.
+ *
+ * The page loads the Go runtime shim (/wasm_exec.js) via Shell's `head` slot,
+ * then a module script instantiates /engine.wasm, runs it (which registers
+ * window.alertlintRunTests), and on button click evaluates a hardcoded auth-
+ * failure example — a POSITIVE case (alert fires) AND a NEGATIVE case (empty
+ * exp_alerts asserts no fire). The parsed { summary, results } JSON is rendered
+ * as a summary line plus per-test pass/fail rows so the Go engine is visibly
+ * doing the work.
+ *
+ * noindex: this is an internal proof page, not an SEO surface. The public tool
+ * lives at /loki-alert-rule-tester.
+ */
+import Shell from '../components/Shell.astro';
+
+// ── Hardcoded example inputs (kept in frontmatter, serialized for the client) ─
+// A single rules document drives both cases: count "failed login" lines over a
+// 5m window and fire above a threshold of 5.
+const rulesYaml = `groups:
+  - name: auth
+    rules:
+      - alert: HighAuthFailureRate
+        expr: sum(count_over_time({app="auth"} |= "failed login" [5m])) > 5
+        labels:
+          severity: page`;
+
+// Two test cases in one promtool-style file:
+//   1) POSITIVE — 8 failed-login lines in the window → count (8) > 5 → fires,
+//      and exp_alerts is non-empty, so the assertion expects a fire. PASS.
+//   2) NEGATIVE — only 2 failed-login lines → count (2) is NOT > 5 → no fire,
+//      and exp_alerts: [] asserts no alert fires. PASS.
+const positiveTestYaml = `tests:
+  - input_streams:
+      - stream:
+          app: auth
+        logs:
+          - "1m failed login for user alice"
+          - "1m failed login for user bob"
+          - "2m failed login for user carol"
+          - "2m failed login for user dave"
+          - "3m failed login for user erin"
+          - "3m failed login for user frank"
+          - "4m failed login for user grace"
+          - "4m failed login for user heidi"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: HighAuthFailureRate
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              app: auth`;
+
+const negativeTestYaml = `tests:
+  - input_streams:
+      - stream:
+          app: auth
+        logs:
+          - "1m failed login for user alice"
+          - "2m failed login for user bob"
+          - "3m user carol logged in"
+          - "4m user dave logged in"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: HighAuthFailureRate
+        exp_alerts: []`;
+---
+
+<Shell title="AlertLint WASM PoC" canonical="/alertlint-wasm-demo" noindex={true}>
+  <!-- Load the Go runtime shim into <head> via Shell's forwarded head slot. It
+       defines globalThis.Go; the module script below consumes it. is:inline keeps
+       Astro from bundling it so the global is available before the module runs. -->
+  <script is:inline src="/wasm_exec.js" slot="head"></script>
+
+  <section class="bg-canvas-soft">
+    <div class="container-page py-16 sm:py-20 lg:py-24">
+      <div class="mx-auto max-w-3xl">
+        <!-- ── Intro ──────────────────────────────────────────────────────── -->
+        <p class="eyebrow"><span translate="no">AlertLint</span> · WASM Proof</p>
+        <h1 class="display-xl mt-4 text-balance text-ink">
+          The <span translate="no">Go</span> engine, running in your browser.
+        </h1>
+        <p class="body-lg mt-6 text-pretty text-body">
+          This page proves the
+          <span class="code-mono text-ink" translate="no">JS → Go(WASM) → JSON</span> pipeline
+          end-to-end. It instantiates the compiled
+          <span class="code-mono text-ink" translate="no">engine.wasm</span>, calls
+          <span class="code-mono text-ink" translate="no">alertlintRunTests</span> with a hardcoded
+          auth-failure example — one alert that should fire and one that should not — and renders the
+          engine's verdict below. No server, no network round-trip after the
+          <span class="code-mono text-ink" translate="no">.wasm</span> loads.
+        </p>
+
+        <!-- ── Control + status ───────────────────────────────────────────── -->
+        <div class="mt-8 flex flex-wrap items-center gap-4">
+          <button id="run-btn" type="button" class="btn btn-primary" disabled>
+            Run via <span translate="no">Go</span> WASM
+          </button>
+          <p id="engine-status" class="body-sm text-mute" role="status" aria-live="polite">
+            Loading the WASM engine…
+          </p>
+        </div>
+
+        <!-- ── Results ────────────────────────────────────────────────────── -->
+        <div id="results" class="mt-10" aria-live="polite">
+          <p class="body-sm text-mute">
+            Results will appear here once you run the engine.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Static example inputs as a JSON island the client script reads. Serialized
+       in frontmatter so the YAML never has to be interpolated into JS source. -->
+  <script
+    id="alertlint-examples"
+    type="application/json"
+    is:inline
+    set:html={JSON.stringify({
+      rulesYaml,
+      cases: [
+        { id: 'positive', label: 'Positive case — alert should fire', testYaml: positiveTestYaml },
+        {
+          id: 'negative',
+          label: 'Negative case — alert should NOT fire',
+          testYaml: negativeTestYaml,
+        },
+      ],
+    })}
+  />
+</Shell>
+
+<script>
+  // ── Element handles ─────────────────────────────────────────────────────────
+  const runBtn = document.getElementById('run-btn') as HTMLButtonElement | null;
+  const statusEl = document.getElementById('engine-status');
+  const resultsEl = document.getElementById('results');
+
+  // Hardcoded example inputs come from a JSON island rendered in the page body
+  // (#alertlint-examples), so the YAML is never interpolated into JS source.
+  const examples = JSON.parse(
+    (document.getElementById('alertlint-examples') as HTMLElement | null)?.textContent ?? '{}',
+  ) as {
+    rulesYaml: string;
+    cases: { id: string; label: string; testYaml: string }[];
+  };
+
+  type TestResult = {
+    name: string;
+    evalTime: string;
+    status: 'pass' | 'fail';
+    kind: string;
+    message: string;
+  };
+  type RunResult = {
+    ok: boolean;
+    error?: string;
+    summary: { total: number; passed: number; failed: number; durationMs: number };
+    results: TestResult[];
+  };
+
+  let engineReady = false;
+
+  function setStatus(text: string, tone: 'mute' | 'live' | 'error' = 'mute') {
+    if (!statusEl) return;
+    statusEl.textContent = text;
+    // Static class swaps only — no concatenation.
+    statusEl.className =
+      tone === 'live'
+        ? 'body-sm text-link'
+        : tone === 'error'
+          ? 'body-sm text-ink'
+          : 'body-sm text-mute';
+  }
+
+  function escapeHtml(s: string): string {
+    return s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ── Render a parsed RunResult into the results area ──────────────────────────
+  function renderResult(caseLabel: string, parsed: RunResult): string {
+    if (!parsed.ok) {
+      return `<div class="card-soft p-5">
+        <p class="eyebrow">${escapeHtml(caseLabel)}</p>
+        <p class="body-md mt-2 text-ink">Engine returned an error.</p>
+        <p class="body-sm mt-1 text-mute">${escapeHtml(parsed.error ?? 'Unknown error.')}</p>
+      </div>`;
+    }
+
+    const { summary, results } = parsed;
+    const allPass = summary.failed === 0;
+
+    const rows = results
+      .map((r) => {
+        const isPass = r.status === 'pass';
+        // Pass/fail differ by text color only — no new accent colors (brand rule).
+        const badgeClass = isPass ? 'badge text-link shrink-0' : 'badge text-ink shrink-0';
+        const mark = isPass ? '✓ pass' : '✗ fail';
+        return `<li class="flex flex-col gap-1 border-t border-hairline py-3 first:border-t-0 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
+          <div class="min-w-0">
+            <span class="code-mono text-ink">${escapeHtml(r.name)}</span>
+            <span class="caption ml-2 text-mute">@ ${escapeHtml(r.evalTime)}</span>
+            <p class="body-sm mt-1 text-pretty text-body">${escapeHtml(r.message)}</p>
+          </div>
+          <span class="${badgeClass}" aria-label="${isPass ? 'passed' : 'failed'}">${mark}</span>
+        </li>`;
+      })
+      .join('');
+
+    return `<div class="card p-6">
+      <div class="flex flex-wrap items-baseline justify-between gap-3">
+        <p class="eyebrow">${escapeHtml(caseLabel)}</p>
+        <p class="body-sm tabular-nums ${allPass ? 'text-link' : 'text-ink'}">
+          ${summary.passed} / ${summary.total} passed${
+            summary.failed > 0 ? ` · ${summary.failed} failed` : ''
+          } · ${summary.durationMs} ms
+        </p>
+      </div>
+      <ul class="mt-4">${rows}</ul>
+    </div>`;
+  }
+
+  // ── Engine instantiation ─────────────────────────────────────────────────────
+  async function loadEngine(): Promise<void> {
+    // The shim (loaded in <head>) defines globalThis.Go.
+    const GoCtor = (globalThis as { Go?: new () => { importObject: WebAssembly.Imports; run: (i: WebAssembly.Instance) => void } }).Go;
+    if (!GoCtor) {
+      setStatus('WASM runtime shim (wasm_exec.js) failed to load.', 'error');
+      return;
+    }
+    const go = new GoCtor();
+
+    // The Go program calls onAlertlintReady once it registers the global fn.
+    (globalThis as { onAlertlintReady?: () => void }).onAlertlintReady = () => {
+      engineReady = true;
+      if (runBtn) runBtn.disabled = false;
+      setStatus('Engine ready. Click “Run via Go WASM”.', 'live');
+    };
+
+    try {
+      let instance: WebAssembly.Instance;
+      try {
+        // Preferred path — requires Content-Type: application/wasm.
+        const result = await WebAssembly.instantiateStreaming(
+          fetch('/engine.wasm'),
+          go.importObject,
+        );
+        instance = result.instance;
+      } catch {
+        // Fallback for servers that don't send the wasm MIME type.
+        const bytes = await (await fetch('/engine.wasm')).arrayBuffer();
+        const result = await WebAssembly.instantiate(bytes, go.importObject);
+        instance = result.instance;
+      }
+      // go.run blocks on the Go side (select{}); it registers the global first.
+      go.run(instance);
+    } catch (err) {
+      setStatus(
+        'Could not instantiate engine.wasm: ' + (err instanceof Error ? err.message : String(err)),
+        'error',
+      );
+    }
+  }
+
+  // ── Run handler ──────────────────────────────────────────────────────────────
+  function runDemo(): void {
+    const fn = (globalThis as { alertlintRunTests?: (r: string, t: string) => string })
+      .alertlintRunTests;
+    if (!engineReady || typeof fn !== 'function') {
+      setStatus('Engine is not ready yet — please wait a moment.', 'mute');
+      return;
+    }
+    if (!resultsEl) return;
+
+    const blocks = examples.cases.map((c) => {
+      let parsed: RunResult;
+      try {
+        parsed = JSON.parse(fn(examples.rulesYaml, c.testYaml)) as RunResult;
+      } catch (err) {
+        parsed = {
+          ok: false,
+          error: 'Failed to parse engine JSON: ' + (err instanceof Error ? err.message : String(err)),
+          summary: { total: 0, passed: 0, failed: 0, durationMs: 0 },
+          results: [],
+        };
+      }
+      return renderResult(c.label, parsed);
+    });
+
+    resultsEl.innerHTML = `<div class="grid gap-6">${blocks.join('')}</div>`;
+    setStatus('Done — rendered the Go engine’s verdict below.', 'live');
+  }
+
+  runBtn?.addEventListener('click', runDemo);
+
+  // Kick off engine load on page ready.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => void loadEngine());
+  } else {
+    void loadEngine();
+  }
+</script>

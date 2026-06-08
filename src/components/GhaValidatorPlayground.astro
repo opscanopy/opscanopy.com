@@ -1,0 +1,1152 @@
+---
+/**
+ * GhaValidatorPlayground — the interactive GitHub Actions Validator island.
+ *
+ * A no-framework, server-rendered shell hydrated by a single module <script>
+ * that lazily boots ONE CodeMirror 6 editor (YAML), wires an example picker,
+ * a "Validate" action, plus Copy + Share. It runs entirely client-side and is
+ * fully usable offline once loaded.
+ *
+ * Runtime contract (built by a sibling agent — imported lazily in the script):
+ *   ../lib/gha-validator/engine →
+ *     validate(yamlText: string) => ValidateResult
+ *       ValidateResult = {
+ *         ok: boolean
+ *         error?: string
+ *         findings: Array<{
+ *           id: string
+ *           severity: 'error' | 'warning' | 'info'
+ *           title: string
+ *           detail: string
+ *           line?: number
+ *           remediation?: string
+ *         }>
+ *         summary: { errors: number; warnings: number; infos: number }
+ *       }
+ *   ../lib/gha-validator/examples →
+ *     examples: Array<{ id: string; label: string; yaml: string }>
+ *
+ * The dark editor surface follows DESIGN.md `code-editor-mockup`; findings use
+ * the semantic error / warning tokens and mute/neutral for info. Headlines stay
+ * sentence-case, weight 600. All runtime-injected result markup is styled via
+ * :global(...) because Astro scoped styles do not reach innerHTML-injected nodes.
+ */
+---
+
+<section class="gha" aria-label="GitHub Actions Validator playground">
+  <div class="card shadow-float rounded-lg overflow-hidden">
+    {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+    <div
+      class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5"
+    >
+      <div class="flex min-w-0 items-center gap-3">
+        <label class="eyebrow shrink-0" for="gha-example">Example</label>
+        <div class="gha-select-wrap relative min-w-0">
+          <select id="gha-example" class="gha-select code-mono" autocomplete="off">
+            {/* Options injected by the hydration script from `examples`. */}
+            <option value="">Loading examples…</option>
+          </select>
+          <svg
+            class="gha-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M4 6l4 4 4-4"></path>
+          </svg>
+        </div>
+      </div>
+
+      <div class="flex shrink-0 flex-wrap items-center gap-2">
+        <button
+          id="gha-copy"
+          type="button"
+          class="btn btn-secondary btn-sm gha-tap"
+          data-default-label="Copy"
+        >
+          <svg
+            class="h-4 w-4 shrink-0"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <rect x="5.5" y="5.5" width="8" height="8" rx="1.5"></rect>
+            <path d="M3.5 10.5h-.5a1.5 1.5 0 0 1-1.5-1.5v-6A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5"></path>
+          </svg>
+          <span class="gha-copy-label">Copy</span>
+        </button>
+        <button
+          id="gha-share"
+          type="button"
+          class="btn btn-secondary btn-sm gha-tap"
+          data-default-label="Share Link"
+        >
+          <svg
+            class="h-4 w-4 shrink-0"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M6 8.5l4-1.5M6 8.5l4 1.5"></path>
+            <circle cx="4" cy="8" r="1.6"></circle>
+            <circle cx="11.5" cy="5" r="1.6"></circle>
+            <circle cx="11.5" cy="11" r="1.6"></circle>
+          </svg>
+          <span class="gha-share-label">Share Link</span>
+        </button>
+        <button
+          id="gha-run"
+          type="button"
+          class="btn btn-primary btn-sm gha-tap"
+          title="Validate (⌘/Ctrl + Enter)"
+          aria-keyshortcuts="Meta+Enter Control+Enter"
+        >
+          <svg
+            class="gha-run-icon h-4 w-4 shrink-0"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M2.5 8.5l3.5 3.5 7.5-8"></path>
+          </svg>
+          <span class="gha-run-label">Validate</span>
+        </button>
+      </div>
+    </div>
+
+    {/* ── Editor (single, full-width, dark mockup surface) ─────────────── */}
+    <div class="gha-pane flex min-w-0 flex-col bg-primary">
+      <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
+        <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+          <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+          <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+          <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+        </span>
+        <span class="code-mono text-white/45">.github/workflows/ci.yml</span>
+      </div>
+      <div
+        id="gha-editor"
+        class="gha-editor min-h-80"
+        role="textbox"
+        aria-label="GitHub Actions workflow (YAML)"
+        aria-multiline="true"
+      >
+      </div>
+    </div>
+
+    {/* ── Results panel ────────────────────────────────────────────────── */}
+    <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <span class="eyebrow">Results</span>
+        <span
+          id="gha-summary"
+          class="gha-summary code-mono text-mute"
+          role="status"
+          aria-live="polite"
+        ></span>
+      </div>
+
+      <div id="gha-results" class="gha-results" aria-live="polite">
+        <p class="gha-empty body-sm text-mute">
+          Load an example or paste a workflow, then validate to see YAML errors
+          and security checks here.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  {/* Polite announcer for clipboard + transient toasts. */}
+  <span id="gha-announce" class="sr-only" role="status" aria-live="polite"></span>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  /* Tap targets opt into fast-tap + no double-tap-zoom on touch. */
+  .gha-tap {
+    touch-action: manipulation;
+  }
+
+  /* The example picker: a 6px-radius in-app form control (form-input-sm scale). */
+  .gha-select {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    height: 32px;
+    min-width: 0;
+    max-width: 280px;
+    padding: 0 32px 0 12px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 13px;
+    line-height: 20px;
+    cursor: pointer;
+    text-overflow: ellipsis;
+    touch-action: manipulation;
+    transition: box-shadow 0.15s ease;
+  }
+  @media (min-width: 640px) {
+    .gha-select {
+      width: auto;
+      min-width: 220px;
+    }
+  }
+  .gha-select:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .gha-select:disabled {
+    cursor: not-allowed;
+    color: var(--color-mute);
+    opacity: 0.7;
+  }
+  .gha-select-caret {
+    transition: color 0.15s ease;
+  }
+  .gha-select-wrap:hover .gha-select-caret {
+    color: var(--color-body);
+  }
+
+  /* CodeMirror host — fills the dark pane, scrolls internally. */
+  .gha-editor {
+    overflow: hidden;
+  }
+  .gha-editor :global(.cm-editor) {
+    height: 100%;
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .gha-editor :global(.cm-editor.cm-focused) {
+    /* Replace CM's default outline with a brand-blue ring (a11y: keep a ring). */
+    outline: 2px solid var(--color-link);
+    outline-offset: -2px;
+  }
+  .gha-editor :global(.cm-scroller) {
+    overflow: auto;
+    max-height: 520px;
+    font-family: var(--font-mono);
+    /* Thin, theme-matched scrollbars on the dark surface. */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  }
+  .gha-editor :global(.cm-scroller)::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .gha-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.16);
+    border-radius: var(--radius-pill);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  .gha-editor :global(.cm-scroller)::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.28);
+    background-clip: content-box;
+  }
+  .gha-editor :global(.cm-gutters) {
+    background: transparent;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .gha-editor :global(.cm-lineNumbers .cm-gutterElement) {
+    color: rgba(255, 255, 255, 0.32);
+  }
+  .gha-editor :global(.cm-content) {
+    padding: 14px 0 16px;
+  }
+  .gha-editor :global(.cm-line) {
+    padding-inline: 4px;
+  }
+
+  /* Summary — counts use tabular figures so they don't jitter. */
+  .gha-summary {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+    white-space: nowrap;
+  }
+
+  /* ── Results container + finding rows (runtime-injected → :global) ───── */
+  .gha-results {
+    min-height: 44px;
+  }
+  :global(.gha-group + .gha-group) {
+    margin-top: 18px;
+  }
+  :global(.gha-group__head) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+
+  :global(.gha-row) {
+    display: flex;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    animation: gha-rise 0.18s ease both;
+  }
+  :global(.gha-row:hover) {
+    box-shadow: var(--shadow-subtle);
+  }
+  :global(.gha-row + .gha-row) {
+    margin-top: 8px;
+  }
+  /* Severity ring on the row, drawn only from contract tokens. */
+  :global(.gha-row--error) {
+    box-shadow: inset 0 0 0 1px var(--color-error-soft);
+  }
+  :global(.gha-row--error:hover) {
+    box-shadow: inset 0 0 0 1px var(--color-error-soft), var(--shadow-subtle);
+  }
+  :global(.gha-row--warning) {
+    box-shadow: inset 0 0 0 1px var(--color-warning-soft);
+  }
+  :global(.gha-row--warning:hover) {
+    box-shadow: inset 0 0 0 1px var(--color-warning-soft), var(--shadow-subtle);
+  }
+  @keyframes gha-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.gha-row),
+    :global(.gha-error),
+    :global(.gha-success) {
+      animation: none;
+    }
+  }
+
+  :global(.gha-row__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.gha-row--error .gha-row__icon) {
+    color: var(--color-error);
+  }
+  :global(.gha-row--warning .gha-row__icon) {
+    color: var(--color-warning-deep);
+  }
+  :global(.gha-row--info .gha-row__icon) {
+    color: var(--color-mute);
+  }
+
+  :global(.gha-row__body) {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  :global(.gha-row__head) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  :global(.gha-row__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+    letter-spacing: -0.01em;
+    color: var(--color-ink);
+    word-break: break-word;
+  }
+  :global(.gha-row__detail) {
+    margin-top: 4px;
+    font-size: 13px;
+    line-height: 19px;
+    color: var(--color-body);
+    word-break: break-word;
+    text-wrap: pretty;
+  }
+
+  /* Severity pill — tones drawn ONLY from contract tokens. */
+  :global(.gha-pill) {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    padding: 1px 8px;
+    border-radius: var(--radius-pill);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    box-shadow: var(--shadow-hairline);
+  }
+  :global(.gha-pill--error) {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
+  :global(.gha-pill--warning) {
+    background: var(--color-warning-soft);
+    color: var(--color-warning-deep);
+  }
+  :global(.gha-pill--info) {
+    background: var(--color-canvas-soft-2);
+    color: var(--color-body);
+  }
+
+  /* Line reference chip (monospace). */
+  :global(.gha-line) {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    padding: 1px 7px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas-soft-2);
+    color: var(--color-mute);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  /* Remediation block. */
+  :global(.gha-fix) {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas-soft);
+    box-shadow: var(--shadow-hairline);
+  }
+  :global(.gha-fix__icon) {
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    margin-top: 3px;
+    color: var(--color-mute);
+  }
+  :global(.gha-fix__label) {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+  :global(.gha-fix__text) {
+    margin-top: 1px;
+    font-size: 13px;
+    line-height: 18px;
+    color: var(--color-body);
+    word-break: break-word;
+    text-wrap: pretty;
+  }
+  :global(.gha-fix code) {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: var(--color-canvas-soft-2);
+    padding: 1px 5px;
+    border-radius: var(--radius-xs);
+    color: var(--color-ink);
+  }
+
+  /* Parse-error banner (result.error). */
+  :global(.gha-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+    animation: gha-rise 0.18s ease both;
+  }
+  :global(.gha-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.gha-error__body) {
+    min-width: 0;
+  }
+  :global(.gha-error__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.gha-error__detail) {
+    margin-top: 2px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 18px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* Success state — clean "no issues found" frame. */
+  :global(.gha-success) {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 16px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    animation: gha-rise 0.18s ease both;
+  }
+  :global(.gha-success__icon) {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    color: var(--color-success);
+  }
+  :global(.gha-success__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+    color: var(--color-ink);
+  }
+  :global(.gha-success__sub) {
+    margin-top: 2px;
+    font-size: 13px;
+    line-height: 18px;
+    color: var(--color-mute);
+  }
+
+  /* Empty state — generous, centered frame (ex-empty-state-card scale). */
+  :global(.gha-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+
+  /* Loading dots — animate opacity only; reduced-motion handled globally. */
+  :global(.gha-loading) {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--color-body);
+  }
+  :global(.gha-loading__dot) {
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background: var(--color-mute);
+    animation: gha-pulse 1.1s ease-in-out infinite;
+  }
+  :global(.gha-loading__dot:nth-child(2)) {
+    animation-delay: 0.18s;
+  }
+  :global(.gha-loading__dot:nth-child(3)) {
+    animation-delay: 0.36s;
+  }
+  @keyframes gha-pulse {
+    0%,
+    100% {
+      opacity: 0.3;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.gha-loading__dot) {
+      animation: none;
+      opacity: 0.6;
+    }
+  }
+
+  /* Run-button busy state. */
+  .is-busy {
+    opacity: 0.65;
+    pointer-events: none;
+    cursor: progress;
+  }
+  .is-busy .gha-run-icon {
+    display: none;
+  }
+</style>
+
+<script>
+  import { EditorState } from '@codemirror/state';
+  import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
+  import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+  import { yaml } from '@codemirror/lang-yaml';
+  import { oneDark } from '@codemirror/theme-one-dark';
+
+  /* ---- Types mirrored from the engine contract (structural, not imported). -- */
+  type Severity = 'error' | 'warning' | 'info';
+  type Finding = {
+    id: string;
+    severity: Severity | string;
+    title: string;
+    detail: string;
+    line?: number;
+    remediation?: string;
+  };
+  type ValidateSummary = { errors: number; warnings: number; infos: number };
+  type ValidateResult = {
+    ok: boolean;
+    error?: string;
+    findings?: Finding[];
+    summary?: ValidateSummary;
+  };
+
+  type EngineModule = {
+    validate: (yamlText: string) => ValidateResult | Promise<ValidateResult>;
+  };
+  type ExampleRaw = Record<string, unknown>;
+  type Example = { id: string; label: string; yaml: string };
+
+  const ROOT_SEL = '.gha';
+  const COPIED_RESET_MS = 1800;
+  const SHARE_KEY = 'gha';
+
+  /** Boot every (so far un-hydrated) playground instance on the page. */
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.ghaWired === 'true') return;
+      root.dataset.ghaWired = 'true';
+      void init(root);
+    });
+  }
+
+  /* ---- Small helpers -------------------------------------------------------- */
+
+  function pick(obj: ExampleRaw, keys: string[]): string {
+    for (const k of keys) {
+      const v = obj[k];
+      if (typeof v === 'string' && v.length > 0) return v;
+    }
+    return '';
+  }
+
+  /** Normalise the sibling `examples` array against likely field names. */
+  function normaliseExamples(raw: unknown): Example[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((item, i) => {
+      const o = (item ?? {}) as ExampleRaw;
+      return {
+        id: pick(o, ['id', 'slug', 'key']) || `example-${i + 1}`,
+        label: pick(o, ['label', 'name', 'title']) || `Example ${i + 1}`,
+        yaml: pick(o, ['yaml', 'workflow', 'content', 'doc', 'text']),
+      };
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  function escapeHtml(s: string): string {
+    return s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  /** Render remediation text, escaping HTML but rendering `code` spans inline. */
+  function remediationHtml(text: string): string {
+    return escapeHtml(text).replace(
+      /`([^`]+)`/g,
+      (_m, code: string) => `<code>${code}</code>`
+    );
+  }
+
+  const SEV_ORDER: Severity[] = ['error', 'warning', 'info'];
+  const SEV_LABEL: Record<Severity, string> = {
+    error: 'Errors',
+    warning: 'Warnings',
+    info: 'Info',
+  };
+
+  function normSeverity(s: string): Severity {
+    return s === 'error' || s === 'warning' || s === 'info' ? s : 'info';
+  }
+
+  /* ---- Editor factory ------------------------------------------------------- */
+
+  function makeEditor(host: HTMLElement, doc: string): EditorView {
+    const state = EditorState.create({
+      doc,
+      extensions: [
+        lineNumbers(),
+        history(),
+        highlightActiveLine(),
+        yaml(),
+        oneDark,
+        EditorView.lineWrapping,
+        keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+        EditorView.theme({
+          '&': { color: '#e6e6e6' },
+          '.cm-content': { caretColor: '#e6e6e6' },
+          '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
+          '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection':
+            { backgroundColor: 'rgba(0, 112, 243, 0.32)' },
+          '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
+          '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+        }),
+      ],
+    });
+    // The host already carries the aria-label/role for screen readers; CM mounts inside.
+    return new EditorView({ state, parent: host });
+  }
+
+  function setEditorDoc(view: EditorView, doc: string): void {
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: doc },
+    });
+  }
+
+  /* ---- Severity icons (explicit width/height; decorative) ------------------- */
+
+  const ICON_ERROR =
+    '<svg class="gha-row__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"></circle><path d="M7.2 7.2l5.6 5.6M12.8 7.2l-5.6 5.6"></path></svg>';
+  const ICON_WARNING =
+    '<svg class="gha-row__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const ICON_INFO =
+    '<svg class="gha-row__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"></circle><path d="M10 9v4.5"></path><path d="M10 6.4v.01"></path></svg>';
+  const ICON_FIX =
+    '<svg class="gha-fix__icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 2.5a3 3 0 0 0 3.8 3.8l-7 7a1.8 1.8 0 0 1-2.6-2.6z"></path></svg>';
+  const ICON_ALERT =
+    '<svg class="gha-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const ICON_CHECK =
+    '<svg class="gha-success__icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"></circle><path d="M7.5 12.5l3 3 6-6.5"></path></svg>';
+
+  function severityIcon(sev: Severity): string {
+    if (sev === 'error') return ICON_ERROR;
+    if (sev === 'warning') return ICON_WARNING;
+    return ICON_INFO;
+  }
+
+  /* ---- Result rendering ----------------------------------------------------- */
+
+  function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
+    summary.textContent = '';
+    summary.classList.remove('text-error');
+    summary.classList.add('text-mute');
+    container.innerHTML =
+      '<p class="gha-empty body-sm text-mute">Load an example or paste a workflow, then validate to see YAML errors and security checks here.</p>';
+  }
+
+  function renderLoading(container: HTMLElement, summary: HTMLElement): void {
+    summary.textContent = '';
+    container.innerHTML =
+      '<div class="gha-loading"><span class="gha-loading__dot"></span>' +
+      '<span class="gha-loading__dot"></span><span class="gha-loading__dot"></span>' +
+      '<span>Validating…</span></div>';
+  }
+
+  function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
+    summary.textContent = 'Parse error';
+    summary.classList.add('text-error');
+    summary.classList.remove('text-mute');
+    container.innerHTML =
+      '<div class="gha-error" role="alert">' +
+      ICON_ALERT +
+      '<div class="gha-error__body"><p class="gha-error__title">Could not parse workflow</p>' +
+      `<p class="gha-error__detail">${escapeHtml(message)}</p></div></div>`;
+  }
+
+  function renderSuccess(container: HTMLElement, summary: HTMLElement): void {
+    summary.textContent = 'No issues';
+    summary.classList.remove('text-error');
+    summary.classList.add('text-mute');
+    container.innerHTML =
+      '<div class="gha-success">' +
+      ICON_CHECK +
+      '<div><p class="gha-success__title">No issues found.</p>' +
+      '<p class="gha-success__sub">This workflow passed every YAML and security check.</p></div></div>';
+  }
+
+  /** Pluralised "N errors · M warnings · K info", omitting zero buckets. */
+  function summaryText(s: ValidateSummary): string {
+    const parts: string[] = [];
+    if (s.errors > 0) parts.push(`${s.errors} ${s.errors === 1 ? 'error' : 'errors'}`);
+    if (s.warnings > 0)
+      parts.push(`${s.warnings} ${s.warnings === 1 ? 'warning' : 'warnings'}`);
+    if (s.infos > 0) parts.push(`${s.infos} info`);
+    return parts.length ? parts.join(' · ') : 'No issues';
+  }
+
+  function findingHtml(f: Finding): string {
+    const sev = normSeverity(String(f.severity));
+    const icon = severityIcon(sev);
+    const srLabel =
+      sev === 'error'
+        ? 'Error: '
+        : sev === 'warning'
+          ? 'Warning: '
+          : 'Info: ';
+    const pill = `<span class="gha-pill gha-pill--${sev}">${sev}</span>`;
+    const line =
+      typeof f.line === 'number' && Number.isFinite(f.line)
+        ? `<span class="gha-line">Line ${f.line}</span>`
+        : '';
+    const detail = f.detail
+      ? `<p class="gha-row__detail">${escapeHtml(f.detail)}</p>`
+      : '';
+    const fix = f.remediation
+      ? '<div class="gha-fix">' +
+        ICON_FIX +
+        '<div><span class="gha-fix__label">Fix</span>' +
+        `<p class="gha-fix__text">${remediationHtml(f.remediation)}</p></div></div>`
+      : '';
+    return (
+      `<div class="gha-row gha-row--${sev}">${icon}` +
+      '<div class="gha-row__body">' +
+      `<div class="gha-row__head">${pill}` +
+      `<span class="gha-row__title"><span class="sr-only">${srLabel}</span>${escapeHtml(f.title)}</span>` +
+      `${line}</div>${detail}${fix}</div></div>`
+    );
+  }
+
+  function renderResults(
+    container: HTMLElement,
+    summary: HTMLElement,
+    result: ValidateResult
+  ): void {
+    if (!result || result.ok === false || result.error) {
+      renderError(
+        container,
+        summary,
+        result?.error ?? 'Unknown error while validating the workflow.'
+      );
+      return;
+    }
+
+    const findings = Array.isArray(result.findings) ? result.findings : [];
+    if (findings.length === 0) {
+      renderSuccess(container, summary);
+      return;
+    }
+
+    const s =
+      result.summary ?? {
+        errors: findings.filter((f) => normSeverity(String(f.severity)) === 'error').length,
+        warnings: findings.filter((f) => normSeverity(String(f.severity)) === 'warning')
+          .length,
+        infos: findings.filter((f) => normSeverity(String(f.severity)) === 'info').length,
+      };
+    summary.textContent = summaryText(s);
+    summary.classList.toggle('text-error', s.errors > 0);
+    summary.classList.toggle('text-mute', s.errors === 0);
+
+    // Group + sort by severity (error → warning → info), preserving input order within.
+    const buckets: Record<Severity, Finding[]> = { error: [], warning: [], info: [] };
+    for (const f of findings) buckets[normSeverity(String(f.severity))].push(f);
+
+    const groups = SEV_ORDER.filter((sev) => buckets[sev].length > 0).map((sev) => {
+      const rows = buckets[sev].map(findingHtml).join('');
+      const count = buckets[sev].length;
+      return (
+        '<div class="gha-group">' +
+        `<p class="gha-group__head">${SEV_LABEL[sev]} <span aria-hidden="true">·</span> ${count}</p>` +
+        rows +
+        '</div>'
+      );
+    });
+    container.innerHTML = groups.join('');
+  }
+
+  /* ---- Clipboard ------------------------------------------------------------ */
+
+  async function copyText(text: string): Promise<boolean> {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      /* fall through to legacy path */
+    }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'absolute';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /* ---- Share-state codec (self-contained; no engine dependency) ------------- */
+
+  function encodeShare(yamlText: string): string {
+    // UTF-8 safe base64 in the URL hash under a namespaced key.
+    const bytes = new TextEncoder().encode(yamlText);
+    let bin = '';
+    for (const b of bytes) bin += String.fromCharCode(b);
+    const b64 = btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return `#${SHARE_KEY}=${b64}`;
+  }
+
+  function decodeShare(): string | null {
+    const hash = window.location.hash.replace(/^#/, '');
+    if (!hash) return null;
+    const param = hash
+      .split('&')
+      .map((p) => p.split('='))
+      .find(([k]) => k === SHARE_KEY);
+    if (!param || !param[1]) return null;
+    try {
+      let b64 = param[1].replace(/-/g, '+').replace(/_/g, '/');
+      while (b64.length % 4) b64 += '=';
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return new TextDecoder().decode(bytes);
+    } catch {
+      return null;
+    }
+  }
+
+  /* ---- Instance init -------------------------------------------------------- */
+
+  async function init(root: HTMLElement): Promise<void> {
+    const editorHost = el<HTMLElement>(root, '#gha-editor');
+    const select = el<HTMLSelectElement>(root, '#gha-example');
+    const runBtn = el<HTMLButtonElement>(root, '#gha-run');
+    const copyBtn = el<HTMLButtonElement>(root, '#gha-copy');
+    const shareBtn = el<HTMLButtonElement>(root, '#gha-share');
+    const resultsBox = el<HTMLElement>(root, '#gha-results');
+    const summaryEl = el<HTMLElement>(root, '#gha-summary');
+    const announce = el<HTMLElement>(root, '#gha-announce');
+
+    if (!editorHost || !select || !runBtn || !copyBtn || !shareBtn || !resultsBox || !summaryEl) {
+      return;
+    }
+
+    // Lazily load the sibling engine + examples (kept out of the initial path).
+    let engine: EngineModule;
+    let examples: Example[] = [];
+    try {
+      const [engineMod, examplesMod] = await Promise.all([
+        import('../lib/gha-validator/engine'),
+        import('../lib/gha-validator/examples'),
+      ]);
+      engine = engineMod as unknown as EngineModule;
+      examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+    } catch (err) {
+      renderError(
+        resultsBox,
+        summaryEl,
+        'The validator engine failed to load. Reload the page to try again.'
+      );
+      // eslint-disable-next-line no-console
+      console.error('[GhaValidator] engine/examples import failed:', err);
+      return;
+    }
+
+    // Seed content: prefer a shared-state URL, else the first example.
+    const seedExample = examples[0] ?? { id: 'example', label: 'Example', yaml: '' };
+    let seedYaml = seedExample.yaml;
+    let fromShare = false;
+    const shared = decodeShare();
+    if (shared) {
+      seedYaml = shared;
+      fromShare = true;
+    }
+
+    const view = makeEditor(editorHost, seedYaml);
+
+    // Populate the example picker.
+    select.innerHTML = '';
+    if (examples.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'No examples available';
+      select.appendChild(opt);
+      select.disabled = true;
+    } else {
+      if (fromShare) {
+        const opt = document.createElement('option');
+        opt.value = '-1';
+        opt.textContent = 'Shared workflow';
+        select.appendChild(opt);
+      }
+      examples.forEach((ex, i) => {
+        const opt = document.createElement('option');
+        opt.value = String(i);
+        opt.textContent = ex.label;
+        select.appendChild(opt);
+      });
+      select.value = fromShare ? '-1' : '0';
+    }
+
+    // Swap the editor when a different example is chosen.
+    select.addEventListener('change', () => {
+      const idx = Number(select.value);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+      setEditorDoc(view, examples[idx].yaml);
+      renderEmpty(resultsBox, summaryEl);
+    });
+
+    // Run — non-blocking; show loading, yield a frame, then render.
+    let running = false;
+    const runLabel = runBtn.querySelector<HTMLElement>('.gha-run-label');
+    let spinner: HTMLElement | null = null;
+    async function run(): Promise<void> {
+      if (running) return;
+      running = true;
+      runBtn.classList.add('is-busy');
+      // Keep focus put for keyboard users: mark busy (not disabled) + swap glyph.
+      runBtn.setAttribute('aria-disabled', 'true');
+      runBtn.setAttribute('aria-busy', 'true');
+      if (!spinner) {
+        spinner = document.createElement('span');
+        spinner.setAttribute('aria-hidden', 'true');
+        // Inline the visual so it never depends on Astro's scoped CSS (runtime node).
+        spinner.style.cssText =
+          'display:inline-block;width:14px;height:14px;flex:0 0 auto;border-radius:9999px;' +
+          'border:2px solid currentColor;border-top-color:transparent;';
+        if (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          spinner.animate(
+            [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }],
+            { duration: 700, iterations: Infinity }
+          );
+        }
+        runBtn.insertBefore(spinner, runBtn.firstChild);
+      }
+      if (runLabel) runLabel.textContent = 'Validating…';
+      renderLoading(resultsBox!, summaryEl!);
+
+      // Yield so the loading state paints before (potentially heavy) work runs.
+      await new Promise<void>((resolve) => {
+        if ('requestAnimationFrame' in window) {
+          requestAnimationFrame(() => resolve());
+        } else {
+          setTimeout(resolve, 0);
+        }
+      });
+
+      try {
+        const doc = view.state.doc.toString();
+        const result = await Promise.resolve(engine.validate(doc));
+        renderResults(resultsBox!, summaryEl!, result);
+        // Persist current state into the URL hash without a history entry.
+        try {
+          history.replaceState(null, '', encodeShare(doc));
+        } catch {
+          /* non-fatal: sharing just won't update */
+        }
+      } catch (err) {
+        const msg =
+          err instanceof Error ? err.message : 'Unexpected error while validating.';
+        renderError(resultsBox!, summaryEl!, msg);
+      } finally {
+        running = false;
+        runBtn.classList.remove('is-busy');
+        runBtn.removeAttribute('aria-disabled');
+        runBtn.removeAttribute('aria-busy');
+        if (spinner) {
+          spinner.remove();
+          spinner = null;
+        }
+        if (runLabel) runLabel.textContent = 'Validate';
+      }
+    }
+
+    runBtn.addEventListener('click', () => void run());
+
+    // Cmd/Ctrl+Enter from inside the editor triggers a run.
+    root.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        void run();
+      }
+    });
+
+    // Copy — copy the workflow YAML to the clipboard.
+    const copyLabel = copyBtn.querySelector<HTMLElement>('.gha-copy-label');
+    let copyTimer: number | undefined;
+    copyBtn.addEventListener('click', async () => {
+      const ok = await copyText(view.state.doc.toString());
+      if (copyLabel) copyLabel.textContent = ok ? 'Copied' : 'Copy Failed';
+      if (announce) {
+        announce.textContent = ok
+          ? 'Workflow YAML copied to your clipboard.'
+          : 'Could not copy. Select the text in the editor and copy it manually.';
+      }
+      window.clearTimeout(copyTimer);
+      copyTimer = window.setTimeout(() => {
+        if (copyLabel) copyLabel.textContent = copyBtn.dataset.defaultLabel ?? 'Copy';
+      }, COPIED_RESET_MS);
+    });
+
+    // Share — copy a shareable URL (current YAML encoded in the hash).
+    const shareLabel = shareBtn.querySelector<HTMLElement>('.gha-share-label');
+    let shareTimer: number | undefined;
+    shareBtn.addEventListener('click', async () => {
+      const frag = encodeShare(view.state.doc.toString());
+      const base = window.location.href.split('#')[0];
+      const shareUrl = `${base}${frag}`;
+      try {
+        history.replaceState(null, '', frag);
+      } catch {
+        /* fall back to the current URL */
+      }
+      const ok = await copyText(shareUrl);
+      if (shareLabel) shareLabel.textContent = ok ? 'Link Copied' : 'Copy Failed';
+      if (announce) {
+        announce.textContent = ok
+          ? 'Share link copied to your clipboard.'
+          : 'Could not copy the link. Copy the URL from your address bar instead.';
+      }
+      window.clearTimeout(shareTimer);
+      shareTimer = window.setTimeout(() => {
+        if (shareLabel) shareLabel.textContent = shareBtn.dataset.defaultLabel ?? 'Share Link';
+      }, COPIED_RESET_MS);
+    });
+
+    // Initial results state.
+    renderEmpty(resultsBox, summaryEl);
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

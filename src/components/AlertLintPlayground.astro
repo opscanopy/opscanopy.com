@@ -1,0 +1,1116 @@
+---
+/**
+ * AlertLintPlayground — the interactive AlertLint island.
+ *
+ * A no-framework, server-rendered shell hydrated by a single module <script>
+ * that lazily boots two CodeMirror 6 editors (Rules + Test), wires an example
+ * picker, a "Run tests" action, and a shareable-URL encoder. It runs entirely
+ * client-side and is fully usable offline once loaded.
+ *
+ * Runtime contract (built by sibling agents — imported lazily in the script):
+ *   ../lib/alertlint/engine →
+ *     runTests(rulesYaml: string, testYaml: string) => RunResult
+ *       RunResult = {
+ *         ok: boolean
+ *         error?: string
+ *         summary: { total, passed, failed, durationMs }
+ *         results: Array<{
+ *           name: string
+ *           evalTime?: string
+ *           status: 'pass' | 'fail'
+ *           kind?: string
+ *           message?: string
+ *           diff?: { expected?: string; actual?: string }
+ *         }>
+ *       }
+ *     encodeState(rulesYaml: string, testYaml: string) => string  // hash fragment
+ *     decodeState() => { rules: string; test: string } | null
+ *   ../lib/alertlint/examples →
+ *     examples: Array<{ name|label|title; rules|rulesYaml; test|testYaml }>
+ *
+ * The dark editor surface follows DESIGN.md `code-editor-mockup`; results use the
+ * semantic success / error tokens. Headlines stay sentence-case, weight 600.
+ */
+---
+
+<section class="playground" aria-label="AlertLint playground">
+  <div class="card shadow-float rounded-lg overflow-hidden">
+    {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+    <div
+      class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5"
+    >
+      <div class="flex min-w-0 items-center gap-3">
+        <label class="eyebrow shrink-0" for="al-example">Example</label>
+        <div class="al-select-wrap relative min-w-0">
+          <select id="al-example" class="al-select code-mono" autocomplete="off">
+            {/* Options injected by the hydration script from `examples`. */}
+            <option value="">Loading examples…</option>
+          </select>
+          <svg
+            class="al-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M4 6l4 4 4-4"></path>
+          </svg>
+        </div>
+      </div>
+
+      <div class="flex shrink-0 flex-wrap items-center gap-2">
+        <button
+          id="al-share"
+          type="button"
+          class="btn btn-secondary btn-sm al-tap"
+          data-default-label="Share Link"
+        >
+          <svg
+            class="h-4 w-4 shrink-0"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M6 8.5l4-1.5M6 8.5l4 1.5"></path>
+            <circle cx="4" cy="8" r="1.6"></circle>
+            <circle cx="11.5" cy="5" r="1.6"></circle>
+            <circle cx="11.5" cy="11" r="1.6"></circle>
+          </svg>
+          <span class="al-share-label">Share Link</span>
+        </button>
+        <button
+          id="al-run"
+          type="button"
+          class="btn btn-primary btn-sm al-tap"
+          title="Run Tests (⌘/Ctrl + Enter)"
+          aria-keyshortcuts="Meta+Enter Control+Enter"
+        >
+          <svg
+            class="al-run-icon h-4 w-4 shrink-0"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M5 3.5l7 4.5-7 4.5z" fill="currentColor" stroke="none"></path>
+          </svg>
+          <span class="al-run-label">Run Tests</span>
+        </button>
+      </div>
+    </div>
+
+    {/* ── Mobile tab switch (single-pane on small screens) ─────────────── */}
+    <div
+      class="al-tabs flex gap-1 border-b border-hairline px-4 py-2 sm:hidden"
+      role="tablist"
+      aria-label="Editor panes"
+    >
+      <button
+        id="al-tab-rules"
+        type="button"
+        class="al-tab al-tap is-active"
+        role="tab"
+        aria-selected="true"
+        aria-controls="al-pane-rules"
+        data-pane="rules"
+        tabindex="0"
+      >
+        Rules
+      </button>
+      <button
+        id="al-tab-test"
+        type="button"
+        class="al-tab al-tap"
+        role="tab"
+        aria-selected="false"
+        aria-controls="al-pane-test"
+        data-pane="test"
+        tabindex="-1"
+      >
+        Test
+      </button>
+    </div>
+
+    {/* ── Editor split (side-by-side on desktop, tabbed on mobile) ─────── */}
+    <div class="al-grid grid grid-cols-1 sm:grid-cols-2">
+      <div
+        id="al-pane-rules"
+        class="al-pane al-pane--active flex min-w-0 flex-col bg-primary sm:border-r sm:border-white/10"
+        role="tabpanel"
+        aria-labelledby="al-tab-rules"
+      >
+        <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
+          <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+          </span>
+          <span class="code-mono text-white/45">rules.yaml</span>
+        </div>
+        <div
+          id="al-editor-rules"
+          class="al-editor min-h-72"
+          role="textbox"
+          aria-label="Loki alert rules (YAML)"
+          aria-multiline="true"
+        >
+        </div>
+      </div>
+
+      <div
+        id="al-pane-test"
+        class="al-pane flex min-w-0 flex-col bg-primary"
+        role="tabpanel"
+        aria-labelledby="al-tab-test"
+      >
+        <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
+          <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+          </span>
+          <span class="code-mono text-white/45">test.yaml</span>
+        </div>
+        <div
+          id="al-editor-test"
+          class="al-editor min-h-72"
+          role="textbox"
+          aria-label="Test cases (YAML)"
+          aria-multiline="true"
+        >
+        </div>
+      </div>
+    </div>
+
+    {/* ── Results panel ────────────────────────────────────────────────── */}
+    <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <span class="eyebrow">Results</span>
+        <span
+          id="al-summary"
+          class="al-summary code-mono text-mute"
+          role="status"
+          aria-live="polite"
+        ></span>
+      </div>
+
+      <div id="al-results" class="al-results">
+        <p class="al-empty body-sm text-mute">
+          Load an example or paste your own rules, then run to see pass/fail
+          results here.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  {/* Polite announcer for clipboard + transient toasts. */}
+  <span id="al-announce" class="sr-only" role="status" aria-live="polite"></span>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  /* Tap targets opt into fast-tap + no double-tap-zoom on touch. */
+  .al-tap {
+    touch-action: manipulation;
+  }
+
+  /* The example picker: a 6px-radius in-app form control (form-input-sm scale). */
+  .al-select {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    height: 32px;
+    min-width: 0;
+    max-width: 280px;
+    padding: 0 32px 0 12px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 13px;
+    line-height: 20px;
+    cursor: pointer;
+    text-overflow: ellipsis;
+    touch-action: manipulation;
+    transition: box-shadow 0.15s ease;
+  }
+  @media (min-width: 640px) {
+    .al-select {
+      width: auto;
+      min-width: 200px;
+    }
+  }
+  .al-select:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .al-select:disabled {
+    cursor: not-allowed;
+    color: var(--color-mute);
+    opacity: 0.7;
+  }
+  .al-select-caret {
+    transition: color 0.15s ease;
+  }
+  .al-select-wrap:hover .al-select-caret {
+    color: var(--color-body);
+  }
+
+  /* Mobile tab pills (square in-app scale; never the 100px marketing pill). */
+  .al-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 0;
+    min-height: 44px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+    background: transparent;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .al-tab:hover:not(.is-active) {
+    color: var(--color-body);
+    background: var(--color-canvas-soft-2);
+  }
+  .al-tab.is-active {
+    color: var(--color-on-primary);
+    background: var(--color-primary);
+  }
+
+  /* Visibility is driven by the .al-pane--active class, NOT the [hidden]
+     attribute. Tailwind v4's layered `[hidden]{display:none!important}` (in
+     @layer base) beats any unlayered !important override, which previously left
+     the test pane invisible on desktop. */
+  @media (max-width: 639px) {
+    .al-pane {
+      display: none;
+    }
+    .al-pane.al-pane--active {
+      display: flex;
+    }
+  }
+  @media (min-width: 640px) {
+    /* Desktop: both panes always visible side by side. */
+    .al-pane {
+      display: flex;
+    }
+  }
+
+  /* CodeMirror host — fills the dark pane, scrolls internally. */
+  .al-editor {
+    overflow: hidden;
+  }
+  .al-editor :global(.cm-editor) {
+    height: 100%;
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .al-editor :global(.cm-editor.cm-focused) {
+    /* Replace CM's default outline with a brand-blue ring (a11y: keep a ring). */
+    outline: 2px solid var(--color-link);
+    outline-offset: -2px;
+  }
+  .al-editor :global(.cm-scroller) {
+    overflow: auto;
+    max-height: 420px;
+    font-family: var(--font-mono);
+    /* Thin, theme-matched scrollbars on the dark surface. */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  }
+  .al-editor :global(.cm-scroller)::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .al-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.16);
+    border-radius: var(--radius-pill);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  .al-editor :global(.cm-scroller)::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.28);
+    background-clip: content-box;
+  }
+  .al-editor :global(.cm-gutters) {
+    background: transparent;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .al-editor :global(.cm-lineNumbers .cm-gutterElement) {
+    color: rgba(255, 255, 255, 0.32);
+  }
+  .al-editor :global(.cm-content) {
+    padding: 14px 0 16px;
+  }
+  .al-editor :global(.cm-line) {
+    padding-inline: 4px;
+  }
+
+  /* Summary — right-aligned counts use tabular figures so they don't jitter. */
+  .al-summary {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+    white-space: nowrap;
+  }
+
+  /* Results rows. */
+  .al-results {
+    min-height: 44px;
+  }
+  :global(.al-row) {
+    display: flex;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    animation: al-rise 0.18s ease both;
+  }
+  :global(.al-row:hover) {
+    box-shadow: var(--shadow-subtle);
+  }
+  :global(.al-row--fail:hover) {
+    box-shadow: inset 0 0 0 1px var(--color-error-soft), var(--shadow-subtle);
+  }
+  :global(.al-row + .al-row) {
+    margin-top: 8px;
+  }
+  @keyframes al-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.al-row) {
+      animation: none;
+    }
+  }
+  :global(.al-row__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.al-row--pass .al-row__icon) {
+    color: var(--color-success);
+  }
+  :global(.al-row--fail) {
+    box-shadow: inset 0 0 0 1px var(--color-error-soft);
+  }
+  :global(.al-row--fail .al-row__icon) {
+    color: var(--color-error);
+  }
+  :global(.al-row__body) {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  :global(.al-row__name) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+    letter-spacing: -0.01em;
+    color: var(--color-ink);
+    word-break: break-word;
+  }
+  :global(.al-row__meta) {
+    margin-top: 2px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--color-mute);
+  }
+  :global(.al-row__msg) {
+    margin-top: 4px;
+    font-size: 13px;
+    line-height: 18px;
+    color: var(--color-body);
+    word-break: break-word;
+  }
+
+  /* Expected / actual diff block. */
+  :global(.al-diff) {
+    margin-top: 8px;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    box-shadow: var(--shadow-hairline);
+  }
+  :global(.al-diff__row) {
+    display: grid;
+    grid-template-columns: 72px 1fr;
+    gap: 8px;
+    padding: 6px 10px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 18px;
+  }
+  :global(.al-diff__row + .al-diff__row) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.al-diff__label) {
+    color: var(--color-mute);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+  :global(.al-diff__val) {
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--color-ink);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+  :global(.al-diff__row--exp) {
+    background: var(--color-canvas-soft-2);
+  }
+  :global(.al-diff__row--act) {
+    background: var(--color-error-soft);
+  }
+  :global(.al-diff__row--act .al-diff__val) {
+    color: var(--color-error-deep);
+  }
+
+  /* Parse-error banner. */
+  :global(.al-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+    animation: al-rise 0.18s ease both;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.al-error) {
+      animation: none;
+    }
+  }
+  :global(.al-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.al-error__body) {
+    min-width: 0;
+  }
+  :global(.al-error__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.al-error__detail) {
+    margin-top: 2px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 18px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* Empty state — generous, centered frame (ex-empty-state-card scale). */
+  :global(.al-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+
+  /* Loading dots — animate opacity only; reduced-motion handled globally. */
+  :global(.al-loading) {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--color-body);
+  }
+  :global(.al-loading__dot) {
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background: var(--color-mute);
+    animation: al-pulse 1.1s ease-in-out infinite;
+  }
+  :global(.al-loading__dot:nth-child(2)) {
+    animation-delay: 0.18s;
+  }
+  :global(.al-loading__dot:nth-child(3)) {
+    animation-delay: 0.36s;
+  }
+  @keyframes al-pulse {
+    0%,
+    100% {
+      opacity: 0.3;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.al-loading__dot) {
+      animation: none;
+      opacity: 0.6;
+    }
+  }
+
+  .is-busy {
+    opacity: 0.65;
+    pointer-events: none;
+    cursor: progress;
+  }
+  .is-busy .al-run-icon {
+    display: none;
+  }
+  /* Compact spinner shown in the Run button while tests execute. */
+  .al-spinner {
+    width: 14px;
+    height: 14px;
+    flex: 0 0 auto;
+    border-radius: 9999px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    animation: al-spin 0.6s linear infinite;
+  }
+  @keyframes al-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  /* Reduced motion is handled globally (animations clamped); the “Running…”
+     label + aria-busy still convey the in-flight state without a spin. */
+</style>
+
+<script>
+  import { EditorState } from '@codemirror/state';
+  import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
+  import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+  import { yaml } from '@codemirror/lang-yaml';
+  import { oneDark } from '@codemirror/theme-one-dark';
+
+  /* ---- Types mirrored from the engine contract (structural, not imported). -- */
+  type DiffPair = { expected?: unknown; actual?: unknown };
+  type TestResult = {
+    name: string;
+    evalTime?: string;
+    status: 'pass' | 'fail' | string;
+    kind?: string;
+    message?: string;
+    diff?: DiffPair;
+  };
+  type RunSummary = { total: number; passed: number; failed: number; durationMs: number };
+  type RunResult = {
+    ok: boolean;
+    error?: string;
+    summary?: RunSummary;
+    results?: TestResult[];
+  };
+
+  type EngineModule = {
+    runTests: (rulesYaml: string, testYaml: string) => RunResult | Promise<RunResult>;
+    encodeState: (rulesYaml: string, testYaml: string) => string;
+    decodeState: () => { rules: string; test: string } | null;
+  };
+  type ExampleRaw = Record<string, unknown>;
+  type Example = { name: string; rules: string; test: string };
+
+  const ROOT_SEL = '.playground';
+  const COPIED_RESET_MS = 1800;
+
+  /** Boot every (so far un-hydrated) playground instance on the page. */
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.alWired === 'true') return;
+      root.dataset.alWired = 'true';
+      void init(root);
+    });
+  }
+
+  /* ---- Small helpers -------------------------------------------------------- */
+
+  function pick(obj: ExampleRaw, keys: string[]): string {
+    for (const k of keys) {
+      const v = obj[k];
+      if (typeof v === 'string' && v.length > 0) return v;
+    }
+    return '';
+  }
+
+  /** Normalise the sibling `examples` array against likely field names. */
+  function normaliseExamples(raw: unknown): Example[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((item, i) => {
+      const o = (item ?? {}) as ExampleRaw;
+      return {
+        name: pick(o, ['name', 'label', 'title', 'id']) || `Example ${i + 1}`,
+        rules: pick(o, ['rules', 'rulesYaml', 'rulesDoc', 'ruleYaml']),
+        test: pick(o, ['test', 'testYaml', 'testDoc', 'tests']),
+      };
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  function escapeHtml(s: string): string {
+    return s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  function formatDuration(ms: number): string {
+    if (!Number.isFinite(ms)) return '';
+    // Non-breaking space between value and unit keeps the measurement intact.
+    if (ms < 1) return '<1 ms';
+    return `${Math.round(ms)} ms`;
+  }
+
+  /* ---- Editor factory ------------------------------------------------------- */
+
+  function makeEditor(host: HTMLElement, doc: string): EditorView {
+    const state = EditorState.create({
+      doc,
+      extensions: [
+        lineNumbers(),
+        history(),
+        highlightActiveLine(),
+        yaml(),
+        oneDark,
+        EditorView.lineWrapping,
+        keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+        EditorView.theme({
+          '&': { color: '#e6e6e6' },
+          '.cm-content': { caretColor: '#e6e6e6' },
+          '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
+          '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection':
+            { backgroundColor: 'rgba(0, 112, 243, 0.32)' },
+          '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
+          '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+        }),
+      ],
+    });
+    // The host already carries the aria-label/role for screen readers; CM mounts inside.
+    return new EditorView({ state, parent: host });
+  }
+
+  function setEditorDoc(view: EditorView, doc: string): void {
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: doc },
+    });
+  }
+
+  /* ---- Result rendering ----------------------------------------------------- */
+
+  const CHECK_SVG =
+    '<svg class="al-row__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"></circle><path d="M6.5 10.5l2.4 2.4 4.6-5"></path></svg>';
+  const CROSS_SVG =
+    '<svg class="al-row__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"></circle><path d="M7.2 7.2l5.6 5.6M12.8 7.2l-5.6 5.6"></path></svg>';
+  const ALERT_SVG =
+    '<svg class="al-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+
+  function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
+    summary.textContent = '';
+    container.innerHTML =
+      '<p class="al-empty body-sm text-mute">Load an example or paste your own rules, then run to see pass/fail results here.</p>';
+  }
+
+  function renderLoading(container: HTMLElement, summary: HTMLElement): void {
+    summary.textContent = '';
+    container.innerHTML =
+      '<div class="al-loading"><span class="al-loading__dot"></span>' +
+      '<span class="al-loading__dot"></span><span class="al-loading__dot"></span>' +
+      '<span>Running tests…</span></div>';
+  }
+
+  function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
+    summary.textContent = 'Error';
+    summary.classList.add('text-error');
+    summary.classList.remove('text-mute');
+    container.innerHTML =
+      '<div class="al-error" role="alert">' +
+      ALERT_SVG +
+      '<div class="al-error__body"><p class="al-error__title">Could not run tests</p>' +
+      `<p class="al-error__detail">${escapeHtml(message)}</p></div></div>`;
+  }
+
+  function diffHtml(diff: DiffPair): string {
+    const rows: string[] = [];
+    // The engine may send diff values as strings OR as objects/arrays (e.g. label
+    // maps). Stringify non-strings so the Expected/Actual block renders for every
+    // failing case instead of silently disappearing.
+    const fmt = (v: unknown): string => (typeof v === 'string' ? v : JSON.stringify(v, null, 2));
+    if (diff.expected !== undefined && diff.expected !== null) {
+      rows.push(
+        '<div class="al-diff__row al-diff__row--exp"><span class="al-diff__label">Expected</span>' +
+          `<span class="al-diff__val">${escapeHtml(fmt(diff.expected))}</span></div>`
+      );
+    }
+    if (diff.actual !== undefined && diff.actual !== null) {
+      rows.push(
+        '<div class="al-diff__row al-diff__row--act"><span class="al-diff__label">Actual</span>' +
+          `<span class="al-diff__val">${escapeHtml(fmt(diff.actual))}</span></div>`
+      );
+    }
+    if (rows.length === 0) return '';
+    return `<div class="al-diff">${rows.join('')}</div>`;
+  }
+
+  function rowHtml(r: TestResult): string {
+    const pass = r.status === 'pass';
+    const icon = pass ? CHECK_SVG : CROSS_SVG;
+    const cls = pass ? 'al-row al-row--pass' : 'al-row al-row--fail';
+    // The icon is decorative; expose pass/fail to assistive tech as text.
+    const statusSr = `<span class="sr-only">${pass ? 'Passed: ' : 'Failed: '}</span>`;
+    const meta: string[] = [];
+    if (r.kind) meta.push(escapeHtml(r.kind));
+    if (r.evalTime) meta.push(`@ ${escapeHtml(r.evalTime)}`);
+    const metaHtml = meta.length ? `<p class="al-row__meta">${meta.join(' · ')}</p>` : '';
+    const msgHtml = r.message
+      ? `<p class="al-row__msg">${escapeHtml(r.message)}</p>`
+      : '';
+    const diff = r.diff && !pass ? diffHtml(r.diff) : '';
+    return (
+      `<div class="${cls}">${icon}` +
+      `<div class="al-row__body"><p class="al-row__name">${statusSr}${escapeHtml(r.name)}</p>` +
+      `${metaHtml}${msgHtml}${diff}</div></div>`
+    );
+  }
+
+  function renderResults(
+    container: HTMLElement,
+    summary: HTMLElement,
+    result: RunResult
+  ): void {
+    if (!result || result.ok === false || result.error) {
+      renderError(container, summary, result?.error ?? 'Unknown error while running tests.');
+      return;
+    }
+
+    const s = result.summary ?? { total: 0, passed: 0, failed: 0, durationMs: 0 };
+    const dur = formatDuration(s.durationMs);
+    const counts =
+      s.failed > 0
+        ? `${s.passed} passed · ${s.failed} failed`
+        : `${s.passed} passed`;
+    summary.textContent = counts + (dur ? ` · ${dur}` : '');
+    summary.classList.toggle('text-error', s.failed > 0);
+    summary.classList.toggle('text-mute', s.failed === 0);
+
+    const results = result.results ?? [];
+    if (results.length === 0) {
+      container.innerHTML =
+        '<p class="al-empty body-sm text-mute">No test cases found in this document.</p>';
+      return;
+    }
+    container.innerHTML = results.map(rowHtml).join('');
+  }
+
+  /* ---- Clipboard ------------------------------------------------------------ */
+
+  async function copyText(text: string): Promise<boolean> {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      /* fall through to legacy path */
+    }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'absolute';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /* ---- Instance init -------------------------------------------------------- */
+
+  async function init(root: HTMLElement): Promise<void> {
+    const rulesHost = el<HTMLElement>(root, '#al-editor-rules');
+    const testHost = el<HTMLElement>(root, '#al-editor-test');
+    const select = el<HTMLSelectElement>(root, '#al-example');
+    const runBtn = el<HTMLButtonElement>(root, '#al-run');
+    const shareBtn = el<HTMLButtonElement>(root, '#al-share');
+    const resultsBox = el<HTMLElement>(root, '#al-results');
+    const summaryEl = el<HTMLElement>(root, '#al-summary');
+    const announce = el<HTMLElement>(root, '#al-announce');
+    const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('.al-tab'));
+
+    if (!rulesHost || !testHost || !select || !runBtn || !shareBtn || !resultsBox || !summaryEl) {
+      return;
+    }
+
+    // Lazily load the sibling engine + examples (kept out of the initial path).
+    let engine: EngineModule;
+    let examples: Example[] = [];
+    try {
+      const [engineMod, examplesMod] = await Promise.all([
+        import('../lib/alertlint/engine'),
+        import('../lib/alertlint/examples'),
+      ]);
+      engine = engineMod as unknown as EngineModule;
+      examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+    } catch (err) {
+      renderError(
+        resultsBox,
+        summaryEl,
+        'The AlertLint engine failed to load. Reload the page to try again.'
+      );
+      // Surface the underlying reason in dev tooling without breaking the UI.
+      // eslint-disable-next-line no-console
+      console.error('[AlertLint] engine/examples import failed:', err);
+      return;
+    }
+
+    // Seed content: prefer a shared-state URL, else the first example.
+    const seedExample = examples[0] ?? { name: 'Example', rules: '', test: '' };
+    let seedRules = seedExample.rules;
+    let seedTest = seedExample.test;
+    let fromShare = false;
+    try {
+      const decoded = engine.decodeState();
+      if (decoded && (decoded.rules || decoded.test)) {
+        seedRules = decoded.rules ?? '';
+        seedTest = decoded.test ?? '';
+        fromShare = true;
+      }
+    } catch {
+      /* malformed hash — fall back to the example seed */
+    }
+
+    const rulesView = makeEditor(rulesHost, seedRules);
+    const testView = makeEditor(testHost, seedTest);
+
+    // Populate the example picker.
+    select.innerHTML = '';
+    if (examples.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'No examples available';
+      select.appendChild(opt);
+      select.disabled = true;
+    } else {
+      if (fromShare) {
+        const opt = document.createElement('option');
+        opt.value = '-1';
+        opt.textContent = 'Shared snippet';
+        select.appendChild(opt);
+      }
+      examples.forEach((ex, i) => {
+        const opt = document.createElement('option');
+        opt.value = String(i);
+        opt.textContent = ex.name;
+        select.appendChild(opt);
+      });
+      select.value = fromShare ? '-1' : '0';
+    }
+
+    // Swap both editors when a different example is chosen.
+    select.addEventListener('change', () => {
+      const idx = Number(select.value);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+      const ex = examples[idx];
+      setEditorDoc(rulesView, ex.rules);
+      setEditorDoc(testView, ex.test);
+      renderEmpty(resultsBox, summaryEl);
+      summaryEl.classList.remove('text-error');
+      summaryEl.classList.add('text-mute');
+    });
+
+    // Mobile tab switching (panes are always visible on desktop via CSS).
+    const rulesPane = el<HTMLElement>(root, '#al-pane-rules');
+    const testPane = el<HTMLElement>(root, '#al-pane-test');
+
+    /** Activate a tab: update aria-selected, roving tabindex, pane visibility. */
+    function activateTab(tab: HTMLButtonElement, focusTab: boolean): void {
+      const showRules = tab.dataset.pane === 'rules';
+      tabs.forEach((t) => {
+        const active = t === tab;
+        t.classList.toggle('is-active', active);
+        t.setAttribute('aria-selected', active ? 'true' : 'false');
+        // Roving tabindex: only the selected tab is in the tab order.
+        t.tabIndex = active ? 0 : -1;
+      });
+      rulesPane?.classList.toggle('al-pane--active', showRules);
+      testPane?.classList.toggle('al-pane--active', !showRules);
+      if (focusTab) tab.focus();
+      // Refresh CM measurement once the pane is visible (next frame, post-layout).
+      requestAnimationFrame(() => (showRules ? rulesView : testView).requestMeasure());
+    }
+
+    tabs.forEach((tab, i) => {
+      tab.addEventListener('click', () => activateTab(tab, false));
+      // Roving focus with Left/Right/Home/End per the tablist a11y pattern.
+      tab.addEventListener('keydown', (e) => {
+        let next = -1;
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (i + 1) % tabs.length;
+        else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
+          next = (i - 1 + tabs.length) % tabs.length;
+        else if (e.key === 'Home') next = 0;
+        else if (e.key === 'End') next = tabs.length - 1;
+        if (next < 0) return;
+        e.preventDefault();
+        activateTab(tabs[next], true);
+      });
+    });
+
+    // Run — non-blocking; show loading, yield a microtask, then render.
+    let running = false;
+    const runLabel = runBtn.querySelector<HTMLElement>('.al-run-label');
+    let spinner: HTMLElement | null = null;
+    async function run(): Promise<void> {
+      if (running) return;
+      running = true;
+      runBtn.classList.add('is-busy');
+      // Keep the control enabled until work begins, then mark it busy (not disabled,
+      // so focus stays put for keyboard users) and swap the play glyph for a spinner.
+      runBtn.setAttribute('aria-disabled', 'true');
+      runBtn.setAttribute('aria-busy', 'true');
+      if (!spinner) {
+        spinner = document.createElement('span');
+        spinner.className = 'al-spinner';
+        spinner.setAttribute('aria-hidden', 'true');
+        // Inline the visual so it never depends on Astro's scoped CSS — this span
+        // is created at runtime and would not receive the component's scope hash.
+        spinner.style.cssText =
+          'display:inline-block;width:14px;height:14px;flex:0 0 auto;border-radius:9999px;' +
+          'border:2px solid currentColor;border-top-color:transparent;';
+        if (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          spinner.animate(
+            [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }],
+            { duration: 700, iterations: Infinity }
+          );
+        }
+        runBtn.insertBefore(spinner, runBtn.firstChild);
+      }
+      if (runLabel) runLabel.textContent = 'Running…';
+      renderLoading(resultsBox!, summaryEl!);
+
+      // Yield so the loading state paints before (potentially heavy) work runs.
+      await new Promise<void>((resolve) => {
+        if ('requestAnimationFrame' in window) {
+          requestAnimationFrame(() => resolve());
+        } else {
+          setTimeout(resolve, 0);
+        }
+      });
+
+      try {
+        const rulesDoc = rulesView.state.doc.toString();
+        const testDoc = testView.state.doc.toString();
+        const result = await Promise.resolve(engine.runTests(rulesDoc, testDoc));
+        renderResults(resultsBox!, summaryEl!, result);
+        // Persist current state into the URL hash without a history entry.
+        try {
+          const hash = engine.encodeState(rulesDoc, testDoc);
+          if (typeof hash === 'string') {
+            const url = hash.startsWith('#') ? hash : `#${hash}`;
+            history.replaceState(null, '', url);
+          }
+        } catch {
+          /* non-fatal: sharing just won't update */
+        }
+      } catch (err) {
+        const msg =
+          err instanceof Error ? err.message : 'Unexpected error while running tests.';
+        renderError(resultsBox!, summaryEl!, msg);
+      } finally {
+        running = false;
+        runBtn.classList.remove('is-busy');
+        runBtn.removeAttribute('aria-disabled');
+        runBtn.removeAttribute('aria-busy');
+        if (spinner) {
+          spinner.remove();
+          spinner = null;
+        }
+        if (runLabel) runLabel.textContent = 'Run Tests';
+      }
+    }
+
+    runBtn.addEventListener('click', () => void run());
+
+    // Cmd/Ctrl+Enter from inside either editor triggers a run.
+    root.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        void run();
+      }
+    });
+
+    // Share — copy the encodeState URL to the clipboard.
+    const shareLabel = shareBtn.querySelector<HTMLElement>('.al-share-label');
+    let shareTimer: number | undefined;
+    shareBtn.addEventListener('click', async () => {
+      const rulesDoc = rulesView.state.doc.toString();
+      const testDoc = testView.state.doc.toString();
+      let shareUrl = window.location.href;
+      try {
+        const hash = engine.encodeState(rulesDoc, testDoc);
+        if (typeof hash === 'string') {
+          const frag = hash.startsWith('#') ? hash : `#${hash}`;
+          const base = window.location.href.split('#')[0];
+          shareUrl = `${base}${frag}`;
+          history.replaceState(null, '', frag);
+        }
+      } catch {
+        /* fall back to the current URL */
+      }
+      const ok = await copyText(shareUrl);
+      if (shareLabel) shareLabel.textContent = ok ? 'Link Copied' : 'Copy Failed';
+      if (announce) {
+        announce.textContent = ok
+          ? 'Share link copied to your clipboard.'
+          : 'Could not copy the link. Copy the URL from your address bar instead.';
+      }
+      window.clearTimeout(shareTimer);
+      shareTimer = window.setTimeout(() => {
+        if (shareLabel) shareLabel.textContent = shareBtn.dataset.defaultLabel ?? 'Share Link';
+      }, COPIED_RESET_MS);
+    });
+
+    // Initial results state.
+    renderEmpty(resultsBox, summaryEl);
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

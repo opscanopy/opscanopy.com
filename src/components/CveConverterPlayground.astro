@@ -1,0 +1,1156 @@
+---
+/**
+ * CveConverterPlayground — the interactive CVE-Ignore Converter island.
+ *
+ * A no-framework, server-rendered shell hydrated by a single module <script>
+ * that lazily boots a CodeMirror 6 input editor and a read-only output editor,
+ * wires "From"/"To" format pickers, an example picker, a "Convert" action and a
+ * "Copy output" action. It runs entirely client-side — no upload, no network.
+ *
+ * Runtime contract (built by sibling agents — imported lazily in the script):
+ *   ../lib/cve-ignore/engine →
+ *     convert(from: Format, to: Format, text: string) =>
+ *       { output: string; warnings: string[]; error?: string }
+ *   ../lib/cve-ignore/types →
+ *     FORMATS: { value: Format; label: string; filename: string }[]
+ *     type Format = string  (opaque format id, e.g. "trivy" | "grype" | …)
+ *   ../lib/cve-ignore/examples →
+ *     examples: { id: string; label: string; from: Format; to: Format; text: string }[]
+ *
+ * The dark editor surface follows DESIGN.md `code-editor-mockup`; warnings use
+ * the semantic warning tokens, errors the error tokens. Headlines stay
+ * sentence-case, weight 600.
+ */
+---
+
+<section class="cv-pg" aria-label="CVE-Ignore Converter playground">
+  <div class="card shadow-float rounded-lg overflow-hidden">
+    {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+    <div
+      class="flex flex-col gap-3 border-b border-hairline px-4 py-3 lg:flex-row lg:items-end lg:justify-between lg:px-5"
+    >
+      <div class="flex flex-wrap items-end gap-3">
+        <div class="flex min-w-0 flex-col gap-1">
+          <label class="eyebrow" for="cv-from">From</label>
+          <div class="cv-select-wrap relative min-w-0">
+            <select id="cv-from" class="cv-select code-mono" autocomplete="off">
+              {/* Options injected by the hydration script from `FORMATS`. */}
+              <option value="">Loading…</option>
+            </select>
+            <svg
+              class="cv-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M4 6l4 4 4-4"></path>
+            </svg>
+          </div>
+        </div>
+
+        <span class="cv-arrow hidden shrink-0 pb-1.5 text-mute sm:inline-flex" aria-hidden="true">
+          <svg
+            class="h-4 w-4"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M3 8h10M9 4l4 4-4 4"></path>
+          </svg>
+        </span>
+
+        <div class="flex min-w-0 flex-col gap-1">
+          <label class="eyebrow" for="cv-to">To</label>
+          <div class="cv-select-wrap relative min-w-0">
+            <select id="cv-to" class="cv-select code-mono" autocomplete="off">
+              <option value="">Loading…</option>
+            </select>
+            <svg
+              class="cv-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M4 6l4 4 4-4"></path>
+            </svg>
+          </div>
+        </div>
+
+        <div class="flex min-w-0 flex-col gap-1">
+          <label class="eyebrow" for="cv-example">Example</label>
+          <div class="cv-select-wrap relative min-w-0">
+            <select id="cv-example" class="cv-select code-mono" autocomplete="off">
+              <option value="">Loading…</option>
+            </select>
+            <svg
+              class="cv-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M4 6l4 4 4-4"></path>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex shrink-0 flex-wrap items-center gap-2">
+        <button
+          id="cv-copy"
+          type="button"
+          class="btn btn-secondary btn-sm cv-tap"
+          data-default-label="Copy Output"
+          disabled
+        >
+          <svg
+            class="h-4 w-4 shrink-0"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <rect x="5.5" y="5.5" width="8" height="8" rx="1.5"></rect>
+            <path d="M3.5 10.5h-.5a1 1 0 01-1-1v-6a1 1 0 011-1h6a1 1 0 011 1v.5"></path>
+          </svg>
+          <span class="cv-copy-label">Copy Output</span>
+        </button>
+        <button
+          id="cv-convert"
+          type="button"
+          class="btn btn-primary btn-sm cv-tap"
+          title="Convert (⌘/Ctrl + Enter)"
+          aria-keyshortcuts="Meta+Enter Control+Enter"
+        >
+          <svg
+            class="cv-convert-icon h-4 w-4 shrink-0"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M3 5.5h8.5M9 3l2.5 2.5L9 8"></path>
+            <path d="M13 10.5H4.5M7 8l-2.5 2.5L7 13"></path>
+          </svg>
+          <span class="cv-convert-label">Convert</span>
+        </button>
+      </div>
+    </div>
+
+    {/* ── Mobile tab switch (single-pane on small screens) ─────────────── */}
+    <div
+      class="cv-tabs flex gap-1 border-b border-hairline px-4 py-2 md:hidden"
+      role="tablist"
+      aria-label="Editor panes"
+    >
+      <button
+        id="cv-tab-input"
+        type="button"
+        class="cv-tab cv-tap is-active"
+        role="tab"
+        aria-selected="true"
+        aria-controls="cv-pane-input"
+        data-pane="input"
+        tabindex="0"
+      >
+        Input
+      </button>
+      <button
+        id="cv-tab-output"
+        type="button"
+        class="cv-tab cv-tap"
+        role="tab"
+        aria-selected="false"
+        aria-controls="cv-pane-output"
+        data-pane="output"
+        tabindex="-1"
+      >
+        Output
+      </button>
+    </div>
+
+    {/* ── Editor split (side-by-side on desktop, tabbed on mobile) ─────── */}
+    <div class="cv-grid grid grid-cols-1 md:grid-cols-2">
+      <div
+        id="cv-pane-input"
+        class="cv-pane cv-pane--active flex min-w-0 flex-col bg-primary md:border-r md:border-white/10"
+        role="tabpanel"
+        aria-labelledby="cv-tab-input"
+      >
+        <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
+          <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+          </span>
+          <span id="cv-input-name" class="code-mono text-white/45">input</span>
+        </div>
+        <div
+          id="cv-editor-input"
+          class="cv-editor min-h-72"
+          role="textbox"
+          aria-label="Source suppression policy"
+          aria-multiline="true"
+        >
+        </div>
+      </div>
+
+      <div
+        id="cv-pane-output"
+        class="cv-pane flex min-w-0 flex-col bg-primary"
+        role="tabpanel"
+        aria-labelledby="cv-tab-output"
+      >
+        <div class="flex items-center justify-between gap-2 border-b border-white/10 px-4 py-2.5">
+          <div class="flex min-w-0 items-center gap-2">
+            <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+              <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+              <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+              <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            </span>
+            <span id="cv-output-name" class="code-mono truncate text-white/45">output</span>
+          </div>
+          <span class="code-mono shrink-0 text-white/30">read-only</span>
+        </div>
+        <div
+          id="cv-editor-output"
+          class="cv-editor min-h-72"
+          role="region"
+          aria-label="Converted suppression policy (read-only)"
+          aria-live="polite"
+        >
+        </div>
+      </div>
+    </div>
+
+    {/* ── Messages panel (warnings + errors) ───────────────────────────── */}
+    <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <span class="eyebrow">Notes</span>
+        <span
+          id="cv-summary"
+          class="cv-summary code-mono text-mute"
+          role="status"
+          aria-live="polite"
+        ></span>
+      </div>
+
+      <div id="cv-messages" class="cv-messages" aria-live="polite">
+        <p class="cv-empty body-sm text-mute">
+          Pick a source format, paste a suppression file, then convert to see the
+          translated policy and any lossy-conversion notes here.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  {/* Polite announcer for clipboard + transient toasts. */}
+  <span id="cv-announce" class="sr-only" role="status" aria-live="polite"></span>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  /* Tap targets opt into fast-tap + no double-tap-zoom on touch. */
+  .cv-tap {
+    touch-action: manipulation;
+  }
+
+  /* The format/example pickers: 6px-radius in-app form controls. */
+  .cv-select {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    height: 32px;
+    min-width: 0;
+    max-width: 280px;
+    padding: 0 32px 0 12px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 13px;
+    line-height: 20px;
+    cursor: pointer;
+    text-overflow: ellipsis;
+    touch-action: manipulation;
+    transition: box-shadow 0.15s ease;
+  }
+  @media (min-width: 640px) {
+    .cv-select {
+      width: auto;
+      min-width: 168px;
+    }
+  }
+  .cv-select:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .cv-select:disabled {
+    cursor: not-allowed;
+    color: var(--color-mute);
+    opacity: 0.7;
+  }
+  .cv-select-caret {
+    transition: color 0.15s ease;
+  }
+  .cv-select-wrap:hover .cv-select-caret {
+    color: var(--color-body);
+  }
+
+  /* Mobile tab pills (square in-app scale; never the 100px marketing pill). */
+  .cv-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 0;
+    min-height: 44px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+    background: transparent;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .cv-tab:hover:not(.is-active) {
+    color: var(--color-body);
+    background: var(--color-canvas-soft-2);
+  }
+  .cv-tab.is-active {
+    color: var(--color-on-primary);
+    background: var(--color-primary);
+  }
+
+  /* Visibility is driven by the .cv-pane--active class, NOT the [hidden]
+     attribute. Tailwind v4's layered `[hidden]{display:none!important}` (in
+     @layer base) beats any unlayered !important override, which previously left
+     the output pane invisible on desktop. */
+  @media (max-width: 767px) {
+    .cv-pane {
+      display: none;
+    }
+    .cv-pane.cv-pane--active {
+      display: flex;
+    }
+  }
+  @media (min-width: 768px) {
+    /* Desktop: both panes always visible side by side. */
+    .cv-pane {
+      display: flex;
+    }
+  }
+
+  /* CodeMirror host — fills the dark pane, scrolls internally. */
+  .cv-editor {
+    overflow: hidden;
+  }
+  .cv-editor :global(.cm-editor) {
+    height: 100%;
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .cv-editor :global(.cm-editor.cm-focused) {
+    /* Replace CM's default outline with a brand-blue ring (a11y: keep a ring). */
+    outline: 2px solid var(--color-link);
+    outline-offset: -2px;
+  }
+  .cv-editor :global(.cm-scroller) {
+    overflow: auto;
+    max-height: 420px;
+    font-family: var(--font-mono);
+    /* Thin, theme-matched scrollbars on the dark surface. */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  }
+  .cv-editor :global(.cm-scroller)::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .cv-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.16);
+    border-radius: var(--radius-pill);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  .cv-editor :global(.cm-scroller)::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.28);
+    background-clip: content-box;
+  }
+  .cv-editor :global(.cm-gutters) {
+    background: transparent;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .cv-editor :global(.cm-lineNumbers .cm-gutterElement) {
+    color: rgba(255, 255, 255, 0.32);
+  }
+  .cv-editor :global(.cm-content) {
+    padding: 14px 0 16px;
+  }
+  .cv-editor :global(.cm-line) {
+    padding-inline: 4px;
+  }
+  /* The read-only output pane: dim the (hidden) cursor and selection chrome. */
+  .cv-editor--ro :global(.cm-cursor),
+  .cv-editor--ro :global(.cm-dropCursor) {
+    display: none;
+  }
+
+  /* Summary — right-aligned counts use tabular figures so they don't jitter. */
+  .cv-summary {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+    white-space: nowrap;
+  }
+
+  /* Messages list (warnings / success / empty). */
+  .cv-messages {
+    min-height: 44px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  /* Lossy-conversion warning row. */
+  :global(.cv-warn) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-warning-soft);
+    box-shadow: inset 0 0 0 1px var(--color-warning);
+    color: var(--color-warning-deep);
+    animation: cv-rise 0.18s ease both;
+  }
+  :global(.cv-warn__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+    color: var(--color-warning-deep);
+  }
+  :global(.cv-warn__body) {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  :global(.cv-warn__title) {
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 18px;
+  }
+  :global(.cv-warn__list) {
+    margin: 4px 0 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  :global(.cv-warn__item) {
+    position: relative;
+    padding-left: 16px;
+    font-size: 13px;
+    line-height: 18px;
+    word-break: break-word;
+  }
+  :global(.cv-warn__item::before) {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 7px;
+    width: 4px;
+    height: 4px;
+    border-radius: 9999px;
+    background: currentColor;
+    opacity: 0.7;
+  }
+
+  /* Success note (no warnings, conversion clean). */
+  :global(.cv-ok) {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    animation: cv-rise 0.18s ease both;
+  }
+  :global(.cv-ok__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    color: var(--color-success);
+  }
+  :global(.cv-ok__text) {
+    font-size: 13px;
+    line-height: 18px;
+  }
+
+  /* Parse / conversion error banner. */
+  :global(.cv-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+    animation: cv-rise 0.18s ease both;
+  }
+  :global(.cv-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.cv-error__body) {
+    min-width: 0;
+  }
+  :global(.cv-error__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.cv-error__detail) {
+    margin-top: 2px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 18px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  @keyframes cv-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.cv-warn),
+    :global(.cv-ok),
+    :global(.cv-error) {
+      animation: none;
+    }
+  }
+
+  /* Empty state — generous, centered frame. */
+  :global(.cv-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+
+  /* Loading dots — animate opacity only; reduced-motion handled globally. */
+  :global(.cv-loading) {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--color-body);
+  }
+  :global(.cv-loading__dot) {
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background: var(--color-mute);
+    animation: cv-pulse 1.1s ease-in-out infinite;
+  }
+  :global(.cv-loading__dot:nth-child(2)) {
+    animation-delay: 0.18s;
+  }
+  :global(.cv-loading__dot:nth-child(3)) {
+    animation-delay: 0.36s;
+  }
+  @keyframes cv-pulse {
+    0%,
+    100% {
+      opacity: 0.3;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.cv-loading__dot) {
+      animation: none;
+      opacity: 0.6;
+    }
+  }
+
+  .is-busy {
+    opacity: 0.65;
+    pointer-events: none;
+    cursor: progress;
+  }
+  .is-busy .cv-convert-icon {
+    display: none;
+  }
+</style>
+
+<script>
+  import { EditorState } from '@codemirror/state';
+  import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
+  import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+  import { yaml } from '@codemirror/lang-yaml';
+  import { oneDark } from '@codemirror/theme-one-dark';
+
+  /* ---- Types mirrored from the engine contract (structural, not imported). -- */
+  type Format = string;
+  type FormatDescriptor = { value: Format; label: string; filename: string };
+  type ConvertResult = { output: string; warnings?: string[]; error?: string };
+  type EngineModule = {
+    convert: (from: Format, to: Format, text: string) => ConvertResult | Promise<ConvertResult>;
+  };
+  type TypesModule = { FORMATS?: unknown };
+  type Example = { id: string; label: string; from: Format; to: Format; text: string };
+
+  const ROOT_SEL = '.cv-pg';
+  const COPIED_RESET_MS = 1800;
+
+  /** Boot every (so far un-hydrated) playground instance on the page. */
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.cvWired === 'true') return;
+      root.dataset.cvWired = 'true';
+      void init(root);
+    });
+  }
+
+  /* ---- Small helpers -------------------------------------------------------- */
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  function escapeHtml(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  /** Normalise the sibling FORMATS list into a stable descriptor array. */
+  function normaliseFormats(raw: unknown): FormatDescriptor[] {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((item) => {
+        const o = (item ?? {}) as Record<string, unknown>;
+        const value = typeof o.value === 'string' ? o.value : '';
+        if (!value) return null;
+        const label = typeof o.label === 'string' && o.label ? o.label : value;
+        const filename = typeof o.filename === 'string' && o.filename ? o.filename : '';
+        return { value, label, filename } satisfies FormatDescriptor;
+      })
+      .filter((f): f is FormatDescriptor => f !== null);
+  }
+
+  /** Normalise the sibling examples list defensively. */
+  function normaliseExamples(raw: unknown): Example[] {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((item, i) => {
+        const o = (item ?? {}) as Record<string, unknown>;
+        const text = typeof o.text === 'string' ? o.text : '';
+        return {
+          id: typeof o.id === 'string' && o.id ? o.id : `example-${i + 1}`,
+          label: typeof o.label === 'string' && o.label ? o.label : `Example ${i + 1}`,
+          from: typeof o.from === 'string' ? o.from : '',
+          to: typeof o.to === 'string' ? o.to : '',
+          text,
+        } satisfies Example;
+      })
+      .filter((e) => e.text.length > 0 || e.from || e.to);
+  }
+
+  /** Filename for a format value, for the editor chrome label. */
+  function filenameFor(formats: FormatDescriptor[], value: Format): string {
+    const f = formats.find((x) => x.value === value);
+    return f?.filename || f?.label || value || 'output';
+  }
+
+  /* ---- Editor factory ------------------------------------------------------- */
+
+  const baseTheme = EditorView.theme({
+    '&': { color: '#e6e6e6' },
+    '.cm-content': { caretColor: '#e6e6e6' },
+    '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
+    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
+      backgroundColor: 'rgba(0, 112, 243, 0.32)',
+    },
+    '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
+    '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+  });
+
+  function makeInputEditor(host: HTMLElement, doc: string): EditorView {
+    const state = EditorState.create({
+      doc,
+      extensions: [
+        lineNumbers(),
+        history(),
+        highlightActiveLine(),
+        yaml(),
+        oneDark,
+        EditorView.lineWrapping,
+        keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+        baseTheme,
+      ],
+    });
+    return new EditorView({ state, parent: host });
+  }
+
+  function makeOutputEditor(host: HTMLElement, doc: string): EditorView {
+    const state = EditorState.create({
+      doc,
+      extensions: [
+        lineNumbers(),
+        yaml(),
+        oneDark,
+        EditorView.lineWrapping,
+        EditorView.editable.of(false),
+        EditorState.readOnly.of(true),
+        baseTheme,
+      ],
+    });
+    host.classList.add('cv-editor--ro');
+    return new EditorView({ state, parent: host });
+  }
+
+  function setEditorDoc(view: EditorView, doc: string): void {
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
+  }
+
+  /* ---- Message rendering (warnings / errors / success / empty) -------------- */
+
+  const WARN_SVG =
+    '<svg class="cv-warn__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const ALERT_SVG =
+    '<svg class="cv-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const CHECK_SVG =
+    '<svg class="cv-ok__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"></circle><path d="M6.5 10.5l2.4 2.4 4.6-5"></path></svg>';
+
+  function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
+    summary.textContent = '';
+    summary.classList.remove('text-error', 'text-warning-deep');
+    summary.classList.add('text-mute');
+    container.innerHTML =
+      '<p class="cv-empty body-sm text-mute">Pick a source format, paste a suppression file, then convert to see the translated policy and any lossy-conversion notes here.</p>';
+  }
+
+  function renderLoading(container: HTMLElement, summary: HTMLElement): void {
+    summary.textContent = '';
+    summary.classList.remove('text-error', 'text-warning-deep');
+    summary.classList.add('text-mute');
+    container.innerHTML =
+      '<div class="cv-loading"><span class="cv-loading__dot"></span>' +
+      '<span class="cv-loading__dot"></span><span class="cv-loading__dot"></span>' +
+      '<span>Converting…</span></div>';
+  }
+
+  function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
+    summary.textContent = 'Error';
+    summary.classList.remove('text-mute', 'text-warning-deep');
+    summary.classList.add('text-error');
+    container.innerHTML =
+      '<div class="cv-error" role="alert">' +
+      ALERT_SVG +
+      '<div class="cv-error__body"><p class="cv-error__title">Could not convert</p>' +
+      `<p class="cv-error__detail">${escapeHtml(message)}</p></div></div>`;
+  }
+
+  function renderWarnings(
+    container: HTMLElement,
+    summary: HTMLElement,
+    warnings: string[]
+  ): void {
+    if (warnings.length === 0) {
+      summary.textContent = 'Converted';
+      summary.classList.remove('text-error', 'text-warning-deep');
+      summary.classList.add('text-mute');
+      container.innerHTML =
+        '<div class="cv-ok">' +
+        CHECK_SVG +
+        '<span class="cv-ok__text">Converted with no lossy changes. Output is on the right.</span></div>';
+      return;
+    }
+    const n = warnings.length;
+    summary.textContent = `${n} ${n === 1 ? 'note' : 'notes'}`;
+    summary.classList.remove('text-error', 'text-mute');
+    summary.classList.add('text-warning-deep');
+    const items = warnings
+      .map((w) => `<li class="cv-warn__item">${escapeHtml(w)}</li>`)
+      .join('');
+    container.innerHTML =
+      '<div class="cv-warn">' +
+      WARN_SVG +
+      '<div class="cv-warn__body">' +
+      `<p class="cv-warn__title">${n === 1 ? 'Lossy conversion note' : 'Lossy conversion notes'}</p>` +
+      `<ul class="cv-warn__list">${items}</ul>` +
+      '</div></div>';
+  }
+
+  /* ---- Clipboard ------------------------------------------------------------ */
+
+  async function copyText(text: string): Promise<boolean> {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      /* fall through to legacy path */
+    }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'absolute';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /* ---- Instance init -------------------------------------------------------- */
+
+  async function init(root: HTMLElement): Promise<void> {
+    const inputHost = el<HTMLElement>(root, '#cv-editor-input');
+    const outputHost = el<HTMLElement>(root, '#cv-editor-output');
+    const fromSel = el<HTMLSelectElement>(root, '#cv-from');
+    const toSel = el<HTMLSelectElement>(root, '#cv-to');
+    const exampleSel = el<HTMLSelectElement>(root, '#cv-example');
+    const convertBtn = el<HTMLButtonElement>(root, '#cv-convert');
+    const copyBtn = el<HTMLButtonElement>(root, '#cv-copy');
+    const messagesBox = el<HTMLElement>(root, '#cv-messages');
+    const summaryEl = el<HTMLElement>(root, '#cv-summary');
+    const announce = el<HTMLElement>(root, '#cv-announce');
+    const inputNameEl = el<HTMLElement>(root, '#cv-input-name');
+    const outputNameEl = el<HTMLElement>(root, '#cv-output-name');
+    const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('.cv-tab'));
+
+    if (
+      !inputHost ||
+      !outputHost ||
+      !fromSel ||
+      !toSel ||
+      !exampleSel ||
+      !convertBtn ||
+      !copyBtn ||
+      !messagesBox ||
+      !summaryEl
+    ) {
+      return;
+    }
+
+    // Lazily load the sibling engine, types and examples (off the initial path).
+    let engine: EngineModule;
+    let formats: FormatDescriptor[] = [];
+    let examples: Example[] = [];
+    try {
+      const [engineMod, typesMod, examplesMod] = await Promise.all([
+        import('../lib/cve-ignore/engine'),
+        import('../lib/cve-ignore/types'),
+        import('../lib/cve-ignore/examples'),
+      ]);
+      engine = engineMod as unknown as EngineModule;
+      formats = normaliseFormats((typesMod as TypesModule).FORMATS);
+      examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+    } catch (err) {
+      renderError(
+        messagesBox,
+        summaryEl,
+        'The converter engine failed to load. Reload the page to try again.'
+      );
+      // eslint-disable-next-line no-console
+      console.error('[CveConverter] engine/types/examples import failed:', err);
+      return;
+    }
+
+    if (formats.length === 0) {
+      renderError(messagesBox, summaryEl, 'No formats are available to convert between.');
+      [fromSel, toSel, exampleSel].forEach((s) => {
+        s.innerHTML = '<option value="">Unavailable</option>';
+        s.disabled = true;
+      });
+      convertBtn.setAttribute('aria-disabled', 'true');
+      convertBtn.classList.add('is-busy');
+      return;
+    }
+
+    /** Populate a format <select> with the descriptor list. */
+    function fillFormatSelect(sel: HTMLSelectElement, selected: Format): void {
+      sel.innerHTML = '';
+      formats.forEach((f) => {
+        const opt = document.createElement('option');
+        opt.value = f.value;
+        opt.textContent = f.label;
+        sel.appendChild(opt);
+      });
+      if (formats.some((f) => f.value === selected)) sel.value = selected;
+    }
+
+    // Seed from the first example when present, else sensible format defaults.
+    const seed = examples[0];
+    const defaultFrom = seed?.from && formats.some((f) => f.value === seed.from)
+      ? seed.from
+      : formats[0].value;
+    const defaultTo = seed?.to && formats.some((f) => f.value === seed.to)
+      ? seed.to
+      : (formats.find((f) => f.value !== defaultFrom)?.value ?? formats[0].value);
+
+    fillFormatSelect(fromSel, defaultFrom);
+    fillFormatSelect(toSel, defaultTo);
+
+    // Populate the example picker (with a leading "Custom" sentinel).
+    exampleSel.innerHTML = '';
+    const customOpt = document.createElement('option');
+    customOpt.value = '-1';
+    customOpt.textContent = examples.length ? 'Custom input' : 'No examples';
+    exampleSel.appendChild(customOpt);
+    examples.forEach((ex, i) => {
+      const opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = ex.label;
+      exampleSel.appendChild(opt);
+    });
+    exampleSel.value = examples.length ? '0' : '-1';
+    if (!examples.length) exampleSel.disabled = true;
+
+    // Editors.
+    const inputView = makeInputEditor(inputHost, seed?.text ?? '');
+    const outputView = makeOutputEditor(outputHost, '');
+
+    /** Sync the dark editor chrome filenames to the chosen formats. */
+    function syncNames(): void {
+      if (inputNameEl) inputNameEl.textContent = filenameFor(formats, fromSel.value);
+      if (outputNameEl) outputNameEl.textContent = filenameFor(formats, toSel.value);
+    }
+    syncNames();
+
+    /** Reset to the pre-conversion state (output cleared, copy disabled). */
+    function resetOutput(): void {
+      setEditorDoc(outputView, '');
+      copyBtn.disabled = true;
+      renderEmpty(messagesBox!, summaryEl!);
+    }
+
+    // Choosing an example swaps input + both formats, then clears the output.
+    exampleSel.addEventListener('change', () => {
+      const idx = Number(exampleSel.value);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+      const ex = examples[idx];
+      setEditorDoc(inputView, ex.text);
+      if (ex.from && formats.some((f) => f.value === ex.from)) fromSel.value = ex.from;
+      if (ex.to && formats.some((f) => f.value === ex.to)) toSel.value = ex.to;
+      syncNames();
+      resetOutput();
+    });
+
+    // Editing the input or formats means the shown output is stale → drop to Custom.
+    function markCustom(): void {
+      if (exampleSel.value !== '-1') exampleSel.value = '-1';
+    }
+    fromSel.addEventListener('change', () => {
+      markCustom();
+      syncNames();
+      resetOutput();
+    });
+    toSel.addEventListener('change', () => {
+      markCustom();
+      syncNames();
+      resetOutput();
+    });
+
+    // Mobile tab switching (panes are always visible on desktop via CSS).
+    const inputPane = el<HTMLElement>(root, '#cv-pane-input');
+    const outputPane = el<HTMLElement>(root, '#cv-pane-output');
+
+    function activateTab(tab: HTMLButtonElement, focusTab: boolean): void {
+      const showInput = tab.dataset.pane === 'input';
+      tabs.forEach((t) => {
+        const active = t === tab;
+        t.classList.toggle('is-active', active);
+        t.setAttribute('aria-selected', active ? 'true' : 'false');
+        t.tabIndex = active ? 0 : -1;
+      });
+      inputPane?.classList.toggle('cv-pane--active', showInput);
+      outputPane?.classList.toggle('cv-pane--active', !showInput);
+      if (focusTab) tab.focus();
+      requestAnimationFrame(() => (showInput ? inputView : outputView).requestMeasure());
+    }
+
+    tabs.forEach((tab, i) => {
+      tab.addEventListener('click', () => activateTab(tab, false));
+      tab.addEventListener('keydown', (e) => {
+        let next = -1;
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (i + 1) % tabs.length;
+        else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
+          next = (i - 1 + tabs.length) % tabs.length;
+        else if (e.key === 'Home') next = 0;
+        else if (e.key === 'End') next = tabs.length - 1;
+        if (next < 0) return;
+        e.preventDefault();
+        activateTab(tabs[next], true);
+      });
+    });
+
+    // Convert — non-blocking; show loading, yield a frame, then render.
+    let running = false;
+    const convertLabel = convertBtn.querySelector<HTMLElement>('.cv-convert-label');
+    let spinner: HTMLElement | null = null;
+
+    async function convertNow(): Promise<void> {
+      if (running) return;
+      running = true;
+      convertBtn.classList.add('is-busy');
+      convertBtn.setAttribute('aria-disabled', 'true');
+      convertBtn.setAttribute('aria-busy', 'true');
+      if (!spinner) {
+        spinner = document.createElement('span');
+        spinner.setAttribute('aria-hidden', 'true');
+        // Inline the visual — this span is created at runtime and would not
+        // receive the component's scoped-style hash.
+        spinner.style.cssText =
+          'display:inline-block;width:14px;height:14px;flex:0 0 auto;border-radius:9999px;' +
+          'border:2px solid currentColor;border-top-color:transparent;';
+        if (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          spinner.animate(
+            [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }],
+            { duration: 700, iterations: Infinity }
+          );
+        }
+        convertBtn.insertBefore(spinner, convertBtn.firstChild);
+      }
+      if (convertLabel) convertLabel.textContent = 'Converting…';
+      renderLoading(messagesBox!, summaryEl!);
+
+      // Yield so the loading state paints before (potentially heavy) work runs.
+      await new Promise<void>((resolve) => {
+        if ('requestAnimationFrame' in window) requestAnimationFrame(() => resolve());
+        else setTimeout(resolve, 0);
+      });
+
+      try {
+        const text = inputView.state.doc.toString();
+        const result = await Promise.resolve(
+          engine.convert(fromSel!.value, toSel!.value, text)
+        );
+
+        if (!result || result.error) {
+          setEditorDoc(outputView, '');
+          copyBtn!.disabled = true;
+          renderError(
+            messagesBox!,
+            summaryEl!,
+            result?.error ?? 'Unknown error while converting.'
+          );
+          return;
+        }
+
+        const output = typeof result.output === 'string' ? result.output : '';
+        setEditorDoc(outputView, output);
+        copyBtn!.disabled = output.length === 0;
+        const warnings = Array.isArray(result.warnings)
+          ? result.warnings.filter((w): w is string => typeof w === 'string' && w.length > 0)
+          : [];
+        renderWarnings(messagesBox!, summaryEl!, warnings);
+        if (announce) {
+          announce.textContent =
+            warnings.length > 0
+              ? `Converted with ${warnings.length} ${warnings.length === 1 ? 'note' : 'notes'}.`
+              : 'Converted successfully.';
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unexpected error while converting.';
+        setEditorDoc(outputView, '');
+        copyBtn!.disabled = true;
+        renderError(messagesBox!, summaryEl!, msg);
+      } finally {
+        running = false;
+        convertBtn.classList.remove('is-busy');
+        convertBtn.removeAttribute('aria-disabled');
+        convertBtn.removeAttribute('aria-busy');
+        if (spinner) {
+          spinner.remove();
+          spinner = null;
+        }
+        if (convertLabel) convertLabel.textContent = 'Convert';
+      }
+    }
+
+    convertBtn.addEventListener('click', () => void convertNow());
+
+    // Cmd/Ctrl+Enter from inside the editor / toolbar triggers a conversion.
+    root.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        void convertNow();
+      }
+    });
+
+    // Copy output — copies the read-only editor's current document.
+    const copyLabel = copyBtn.querySelector<HTMLElement>('.cv-copy-label');
+    let copyTimer: number | undefined;
+    copyBtn.addEventListener('click', async () => {
+      const out = outputView.state.doc.toString();
+      if (!out) return;
+      const ok = await copyText(out);
+      if (copyLabel) copyLabel.textContent = ok ? 'Copied' : 'Copy Failed';
+      if (announce) {
+        announce.textContent = ok
+          ? 'Converted output copied to your clipboard.'
+          : 'Could not copy. Select the output text and copy it manually.';
+      }
+      window.clearTimeout(copyTimer);
+      copyTimer = window.setTimeout(() => {
+        if (copyLabel) copyLabel.textContent = copyBtn.dataset.defaultLabel ?? 'Copy Output';
+      }, COPIED_RESET_MS);
+    });
+
+    // Initial state.
+    renderEmpty(messagesBox, summaryEl);
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

@@ -1,0 +1,211 @@
+---
+/**
+ * CodeBlock — the dark code / terminal mockup (DESIGN.md `code-editor-mockup`).
+ *
+ * Renders a polarity-flipped ink card (`bg-primary` / `text-on-primary`) with:
+ *   - an optional top bar: three faux traffic-light dots + a filename or lang
+ *     label (caption mono), and a copy button pinned top-right;
+ *   - a `<pre><code>` body in `code-mono` with the source preserved EXACTLY
+ *     (HTML-escaped for safe rendering, raw copy carried on a data attribute).
+ *
+ * The homepage and AlertLint page pass real LogQL / YAML / CLI snippets here.
+ *
+ * Usage:
+ *   <CodeBlock code={snippet} filename="alert.test.yaml" lang="yaml" />
+ *   <CodeBlock code={query} lang="logql" />
+ */
+export interface Props {
+  /** Raw source text. Rendered verbatim (whitespace + indentation preserved). */
+  code: string;
+  /** Optional filename shown in the top bar (mono). Implies the top bar. */
+  filename?: string;
+  /** Optional language tag — shown as a label when no filename is given. */
+  lang?: string;
+  /** Extra classes for the outer card (e.g. layout / max-width overrides). */
+  class?: string;
+}
+
+const { code, filename, lang, class: className = '' } = Astro.props;
+
+/** Trim a single leading/trailing newline so template-literal snippets look tight. */
+const source = code.replace(/^\n/, '').replace(/\n$/, '');
+
+/** A top bar appears when we have a filename OR a language to label. */
+const hasBar = Boolean(filename || lang);
+
+/** Accessible label for the bar's text node. */
+const barLabel = filename ?? (lang ? lang.toUpperCase() : undefined);
+
+/* Copy button vertical offset — full static class strings (no concatenation). */
+const copyBtnBase =
+  'code-copy absolute right-2.5 inline-flex h-8 items-center gap-1.5 rounded-sm border border-white/10 bg-white/5 px-2.5 text-white/70 [touch-action:manipulation] hover:border-white/20 hover:bg-white/10 hover:text-on-primary';
+const copyBtnClass = hasBar
+  ? `${copyBtnBase} top-2`
+  : `${copyBtnBase} top-2.5`;
+---
+
+<figure class={`code-editor relative overflow-hidden rounded-md bg-primary text-on-primary shadow-float ${className}`}>
+  {
+    hasBar && (
+      <figcaption class="flex items-center gap-3 border-b border-white/10 px-4 py-2.5">
+        <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+          <span class="h-3 w-3 rounded-full bg-white/15" />
+          <span class="h-3 w-3 rounded-full bg-white/15" />
+          <span class="h-3 w-3 rounded-full bg-white/15" />
+        </span>
+        {barLabel && (
+          <span class="code-mono truncate text-white/45" title={filename ?? barLabel}>
+            {barLabel}
+          </span>
+        )}
+      </figcaption>
+    )
+  }
+
+  <button type="button" class={copyBtnClass} aria-label="Copy code" data-copy={source}>
+    <svg
+      class="copy-icon h-4 w-4"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.4"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
+      <path d="M10.5 2.5h-7A1.5 1.5 0 0 0 2 4v7" />
+    </svg>
+    <svg
+      class="check-icon hidden h-4 w-4"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.6"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 8.5l3.5 3.5L13 4.5" />
+    </svg>
+    <span class="code-mono copy-label">Copy</span>
+  </button>
+
+  <div class="overflow-x-auto">
+    <pre class="code-mono px-5 py-4 text-on-primary"><code set:html={
+      source
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+    } /></pre>
+  </div>
+
+  <span class="sr-only copy-status" role="status" aria-live="polite"></span>
+</figure>
+
+<style>
+  @reference "../styles/global.css";
+
+  /* The mono body never wraps — overflow scrolls horizontally instead. */
+  .code-editor pre {
+    margin: 0;
+    white-space: pre;
+    tab-size: 2;
+    font-variant-ligatures: none;
+  }
+
+  .code-editor :global(code) {
+    font: inherit;
+    color: inherit;
+  }
+
+  /* Copy button stays out of the way until the row is hovered/focused, then
+     fades in — keeps the snippet clean while remaining keyboard-reachable.
+     Only opacity/color/background animate; reduced-motion is honored globally. */
+  .code-copy {
+    opacity: 0;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+      opacity 0.15s ease;
+  }
+  /* Copied confirmation: gentle compositor-only pop on the swapped check icon. */
+  .code-copy.is-copied .check-icon {
+    animation: copy-pop 0.18s ease-out;
+  }
+  @keyframes copy-pop {
+    0% {
+      transform: scale(0.7);
+      opacity: 0;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+  .code-editor:hover .code-copy,
+  .code-copy:focus-visible,
+  .code-copy.is-copied {
+    opacity: 1;
+  }
+  /* Touch / coarse pointers can't hover — keep the button always visible there. */
+  @media (hover: none) {
+    .code-copy {
+      opacity: 1;
+    }
+  }
+</style>
+
+<script>
+  const RESET_MS = 1800;
+
+  function wireCopyButtons(): void {
+    const buttons = document.querySelectorAll<HTMLButtonElement>('.code-copy');
+
+    buttons.forEach((button) => {
+      if (button.dataset.copyWired === 'true') return;
+      button.dataset.copyWired = 'true';
+
+      const figure = button.closest('.code-editor');
+      const status = figure?.querySelector<HTMLElement>('.copy-status');
+      const label = button.querySelector<HTMLElement>('.copy-label');
+      const copyIcon = button.querySelector<HTMLElement>('.copy-icon');
+      const checkIcon = button.querySelector<HTMLElement>('.check-icon');
+      let timer: number | undefined;
+
+      const setCopiedState = (copied: boolean): void => {
+        button.classList.toggle('is-copied', copied);
+        copyIcon?.classList.toggle('hidden', copied);
+        checkIcon?.classList.toggle('hidden', !copied);
+        if (label) label.textContent = copied ? 'Copied' : 'Copy';
+        if (status) status.textContent = copied ? 'Copied to clipboard.' : '';
+      };
+
+      button.addEventListener('click', async () => {
+        const text = button.dataset.copy ?? '';
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+          } else {
+            // Legacy fallback for non-secure contexts.
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'absolute';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+          }
+          setCopiedState(true);
+          window.clearTimeout(timer);
+          timer = window.setTimeout(() => setCopiedState(false), RESET_MS);
+        } catch {
+          if (status) status.textContent = 'Copy failed — select the code manually.';
+        }
+      });
+    });
+  }
+
+  wireCopyButtons();
+  document.addEventListener('astro:page-load', wireCopyButtons);
+</script>
