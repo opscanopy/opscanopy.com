@@ -23,7 +23,6 @@ export interface NavLink {
 /** Centre link row in the top nav. */
 export const navLinks: NavLink[] = [
   { label: 'Tools', href: '/tools' },
-  { label: 'AlertLint', href: '/loki-alert-rule-tester' },
   { label: 'Blog', href: '/blog' },
 ];
 
@@ -43,10 +42,7 @@ export const footerColumns: FooterColumn[] = [
   },
   {
     title: 'Resources',
-    links: [
-      { label: 'Blog', href: '/blog' },
-      { label: 'GitHub', href: 'https://github.com/opscanopy' },
-    ],
+    links: [{ label: 'Blog', href: '/blog' }],
   },
   {
     title: 'Platform',
@@ -57,9 +53,6 @@ export const footerColumns: FooterColumn[] = [
   },
   {
     title: 'Project',
-    links: [
-      { label: 'Roadmap', href: '/tools#roadmap' },
-      { label: 'Open an issue', href: 'https://github.com/opscanopy' },
-    ],
+    links: [{ label: 'Roadmap', href: '/tools#roadmap' }],
   },
 ];
