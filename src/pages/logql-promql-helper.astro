@@ -1,0 +1,326 @@
+---
+/**
+ * LogQL ↔ PromQL Helper — the tool page (primary SEO surface).
+ * Convert common metric-query shapes between Grafana Loki LogQL and Prometheus
+ * PromQL, with honest notes on what does and does not map — entirely in the
+ * browser. No server, no signup.
+ *
+ * Imports the interactive island (LogqlPromqlPlayground, self-mounting) plus the
+ * brand primitives. JSON-LD (SoftwareApplication + FAQPage) is assembled in
+ * frontmatter and handed to Shell via the `jsonLd` prop.
+ */
+import Shell from '../components/Shell.astro';
+import LogqlPromqlPlayground from '../components/LogqlPromqlPlayground.astro';
+import CodeBlock from '../components/CodeBlock.astro';
+import ToolHero from '../components/ToolHero.astro';
+import ToolPipeline from '../components/ToolPipeline.astro';
+import FaqList from '../components/FaqList.astro';
+import ToolCrossLinks from '../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../data/site';
+import { getTool } from '../data/tools';
+import { softwareAppLd, faqPageLd } from '../lib/jsonld';
+
+const tool = getTool('logql-promql-helper');
+
+const pagePath = '/logql-promql-helper';
+const pageUrl = `${site.url}${pagePath}`;
+
+// ── FAQ content — single source for both the rendered section and FAQPage LD ─
+const faqs = [
+  {
+    q: 'What does the LogQL ↔ PromQL Helper do?',
+    a: 'It translates common metric-query shapes between Grafana Loki’s LogQL and Prometheus’ PromQL, in both directions. Paste a query, pick a direction, and the helper rewrites the selectors, range functions, and aggregations into the other language — then flags anything that can’t map cleanly. It runs entirely in your browser, with no account and no upload.',
+  },
+  {
+    q: 'Does my query ever leave my browser?',
+    a: 'No. The helper is 100% client-side. Your queries are parsed and rewritten inside your browser tab — nothing is sent to a server, and there’s no signup. You can safely paste internal label names, namespaces, and service identifiers.',
+  },
+  {
+    q: 'Can every LogQL query become a PromQL query (and vice versa)?',
+    a: 'No, and the helper is explicit about it. LogQL and PromQL share the same matcher and aggregation grammar for metric queries, so shapes like rate(), count_over_time(), sum by (…) and threshold comparisons translate well. But LogQL log queries — line filters such as |= "error", label_format, line_format, and pattern/regexp parsers — have no PromQL equivalent because PromQL only sees pre-aggregated samples. Those parts are reported as notes rather than silently dropped.',
+  },
+  {
+    q: 'What carries over cleanly between the two?',
+    a: 'Label matchers ({app="checkout", env=~"prod|stage"}), range-vector functions (rate, irate, increase, *_over_time), aggregation operators (sum, avg, max, min, count, topk) with by/without grouping, and binary/threshold comparisons all share near-identical syntax. The helper maps these directly and leaves your label names and durations untouched.',
+  },
+  {
+    q: 'Why convert between LogQL and PromQL at all?',
+    a: 'Teams often run both Loki and Prometheus and want a metric they’ve proven in one to exist in the other — for example, turning a log-derived error rate in Loki into a recording rule shape they can reason about against Prometheus metrics, or porting a PromQL alert threshold into a LogQL equivalent over a log stream. The helper gives you a fast first draft plus a clear list of what to double-check.',
+  },
+  {
+    q: 'Is this affiliated with Grafana Labs or Prometheus?',
+    a: 'No. This is an independent, community tool and is not affiliated with or endorsed by Grafana Labs or the Prometheus project. Loki and Grafana are trademarks of Raintank, Inc.; Prometheus is a trademark of The Linux Foundation. The vendor names are used only to describe the query languages the helper translates.',
+  },
+];
+
+// ── JSON-LD: SoftwareApplication ─────────────────────────────────────────────
+const softwareApp = softwareAppLd({
+  name: 'LogQL to PromQL Helper',
+  description:
+    'Convert common metric-query shapes between Grafana Loki LogQL and Prometheus PromQL, with notes on what does and does not map — entirely in your browser, no server, no signup.',
+  url: pageUrl,
+  subCategory: 'Observability',
+  featureList: [
+    'Translate metric queries between LogQL and PromQL, both directions',
+    'Maps matchers, range functions, aggregations and thresholds',
+    'Flags log-only LogQL constructs that have no PromQL equivalent',
+    '100% client-side, no upload, no signup',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+
+// ── JSON-LD: FAQPage (mirrors the rendered FAQ) ──────────────────────────────
+const faqPage = faqPageLd(faqs);
+
+// ── HOW IT WORKS pipeline ────────────────────────────────────────────────────
+const pipeline = [
+  {
+    title: 'Parse the query.',
+    body: 'Your source query is parsed into its structural parts — selectors, range functions, aggregations and comparisons — in whichever language you chose.',
+  },
+  {
+    title: 'Map the metric shape.',
+    body: 'Constructs that share grammar — matchers, rate/over_time, sum by (…), thresholds — are mapped one-to-one into the target language.',
+  },
+  {
+    title: 'Isolate what can’t map.',
+    body: 'Log-only LogQL pieces — line filters, parsers, line_format — are separated out, since PromQL has no equivalent for them.',
+  },
+  {
+    title: 'Emit the translation.',
+    body: 'The rewritten query is rendered in the target language, ready to copy into Grafana, a rule file or an alert.',
+  },
+  {
+    title: 'Report the notes.',
+    body: 'Anything lossy or unmappable is surfaced as a plain-language note, so you know exactly what to verify by hand.',
+  },
+];
+
+// ── Example: LogQL → PromQL (clean metric map) ───────────────────────────────
+const logqlExample = `# LogQL metric query — error rate from a log stream
+sum by (app) (
+  rate({app="checkout", env="prod"} |= "error" [5m])
+) > 0.2`;
+
+const promqlExample = `# PromQL — the same aggregation shape over a counter metric
+sum by (app) (
+  rate(app_request_errors_total{app="checkout", env="prod"}[5m])
+) > 0.2`;
+
+// ── Example: what does NOT map (log-only constructs) ─────────────────────────
+const unmappableExample = `# These LogQL pieces have NO PromQL equivalent:
+{app="checkout"} |= "error"            # line filter — PromQL sees samples, not lines
+| json | line_format "{{.msg}}"        # parsers + line_format reshape log text
+| label_format level=\`{{.severity}}\`   # label_format rewrites labels at query time`;
+---
+
+<Shell
+  title="LogQL to PromQL Helper — Convert Loki & Prometheus Queries Online"
+  description="Convert common metric-query shapes between Grafana Loki LogQL and Prometheus PromQL, with notes on what does and does not map — entirely in your browser."
+  canonical="/logql-promql-helper"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <!-- ════════════════════════════════════════════════════════════════════
+       1) HERO — compact, mesh gradient behind
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolHero
+    eyebrow="LogQL ↔ PromQL · Observability"
+    badges={[
+      { label: 'Runs in your browser', variant: 'live' },
+      { label: 'No signup', variant: 'neutral' },
+      { label: 'Free & open', variant: 'neutral' },
+    ]}
+    primaryCta={{ label: 'Try It Now', href: '#playground' }}
+    secondaryCta={{ label: 'See How It Works', href: '#how-it-works' }}
+  >
+    <Fragment slot="headline">
+      Translate between <span translate="no">LogQL</span> and <span translate="no">PromQL</span>.
+    </Fragment>
+    <Fragment slot="lead">
+      <span translate="no">Loki</span>’s <span translate="no">LogQL</span> and
+      <span translate="no">Prometheus</span>’ <span translate="no">PromQL</span> share the same metric
+      grammar — but only up to a point. Paste a query, pick a direction, and get a clean rewrite of the
+      parts that map, plus honest notes on the parts that don’t. Everything runs in your browser.
+    </Fragment>
+  </ToolHero>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       2) THE PLAYGROUND
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pb-20 sm:pb-24">
+    <div class="container-page">
+      <div class="mx-auto mb-6 max-w-3xl text-center">
+        <h2 class="display-lg text-ink">The playground.</h2>
+        <p class="body-md mx-auto mt-3 max-w-2xl text-pretty text-body">
+          Paste a query, choose a direction, then press <strong class="font-medium text-ink"
+            >Convert</strong
+          > — or load an example to see a clean metric map and a lossy log query side by side.
+          Everything translates locally in your tab; nothing is uploaded.
+        </p>
+      </div>
+      <LogqlPromqlPlayground />
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       3) WHY IT EXISTS — the gap
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">The Gap</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            Same grammar, different worlds.
+          </h2>
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            <span translate="no">LogQL</span> was deliberately modeled on
+            <span translate="no">PromQL</span>: the matcher syntax, the range-vector functions, and
+            the aggregation operators look almost identical. So engineers running both
+            <span translate="no">Loki</span> and <span translate="no">Prometheus</span> constantly
+            want to carry a query from one to the other — and reach for find-and-replace, which
+            quietly breaks on the parts that don’t line up.
+          </p>
+          <p class="body-md text-pretty text-body">
+            The catch is that <span translate="no">PromQL</span> only ever sees pre-aggregated
+            samples, while <span translate="no">LogQL</span> can also filter and reshape raw log
+            lines. Line filters, parsers and
+            <span class="code-mono text-ink" translate="no">line_format</span> have no
+            <span translate="no">PromQL</span> equivalent at all. This helper does the boring metric
+            mapping for you and, just as importantly, tells you exactly which pieces it
+            <em>couldn’t</em> translate — so you fix them on purpose instead of by surprise.
+          </p>
+          <p class="body-sm text-mute">
+            New to the differences? Jump to <a class="link-inline" href="#syntax">what maps and what
+            doesn’t</a> or try the <a class="link-inline" href="#playground">live playground</a> above.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       4) HOW IT WORKS — numbered pipeline
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="The Pipeline"
+    heading="How it works."
+    lead="Five deterministic steps run end-to-end on every press of Convert — all inside your browser tab, every time."
+    steps={pipeline}
+  />
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       5) SYNTAX — what maps & what doesn't
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="syntax" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">What Maps</p>
+        <h2 class="display-lg mt-3 text-ink">What translates, and what doesn’t.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          <span translate="no">Metric</span> queries share grammar and map cleanly.
+          <span translate="no">Log</span> queries — the part that reads raw lines — are where the two
+          languages part ways. Here is the honest split.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 grid max-w-5xl gap-8 lg:grid-cols-2">
+        <div class="min-w-0">
+          <h3 class="display-sm text-ink">Maps cleanly</h3>
+          <p class="body-sm mt-2 mb-4 text-pretty text-body">
+            Label matchers, range-vector functions
+            (<span class="code-mono text-ink" translate="no">rate</span>,
+            <span class="code-mono text-ink" translate="no">increase</span>,
+            <span class="code-mono text-ink" translate="no">count_over_time</span>), aggregation
+            operators with <span class="code-mono text-ink" translate="no">by</span> /
+            <span class="code-mono text-ink" translate="no">without</span> grouping, and threshold
+            comparisons all share near-identical syntax. The same shape in
+            <span translate="no">LogQL</span> becomes the same shape in
+            <span translate="no">PromQL</span>.
+          </p>
+          <div class="space-y-4">
+            <CodeBlock lang="logql" filename="source.logql" code={logqlExample} />
+            <CodeBlock lang="promql" filename="result.promql" code={promqlExample} />
+          </div>
+        </div>
+
+        <div class="min-w-0">
+          <h3 class="display-sm text-ink">Has no equivalent</h3>
+          <p class="body-sm mt-2 mb-4 text-pretty text-body">
+            <span translate="no">PromQL</span> only sees numeric samples, so the parts of
+            <span translate="no">LogQL</span> that work on raw log text simply don’t exist on the
+            other side. Line filters
+            (<span class="code-mono text-ink" translate="no">|= "error"</span>), parsers
+            (<span class="code-mono text-ink" translate="no">| json</span>,
+            <span class="code-mono text-ink" translate="no">| logfmt</span>),
+            <span class="code-mono text-ink" translate="no">line_format</span> and
+            <span class="code-mono text-ink" translate="no">label_format</span> are reported as
+            notes, never silently dropped.
+          </p>
+          <CodeBlock lang="logql" filename="log-only.logql" code={unmappableExample} />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       6) NOTE — honest preview-engine callout
+       ════════════════════════════════════════════════════════════════════ -->
+  <section class="bg-canvas-soft">
+    <div class="container-page py-12 sm:py-16">
+      <div class="card-soft mx-auto max-w-3xl p-6">
+        <p class="eyebrow">Preview Engine</p>
+        <p class="body-md mt-3 text-pretty text-body">
+          A note on accuracy: the in-browser translator is a <strong class="font-medium text-ink"
+            >preview engine</strong
+          > that maps the common metric-query shapes — label matchers, range-vector functions like
+          <span class="code-mono text-ink" translate="no">rate</span> /
+          <span class="code-mono text-ink" translate="no">count_over_time</span>, aggregations with
+          <span class="code-mono text-ink" translate="no">by</span> /
+          <span class="code-mono text-ink" translate="no">without</span>, and threshold comparisons.
+          It does not run a full <span translate="no">LogQL</span> or
+          <span translate="no">PromQL</span> parser, and it can’t invent a metric name for a
+          log-derived series. Treat its output as a strong first draft to review — not a guaranteed
+          drop-in for production rules.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       7) FAQ
+       ════════════════════════════════════════════════════════════════════ -->
+  <FaqList faqs={faqs} />
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       Cross-links (observability cluster) + footer disclaimer
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolCrossLinks>
+    <Fragment slot="lead">
+      The <span translate="no">LogQL</span> ↔ <span translate="no">PromQL</span> Helper sits alongside
+      the rest of the <span translate="no">{site.name}</span> observability cluster —
+      <a class="link-inline" href="/promql-explainer"
+        >explain a <span translate="no">PromQL</span> query</a
+      > or <a class="link-inline" href="/loki-alert-rule-tester"
+        >test your <span translate="no">Loki</span> alert rules</a
+      > with <span translate="no">AlertLint</span>, all browser-based and private by default.
+    </Fragment>
+    <Fragment slot="links">
+      Want the whole set? Browse the full <a class="link-inline" href={navLinks[0].href}
+        >tools directory</a
+      >, or read why everything here runs <a class="link-inline" href="/#privacy"
+        >entirely client-side</a
+      >.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      Not affiliated with or endorsed by <span translate="no">Grafana Labs</span> or the
+      <span translate="no">Prometheus</span> project. <span translate="no">Loki</span> and
+      <span translate="no">Grafana</span> are trademarks of <span translate="no">Raintank, Inc.</span>;
+      <span translate="no">Prometheus</span> is a trademark of
+      <span translate="no">The Linux Foundation.</span>
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>

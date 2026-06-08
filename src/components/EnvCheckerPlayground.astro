@@ -1,0 +1,1240 @@
+---
+/**
+ * EnvCheckerPlayground — the interactive Env Example Checker island.
+ *
+ * A no-framework, server-rendered shell hydrated by a single module <script>
+ * that lazily boots two CodeMirror 6 editors ("Your code" + ".env.example"),
+ * wires an example picker, a "Check" action and live re-checking, then renders a
+ * drift report. It runs entirely client-side — no upload, no network.
+ *
+ * Runtime contract (built by sibling agents — imported lazily in the script):
+ *   ../lib/env-checker/types →
+ *     type EnvResult = {
+ *       error?: string
+ *       usedVars: string[]
+ *       exampleVars: string[]
+ *       missingInExample: string[]   // used in code, absent from .env.example
+ *       unusedInExample: string[]    // present in .env.example, never read
+ *     }
+ *   ../lib/env-checker/engine →
+ *     check(code: string, envExample: string) => EnvResult
+ *   ../lib/env-checker/examples →
+ *     examples: { id: string; label: string; code: string; envExample: string }[]
+ *
+ * The dark editor surface follows DESIGN.md `code-editor-mockup`; the "missing"
+ * group uses the semantic error/warning tokens, the "unused" group is muted, and
+ * the clean state uses the success token. Headlines stay sentence-case, weight 600.
+ */
+---
+
+<section class="ec-pg" aria-label="Env Example Checker playground">
+  <div class="card shadow-float rounded-lg overflow-hidden">
+    {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+    <div
+      class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5"
+    >
+      <div class="flex min-w-0 items-center gap-3">
+        <label class="eyebrow shrink-0" for="ec-example">Example</label>
+        <div class="ec-select-wrap relative min-w-0">
+          <select id="ec-example" class="ec-select code-mono" autocomplete="off">
+            {/* Options injected by the hydration script from `examples`. */}
+            <option value="">Loading examples…</option>
+          </select>
+          <svg
+            class="ec-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M4 6l4 4 4-4"></path>
+          </svg>
+        </div>
+      </div>
+
+      <div class="flex shrink-0 flex-wrap items-center gap-2">
+        <label class="ec-live inline-flex cursor-pointer select-none items-center gap-2">
+          <input id="ec-live" type="checkbox" class="ec-live-input" checked />
+          <span class="ec-live-track" aria-hidden="true"><span class="ec-live-thumb"></span></span>
+          <span class="caption text-body">Live check</span>
+        </label>
+        <button
+          id="ec-check"
+          type="button"
+          class="btn btn-primary btn-sm ec-tap"
+          title="Check (⌘/Ctrl + Enter)"
+          aria-keyshortcuts="Meta+Enter Control+Enter"
+        >
+          <svg
+            class="ec-check-icon h-4 w-4 shrink-0"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+          </svg>
+          <span class="ec-check-label">Check</span>
+        </button>
+      </div>
+    </div>
+
+    {/* ── Mobile tab switch (single-pane on small screens) ─────────────── */}
+    <div
+      class="ec-tabs flex gap-1 border-b border-hairline px-4 py-2 sm:hidden"
+      role="tablist"
+      aria-label="Editor panes"
+    >
+      <button
+        id="ec-tab-code"
+        type="button"
+        class="ec-tab ec-tap is-active"
+        role="tab"
+        aria-selected="true"
+        aria-controls="ec-pane-code"
+        data-pane="code"
+        tabindex="0"
+      >
+        Your Code
+      </button>
+      <button
+        id="ec-tab-env"
+        type="button"
+        class="ec-tab ec-tap"
+        role="tab"
+        aria-selected="false"
+        aria-controls="ec-pane-env"
+        data-pane="env"
+        tabindex="-1"
+      >
+        .env.example
+      </button>
+    </div>
+
+    {/* ── Editor split (side-by-side on desktop, tabbed on mobile) ─────── */}
+    <div class="ec-grid grid grid-cols-1 sm:grid-cols-2">
+      <div
+        id="ec-pane-code"
+        class="ec-pane ec-pane--active flex min-w-0 flex-col bg-primary sm:border-r sm:border-white/10"
+        role="tabpanel"
+        aria-labelledby="ec-tab-code"
+      >
+        <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
+          <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+          </span>
+          <span class="code-mono text-white/45">your-code</span>
+        </div>
+        <div
+          id="ec-editor-code"
+          class="ec-editor min-h-72"
+          aria-label="Your application code"
+        >
+        </div>
+      </div>
+
+      <div
+        id="ec-pane-env"
+        class="ec-pane flex min-w-0 flex-col bg-primary"
+        role="tabpanel"
+        aria-labelledby="ec-tab-env"
+      >
+        <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
+          <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+          </span>
+          <span class="code-mono text-white/45">.env.example</span>
+        </div>
+        <div
+          id="ec-editor-env"
+          class="ec-editor min-h-72"
+          aria-label="Your .env.example file"
+        >
+        </div>
+      </div>
+    </div>
+
+    {/* ── Drift report panel ───────────────────────────────────────────── */}
+    <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <span class="eyebrow">Drift Report</span>
+        <span
+          id="ec-summary"
+          class="ec-summary code-mono text-mute"
+          role="status"
+          aria-live="polite"
+        ></span>
+      </div>
+
+      <div id="ec-report" class="ec-report">
+        <p class="ec-empty body-sm text-mute">
+          Load an example or paste your own code and .env.example, then check to
+          see which variables drifted.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  {/* Polite announcer for clipboard + transient toasts. */}
+  <span id="ec-announce" class="sr-only" role="status" aria-live="polite"></span>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  /* Tap targets opt into fast-tap + no double-tap-zoom on touch. */
+  .ec-tap {
+    touch-action: manipulation;
+  }
+
+  /* The example picker: a 6px-radius in-app form control (form-input-sm scale). */
+  .ec-select {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    height: 32px;
+    min-width: 0;
+    max-width: 280px;
+    padding: 0 32px 0 12px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 13px;
+    line-height: 20px;
+    cursor: pointer;
+    text-overflow: ellipsis;
+    touch-action: manipulation;
+    transition: box-shadow 0.15s ease;
+  }
+  @media (min-width: 640px) {
+    .ec-select {
+      width: auto;
+      min-width: 200px;
+    }
+  }
+  .ec-select:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .ec-select:disabled {
+    cursor: not-allowed;
+    color: var(--color-mute);
+    opacity: 0.7;
+  }
+  .ec-select-caret {
+    transition: color 0.15s ease;
+  }
+  .ec-select-wrap:hover .ec-select-caret {
+    color: var(--color-body);
+  }
+
+  /* Live-check toggle — a compact switch built from the contract tokens. */
+  .ec-live {
+    touch-action: manipulation;
+  }
+  .ec-live-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .ec-live-track {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    width: 32px;
+    height: 18px;
+    border-radius: var(--radius-pill);
+    background: var(--color-canvas-soft-2);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+    transition: background-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .ec-live-thumb {
+    position: absolute;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 9999px;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-subtle);
+    transition: transform 0.15s ease;
+  }
+  .ec-live-input:checked + .ec-live-track {
+    background: var(--color-primary);
+    box-shadow: none;
+  }
+  .ec-live-input:checked + .ec-live-track .ec-live-thumb {
+    transform: translateX(14px);
+  }
+  .ec-live-input:focus-visible + .ec-live-track {
+    outline: 2px solid var(--color-link);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ec-live-track,
+    .ec-live-thumb {
+      transition: none;
+    }
+  }
+
+  /* Mobile tab pills (square in-app scale; never the 100px marketing pill). */
+  .ec-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 0;
+    min-height: 44px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+    background: transparent;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .ec-tab:hover:not(.is-active) {
+    color: var(--color-body);
+    background: var(--color-canvas-soft-2);
+  }
+  .ec-tab.is-active {
+    color: var(--color-on-primary);
+    background: var(--color-primary);
+  }
+
+  /* Visibility is driven by the .ec-pane--active class, NOT the [hidden]
+     attribute. Tailwind v4's layered `[hidden]{display:none!important}` (in
+     @layer base) beats any unlayered !important override, which would otherwise
+     leave the .env.example pane invisible on desktop. */
+  @media (max-width: 639px) {
+    .ec-pane {
+      display: none;
+    }
+    .ec-pane.ec-pane--active {
+      display: flex;
+    }
+  }
+  @media (min-width: 640px) {
+    /* Desktop: both panes always visible side by side. */
+    .ec-pane {
+      display: flex;
+    }
+  }
+
+  /* CodeMirror host — fills the dark pane, scrolls internally. */
+  .ec-editor {
+    overflow: hidden;
+  }
+  .ec-editor :global(.cm-editor) {
+    height: 100%;
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .ec-editor :global(.cm-editor.cm-focused) {
+    /* Replace CM's default outline with a brand-blue ring (a11y: keep a ring). */
+    outline: 2px solid var(--color-link);
+    outline-offset: -2px;
+  }
+  .ec-editor :global(.cm-scroller) {
+    overflow: auto;
+    max-height: 420px;
+    font-family: var(--font-mono);
+    /* Thin, theme-matched scrollbars on the dark surface. */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  }
+  .ec-editor :global(.cm-scroller)::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .ec-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.16);
+    border-radius: var(--radius-pill);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  .ec-editor :global(.cm-scroller)::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.28);
+    background-clip: content-box;
+  }
+  .ec-editor :global(.cm-gutters) {
+    background: transparent;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .ec-editor :global(.cm-lineNumbers .cm-gutterElement) {
+    color: rgba(255, 255, 255, 0.32);
+  }
+  .ec-editor :global(.cm-content) {
+    padding: 14px 0 16px;
+  }
+  .ec-editor :global(.cm-line) {
+    padding-inline: 4px;
+  }
+
+  /* Summary — right-aligned counts use tabular figures so they don't jitter. */
+  .ec-summary {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+    white-space: nowrap;
+  }
+
+  /* Report layout. All children below are injected at runtime via innerHTML, so
+     every selector is :global — Astro's scoped hash never reaches them. */
+  .ec-report {
+    min-height: 44px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* A grouped report section (Missing / Unused). */
+  :global(.ec-group) {
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+    animation: ec-rise 0.18s ease both;
+  }
+  :global(.ec-group--miss) {
+    box-shadow: inset 0 0 0 1px var(--color-error-soft);
+  }
+  :global(.ec-group__head) {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+  }
+  :global(.ec-group--miss .ec-group__head) {
+    background: var(--color-error-soft);
+    border-bottom-color: transparent;
+  }
+  :global(.ec-group__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+  }
+  :global(.ec-group--miss .ec-group__icon) {
+    color: var(--color-error);
+  }
+  :global(.ec-group--unused .ec-group__icon) {
+    color: var(--color-mute);
+  }
+  :global(.ec-group__title) {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+    letter-spacing: -0.01em;
+    color: var(--color-ink);
+  }
+  :global(.ec-group--miss .ec-group__title) {
+    color: var(--color-error-deep);
+  }
+  :global(.ec-group__count) {
+    flex: 0 0 auto;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+    font-size: 12px;
+    line-height: 16px;
+    padding: 1px 8px;
+    border-radius: var(--radius-pill);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+  }
+  :global(.ec-group--miss .ec-group__count) {
+    color: var(--color-error-deep);
+    box-shadow: inset 0 0 0 1px var(--color-error-soft);
+  }
+  :global(.ec-group__hint) {
+    padding: 8px 14px 0;
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--color-mute);
+    text-wrap: pretty;
+  }
+  :global(.ec-list) {
+    margin: 0;
+    padding: 8px;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  /* A single variable row. Missing rows are copyable KEY= lines. */
+  :global(.ec-item) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas-soft);
+  }
+  :global(.ec-item--unused) {
+    background: transparent;
+  }
+  :global(.ec-item__key) {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 18px;
+    color: var(--color-ink);
+    word-break: break-all;
+  }
+  :global(.ec-item--unused .ec-item__key) {
+    color: var(--color-mute);
+  }
+  :global(.ec-item__eq) {
+    color: var(--color-mute);
+  }
+
+  /* Per-row copy button for missing keys. */
+  :global(.ec-copy) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 26px;
+    padding: 0 9px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: box-shadow 0.15s ease, color 0.15s ease;
+  }
+  :global(.ec-copy:hover) {
+    color: var(--color-ink);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  :global(.ec-copy:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 2px;
+  }
+  :global(.ec-copy__icon) {
+    width: 13px;
+    height: 13px;
+    flex: 0 0 auto;
+  }
+  :global(.ec-copy.is-copied) {
+    color: var(--color-success);
+  }
+
+  /* "Copy all" action on the missing group header. */
+  :global(.ec-copyall) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: box-shadow 0.15s ease, color 0.15s ease;
+  }
+  :global(.ec-copyall:hover) {
+    color: var(--color-ink);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  :global(.ec-copyall:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 2px;
+  }
+  :global(.ec-copyall__icon) {
+    width: 13px;
+    height: 13px;
+    flex: 0 0 auto;
+  }
+  :global(.ec-copyall.is-copied) {
+    color: var(--color-success);
+  }
+
+  /* Clean all-good state. */
+  :global(.ec-ok) {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    animation: ec-rise 0.18s ease both;
+  }
+  :global(.ec-ok__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    color: var(--color-success);
+  }
+  :global(.ec-ok__text) {
+    font-size: 13px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+
+  /* Parse / engine error banner. */
+  :global(.ec-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+    animation: ec-rise 0.18s ease both;
+  }
+  :global(.ec-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.ec-error__body) {
+    min-width: 0;
+  }
+  :global(.ec-error__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.ec-error__detail) {
+    margin-top: 2px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 18px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  @keyframes ec-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.ec-group),
+    :global(.ec-ok),
+    :global(.ec-error) {
+      animation: none;
+    }
+  }
+
+  /* Empty state — generous, centered frame. */
+  :global(.ec-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+
+  /* Loading dots — animate opacity only; reduced-motion handled globally. */
+  :global(.ec-loading) {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--color-body);
+  }
+  :global(.ec-loading__dot) {
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background: var(--color-mute);
+    animation: ec-pulse 1.1s ease-in-out infinite;
+  }
+  :global(.ec-loading__dot:nth-child(2)) {
+    animation-delay: 0.18s;
+  }
+  :global(.ec-loading__dot:nth-child(3)) {
+    animation-delay: 0.36s;
+  }
+  @keyframes ec-pulse {
+    0%,
+    100% {
+      opacity: 0.3;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.ec-loading__dot) {
+      animation: none;
+      opacity: 0.6;
+    }
+  }
+
+  .is-busy {
+    opacity: 0.65;
+    pointer-events: none;
+    cursor: progress;
+  }
+  .is-busy .ec-check-icon {
+    display: none;
+  }
+</style>
+
+<script>
+  import { EditorState } from '@codemirror/state';
+  import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
+  import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+  import { oneDark } from '@codemirror/theme-one-dark';
+  import { escapeHtml } from '../lib/escape-html';
+
+  /* ---- Types mirrored from the engine contract (structural, not imported). -- */
+  type EnvResult = {
+    error?: string;
+    usedVars?: string[];
+    exampleVars?: string[];
+    missingInExample?: string[];
+    unusedInExample?: string[];
+  };
+  type EngineModule = {
+    check: (code: string, envExample: string) => EnvResult | Promise<EnvResult>;
+  };
+  type Example = { id: string; label: string; code: string; envExample: string };
+
+  const ROOT_SEL = '.ec-pg';
+  const COPIED_RESET_MS = 1500;
+  const LIVE_DEBOUNCE_MS = 320;
+
+  /** Boot every (so far un-hydrated) playground instance on the page. */
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.ecWired === 'true') return;
+      root.dataset.ecWired = 'true';
+      void init(root);
+    });
+  }
+
+  /* ---- Small helpers -------------------------------------------------------- */
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  function pick(o: Record<string, unknown>, keys: string[]): string {
+    for (const k of keys) {
+      const v = o[k];
+      if (typeof v === 'string' && v.length > 0) return v;
+    }
+    return '';
+  }
+
+  /** Normalise the sibling `examples` array defensively. */
+  function normaliseExamples(raw: unknown): Example[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((item, i) => {
+      const o = (item ?? {}) as Record<string, unknown>;
+      return {
+        id: pick(o, ['id']) || `example-${i + 1}`,
+        label: pick(o, ['label', 'name', 'title']) || `Example ${i + 1}`,
+        code: typeof o.code === 'string' ? o.code : '',
+        envExample: pick(o, ['envExample', 'env', 'example']),
+      };
+    });
+  }
+
+  /** Coerce an unknown into a deduped string array of non-empty keys. */
+  function strList(v: unknown): string[] {
+    if (!Array.isArray(v)) return [];
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const x of v) {
+      if (typeof x === 'string' && x.length > 0 && !seen.has(x)) {
+        seen.add(x);
+        out.push(x);
+      }
+    }
+    return out;
+  }
+
+  /* ---- Editor factory ------------------------------------------------------- */
+
+  const baseTheme = EditorView.theme({
+    '&': { color: '#e6e6e6' },
+    '.cm-content': { caretColor: '#e6e6e6' },
+    '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
+    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
+      backgroundColor: 'rgba(0, 112, 243, 0.32)',
+    },
+    '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
+    '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+  });
+
+  function makeEditor(host: HTMLElement, doc: string, onChange: () => void): EditorView {
+    const state = EditorState.create({
+      doc,
+      extensions: [
+        lineNumbers(),
+        history(),
+        highlightActiveLine(),
+        oneDark,
+        EditorView.lineWrapping,
+        keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+        baseTheme,
+        EditorView.updateListener.of((u) => {
+          if (u.docChanged) onChange();
+        }),
+      ],
+    });
+    return new EditorView({ state, parent: host });
+  }
+
+  function setEditorDoc(view: EditorView, doc: string): void {
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
+  }
+
+  /* ---- Clipboard ------------------------------------------------------------ */
+
+  async function copyText(text: string): Promise<boolean> {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      /* fall through to legacy path */
+    }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'absolute';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /* ---- Report rendering ----------------------------------------------------- */
+
+  const MISS_SVG =
+    '<svg class="ec-group__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const UNUSED_SVG =
+    '<svg class="ec-group__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"></circle><path d="M10 6v4.5"></path><path d="M10 13.6v.01"></path></svg>';
+  const OK_SVG =
+    '<svg class="ec-ok__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"></circle><path d="M6.5 10.5l2.4 2.4 4.6-5"></path></svg>';
+  const ALERT_SVG =
+    '<svg class="ec-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const COPY_ICON =
+    '<svg class="ec-copy__icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"></rect><path d="M3.5 10.5h-.5a1 1 0 01-1-1v-6a1 1 0 011-1h6a1 1 0 011 1v.5"></path></svg>';
+  const COPYALL_ICON =
+    '<svg class="ec-copyall__icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"></rect><path d="M3.5 10.5h-.5a1 1 0 01-1-1v-6a1 1 0 011-1h6a1 1 0 011 1v.5"></path></svg>';
+
+  function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
+    summary.textContent = '';
+    summary.classList.remove('text-error', 'text-success');
+    summary.classList.add('text-mute');
+    container.innerHTML =
+      '<p class="ec-empty body-sm text-mute">Load an example or paste your own code and .env.example, then check to see which variables drifted.</p>';
+  }
+
+  function renderLoading(container: HTMLElement, summary: HTMLElement): void {
+    summary.textContent = '';
+    summary.classList.remove('text-error', 'text-success');
+    summary.classList.add('text-mute');
+    container.innerHTML =
+      '<div class="ec-loading"><span class="ec-loading__dot"></span>' +
+      '<span class="ec-loading__dot"></span><span class="ec-loading__dot"></span>' +
+      '<span>Checking…</span></div>';
+  }
+
+  function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
+    summary.textContent = 'Error';
+    summary.classList.remove('text-mute', 'text-success');
+    summary.classList.add('text-error');
+    container.innerHTML =
+      '<div class="ec-error" role="alert">' +
+      ALERT_SVG +
+      '<div class="ec-error__body"><p class="ec-error__title">Could not check</p>' +
+      `<p class="ec-error__detail">${escapeHtml(message)}</p></div></div>`;
+  }
+
+  /** Build the "Missing from .env.example" group (copyable KEY= rows). */
+  function missingGroupHtml(keys: string[]): string {
+    const n = keys.length;
+    const items = keys
+      .map((k) => {
+        const safe = escapeHtml(k);
+        return (
+          '<li class="ec-item">' +
+          `<span class="ec-item__key"><span>${safe}</span><span class="ec-item__eq">=</span></span>` +
+          `<button type="button" class="ec-copy ec-tap" data-copy="${safe}=" ` +
+          `aria-label="Copy ${safe}= line">${COPY_ICON}<span class="ec-copy__lbl">Copy</span></button>` +
+          '</li>'
+        );
+      })
+      .join('');
+    return (
+      '<section class="ec-group ec-group--miss">' +
+      '<div class="ec-group__head">' +
+      MISS_SVG +
+      `<h3 class="ec-group__title">Missing from .env.example</h3>` +
+      `<span class="ec-group__count">${n}</span>` +
+      `<button type="button" class="ec-copyall ec-tap" data-copy-all="missing" ` +
+      `aria-label="Copy all missing keys as .env lines">${COPYALL_ICON}<span class="ec-copyall__lbl">Copy all</span></button>` +
+      '</div>' +
+      '<p class="ec-group__hint">Used in code but absent from your example. Add these placeholder lines so teammates know what to set.</p>' +
+      `<ul class="ec-list">${items}</ul>` +
+      '</section>'
+    );
+  }
+
+  /** Build the "Unused in code" group (muted, informational). */
+  function unusedGroupHtml(keys: string[]): string {
+    const n = keys.length;
+    const items = keys
+      .map(
+        (k) =>
+          `<li class="ec-item ec-item--unused"><span class="ec-item__key">${escapeHtml(k)}</span></li>`
+      )
+      .join('');
+    return (
+      '<section class="ec-group ec-group--unused">' +
+      '<div class="ec-group__head">' +
+      UNUSED_SVG +
+      `<h3 class="ec-group__title">Unused in code</h3>` +
+      `<span class="ec-group__count">${n}</span>` +
+      '</div>' +
+      '<p class="ec-group__hint">Declared in .env.example but never read in the code you pasted. Safe to remove if truly unused.</p>' +
+      `<ul class="ec-list">${items}</ul>` +
+      '</section>'
+    );
+  }
+
+  function renderResult(
+    container: HTMLElement,
+    summary: HTMLElement,
+    result: EnvResult
+  ): void {
+    if (!result || result.error) {
+      renderError(container, summary, result?.error ?? 'Unknown error while checking.');
+      return;
+    }
+
+    const missing = strList(result.missingInExample);
+    const unused = strList(result.unusedInExample);
+    const used = strList(result.usedVars);
+
+    // Summary counts.
+    if (missing.length === 0 && unused.length === 0) {
+      summary.textContent = used.length
+        ? `${used.length} ${used.length === 1 ? 'var' : 'vars'} · in sync`
+        : 'In sync';
+      summary.classList.remove('text-error', 'text-mute');
+      summary.classList.add('text-success');
+    } else {
+      const parts: string[] = [];
+      if (missing.length) parts.push(`${missing.length} missing`);
+      if (unused.length) parts.push(`${unused.length} unused`);
+      summary.textContent = parts.join(' · ');
+      summary.classList.remove('text-success', 'text-mute');
+      summary.classList.toggle('text-error', missing.length > 0);
+      summary.classList.toggle('text-mute', missing.length === 0);
+    }
+
+    if (missing.length === 0 && unused.length === 0) {
+      container.innerHTML =
+        '<div class="ec-ok">' +
+        OK_SVG +
+        '<span class="ec-ok__text">No drift detected. Every variable your code reads is declared in .env.example, with nothing left over.</span>' +
+        '</div>';
+      return;
+    }
+
+    const blocks: string[] = [];
+    if (missing.length) blocks.push(missingGroupHtml(missing));
+    if (unused.length) blocks.push(unusedGroupHtml(unused));
+    container.innerHTML = blocks.join('');
+  }
+
+  /* ---- Instance init -------------------------------------------------------- */
+
+  async function init(root: HTMLElement): Promise<void> {
+    const codeHost = el<HTMLElement>(root, '#ec-editor-code');
+    const envHost = el<HTMLElement>(root, '#ec-editor-env');
+    const select = el<HTMLSelectElement>(root, '#ec-example');
+    const checkBtn = el<HTMLButtonElement>(root, '#ec-check');
+    const liveInput = el<HTMLInputElement>(root, '#ec-live');
+    const reportBox = el<HTMLElement>(root, '#ec-report');
+    const summaryEl = el<HTMLElement>(root, '#ec-summary');
+    const announce = el<HTMLElement>(root, '#ec-announce');
+    const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('.ec-tab'));
+
+    if (!codeHost || !envHost || !select || !checkBtn || !reportBox || !summaryEl) {
+      return;
+    }
+
+    // Lazily load the sibling engine + examples (kept out of the initial path).
+    let engine: EngineModule;
+    let examples: Example[] = [];
+    try {
+      const [engineMod, examplesMod] = await Promise.all([
+        import('../lib/env-checker/engine'),
+        import('../lib/env-checker/examples'),
+      ]);
+      engine = engineMod as unknown as EngineModule;
+      examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+    } catch (err) {
+      renderError(
+        reportBox,
+        summaryEl,
+        'The Env Example Checker engine failed to load. Reload the page to try again.'
+      );
+      // eslint-disable-next-line no-console
+      console.error('[EnvChecker] engine/examples import failed:', err);
+      return;
+    }
+
+    // Seed from the first example (per the playground contract).
+    const seed = examples[0] ?? { id: 'blank', label: 'Example', code: '', envExample: '' };
+
+    // Live-check scheduling (debounced; only runs when the toggle is on).
+    let debounceTimer: number | undefined;
+    function scheduleLive(): void {
+      if (!liveInput?.checked) return;
+      window.clearTimeout(debounceTimer);
+      debounceTimer = window.setTimeout(() => void run(false), LIVE_DEBOUNCE_MS);
+    }
+
+    const codeView = makeEditor(codeHost, seed.code, scheduleLive);
+    const envView = makeEditor(envHost, seed.envExample, scheduleLive);
+
+    // Populate the example picker.
+    select.innerHTML = '';
+    if (examples.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'No examples available';
+      select.appendChild(opt);
+      select.disabled = true;
+    } else {
+      examples.forEach((ex, i) => {
+        const opt = document.createElement('option');
+        opt.value = String(i);
+        opt.textContent = ex.label;
+        select.appendChild(opt);
+      });
+      select.value = '0';
+    }
+
+    // Swap both editors when a different example is chosen, then re-check.
+    select.addEventListener('change', () => {
+      const idx = Number(select.value);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+      const ex = examples[idx];
+      setEditorDoc(codeView, ex.code);
+      setEditorDoc(envView, ex.envExample);
+      if (liveInput?.checked) void run(false);
+      else renderEmpty(reportBox, summaryEl);
+    });
+
+    // Mobile tab switching (panes are always visible on desktop via CSS).
+    const codePane = el<HTMLElement>(root, '#ec-pane-code');
+    const envPane = el<HTMLElement>(root, '#ec-pane-env');
+
+    function activateTab(tab: HTMLButtonElement, focusTab: boolean): void {
+      const showCode = tab.dataset.pane === 'code';
+      tabs.forEach((t) => {
+        const active = t === tab;
+        t.classList.toggle('is-active', active);
+        t.setAttribute('aria-selected', active ? 'true' : 'false');
+        // Roving tabindex: only the selected tab is in the tab order.
+        t.tabIndex = active ? 0 : -1;
+      });
+      codePane?.classList.toggle('ec-pane--active', showCode);
+      envPane?.classList.toggle('ec-pane--active', !showCode);
+      if (focusTab) tab.focus();
+      // Refresh CM measurement once the pane is visible (next frame, post-layout).
+      requestAnimationFrame(() => (showCode ? codeView : envView).requestMeasure());
+    }
+
+    tabs.forEach((tab, i) => {
+      tab.addEventListener('click', () => activateTab(tab, false));
+      // Roving focus with Left/Right/Home/End per the tablist a11y pattern.
+      tab.addEventListener('keydown', (e) => {
+        let next = -1;
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (i + 1) % tabs.length;
+        else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
+          next = (i - 1 + tabs.length) % tabs.length;
+        else if (e.key === 'Home') next = 0;
+        else if (e.key === 'End') next = tabs.length - 1;
+        if (next < 0) return;
+        e.preventDefault();
+        activateTab(tabs[next], true);
+      });
+    });
+
+    // Delegated copy handling for runtime-injected report buttons.
+    let copyResetTimer: number | undefined;
+    let lastMissing: string[] = [];
+    reportBox.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement | null;
+      const copyBtn = target?.closest<HTMLButtonElement>('.ec-copy');
+      const copyAllBtn = target?.closest<HTMLButtonElement>('.ec-copyall');
+      const btn = copyBtn ?? copyAllBtn;
+      if (!btn) return;
+
+      const text = copyBtn
+        ? copyBtn.dataset.copy ?? ''
+        : lastMissing.map((k) => `${k}=`).join('\n');
+      if (!text) return;
+
+      void (async () => {
+        const ok = await copyText(text);
+        const lbl = btn.querySelector<HTMLElement>('.ec-copy__lbl, .ec-copyall__lbl');
+        const original = copyBtn ? 'Copy' : 'Copy all';
+        if (lbl) lbl.textContent = ok ? 'Copied' : 'Failed';
+        btn.classList.toggle('is-copied', ok);
+        if (announce) {
+          announce.textContent = ok
+            ? copyBtn
+              ? `Copied ${text} to your clipboard.`
+              : `Copied ${lastMissing.length} missing keys to your clipboard.`
+            : 'Could not copy. Select the text and copy it manually.';
+        }
+        window.clearTimeout(copyResetTimer);
+        copyResetTimer = window.setTimeout(() => {
+          if (lbl) lbl.textContent = original;
+          btn.classList.remove('is-copied');
+        }, COPIED_RESET_MS);
+      })();
+    });
+
+    // Check — non-blocking; show loading (when explicit), yield a frame, render.
+    let running = false;
+    const checkLabel = checkBtn.querySelector<HTMLElement>('.ec-check-label');
+    let spinner: HTMLElement | null = null;
+
+    async function run(showLoading: boolean): Promise<void> {
+      if (running) return;
+      running = true;
+      checkBtn!.classList.add('is-busy');
+      checkBtn!.setAttribute('aria-disabled', 'true');
+      checkBtn!.setAttribute('aria-busy', 'true');
+      if (!spinner) {
+        spinner = document.createElement('span');
+        spinner.setAttribute('aria-hidden', 'true');
+        // Inline the visual so it never depends on Astro's scoped CSS — this span
+        // is created at runtime and would not receive the component's scope hash.
+        spinner.style.cssText =
+          'display:inline-block;width:14px;height:14px;flex:0 0 auto;border-radius:9999px;' +
+          'border:2px solid currentColor;border-top-color:transparent;';
+        if (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          spinner.animate(
+            [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }],
+            { duration: 700, iterations: Infinity }
+          );
+        }
+        checkBtn!.insertBefore(spinner, checkBtn!.firstChild);
+      }
+      if (checkLabel) checkLabel.textContent = 'Checking…';
+      if (showLoading) renderLoading(reportBox!, summaryEl!);
+
+      // Yield so any loading state paints before (potentially heavy) work runs.
+      await new Promise<void>((resolve) => {
+        if ('requestAnimationFrame' in window) requestAnimationFrame(() => resolve());
+        else setTimeout(resolve, 0);
+      });
+
+      try {
+        const code = codeView.state.doc.toString();
+        const envDoc = envView.state.doc.toString();
+        const result = await Promise.resolve(engine.check(code, envDoc));
+        lastMissing = strList(result?.missingInExample);
+        renderResult(reportBox!, summaryEl!, result);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unexpected error while checking.';
+        renderError(reportBox!, summaryEl!, msg);
+      } finally {
+        running = false;
+        checkBtn!.classList.remove('is-busy');
+        checkBtn!.removeAttribute('aria-disabled');
+        checkBtn!.removeAttribute('aria-busy');
+        if (spinner) {
+          spinner.remove();
+          spinner = null;
+        }
+        if (checkLabel) checkLabel.textContent = 'Check';
+      }
+    }
+
+    checkBtn.addEventListener('click', () => void run(true));
+
+    // Cmd/Ctrl+Enter from inside either editor triggers a check.
+    root.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        void run(true);
+      }
+    });
+
+    // Toggling live on triggers an immediate check; off cancels pending work.
+    liveInput?.addEventListener('change', () => {
+      if (liveInput.checked) void run(false);
+      else window.clearTimeout(debounceTimer);
+    });
+
+    // Initial pass: seed is populated, so reflect drift immediately when live.
+    if (liveInput?.checked) void run(false);
+    else renderEmpty(reportBox, summaryEl);
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

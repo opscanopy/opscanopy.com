@@ -701,22 +701,6 @@ function checkSecretsInPullRequest(
 }
 
 /* ────────────────────────────────────────────────────────────────────────── *
- *  Tree-walk helper: visit every step across all jobs.
- * ────────────────────────────────────────────────────────────────────────── */
-
-function forEachStep(wf: Workflow, fn: (step: WorkflowStep) => void): void {
-  if (!isRecord(wf.jobs)) return;
-  for (const job of Object.values(wf.jobs as Record<string, unknown>)) {
-    if (!isRecord(job)) continue;
-    const steps = (job as WorkflowJob).steps;
-    if (!Array.isArray(steps)) continue;
-    for (const step of steps) {
-      if (isRecord(step)) fn(step as WorkflowStep);
-    }
-  }
-}
-
-/* ────────────────────────────────────────────────────────────────────────── *
  *  Finalize — sort by severity, de-duplicate, and roll up counts.
  * ────────────────────────────────────────────────────────────────────────── */
 

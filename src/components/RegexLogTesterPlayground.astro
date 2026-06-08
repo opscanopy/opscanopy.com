@@ -1,0 +1,1159 @@
+---
+/**
+ * RegexLogTesterPlayground — the interactive Regex Log Tester island.
+ *
+ * A no-framework, server-rendered shell hydrated by a single module <script>
+ * that lazily boots a CodeMirror 6 editor for the sample log text, wires a
+ * pattern input, five flag toggles (g i m s u) and an example picker. Matching
+ * is live and debounced — every edit re-runs the engine, updates a match count,
+ * a highlighted rendering of the text and a table of matches with their capture
+ * and named groups. It runs entirely client-side — no upload, no network.
+ *
+ * Runtime contract (built by sibling agents — imported lazily in the script):
+ *   ../lib/regex-tester/engine →
+ *     run(pattern: string, flags: string, text: string): RegexResult
+ *   ../lib/regex-tester/types →
+ *     RegexMatch  { index: number; length: number; match: string;
+ *                   groups: string[]; named: Record<string, string> }
+ *     RegexResult { valid: boolean; error?: string; matchCount: number;
+ *                   matches: RegexMatch[] }
+ *   ../lib/regex-tester/examples →
+ *     examples: { id: string; label: string; pattern: string; flags: string;
+ *                 text: string }[]
+ *
+ * The dark editor surface follows DESIGN.md `code-editor-mockup`; matches use
+ * the brand link tint for highlights, errors the semantic error tokens.
+ * Headlines stay sentence-case, weight 600.
+ */
+---
+
+<section class="rx-pg" aria-label="Regex Log Tester playground">
+  <div class="card shadow-float rounded-lg overflow-hidden">
+    {/* ── Toolbar: pattern + flags + example ───────────────────────────── */}
+    <div class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:px-5">
+      <div class="flex flex-col gap-1">
+        <label class="eyebrow" for="rx-pattern">Pattern</label>
+        <div class="rx-pattern-wrap flex items-stretch">
+          <span class="rx-delim code-mono" aria-hidden="true">/</span>
+          <input
+            id="rx-pattern"
+            type="text"
+            class="rx-pattern code-mono"
+            autocomplete="off"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+            inputmode="text"
+            placeholder="Enter a regular expression…"
+            aria-describedby="rx-pattern-hint"
+          />
+          <span id="rx-flag-mirror" class="rx-delim rx-delim--flags code-mono" aria-hidden="true">/</span>
+        </div>
+        <p id="rx-pattern-hint" class="sr-only">
+          JavaScript regular expression syntax. Matching updates as you type.
+        </p>
+      </div>
+
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <fieldset class="rx-flags flex flex-col gap-1.5">
+          <legend class="eyebrow">Flags</legend>
+          <div class="flex flex-wrap gap-1.5" role="group" aria-label="Regular expression flags">
+            <label class="rx-flag rx-tap" title="Global — find all matches">
+              <input type="checkbox" class="rx-flag-input sr-only" value="g" checked />
+              <span class="rx-flag-glyph code-mono" aria-hidden="true">g</span>
+              <span class="rx-flag-name">global</span>
+            </label>
+            <label class="rx-flag rx-tap" title="Ignore case">
+              <input type="checkbox" class="rx-flag-input sr-only" value="i" />
+              <span class="rx-flag-glyph code-mono" aria-hidden="true">i</span>
+              <span class="rx-flag-name">ignore case</span>
+            </label>
+            <label class="rx-flag rx-tap" title="Multiline — ^ and $ match line breaks">
+              <input type="checkbox" class="rx-flag-input sr-only" value="m" />
+              <span class="rx-flag-glyph code-mono" aria-hidden="true">m</span>
+              <span class="rx-flag-name">multiline</span>
+            </label>
+            <label class="rx-flag rx-tap" title="Dotall — . matches newlines">
+              <input type="checkbox" class="rx-flag-input sr-only" value="s" />
+              <span class="rx-flag-glyph code-mono" aria-hidden="true">s</span>
+              <span class="rx-flag-name">dotall</span>
+            </label>
+            <label class="rx-flag rx-tap" title="Unicode">
+              <input type="checkbox" class="rx-flag-input sr-only" value="u" />
+              <span class="rx-flag-glyph code-mono" aria-hidden="true">u</span>
+              <span class="rx-flag-name">unicode</span>
+            </label>
+          </div>
+        </fieldset>
+
+        <div class="flex min-w-0 flex-col gap-1 sm:items-end">
+          <label class="eyebrow" for="rx-example">Example</label>
+          <div class="rx-select-wrap relative min-w-0">
+            <select id="rx-example" class="rx-select code-mono" autocomplete="off">
+              {/* Options injected by the hydration script from `examples`. */}
+              <option value="">Loading examples…</option>
+            </select>
+            <svg
+              class="rx-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M4 6l4 4 4-4"></path>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {/* ── Mobile tab switch (single-pane on small screens) ─────────────── */}
+    <div
+      class="rx-tabs flex gap-1 border-b border-hairline px-4 py-2 md:hidden"
+      role="tablist"
+      aria-label="Sample and matches panes"
+    >
+      <button
+        id="rx-tab-sample"
+        type="button"
+        class="rx-tab rx-tap is-active"
+        role="tab"
+        aria-selected="true"
+        aria-controls="rx-pane-sample"
+        data-pane="sample"
+        tabindex="0"
+      >
+        Sample
+      </button>
+      <button
+        id="rx-tab-matches"
+        type="button"
+        class="rx-tab rx-tap"
+        role="tab"
+        aria-selected="false"
+        aria-controls="rx-pane-matches"
+        data-pane="matches"
+        tabindex="-1"
+      >
+        Matches
+      </button>
+    </div>
+
+    {/* ── Split: sample editor (left) + highlighted preview (right) ────── */}
+    <div class="rx-grid grid grid-cols-1 md:grid-cols-2">
+      <div
+        id="rx-pane-sample"
+        class="rx-pane rx-pane--active flex min-w-0 flex-col bg-primary md:border-r md:border-white/10"
+        role="tabpanel"
+        aria-labelledby="rx-tab-sample"
+      >
+        <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
+          <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+          </span>
+          <span class="code-mono text-white/45">sample.log</span>
+        </div>
+        <div
+          id="rx-editor"
+          class="rx-editor min-h-72"
+          aria-label="Sample log lines"
+        >
+        </div>
+      </div>
+
+      <div
+        id="rx-pane-matches"
+        class="rx-pane flex min-w-0 flex-col bg-primary"
+        role="tabpanel"
+        aria-labelledby="rx-tab-matches"
+      >
+        <div class="flex items-center justify-between gap-2 border-b border-white/10 px-4 py-2.5">
+          <div class="flex min-w-0 items-center gap-2">
+            <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+              <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+              <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+              <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            </span>
+            <span class="code-mono text-white/45">matches</span>
+          </div>
+          <span class="code-mono shrink-0 text-white/30">highlighted</span>
+        </div>
+        <div
+          id="rx-highlight"
+          class="rx-highlight"
+          role="region"
+          aria-label="Sample text with matches highlighted"
+        >
+        </div>
+      </div>
+    </div>
+
+    {/* ── Results panel (count + per-match groups table) ───────────────── */}
+    <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <span class="eyebrow">Matches</span>
+        <span
+          id="rx-summary"
+          class="rx-summary code-mono text-mute"
+          role="status"
+          aria-live="polite"
+        ></span>
+      </div>
+
+      <div id="rx-results" class="rx-results">
+        <p class="rx-empty body-sm text-mute">
+          Enter a pattern above to see live matches, capture groups and named
+          groups here.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  /* Tap targets opt into fast-tap + no double-tap-zoom on touch. */
+  .rx-tap {
+    touch-action: manipulation;
+  }
+
+  /* Pattern input — a slash-delimited /…/ field on the canvas surface. */
+  .rx-pattern-wrap {
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+    transition: box-shadow 0.15s ease;
+  }
+  .rx-pattern-wrap:focus-within {
+    box-shadow: inset 0 0 0 1px var(--color-link), 0 0 0 3px var(--color-link-bg-soft);
+  }
+  .rx-delim {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 4px 0 10px;
+    color: var(--color-mute);
+    user-select: none;
+  }
+  .rx-delim--flags {
+    padding: 0 12px 0 4px;
+    min-width: 24px;
+    justify-content: flex-start;
+    white-space: nowrap;
+  }
+  .rx-pattern {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 40px;
+    border: 0;
+    background: transparent;
+    color: var(--color-ink);
+    font-size: 14px;
+    line-height: 20px;
+    padding: 0;
+    outline: none;
+  }
+  .rx-pattern::placeholder {
+    color: var(--color-mute);
+  }
+  .rx-pattern-wrap.rx-pattern-wrap--error {
+    box-shadow: inset 0 0 0 1px var(--color-error);
+  }
+  .rx-pattern-wrap.rx-pattern-wrap--error:focus-within {
+    box-shadow: inset 0 0 0 1px var(--color-error), 0 0 0 3px var(--color-error-soft);
+  }
+
+  /* Flag toggle chips — selectable mono glyph + label. */
+  .rx-flags {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+  }
+  .rx-flag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 32px;
+    padding: 0 10px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-mute);
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .rx-flag:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+    color: var(--color-body);
+  }
+  .rx-flag-glyph {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    font-weight: 500;
+  }
+  .rx-flag-name {
+    font-size: 12px;
+    line-height: 16px;
+    letter-spacing: -0.01em;
+  }
+  /* Checked state — driven by the :checked sibling, not a JS class. */
+  .rx-flag:has(.rx-flag-input:checked) {
+    background: var(--color-primary);
+    color: var(--color-on-primary);
+    box-shadow: var(--shadow-hairline);
+  }
+  /* Keyboard focus ring on the visually-hidden checkbox. */
+  .rx-flag:has(.rx-flag-input:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 2px;
+  }
+
+  /* The example picker: a 6px-radius in-app form control. */
+  .rx-select {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    height: 32px;
+    min-width: 0;
+    max-width: 280px;
+    padding: 0 32px 0 12px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 13px;
+    line-height: 20px;
+    cursor: pointer;
+    text-overflow: ellipsis;
+    touch-action: manipulation;
+    transition: box-shadow 0.15s ease;
+  }
+  @media (min-width: 640px) {
+    .rx-select {
+      width: auto;
+      min-width: 200px;
+    }
+  }
+  .rx-select:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .rx-select:disabled {
+    cursor: not-allowed;
+    color: var(--color-mute);
+    opacity: 0.7;
+  }
+  .rx-select-caret {
+    transition: color 0.15s ease;
+  }
+  .rx-select-wrap:hover .rx-select-caret {
+    color: var(--color-body);
+  }
+
+  /* Mobile tab pills (square in-app scale; never the 100px marketing pill). */
+  .rx-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 0;
+    min-height: 44px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+    background: transparent;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .rx-tab:hover:not(.is-active) {
+    color: var(--color-body);
+    background: var(--color-canvas-soft-2);
+  }
+  .rx-tab.is-active {
+    color: var(--color-on-primary);
+    background: var(--color-primary);
+  }
+
+  /* Visibility is driven by the .rx-pane--active class, NOT the [hidden]
+     attribute. Tailwind v4's layered `[hidden]{display:none!important}` (in
+     @layer base) beats any unlayered !important override, which would otherwise
+     leave the matches pane invisible on desktop. Toggle ONLY the class in JS. */
+  @media (max-width: 767px) {
+    .rx-pane {
+      display: none;
+    }
+    .rx-pane.rx-pane--active {
+      display: flex;
+    }
+  }
+  @media (min-width: 768px) {
+    /* Desktop: both panes always visible side by side. */
+    .rx-pane {
+      display: flex;
+    }
+  }
+
+  /* CodeMirror host — fills the dark pane, scrolls internally. */
+  .rx-editor {
+    overflow: hidden;
+  }
+  .rx-editor :global(.cm-editor) {
+    height: 100%;
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .rx-editor :global(.cm-editor.cm-focused) {
+    /* Replace CM's default outline with a brand-blue ring (a11y: keep a ring). */
+    outline: 2px solid var(--color-link);
+    outline-offset: -2px;
+  }
+  .rx-editor :global(.cm-scroller) {
+    overflow: auto;
+    max-height: 420px;
+    font-family: var(--font-mono);
+    /* Thin, theme-matched scrollbars on the dark surface. */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  }
+  .rx-editor :global(.cm-scroller)::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .rx-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.16);
+    border-radius: var(--radius-pill);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  .rx-editor :global(.cm-scroller)::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.28);
+    background-clip: content-box;
+  }
+  .rx-editor :global(.cm-gutters) {
+    background: transparent;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .rx-editor :global(.cm-lineNumbers .cm-gutterElement) {
+    color: rgba(255, 255, 255, 0.32);
+  }
+  .rx-editor :global(.cm-content) {
+    padding: 14px 0 16px;
+  }
+  .rx-editor :global(.cm-line) {
+    padding-inline: 4px;
+  }
+
+  /* Highlighted preview — the sample text re-rendered with <mark> spans.
+     This pane is filled at runtime via innerHTML, so every selector inside is
+     :global(...) and any injected mark gets explicit styling. */
+  .rx-highlight {
+    overflow: auto;
+    max-height: 462px;
+    padding: 14px 16px 16px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  }
+  .rx-highlight::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .rx-highlight::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.16);
+    border-radius: var(--radius-pill);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  :global(.rx-pre) {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+    color: rgba(255, 255, 255, 0.82);
+    white-space: pre-wrap;
+    word-break: break-word;
+    tab-size: 2;
+  }
+  :global(.rx-mark) {
+    background: rgba(0, 112, 243, 0.28);
+    color: #ffffff;
+    border-radius: 3px;
+    box-shadow: inset 0 0 0 1px rgba(0, 112, 243, 0.6);
+    padding: 0 1px;
+  }
+  /* Alternate tint so adjacent matches stay distinguishable. */
+  :global(.rx-mark--alt) {
+    background: rgba(121, 40, 202, 0.32);
+    box-shadow: inset 0 0 0 1px rgba(121, 40, 202, 0.62);
+  }
+  /* Zero-length match marker (e.g. /^/) — a thin caret rule. */
+  :global(.rx-mark--empty) {
+    box-shadow: inset 1px 0 0 0 rgba(0, 112, 243, 0.9);
+    background: transparent;
+    padding: 0;
+  }
+  :global(.rx-hl-empty) {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+    color: rgba(255, 255, 255, 0.34);
+  }
+
+  /* Summary — right-aligned counts use tabular figures so they don't jitter. */
+  .rx-summary {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+    white-space: nowrap;
+  }
+
+  /* Results region. */
+  .rx-results {
+    min-height: 44px;
+  }
+
+  /* Matches table — injected at runtime, so style globally. */
+  :global(.rx-table-wrap) {
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: auto;
+    animation: rx-rise 0.18s ease both;
+  }
+  @keyframes rx-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.rx-table-wrap) {
+      animation: none;
+    }
+  }
+  :global(.rx-table) {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    line-height: 18px;
+  }
+  :global(.rx-table th),
+  :global(.rx-table td) {
+    text-align: left;
+    padding: 8px 12px;
+    vertical-align: top;
+    border-bottom: 1px solid var(--color-hairline);
+  }
+  :global(.rx-table thead th) {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+    background: var(--color-canvas-soft-2);
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+  }
+  :global(.rx-table tbody tr:last-child td) {
+    border-bottom: 0;
+  }
+  :global(.rx-table tbody tr:hover) {
+    background: var(--color-canvas-soft);
+  }
+  :global(.rx-idx) {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+    color: var(--color-mute);
+    white-space: nowrap;
+  }
+  :global(.rx-val) {
+    font-family: var(--font-mono);
+    color: var(--color-ink);
+    word-break: break-word;
+  }
+  :global(.rx-val--empty) {
+    color: var(--color-mute);
+    font-style: italic;
+  }
+  /* Per-row capture / named group chips. */
+  :global(.rx-groups) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  :global(.rx-group) {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas-soft-2);
+    box-shadow: var(--shadow-hairline);
+    max-width: 100%;
+  }
+  :global(.rx-group__key) {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-mute);
+    white-space: nowrap;
+  }
+  :global(.rx-group__val) {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--color-ink);
+    word-break: break-word;
+  }
+  :global(.rx-group__val--empty) {
+    color: var(--color-mute);
+    font-style: italic;
+  }
+  :global(.rx-nogroups) {
+    color: var(--color-mute);
+  }
+
+  /* Parse-error banner. */
+  :global(.rx-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+    animation: rx-rise 0.18s ease both;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.rx-error) {
+      animation: none;
+    }
+  }
+  :global(.rx-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.rx-error__body) {
+    min-width: 0;
+  }
+  :global(.rx-error__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.rx-error__detail) {
+    margin-top: 2px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 18px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* No-match note. */
+  :global(.rx-nomatch) {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    animation: rx-rise 0.18s ease both;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.rx-nomatch) {
+      animation: none;
+    }
+  }
+  :global(.rx-nomatch__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    color: var(--color-mute);
+  }
+  :global(.rx-nomatch__text) {
+    font-size: 13px;
+    line-height: 18px;
+  }
+
+  /* Empty state — generous, centered frame. */
+  :global(.rx-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+</style>
+
+<script>
+  import { EditorState } from '@codemirror/state';
+  import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
+  import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+  import { oneDark } from '@codemirror/theme-one-dark';
+  import { escapeHtml } from '../lib/escape-html';
+
+  /* ---- Types mirrored from the engine contract (structural, not imported). -- */
+  type RegexMatch = {
+    index: number;
+    length: number;
+    match: string;
+    groups: string[];
+    named: Record<string, string>;
+  };
+  type RegexResult = {
+    valid: boolean;
+    error?: string;
+    matchCount: number;
+    matches: RegexMatch[];
+  };
+  type EngineModule = {
+    run: (pattern: string, flags: string, text: string) => RegexResult;
+  };
+  type Example = {
+    id: string;
+    label: string;
+    pattern: string;
+    flags: string;
+    text: string;
+  };
+
+  const ROOT_SEL = '.rx-pg';
+  const DEBOUNCE_MS = 160;
+  const FLAG_ORDER = ['g', 'i', 'm', 's', 'u'] as const;
+
+  /** Boot every (so far un-hydrated) playground instance on the page. */
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.rxWired === 'true') return;
+      root.dataset.rxWired = 'true';
+      void init(root);
+    });
+  }
+
+  /* ---- Small helpers -------------------------------------------------------- */
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  /** Normalise the sibling examples array defensively. */
+  function normaliseExamples(raw: unknown): Example[] {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((item, i) => {
+        const o = (item ?? {}) as Record<string, unknown>;
+        return {
+          id: typeof o.id === 'string' && o.id ? o.id : `example-${i + 1}`,
+          label: typeof o.label === 'string' && o.label ? o.label : `Example ${i + 1}`,
+          pattern: typeof o.pattern === 'string' ? o.pattern : '',
+          flags: typeof o.flags === 'string' ? o.flags : '',
+          text: typeof o.text === 'string' ? o.text : '',
+        } satisfies Example;
+      });
+  }
+
+  /* ---- Editor factory ------------------------------------------------------- */
+
+  function makeEditor(host: HTMLElement, doc: string, onChange: () => void): EditorView {
+    const state = EditorState.create({
+      doc,
+      extensions: [
+        lineNumbers(),
+        history(),
+        highlightActiveLine(),
+        oneDark,
+        EditorView.lineWrapping,
+        keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+        EditorView.updateListener.of((u) => {
+          if (u.docChanged) onChange();
+        }),
+        EditorView.theme({
+          '&': { color: '#e6e6e6' },
+          '.cm-content': { caretColor: '#e6e6e6' },
+          '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
+          '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
+            backgroundColor: 'rgba(0, 112, 243, 0.32)',
+          },
+          '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
+          '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+        }),
+      ],
+    });
+    return new EditorView({ state, parent: host });
+  }
+
+  function setEditorDoc(view: EditorView, doc: string): void {
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
+  }
+
+  /* ---- Highlighted-preview construction ------------------------------------ */
+
+  const CHECK_SVG =
+    '<svg class="rx-nomatch__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"></circle><path d="M7 10.2l-.01.01"></path><path d="M10 10.2l-.01.01"></path><path d="M13 10.2l-.01.01"></path></svg>';
+  const ALERT_SVG =
+    '<svg class="rx-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+
+  /**
+   * Build the highlighted HTML by walking sorted, clamped, non-overlapping
+   * match ranges. Every text run is escaped; only our own <mark> wrappers are
+   * raw markup, so user content can never inject HTML.
+   */
+  function buildHighlight(text: string, matches: RegexMatch[]): string {
+    if (text.length === 0) {
+      return '<p class="rx-hl-empty">No sample text.</p>';
+    }
+    // Sort by start index; skip ranges that overlap an already-emitted one so
+    // the slicing stays well-formed even if the engine returns odd offsets.
+    const sorted = matches
+      .filter((m) => Number.isFinite(m.index) && m.index >= 0 && m.index <= text.length)
+      .slice()
+      .sort((a, b) => a.index - b.index);
+
+    let html = '';
+    let cursor = 0;
+    let i = 0;
+    sorted.forEach((m) => {
+      const start = Math.max(m.index, cursor);
+      const rawLen = Number.isFinite(m.length) ? Math.max(0, m.length) : 0;
+      const end = Math.min(m.index + rawLen, text.length);
+      if (start < cursor) return; // overlaps a prior match — skip
+      // Emit the unmatched text before this match.
+      if (m.index > cursor) {
+        html += escapeHtml(text.slice(cursor, m.index));
+      }
+      const cls = i % 2 === 0 ? 'rx-mark' : 'rx-mark rx-mark--alt';
+      if (end <= m.index) {
+        // Zero-length match (e.g. anchors / lookarounds) — render a caret marker.
+        html += `<mark class="${cls} rx-mark--empty"></mark>`;
+        cursor = Math.max(cursor, m.index);
+      } else {
+        html += `<mark class="${cls}">${escapeHtml(text.slice(m.index, end))}</mark>`;
+        cursor = end;
+      }
+      i += 1;
+    });
+    if (cursor < text.length) {
+      html += escapeHtml(text.slice(cursor));
+    }
+    return `<pre class="rx-pre">${html}</pre>`;
+  }
+
+  /* ---- Results table -------------------------------------------------------- */
+
+  /** A single group chip (capture index or named). */
+  function groupChip(key: string, value: string | undefined): string {
+    const has = typeof value === 'string';
+    const valHtml = !has
+      ? '<span class="rx-group__val rx-group__val--empty">undefined</span>'
+      : value === ''
+        ? '<span class="rx-group__val rx-group__val--empty">empty</span>'
+        : `<span class="rx-group__val">${escapeHtml(value)}</span>`;
+    return (
+      `<span class="rx-group"><span class="rx-group__key">${escapeHtml(key)}</span>${valHtml}</span>`
+    );
+  }
+
+  function matchRow(m: RegexMatch, n: number): string {
+    const idx = Number.isFinite(m.index) ? m.index : 0;
+    const full =
+      m.match === ''
+        ? '<span class="rx-val rx-val--empty">(empty match)</span>'
+        : `<span class="rx-val">${escapeHtml(m.match)}</span>`;
+
+    const chips: string[] = [];
+    const groups = Array.isArray(m.groups) ? m.groups : [];
+    groups.forEach((g, gi) => {
+      chips.push(groupChip(`$${gi + 1}`, g));
+    });
+    const named = m.named && typeof m.named === 'object' ? m.named : {};
+    Object.keys(named).forEach((name) => {
+      chips.push(groupChip(name, named[name]));
+    });
+    const groupsHtml = chips.length
+      ? `<div class="rx-groups">${chips.join('')}</div>`
+      : '<span class="rx-nogroups">—</span>';
+
+    return (
+      '<tr>' +
+      `<td class="rx-idx">${n}</td>` +
+      `<td class="rx-idx">${idx}</td>` +
+      `<td>${full}</td>` +
+      `<td>${groupsHtml}</td>` +
+      '</tr>'
+    );
+  }
+
+  function renderResults(
+    container: HTMLElement,
+    summary: HTMLElement,
+    result: RegexResult
+  ): void {
+    if (!result || result.valid === false || result.error) {
+      summary.textContent = 'Invalid';
+      summary.classList.add('text-error');
+      summary.classList.remove('text-mute');
+      container.innerHTML =
+        '<div class="rx-error" role="alert">' +
+        ALERT_SVG +
+        '<div class="rx-error__body"><p class="rx-error__title">Invalid pattern</p>' +
+        `<p class="rx-error__detail">${escapeHtml(result?.error ?? 'The regular expression could not be compiled.')}</p></div></div>`;
+      return;
+    }
+
+    const count = Number.isFinite(result.matchCount) ? result.matchCount : 0;
+    summary.textContent = count === 1 ? '1 match' : `${count} matches`;
+    summary.classList.remove('text-error');
+    summary.classList.add('text-mute');
+
+    const matches = Array.isArray(result.matches) ? result.matches : [];
+    if (matches.length === 0) {
+      container.innerHTML =
+        '<div class="rx-nomatch">' +
+        CHECK_SVG +
+        '<span class="rx-nomatch__text">No matches. Adjust the pattern, flags or sample text.</span></div>';
+      return;
+    }
+
+    const rows = matches.map((m, i) => matchRow(m, i + 1)).join('');
+    container.innerHTML =
+      '<div class="rx-table-wrap"><table class="rx-table">' +
+      '<thead><tr><th scope="col">#</th><th scope="col">Index</th>' +
+      '<th scope="col">Match</th><th scope="col">Groups</th></tr></thead>' +
+      `<tbody>${rows}</tbody></table></div>`;
+  }
+
+  function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
+    summary.textContent = '';
+    summary.classList.remove('text-error');
+    summary.classList.add('text-mute');
+    container.innerHTML =
+      '<p class="rx-empty body-sm text-mute">Enter a pattern above to see live matches, capture groups and named groups here.</p>';
+  }
+
+  /* ---- Instance init -------------------------------------------------------- */
+
+  async function init(root: HTMLElement): Promise<void> {
+    const editorHost = el<HTMLElement>(root, '#rx-editor');
+    const patternInput = el<HTMLInputElement>(root, '#rx-pattern');
+    const patternWrap = root.querySelector<HTMLElement>('.rx-pattern-wrap');
+    const flagMirror = el<HTMLElement>(root, '#rx-flag-mirror');
+    const select = el<HTMLSelectElement>(root, '#rx-example');
+    const highlightBox = el<HTMLElement>(root, '#rx-highlight');
+    const resultsBox = el<HTMLElement>(root, '#rx-results');
+    const summaryEl = el<HTMLElement>(root, '#rx-summary');
+    const flagInputs = Array.from(
+      root.querySelectorAll<HTMLInputElement>('.rx-flag-input')
+    );
+    const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('.rx-tab'));
+
+    if (
+      !editorHost ||
+      !patternInput ||
+      !patternWrap ||
+      !select ||
+      !highlightBox ||
+      !resultsBox ||
+      !summaryEl
+    ) {
+      return;
+    }
+
+    // Lazily load the sibling engine + examples (kept off the initial path).
+    let engine: EngineModule;
+    let examples: Example[] = [];
+    try {
+      const [engineMod, examplesMod] = await Promise.all([
+        import('../lib/regex-tester/engine'),
+        import('../lib/regex-tester/examples'),
+      ]);
+      engine = engineMod as unknown as EngineModule;
+      examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+    } catch (err) {
+      summaryEl.textContent = 'Error';
+      summaryEl.classList.add('text-error');
+      summaryEl.classList.remove('text-mute');
+      resultsBox.innerHTML =
+        '<div class="rx-error" role="alert">' +
+        ALERT_SVG +
+        '<div class="rx-error__body"><p class="rx-error__title">Could not load the tester</p>' +
+        '<p class="rx-error__detail">The regex engine failed to load. Reload the page to try again.</p></div></div>';
+      // eslint-disable-next-line no-console
+      console.error('[RegexLogTester] engine/examples import failed:', err);
+      return;
+    }
+
+    /** Collect the active flags in canonical g i m s u order. */
+    function currentFlags(): string {
+      const set = new Set(
+        flagInputs.filter((c) => c.checked).map((c) => c.value)
+      );
+      return FLAG_ORDER.filter((f) => set.has(f)).join('');
+    }
+
+    /** Mirror the active flags after the closing slash of the pattern field. */
+    function syncFlagMirror(): void {
+      if (flagMirror) flagMirror.textContent = `/${currentFlags()}`;
+    }
+
+    /** Run the engine and repaint the highlight + table. Never throws. */
+    function runNow(): void {
+      const pattern = patternInput!.value;
+      const flags = currentFlags();
+      const text = editorView.state.doc.toString();
+
+      if (pattern.length === 0) {
+        patternWrap!.classList.remove('rx-pattern-wrap--error');
+        highlightBox!.innerHTML = buildHighlight(text, []);
+        renderEmpty(resultsBox!, summaryEl!);
+        return;
+      }
+
+      let result: RegexResult;
+      try {
+        result = engine.run(pattern, flags, text);
+      } catch (err) {
+        result = {
+          valid: false,
+          error: err instanceof Error ? err.message : 'Unexpected error while matching.',
+          matchCount: 0,
+          matches: [],
+        };
+      }
+
+      const ok = result && result.valid !== false && !result.error;
+      patternWrap!.classList.toggle('rx-pattern-wrap--error', !ok);
+      patternInput!.setAttribute('aria-invalid', ok ? 'false' : 'true');
+
+      const matches = ok && Array.isArray(result.matches) ? result.matches : [];
+      highlightBox!.innerHTML = buildHighlight(text, matches);
+      renderResults(resultsBox!, summaryEl!, result);
+    }
+
+    // Debounce so heavy patterns/large text don't thrash on every keystroke.
+    let debounceTimer: number | undefined;
+    function scheduleRun(): void {
+      window.clearTimeout(debounceTimer);
+      debounceTimer = window.setTimeout(runNow, DEBOUNCE_MS);
+    }
+
+    // Seed from the first example.
+    const seed = examples[0] ?? { id: '', label: '', pattern: '', flags: '', text: '' };
+    const editorView = makeEditor(editorHost, seed.text, scheduleRun);
+    patternInput.value = seed.pattern;
+    const seedFlags = new Set(seed.flags.split(''));
+    flagInputs.forEach((c) => {
+      c.checked = seedFlags.has(c.value);
+    });
+    syncFlagMirror();
+
+    // Populate the example picker.
+    select.innerHTML = '';
+    if (examples.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'No examples available';
+      select.appendChild(opt);
+      select.disabled = true;
+    } else {
+      examples.forEach((ex, i) => {
+        const opt = document.createElement('option');
+        opt.value = String(i);
+        opt.textContent = ex.label;
+        select.appendChild(opt);
+      });
+      select.value = '0';
+    }
+
+    // Swap pattern + flags + sample text when a different example is chosen.
+    select.addEventListener('change', () => {
+      const idx = Number(select.value);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+      const ex = examples[idx];
+      patternInput.value = ex.pattern;
+      const want = new Set(ex.flags.split(''));
+      flagInputs.forEach((c) => {
+        c.checked = want.has(c.value);
+      });
+      syncFlagMirror();
+      setEditorDoc(editorView, ex.text); // triggers scheduleRun via updateListener
+      runNow();
+    });
+
+    // Pattern edits + flag toggles re-run (debounced for typing, immediate for flags).
+    patternInput.addEventListener('input', scheduleRun);
+    flagInputs.forEach((c) => {
+      c.addEventListener('change', () => {
+        syncFlagMirror();
+        runNow();
+      });
+    });
+
+    // Mobile tab switching (panes are always visible on desktop via CSS).
+    const samplePane = el<HTMLElement>(root, '#rx-pane-sample');
+    const matchesPane = el<HTMLElement>(root, '#rx-pane-matches');
+
+    function activateTab(tab: HTMLButtonElement, focusTab: boolean): void {
+      const showSample = tab.dataset.pane === 'sample';
+      tabs.forEach((t) => {
+        const active = t === tab;
+        t.classList.toggle('is-active', active);
+        t.setAttribute('aria-selected', active ? 'true' : 'false');
+        // Roving tabindex: only the selected tab is in the tab order.
+        t.tabIndex = active ? 0 : -1;
+      });
+      samplePane?.classList.toggle('rx-pane--active', showSample);
+      matchesPane?.classList.toggle('rx-pane--active', !showSample);
+      if (focusTab) tab.focus();
+      // Refresh CM measurement once the sample pane is visible (post-layout).
+      if (showSample) requestAnimationFrame(() => editorView.requestMeasure());
+    }
+
+    tabs.forEach((tab, i) => {
+      tab.addEventListener('click', () => activateTab(tab, false));
+      // Roving focus with Left/Right/Home/End per the tablist a11y pattern.
+      tab.addEventListener('keydown', (e) => {
+        let next = -1;
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (i + 1) % tabs.length;
+        else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
+          next = (i - 1 + tabs.length) % tabs.length;
+        else if (e.key === 'Home') next = 0;
+        else if (e.key === 'End') next = tabs.length - 1;
+        if (next < 0) return;
+        e.preventDefault();
+        activateTab(tabs[next], true);
+      });
+    });
+
+    // Initial paint.
+    runNow();
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

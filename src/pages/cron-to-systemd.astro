@@ -1,0 +1,369 @@
+---
+/**
+ * Cron to systemd Converter — the tool page (primary SEO surface).
+ * Paste a crontab line, get an equivalent systemd `.timer` + `.service` pair
+ * with an `OnCalendar=` expression and migration notes, entirely in the browser.
+ *
+ * Imports the interactive island (CronToSystemdPlayground, self-mounting) plus
+ * the brand primitives. JSON-LD (SoftwareApplication + FAQPage) is assembled in
+ * frontmatter and handed to Shell via the `jsonLd` prop.
+ */
+import Shell from '../components/Shell.astro';
+import CronToSystemdPlayground from '../components/CronToSystemdPlayground.astro';
+import CodeBlock from '../components/CodeBlock.astro';
+import ToolHero from '../components/ToolHero.astro';
+import ToolPipeline from '../components/ToolPipeline.astro';
+import FaqList from '../components/FaqList.astro';
+import ToolCrossLinks from '../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../data/site';
+import { getTool } from '../data/tools';
+import { softwareAppLd, faqPageLd } from '../lib/jsonld';
+
+const tool = getTool('cron-to-systemd');
+
+const pagePath = '/cron-to-systemd';
+const pageUrl = `${site.url}${pagePath}`;
+
+// ── FAQ content — single source for both the rendered section and FAQPage LD ─
+const faqs = [
+  {
+    q: 'What does the Cron to systemd Converter do?',
+    a: 'It takes a single crontab line — the five time fields plus the command — and generates an equivalent systemd setup: a .timer unit with an OnCalendar= expression that matches your schedule, and a .service unit that runs your command. It also lists migration notes that flag anything systemd handles differently, like the implicit working directory or environment. Everything is computed in your browser.',
+  },
+  {
+    q: 'Does my crontab or command ever leave my browser?',
+    a: 'No. The converter runs 100% client-side. Your cron line and command are parsed and translated in your browser tab — nothing is uploaded to a server, and there is no account or signup. It is safe to paste internal commands and paths.',
+  },
+  {
+    q: 'How does a cron schedule map to OnCalendar=?',
+    a: 'A crontab field set is rewritten into systemd’s OnCalendar= calendar syntax — for example “0 3 * * *” becomes “*-*-* 03:00:00” (daily at 03:00). Lists, ranges and step values map to their OnCalendar equivalents, and common @macros like @daily and @hourly map to their canonical timer forms. After installing the timer you can confirm the next runs with “systemctl list-timers”.',
+  },
+  {
+    q: 'Why move from cron to a systemd timer at all?',
+    a: 'Timers give you structured logging through the journal (journalctl -u your.service), dependency ordering, resource limits, automatic retry and accurate-vs-monotonic scheduling, plus Persistent=true so a missed run can fire on next boot. They are the native scheduling primitive on modern systemd Linux distributions, where the per-user crond is often not even installed.',
+  },
+  {
+    q: 'What can’t be translated one-to-one?',
+    a: 'A few cron behaviours have no direct OnCalendar= analogue and surface as migration notes instead — non-standard or vendor cron extensions, MAILTO email-on-output (use journald or an OnFailure= handler), and per-line environment assignments (move these to Environment= or an EnvironmentFile= in the .service). The converter flags these so nothing silently changes meaning.',
+  },
+  {
+    q: 'Is this an official systemd or cron tool?',
+    a: 'No. This is an independent, community utility and is not affiliated with or endorsed by the systemd project or any cron implementation. It models the standard crontab and systemd unit formats for familiarity and names them only to describe what it converts.',
+  },
+];
+
+// ── JSON-LD: SoftwareApplication ─────────────────────────────────────────────
+const softwareApp = softwareAppLd({
+  name: 'Cron to systemd Converter',
+  description:
+    'Convert a crontab entry into an equivalent systemd .timer and .service unit with an OnCalendar expression and migration notes — entirely in your browser.',
+  url: pageUrl,
+  subCategory: 'Scheduling',
+  featureList: [
+    'Convert a crontab line to a systemd .timer + .service pair',
+    'Generate an OnCalendar= expression from cron fields and @macros',
+    'Migration notes for behaviours that don’t map one-to-one',
+    '100% client-side, no upload, no signup',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+
+// ── JSON-LD: FAQPage (mirrors the rendered FAQ) ──────────────────────────────
+const faqPage = faqPageLd(faqs);
+
+// ── HOW IT WORKS pipeline ────────────────────────────────────────────────────
+const pipeline = [
+  {
+    title: 'Parse the line.',
+    body: 'Your crontab entry is split into the five time fields (or an @macro) and the command that follows.',
+  },
+  {
+    title: 'Build OnCalendar.',
+    body: 'The time fields are rewritten into a systemd OnCalendar= calendar expression, lists and steps included.',
+  },
+  {
+    title: 'Emit the units.',
+    body: 'A .timer carrying the schedule and a .service wrapping your command are generated as a matched pair.',
+  },
+  {
+    title: 'Flag the gaps.',
+    body: 'Anything cron does that systemd handles differently — env, MAILTO, working dir — surfaces as a note.',
+  },
+  {
+    title: 'Copy & install.',
+    body: 'Drop the two units in place, then enable and start the timer. The next runs show in list-timers.',
+  },
+];
+
+// ── Example: a crontab line ──────────────────────────────────────────────────
+const cronExample = `# Run the nightly backup every day at 03:00
+0 3 * * *  /usr/local/bin/backup.sh`;
+
+// ── Example: generated .timer unit ───────────────────────────────────────────
+const timerExample = `[Unit]
+Description=Run backup.sh (migrated from crontab)
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target`;
+
+// ── Example: generated .service unit ─────────────────────────────────────────
+const serviceExample = `[Unit]
+Description=backup.sh (migrated from crontab)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/backup.sh`;
+
+// ── Install teaser ───────────────────────────────────────────────────────────
+const installExample = `# Drop the units in place, then enable the timer
+$ sudo cp backup.timer backup.service /etc/systemd/system/
+$ sudo systemctl daemon-reload
+$ sudo systemctl enable --now backup.timer
+
+# Confirm the next scheduled run
+$ systemctl list-timers backup.timer`;
+---
+
+<Shell
+  title="Cron to systemd Converter — Generate Timer & Service Units Online"
+  description="Convert a crontab entry into an equivalent systemd .timer and .service unit with an OnCalendar expression and migration notes — entirely in your browser."
+  canonical="/cron-to-systemd"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <!-- ════════════════════════════════════════════════════════════════════
+       1) HERO — compact, mesh gradient behind
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolHero
+    eyebrow="Cron to systemd Converter · Scheduling"
+    badges={[
+      { label: 'Runs in your browser', variant: 'live' },
+      { label: 'No signup', variant: 'neutral' },
+      { label: 'Free & open', variant: 'neutral' },
+    ]}
+    primaryCta={{ label: 'Convert a Cron Line', href: '#playground' }}
+    secondaryCta={{ label: 'See How It Works', href: '#how-it-works' }}
+  >
+    <Fragment slot="headline">
+      Move a crontab line to a <span translate="no">systemd</span> timer.
+    </Fragment>
+    <Fragment slot="lead">
+      Paste a single <span translate="no">crontab</span> entry and get a matched
+      <span class="code-mono text-ink" translate="no">.timer</span> and
+      <span class="code-mono text-ink" translate="no">.service</span> pair — with an
+      <span class="code-mono text-ink" translate="no">OnCalendar=</span> expression built from your
+      schedule and migration notes for anything that doesn’t map one-to-one. It all runs in your
+      browser.
+    </Fragment>
+  </ToolHero>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       2) THE PLAYGROUND
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pb-20 sm:pb-24">
+    <div class="container-page">
+      <div class="mx-auto mb-6 max-w-3xl text-center">
+        <h2 class="display-lg text-ink">The playground.</h2>
+        <p class="body-md mx-auto mt-3 max-w-2xl text-pretty text-body">
+          Edit the <span translate="no">crontab</span> line below, then press
+          <strong class="font-medium text-ink">Convert</strong> — or load an example to see a typical
+          schedule translated. Everything runs locally in your tab; nothing is uploaded.
+        </p>
+      </div>
+      <CronToSystemdPlayground />
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       3) WHY IT EXISTS — the gap
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">The Gap</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            <span translate="no">systemd</span> is the new <span translate="no">crontab</span>.
+          </h2>
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            Modern Linux distributions schedule jobs with <span translate="no">systemd</span> timers,
+            and many no longer ship a per-user <span translate="no">cron</span> daemon at all. Timers
+            give you journald logging, dependency ordering, resource limits, retries and
+            <span class="code-mono text-ink" translate="no">Persistent=true</span> for missed runs —
+            things a bare <span translate="no">crontab</span> line can’t express.
+          </p>
+          <p class="body-md text-pretty text-body">
+            But the syntax is unfamiliar, and rewriting a schedule by hand into
+            <span class="code-mono text-ink" translate="no">OnCalendar=</span> across two unit files is
+            fiddly and easy to get subtly wrong. This converter does the mechanical part for you and
+            calls out the handful of behaviours — environment, <span class="code-mono text-ink" translate="no">MAILTO</span>,
+            working directory — that don’t translate one-to-one, so the migration is honest rather than
+            silent.
+          </p>
+          <p class="body-sm text-mute">
+            Need to read the cron side first? Try the
+            <a class="link-inline" href="/cron-expression-tester">Cron Expression Tester</a>, then
+            convert it here — or jump straight to the
+            <a class="link-inline" href="#playground">live playground</a> above.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       4) HOW IT WORKS — numbered pipeline
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="The Pipeline"
+    heading="How it works."
+    lead="Five deterministic steps turn one crontab line into an installable pair of units — all inside your browser tab, every time."
+    steps={pipeline}
+  />
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       5) FORMATS — the cron line in, the two units out
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="formats" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">The Mapping</p>
+        <h2 class="display-lg mt-3 text-ink">One line in, two units out.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          The converter reads a standard <span translate="no">crontab</span> entry — five time fields
+          plus a command, or an <span class="code-mono text-ink" translate="no">@macro</span> — and emits
+          a <span translate="no">systemd</span>
+          <span class="code-mono text-ink" translate="no">.timer</span> paired with a
+          <span class="code-mono text-ink" translate="no">.service</span>.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 max-w-3xl">
+        <h3 class="display-sm text-ink">The crontab line</h3>
+        <p class="body-sm mt-2 mb-4 text-pretty text-body">
+          The five fields are <span class="code-mono text-ink" translate="no">minute</span>,
+          <span class="code-mono text-ink" translate="no">hour</span>,
+          <span class="code-mono text-ink" translate="no">day-of-month</span>,
+          <span class="code-mono text-ink" translate="no">month</span> and
+          <span class="code-mono text-ink" translate="no">day-of-week</span>, followed by the command.
+          Lists (<span class="code-mono text-ink">1,15</span>), ranges
+          (<span class="code-mono text-ink">1-5</span>), steps
+          (<span class="code-mono text-ink">*/10</span>) and
+          <span class="code-mono text-ink" translate="no">@macros</span> are all understood.
+        </p>
+        <CodeBlock lang="crontab" filename="crontab" code={cronExample} />
+      </div>
+
+      <div class="mx-auto mt-10 grid max-w-5xl gap-8 lg:grid-cols-2">
+        <div class="min-w-0">
+          <h3 class="display-sm text-ink">The .timer unit</h3>
+          <p class="body-sm mt-2 mb-4 text-pretty text-body">
+            Carries the schedule as an <span class="code-mono text-ink" translate="no">OnCalendar=</span>
+            expression. <span class="code-mono text-ink" translate="no">Persistent=true</span> means a
+            run missed while the machine was off fires on the next boot — closer to how operators
+            expect a backup job to behave.
+          </p>
+          <CodeBlock lang="ini" filename="backup.timer" code={timerExample} />
+        </div>
+
+        <div class="min-w-0">
+          <h3 class="display-sm text-ink">The .service unit</h3>
+          <p class="body-sm mt-2 mb-4 text-pretty text-body">
+            Wraps your command. <span class="code-mono text-ink" translate="no">Type=oneshot</span> fits
+            a run-to-completion job, and <span class="code-mono text-ink" translate="no">ExecStart=</span>
+            holds the command from the <span translate="no">crontab</span> line. Add
+            <span class="code-mono text-ink" translate="no">Environment=</span> or
+            <span class="code-mono text-ink" translate="no">User=</span> here as needed.
+          </p>
+          <CodeBlock lang="ini" filename="backup.service" code={serviceExample} />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       6) INSTALL — polarity-flipped dark band
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="install" class="scroll-mt-24 bg-primary text-on-primary">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-2 lg:gap-16">
+        <div class="min-w-0">
+          <p class="eyebrow !text-cyan">Installing the Units</p>
+          <h2 class="display-lg mt-3 text-balance text-on-primary">Three commands to go live.</h2>
+          <p class="body-md mt-4 text-pretty text-white/70">
+            Copy both units, drop them in <span class="code-mono text-white/90" translate="no"
+              >/etc/systemd/system/</span
+            >, reload the daemon, then enable and start the
+            <span class="code-mono text-white/90" translate="no">.timer</span> — never the service
+            directly. The timer is what schedules the run.
+          </p>
+          <p class="body-sm mt-4 text-pretty text-white/55">
+            Once enabled, <span class="code-mono text-white/80" translate="no">systemctl list-timers</span>
+            shows the next firing time, and
+            <span class="code-mono text-white/80" translate="no">journalctl -u backup.service</span> tails
+            the output the old <span translate="no">MAILTO</span> would have emailed you.
+          </p>
+        </div>
+        <CodeBlock lang="bash" filename="install.sh" code={installExample} />
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       7) NOTE — honest migration callout
+       ════════════════════════════════════════════════════════════════════ -->
+  <section class="bg-canvas-soft">
+    <div class="container-page py-12 sm:py-16">
+      <div class="card-soft mx-auto max-w-3xl p-6">
+        <p class="eyebrow">Before You Cut Over</p>
+        <p class="body-md mt-3 text-pretty text-body">
+          A note on parity: the generated units cover the common case — schedule, command and missed-run
+          handling. A few <span translate="no">cron</span> behaviours have no direct
+          <span class="code-mono text-ink" translate="no">OnCalendar=</span> analogue and appear as
+          migration notes instead: per-line environment assignments (move to
+          <span class="code-mono text-ink" translate="no">Environment=</span> /
+          <span class="code-mono text-ink" translate="no">EnvironmentFile=</span>),
+          <span class="code-mono text-ink" translate="no">MAILTO</span> email-on-output (use journald or
+          an <span class="code-mono text-ink" translate="no">OnFailure=</span> handler), and the implicit
+          working directory (set <span class="code-mono text-ink" translate="no">WorkingDirectory=</span>).
+          Review the notes, then run the timer once with
+          <span class="code-mono text-ink" translate="no">systemctl start</span> to confirm before you
+          remove the original <span translate="no">crontab</span> line.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       8) FAQ
+       ════════════════════════════════════════════════════════════════════ -->
+  <FaqList faqs={faqs} />
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       Cross-links + footer note
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolCrossLinks>
+    <Fragment slot="lead">
+      The Cron to systemd Converter is one tool in
+      <span translate="no">{site.name}</span> — a growing canopy of browser-based validators,
+      converters and testers that never touch a server.
+    </Fragment>
+    <Fragment slot="links">
+      Working with schedules? Pair this with the
+      <a class="link-inline" href="/cron-expression-tester">Cron Expression Tester</a> to read a
+      cron line in plain English first, or browse the full
+      <a class="link-inline" href={navLinks[0].href}>tools directory</a>.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      Not affiliated with or endorsed by the <span translate="no">systemd</span> project or any
+      <span translate="no">cron</span> implementation. Format names are used only to describe what
+      this tool converts.
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>

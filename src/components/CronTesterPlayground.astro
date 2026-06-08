@@ -1,0 +1,884 @@
+---
+/**
+ * CronTesterPlayground — the interactive Cron Expression Tester island.
+ *
+ * A no-framework, server-rendered shell hydrated by a single module <script>.
+ * Unlike the editor-based playgrounds, this tool takes a single-line cron
+ * expression in a labeled text input, a numeric "next runs" count, and an
+ * example picker. It explains the expression in plain English and lists the
+ * upcoming run times. It updates live on input — no button required — and runs
+ * entirely client-side (no upload, no network).
+ *
+ * Runtime contract (built by sibling agents — imported lazily in the script):
+ *   ../lib/cron-tester/engine →
+ *     explain(expr: string): CronResult
+ *     nextRuns(expr: string, count?: number, fromIso?: string): string[]
+ *   ../lib/cron-tester/types →
+ *     type CronResult = {
+ *       valid: boolean
+ *       error?: string
+ *       description: string
+ *       fields: { minute; hour; dayOfMonth; month; dayOfWeek }
+ *       nextRuns: string[]
+ *     }
+ *   ../lib/cron-tester/examples →
+ *     examples: { id: string; label: string; expr: string }[]
+ *
+ * Results are injected at runtime; every injected selector is styled with
+ * :global(...) and injected SVGs carry explicit width/height. Headlines stay
+ * sentence-case, weight 600.
+ */
+---
+
+<section class="cron-pg" aria-label="Cron Expression Tester playground">
+  <div class="card shadow-float rounded-lg overflow-hidden">
+    {/* ── Toolbar: example picker + next-runs count ────────────────────── */}
+    <div
+      class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-end sm:justify-between sm:px-5"
+    >
+      <div class="flex min-w-0 flex-col gap-1">
+        <label class="eyebrow shrink-0" for="cron-example">Example</label>
+        <div class="cron-select-wrap relative min-w-0">
+          <select id="cron-example" class="cron-select code-mono" autocomplete="off">
+            {/* Options injected by the hydration script from `examples`. */}
+            <option value="">Loading examples…</option>
+          </select>
+          <svg
+            class="cron-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M4 6l4 4 4-4"></path>
+          </svg>
+        </div>
+      </div>
+
+      <div class="flex shrink-0 flex-col gap-1">
+        <label class="eyebrow shrink-0" for="cron-count">Next runs to show</label>
+        <div class="cron-stepper" role="group" aria-label="Number of next runs to show">
+          <button
+            id="cron-count-dec"
+            type="button"
+            class="cron-step-btn cron-tap"
+            aria-label="Show fewer runs"
+          >
+            <svg
+              class="h-4 w-4"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              aria-hidden="true"
+            >
+              <path d="M3.5 8h9"></path>
+            </svg>
+          </button>
+          <input
+            id="cron-count"
+            type="number"
+            class="cron-count-input code-mono"
+            inputmode="numeric"
+            min="1"
+            max="20"
+            step="1"
+            value="5"
+            autocomplete="off"
+          />
+          <button
+            id="cron-count-inc"
+            type="button"
+            class="cron-step-btn cron-tap"
+            aria-label="Show more runs"
+          >
+            <svg
+              class="h-4 w-4"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              aria-hidden="true"
+            >
+              <path d="M8 3.5v9M3.5 8h9"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    {/* ── Expression input ─────────────────────────────────────────────── */}
+    <div class="border-b border-hairline px-4 py-4 sm:px-5">
+      <label class="eyebrow mb-2 block" for="cron-input">Cron expression</label>
+      <div class="cron-input-wrap">
+        <svg
+          class="cron-input-icon pointer-events-none"
+          viewBox="0 0 20 20"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="10" cy="10" r="7.25"></circle>
+          <path d="M10 5.75V10l2.75 1.75"></path>
+        </svg>
+        <input
+          id="cron-input"
+          type="text"
+          class="cron-input code-mono"
+          spellcheck="false"
+          autocapitalize="off"
+          autocorrect="off"
+          autocomplete="off"
+          placeholder="*/5 * * * *"
+          aria-describedby="cron-input-hint"
+        />
+      </div>
+      <p id="cron-input-hint" class="cron-hint caption text-mute">
+        Five fields — minute, hour, day of month, month, day of week. Macros like
+        <span class="code-mono">@daily</span> are supported too.
+      </p>
+    </div>
+
+    {/* ── Results panel (description + next runs) ──────────────────────── */}
+    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <span class="eyebrow">Result</span>
+        <span
+          id="cron-summary"
+          class="cron-summary code-mono text-mute"
+          role="status"
+          aria-live="polite"
+        ></span>
+      </div>
+
+      <div id="cron-results" class="cron-results">
+        <p class="cron-empty body-sm text-mute">
+          Type a cron expression or pick an example to see a plain-English
+          description and the next run times here.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  /* Tap targets opt into fast-tap + no double-tap-zoom on touch. */
+  .cron-tap {
+    touch-action: manipulation;
+  }
+
+  /* The example picker: a 6px-radius in-app form control (form-input-sm scale). */
+  .cron-select {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    height: 32px;
+    min-width: 0;
+    max-width: 280px;
+    padding: 0 32px 0 12px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 13px;
+    line-height: 20px;
+    cursor: pointer;
+    text-overflow: ellipsis;
+    touch-action: manipulation;
+    transition: box-shadow 0.15s ease;
+  }
+  @media (min-width: 640px) {
+    .cron-select {
+      width: auto;
+      min-width: 220px;
+    }
+  }
+  .cron-select:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .cron-select:disabled {
+    cursor: not-allowed;
+    color: var(--color-mute);
+    opacity: 0.7;
+  }
+  .cron-select-caret {
+    transition: color 0.15s ease;
+  }
+  .cron-select-wrap:hover .cron-select-caret {
+    color: var(--color-body);
+  }
+
+  /* Numeric stepper — three-segment in-app control. */
+  .cron-stepper {
+    display: inline-flex;
+    align-items: stretch;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+  }
+  .cron-step-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    flex: 0 0 auto;
+    color: var(--color-body);
+    background: transparent;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .cron-step-btn:hover {
+    background: var(--color-canvas-soft-2);
+    color: var(--color-ink);
+  }
+  .cron-step-btn:disabled {
+    cursor: not-allowed;
+    color: var(--color-mute);
+    opacity: 0.5;
+    background: transparent;
+  }
+  .cron-count-input {
+    width: 44px;
+    min-width: 0;
+    border: 0;
+    border-left: 1px solid var(--color-hairline);
+    border-right: 1px solid var(--color-hairline);
+    background: transparent;
+    color: var(--color-ink);
+    text-align: center;
+    font-size: 13px;
+    line-height: 20px;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+    -moz-appearance: textfield;
+  }
+  .cron-count-input::-webkit-outer-spin-button,
+  .cron-count-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .cron-count-input:focus {
+    outline: none;
+  }
+  .cron-count-input:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: -2px;
+  }
+
+  /* Single-line expression input. */
+  .cron-input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .cron-input-icon {
+    position: absolute;
+    left: 14px;
+    width: 18px;
+    height: 18px;
+    color: var(--color-mute);
+    pointer-events: none;
+  }
+  .cron-input {
+    width: 100%;
+    height: 48px;
+    padding: 0 16px 0 42px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 15px;
+    line-height: 24px;
+    letter-spacing: 0.01em;
+    transition: box-shadow 0.15s ease;
+  }
+  .cron-input::placeholder {
+    color: var(--color-mute);
+  }
+  .cron-input:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .cron-input:focus {
+    outline: none;
+  }
+  .cron-input:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-link);
+    outline: none;
+  }
+  .cron-input.cron-input--error {
+    box-shadow: inset 0 0 0 1px var(--color-error);
+  }
+  .cron-input.cron-input--error:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-error);
+  }
+  .cron-hint {
+    margin-top: 8px;
+    text-wrap: pretty;
+  }
+
+  /* Summary — right-aligned counts use tabular figures so they don't jitter. */
+  .cron-summary {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+    white-space: nowrap;
+  }
+
+  .cron-results {
+    min-height: 44px;
+  }
+
+  /* ── Runtime-injected markup (styled with :global) ──────────────────── */
+
+  /* Description card — the plain-English read of the expression. */
+  :global(.cron-desc) {
+    padding: 14px 16px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    animation: cron-rise 0.18s ease both;
+  }
+  :global(.cron-desc__text) {
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 22px;
+    letter-spacing: -0.01em;
+    color: var(--color-ink);
+    text-wrap: pretty;
+  }
+
+  /* Parsed-field grid — minute / hour / dom / month / dow. */
+  :global(.cron-fields) {
+    margin-top: 12px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  @media (min-width: 560px) {
+    :global(.cron-fields) {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+  }
+  :global(.cron-field) {
+    min-width: 0;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas-soft);
+    box-shadow: var(--shadow-hairline);
+  }
+  :global(.cron-field__label) {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 14px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+  :global(.cron-field__val) {
+    display: block;
+    margin-top: 3px;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--color-ink);
+    word-break: break-word;
+  }
+
+  /* Next-runs list. */
+  :global(.cron-runs) {
+    margin-top: 12px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+  }
+  :global(.cron-runs__head) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+  }
+  :global(.cron-runs__head-icon) {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    color: var(--color-mute);
+  }
+  :global(.cron-runs__head-text) {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+  :global(.cron-runs__list) {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  :global(.cron-run) {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 9px 14px;
+    animation: cron-rise 0.18s ease both;
+  }
+  :global(.cron-run + .cron-run) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.cron-run__idx) {
+    flex: 0 0 auto;
+    width: 20px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 20px;
+    color: var(--color-mute);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+  :global(.cron-run__time) {
+    min-width: 0;
+    flex: 1 1 auto;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--color-ink);
+    word-break: break-word;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  @keyframes cron-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.cron-desc),
+    :global(.cron-run) {
+      animation: none;
+    }
+  }
+
+  /* Parse-error banner. */
+  :global(.cron-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+    animation: cron-rise 0.18s ease both;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.cron-error) {
+      animation: none;
+    }
+  }
+  :global(.cron-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.cron-error__body) {
+    min-width: 0;
+  }
+  :global(.cron-error__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.cron-error__detail) {
+    margin-top: 2px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 18px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* Empty state — generous, centered frame. */
+  :global(.cron-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+</style>
+
+<script>
+  import { escapeHtml } from '../lib/escape-html';
+
+  /* ---- Types mirrored from the engine contract (structural, not imported). -- */
+  type CronFields = {
+    minute: string;
+    hour: string;
+    dayOfMonth: string;
+    month: string;
+    dayOfWeek: string;
+  };
+  type CronResult = {
+    valid: boolean;
+    error?: string;
+    description: string;
+    fields: CronFields;
+    nextRuns: string[];
+  };
+  type Example = { id: string; label: string; expr: string };
+  type EngineModule = {
+    explain: (expr: string) => CronResult;
+    nextRuns: (expr: string, count?: number, fromIso?: string) => string[];
+  };
+
+  const ROOT_SEL = '.cron-pg';
+  const DEFAULT_COUNT = 5;
+  const MIN_COUNT = 1;
+  const MAX_COUNT = 20;
+  const DEBOUNCE_MS = 120;
+
+  /** Boot every (so far un-hydrated) playground instance on the page. */
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.cronWired === 'true') return;
+      root.dataset.cronWired = 'true';
+      void init(root);
+    });
+  }
+
+  /* ---- Small helpers -------------------------------------------------------- */
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  function clampCount(n: number): number {
+    if (!Number.isFinite(n)) return DEFAULT_COUNT;
+    return Math.min(MAX_COUNT, Math.max(MIN_COUNT, Math.round(n)));
+  }
+
+  /** Normalise the sibling `examples` array defensively. */
+  function normaliseExamples(raw: unknown): Example[] {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((item, i) => {
+        const o = (item ?? {}) as Record<string, unknown>;
+        const expr = typeof o.expr === 'string' ? o.expr : '';
+        return {
+          id: typeof o.id === 'string' && o.id ? o.id : `example-${i + 1}`,
+          label: typeof o.label === 'string' && o.label ? o.label : `Example ${i + 1}`,
+          expr,
+        } satisfies Example;
+      })
+      .filter((e) => e.expr.length > 0);
+  }
+
+  /* ---- Result rendering ----------------------------------------------------- */
+
+  const ALERT_SVG =
+    '<svg class="cron-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const CLOCK_SVG =
+    '<svg class="cron-runs__head-icon" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7.25"></circle><path d="M10 5.75V10l2.75 1.75"></path></svg>';
+
+  const FIELD_LABELS: Array<[keyof CronFields, string]> = [
+    ['minute', 'Minute'],
+    ['hour', 'Hour'],
+    ['dayOfMonth', 'Day of month'],
+    ['month', 'Month'],
+    ['dayOfWeek', 'Day of week'],
+  ];
+
+  function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
+    summary.textContent = '';
+    summary.classList.remove('text-error');
+    summary.classList.add('text-mute');
+    container.innerHTML =
+      '<p class="cron-empty body-sm text-mute">Type a cron expression or pick an example to see a plain-English description and the next run times here.</p>';
+  }
+
+  function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
+    summary.textContent = 'Invalid';
+    summary.classList.remove('text-mute');
+    summary.classList.add('text-error');
+    container.innerHTML =
+      '<div class="cron-error" role="alert">' +
+      ALERT_SVG +
+      '<div class="cron-error__body"><p class="cron-error__title">Could not parse this expression</p>' +
+      `<p class="cron-error__detail">${escapeHtml(message)}</p></div></div>`;
+  }
+
+  function fieldsHtml(fields: CronFields): string {
+    const cells = FIELD_LABELS.map(([key, label]) => {
+      const raw = fields[key];
+      const val = typeof raw === 'string' && raw.length > 0 ? raw : '—';
+      return (
+        '<div class="cron-field">' +
+        `<span class="cron-field__label">${escapeHtml(label)}</span>` +
+        `<span class="cron-field__val">${escapeHtml(val)}</span></div>`
+      );
+    }).join('');
+    return `<div class="cron-fields">${cells}</div>`;
+  }
+
+  function runsHtml(runs: string[]): string {
+    if (runs.length === 0) {
+      return (
+        '<div class="cron-runs"><div class="cron-runs__head">' +
+        CLOCK_SVG +
+        '<span class="cron-runs__head-text">Next runs</span></div>' +
+        '<ul class="cron-runs__list"><li class="cron-run">' +
+        '<span class="cron-run__time">No upcoming runs found.</span></li></ul></div>'
+      );
+    }
+    const items = runs
+      .map(
+        (run, i) =>
+          '<li class="cron-run">' +
+          `<span class="cron-run__idx" aria-hidden="true">${i + 1}</span>` +
+          `<span class="cron-run__time">${escapeHtml(run)}</span></li>`
+      )
+      .join('');
+    return (
+      '<div class="cron-runs"><div class="cron-runs__head">' +
+      CLOCK_SVG +
+      `<span class="cron-runs__head-text">Next ${runs.length === 1 ? 'run' : `${runs.length} runs`}</span></div>` +
+      `<ul class="cron-runs__list">${items}</ul></div>`
+    );
+  }
+
+  function renderResult(
+    container: HTMLElement,
+    summary: HTMLElement,
+    result: CronResult,
+    runs: string[]
+  ): void {
+    summary.textContent = 'Valid';
+    summary.classList.remove('text-error');
+    summary.classList.add('text-mute');
+    const desc =
+      typeof result.description === 'string' && result.description.length > 0
+        ? result.description
+        : 'Schedule parsed.';
+    const fields = result.fields ?? {
+      minute: '',
+      hour: '',
+      dayOfMonth: '',
+      month: '',
+      dayOfWeek: '',
+    };
+    container.innerHTML =
+      '<div class="cron-desc">' +
+      `<p class="cron-desc__text">${escapeHtml(desc)}</p>` +
+      fieldsHtml(fields) +
+      '</div>' +
+      runsHtml(runs);
+  }
+
+  /* ---- Instance init -------------------------------------------------------- */
+
+  async function init(root: HTMLElement): Promise<void> {
+    const exprInput = el<HTMLInputElement>(root, '#cron-input');
+    const countInput = el<HTMLInputElement>(root, '#cron-count');
+    const decBtn = el<HTMLButtonElement>(root, '#cron-count-dec');
+    const incBtn = el<HTMLButtonElement>(root, '#cron-count-inc');
+    const exampleSel = el<HTMLSelectElement>(root, '#cron-example');
+    const resultsBox = el<HTMLElement>(root, '#cron-results');
+    const summaryEl = el<HTMLElement>(root, '#cron-summary');
+
+    if (
+      !exprInput ||
+      !countInput ||
+      !decBtn ||
+      !incBtn ||
+      !exampleSel ||
+      !resultsBox ||
+      !summaryEl
+    ) {
+      return;
+    }
+
+    // Lazily load the sibling engine + examples (kept out of the initial path).
+    let engine: EngineModule;
+    let examples: Example[] = [];
+    try {
+      const [engineMod, examplesMod] = await Promise.all([
+        import('../lib/cron-tester/engine'),
+        import('../lib/cron-tester/examples'),
+      ]);
+      engine = engineMod as unknown as EngineModule;
+      examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+    } catch (err) {
+      renderError(
+        resultsBox,
+        summaryEl,
+        'The cron engine failed to load. Reload the page to try again.'
+      );
+      // eslint-disable-next-line no-console
+      console.error('[CronTester] engine/examples import failed:', err);
+      return;
+    }
+
+    // Populate the example picker (with a leading "Custom" sentinel).
+    exampleSel.innerHTML = '';
+    const customOpt = document.createElement('option');
+    customOpt.value = '-1';
+    customOpt.textContent = examples.length ? 'Custom expression' : 'No examples';
+    exampleSel.appendChild(customOpt);
+    examples.forEach((ex, i) => {
+      const opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = ex.label;
+      exampleSel.appendChild(opt);
+    });
+    if (!examples.length) exampleSel.disabled = true;
+
+    /** Read the desired next-run count, clamped to range. */
+    function getCount(): number {
+      return clampCount(Number(countInput!.value));
+    }
+
+    /** Re-evaluate the current expression and re-render the results panel. */
+    function evaluate(): void {
+      const expr = exprInput!.value.trim();
+      if (expr.length === 0) {
+        exprInput!.classList.remove('cron-input--error');
+        renderEmpty(resultsBox!, summaryEl!);
+        return;
+      }
+
+      let result: CronResult | null = null;
+      try {
+        result = engine.explain(expr);
+      } catch (err) {
+        const msg =
+          err instanceof Error ? err.message : 'Unexpected error while parsing the expression.';
+        exprInput!.classList.add('cron-input--error');
+        renderError(resultsBox!, summaryEl!, msg);
+        return;
+      }
+
+      if (!result || result.valid === false) {
+        exprInput!.classList.add('cron-input--error');
+        renderError(
+          resultsBox!,
+          summaryEl!,
+          result?.error ?? 'This is not a valid cron expression.'
+        );
+        return;
+      }
+
+      exprInput!.classList.remove('cron-input--error');
+
+      // Prefer a fresh nextRuns() call so the count control takes effect; fall
+      // back to whatever the explain() result already carried.
+      let runs: string[] = [];
+      try {
+        const fromEngine = engine.nextRuns(expr, getCount());
+        runs = Array.isArray(fromEngine)
+          ? fromEngine.filter((r): r is string => typeof r === 'string')
+          : [];
+      } catch {
+        runs = Array.isArray(result.nextRuns)
+          ? result.nextRuns.filter((r): r is string => typeof r === 'string')
+          : [];
+      }
+      if (runs.length === 0 && Array.isArray(result.nextRuns)) {
+        runs = result.nextRuns
+          .filter((r): r is string => typeof r === 'string')
+          .slice(0, getCount());
+      }
+
+      renderResult(resultsBox!, summaryEl!, result, runs);
+    }
+
+    // Debounced live evaluation on input (keeps typing smooth).
+    let timer: number | undefined;
+    function scheduleEvaluate(): void {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(evaluate, DEBOUNCE_MS);
+    }
+
+    // Editing the expression means we're no longer on a named example.
+    exprInput.addEventListener('input', () => {
+      if (exampleSel.value !== '-1') exampleSel.value = '-1';
+      scheduleEvaluate();
+    });
+
+    // Choosing an example loads its expression and evaluates immediately.
+    exampleSel.addEventListener('change', () => {
+      const idx = Number(exampleSel.value);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+      exprInput.value = examples[idx].expr;
+      window.clearTimeout(timer);
+      evaluate();
+    });
+
+    /** Apply a clamped count value and refresh the steppers' disabled state. */
+    function setCount(n: number): void {
+      const c = clampCount(n);
+      countInput!.value = String(c);
+      decBtn!.disabled = c <= MIN_COUNT;
+      incBtn!.disabled = c >= MAX_COUNT;
+    }
+
+    decBtn.addEventListener('click', () => {
+      setCount(getCount() - 1);
+      evaluate();
+    });
+    incBtn.addEventListener('click', () => {
+      setCount(getCount() + 1);
+      evaluate();
+    });
+    countInput.addEventListener('input', () => {
+      // Re-evaluate live, but don't fight the user mid-edit by re-clamping the
+      // field text on every keystroke.
+      decBtn!.disabled = getCount() <= MIN_COUNT;
+      incBtn!.disabled = getCount() >= MAX_COUNT;
+      scheduleEvaluate();
+    });
+    countInput.addEventListener('change', () => {
+      setCount(getCount());
+      evaluate();
+    });
+
+    // Seed from the first example; normalise the count control once.
+    setCount(DEFAULT_COUNT);
+    const seed = examples[0];
+    if (seed) {
+      exprInput.value = seed.expr;
+      exampleSel.value = '0';
+      evaluate();
+    } else {
+      renderEmpty(resultsBox, summaryEl);
+    }
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

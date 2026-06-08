@@ -1,0 +1,1227 @@
+---
+/**
+ * CronToSystemdPlayground — the interactive Cron → systemd Converter island.
+ *
+ * A no-framework, server-rendered shell hydrated by a single module <script>
+ * that lazily boots a CodeMirror 6 input editor (the crontab line) plus two
+ * read-only output editors (.timer + .service units), wires an example picker,
+ * a "Convert" action, and per-unit "Copy" actions. It runs entirely client-side
+ * — no upload, no network.
+ *
+ * Runtime contract (built by sibling agents — imported lazily in the script):
+ *   ../lib/cron-systemd/types →
+ *     type SystemdResult = {
+ *       valid: boolean
+ *       error?: string
+ *       onCalendar: string
+ *       timerUnit: string
+ *       serviceUnit: string
+ *       notes: string[]
+ *     }
+ *   ../lib/cron-systemd/engine →
+ *     convert(cronLine: string, opts?: { unitName?: string }) => SystemdResult
+ *   ../lib/cron-systemd/examples →
+ *     examples: { id: string; label: string; cron: string }[]
+ *
+ * The dark editor surface follows DESIGN.md `code-editor-mockup`; notes use the
+ * semantic warning tokens, errors the error tokens. Headlines stay
+ * sentence-case, weight 600.
+ */
+---
+
+<section class="cs-pg" aria-label="Cron to systemd converter playground">
+  <div class="card shadow-float rounded-lg overflow-hidden">
+    {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+    <div
+      class="flex flex-col gap-3 border-b border-hairline px-4 py-3 lg:flex-row lg:items-end lg:justify-between lg:px-5"
+    >
+      <div class="flex flex-wrap items-end gap-3">
+        <div class="flex min-w-0 flex-col gap-1">
+          <label class="eyebrow" for="cs-example">Example</label>
+          <div class="cs-select-wrap relative min-w-0">
+            <select id="cs-example" class="cs-select code-mono" autocomplete="off">
+              {/* Options injected by the hydration script from `examples`. */}
+              <option value="">Loading…</option>
+            </select>
+            <svg
+              class="cs-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M4 6l4 4 4-4"></path>
+            </svg>
+          </div>
+        </div>
+
+        <div class="flex min-w-0 flex-col gap-1">
+          <label class="eyebrow" for="cs-unit">Unit name</label>
+          <input
+            id="cs-unit"
+            class="cs-text code-mono"
+            type="text"
+            autocomplete="off"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+            placeholder="backup"
+            aria-describedby="cs-unit-hint"
+          />
+          <span id="cs-unit-hint" class="sr-only">
+            Base name for the generated .timer and .service units. Optional.
+          </span>
+        </div>
+      </div>
+
+      <div class="flex shrink-0 flex-wrap items-center gap-2">
+        <button
+          id="cs-convert"
+          type="button"
+          class="btn btn-primary btn-sm cs-tap"
+          title="Convert (⌘/Ctrl + Enter)"
+          aria-keyshortcuts="Meta+Enter Control+Enter"
+        >
+          <svg
+            class="cs-convert-icon h-4 w-4 shrink-0"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M3 5.5h8.5M9 3l2.5 2.5L9 8"></path>
+            <path d="M13 10.5H4.5M7 8l-2.5 2.5L7 13"></path>
+          </svg>
+          <span class="cs-convert-label">Convert</span>
+        </button>
+      </div>
+    </div>
+
+    {/* ── Input row: the single crontab line ───────────────────────────── */}
+    <div class="flex flex-col bg-primary">
+      <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
+        <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+          <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+          <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+          <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+        </span>
+        <span class="code-mono text-white/45">crontab</span>
+      </div>
+      <label class="sr-only" for="cs-editor-input">Crontab line</label>
+      <div
+        id="cs-editor-input"
+        class="cs-editor cs-editor--input"
+        aria-label="Crontab line"
+      >
+      </div>
+    </div>
+
+    {/* ── On-calendar summary strip ────────────────────────────────────── */}
+    <div
+      class="flex flex-col gap-1 border-t border-hairline bg-canvas-soft-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-3 sm:px-5"
+    >
+      <span class="eyebrow shrink-0">OnCalendar</span>
+      <code
+        id="cs-oncalendar"
+        class="cs-oncalendar code-mono"
+      >—</code>
+    </div>
+
+    {/* ── Mobile tab switch (single output pane on small screens) ───────── */}
+    <div
+      class="cs-tabs flex gap-1 border-t border-hairline px-4 py-2 md:hidden"
+      role="tablist"
+      aria-label="Generated unit files"
+    >
+      <button
+        id="cs-tab-timer"
+        type="button"
+        class="cs-tab cs-tap is-active"
+        role="tab"
+        aria-selected="true"
+        aria-controls="cs-pane-timer"
+        data-pane="timer"
+        tabindex="0"
+      >
+        Timer
+      </button>
+      <button
+        id="cs-tab-service"
+        type="button"
+        class="cs-tab cs-tap"
+        role="tab"
+        aria-selected="false"
+        aria-controls="cs-pane-service"
+        data-pane="service"
+        tabindex="-1"
+      >
+        Service
+      </button>
+    </div>
+
+    {/* ── Output split: .timer + .service (side-by-side on desktop) ─────── */}
+    <div class="cs-grid grid grid-cols-1 border-t border-hairline md:grid-cols-2">
+      <div
+        id="cs-pane-timer"
+        class="cs-pane cs-pane--active flex min-w-0 flex-col bg-primary md:border-r md:border-white/10"
+        role="tabpanel"
+        aria-labelledby="cs-tab-timer"
+      >
+        <div class="flex items-center justify-between gap-2 border-b border-white/10 px-4 py-2.5">
+          <div class="flex min-w-0 items-center gap-2">
+            <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+              <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+              <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+              <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            </span>
+            <span id="cs-timer-name" class="code-mono truncate text-white/45">timer.timer</span>
+          </div>
+          <button
+            id="cs-copy-timer"
+            type="button"
+            class="cs-copy cs-tap"
+            data-default-label="Copy"
+            aria-label="Copy timer unit"
+            disabled
+          >
+            <svg
+              class="h-3.5 w-3.5 shrink-0"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="5.5" y="5.5" width="8" height="8" rx="1.5"></rect>
+              <path d="M3.5 10.5h-.5a1 1 0 01-1-1v-6a1 1 0 011-1h6a1 1 0 011 1v.5"></path>
+            </svg>
+            <span class="cs-copy-label">Copy</span>
+          </button>
+        </div>
+        <div
+          id="cs-editor-timer"
+          class="cs-editor cs-editor--ro min-h-56"
+          role="region"
+          aria-label="Generated systemd timer unit (read-only)"
+        >
+        </div>
+      </div>
+
+      <div
+        id="cs-pane-service"
+        class="cs-pane flex min-w-0 flex-col bg-primary"
+        role="tabpanel"
+        aria-labelledby="cs-tab-service"
+      >
+        <div class="flex items-center justify-between gap-2 border-b border-white/10 px-4 py-2.5">
+          <div class="flex min-w-0 items-center gap-2">
+            <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+              <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+              <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+              <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            </span>
+            <span id="cs-service-name" class="code-mono truncate text-white/45">service.service</span>
+          </div>
+          <button
+            id="cs-copy-service"
+            type="button"
+            class="cs-copy cs-tap"
+            data-default-label="Copy"
+            aria-label="Copy service unit"
+            disabled
+          >
+            <svg
+              class="h-3.5 w-3.5 shrink-0"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="5.5" y="5.5" width="8" height="8" rx="1.5"></rect>
+              <path d="M3.5 10.5h-.5a1 1 0 01-1-1v-6a1 1 0 011-1h6a1 1 0 011 1v.5"></path>
+            </svg>
+            <span class="cs-copy-label">Copy</span>
+          </button>
+        </div>
+        <div
+          id="cs-editor-service"
+          class="cs-editor cs-editor--ro min-h-56"
+          role="region"
+          aria-label="Generated systemd service unit (read-only)"
+        >
+        </div>
+      </div>
+    </div>
+
+    {/* ── Notes panel (migration notes + errors) ───────────────────────── */}
+    <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <span class="eyebrow">Notes</span>
+        <span
+          id="cs-summary"
+          class="cs-summary code-mono text-mute"
+          role="status"
+          aria-live="polite"
+        ></span>
+      </div>
+
+      <div id="cs-notes" class="cs-notes">
+        <p class="cs-empty body-sm text-mute">
+          Paste a crontab line, then convert to see the equivalent systemd
+          <code class="code-mono">.timer</code> and <code class="code-mono">.service</code>
+          units, plus any migration notes here.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  {/* Polite announcer for clipboard + transient toasts. */}
+  <span id="cs-announce" class="sr-only" role="status" aria-live="polite"></span>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  /* Tap targets opt into fast-tap + no double-tap-zoom on touch. */
+  .cs-tap {
+    touch-action: manipulation;
+  }
+
+  /* The example picker: a 6px-radius in-app form control. */
+  .cs-select {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    height: 32px;
+    min-width: 0;
+    max-width: 280px;
+    padding: 0 32px 0 12px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 13px;
+    line-height: 20px;
+    cursor: pointer;
+    text-overflow: ellipsis;
+    touch-action: manipulation;
+    transition: box-shadow 0.15s ease;
+  }
+  @media (min-width: 640px) {
+    .cs-select {
+      width: auto;
+      min-width: 200px;
+    }
+  }
+  .cs-select:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .cs-select:disabled {
+    cursor: not-allowed;
+    color: var(--color-mute);
+    opacity: 0.7;
+  }
+  .cs-select-caret {
+    transition: color 0.15s ease;
+  }
+  .cs-select-wrap:hover .cs-select-caret {
+    color: var(--color-body);
+  }
+
+  /* Unit-name text input (same 6px in-app form scale as the picker). */
+  .cs-text {
+    width: 100%;
+    height: 32px;
+    min-width: 0;
+    max-width: 200px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 13px;
+    line-height: 20px;
+    transition: box-shadow 0.15s ease;
+  }
+  @media (min-width: 640px) {
+    .cs-text {
+      min-width: 160px;
+    }
+  }
+  .cs-text::placeholder {
+    color: var(--color-mute);
+  }
+  .cs-text:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .cs-text:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+
+  /* OnCalendar summary chip. */
+  .cs-oncalendar {
+    min-width: 0;
+    color: var(--color-ink);
+    font-size: 13px;
+    line-height: 20px;
+    word-break: break-word;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  /* Per-unit copy buttons — compact ghost controls on the dark chrome. */
+  .cs-copy {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.62);
+    background: rgba(255, 255, 255, 0.06);
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .cs-copy:hover:not(:disabled) {
+    color: var(--color-on-primary);
+    background: rgba(255, 255, 255, 0.12);
+  }
+  .cs-copy:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 2px;
+  }
+  .cs-copy:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* Mobile tab pills (square in-app scale; never the 100px marketing pill). */
+  .cs-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 0;
+    min-height: 44px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+    background: transparent;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .cs-tab:hover:not(.is-active) {
+    color: var(--color-body);
+    background: var(--color-canvas-soft-2);
+  }
+  .cs-tab.is-active {
+    color: var(--color-on-primary);
+    background: var(--color-primary);
+  }
+
+  /* Visibility is driven by the .cs-pane--active class, NOT the [hidden]
+     attribute. Tailwind v4's layered `[hidden]{display:none!important}` (in
+     @layer base) beats any unlayered !important override, which would leave the
+     service pane invisible on desktop. */
+  @media (max-width: 767px) {
+    .cs-pane {
+      display: none;
+    }
+    .cs-pane.cs-pane--active {
+      display: flex;
+    }
+  }
+  @media (min-width: 768px) {
+    /* Desktop: both unit panes always visible side by side. */
+    .cs-pane {
+      display: flex;
+    }
+  }
+
+  /* CodeMirror host — fills the dark pane, scrolls internally. */
+  .cs-editor {
+    overflow: hidden;
+  }
+  .cs-editor :global(.cm-editor) {
+    height: 100%;
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .cs-editor :global(.cm-editor.cm-focused) {
+    /* Replace CM's default outline with a brand-blue ring (a11y: keep a ring). */
+    outline: 2px solid var(--color-link);
+    outline-offset: -2px;
+  }
+  .cs-editor :global(.cm-scroller) {
+    overflow: auto;
+    max-height: 360px;
+    font-family: var(--font-mono);
+    /* Thin, theme-matched scrollbars on the dark surface. */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  }
+  .cs-editor--input :global(.cm-scroller) {
+    max-height: 180px;
+  }
+  .cs-editor :global(.cm-scroller)::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .cs-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.16);
+    border-radius: var(--radius-pill);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  .cs-editor :global(.cm-scroller)::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.28);
+    background-clip: content-box;
+  }
+  .cs-editor :global(.cm-gutters) {
+    background: transparent;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .cs-editor :global(.cm-lineNumbers .cm-gutterElement) {
+    color: rgba(255, 255, 255, 0.32);
+  }
+  .cs-editor :global(.cm-content) {
+    padding: 14px 0 16px;
+  }
+  .cs-editor :global(.cm-line) {
+    padding-inline: 4px;
+  }
+  /* The read-only output panes: hide cursor + drop-cursor chrome. */
+  .cs-editor--ro :global(.cm-cursor),
+  .cs-editor--ro :global(.cm-dropCursor) {
+    display: none;
+  }
+
+  /* Summary — right-aligned counts use tabular figures so they don't jitter. */
+  .cs-summary {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+    white-space: nowrap;
+  }
+
+  /* Notes list (migration notes / success / empty). */
+  .cs-notes {
+    min-height: 44px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  /* Migration-note row (informational; uses warning tokens). */
+  :global(.cs-note) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-warning-soft);
+    box-shadow: inset 0 0 0 1px var(--color-warning);
+    color: var(--color-warning-deep);
+    animation: cs-rise 0.18s ease both;
+  }
+  :global(.cs-note__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+    color: var(--color-warning-deep);
+  }
+  :global(.cs-note__body) {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  :global(.cs-note__title) {
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 18px;
+  }
+  :global(.cs-note__list) {
+    margin: 4px 0 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  :global(.cs-note__item) {
+    position: relative;
+    padding-left: 16px;
+    font-size: 13px;
+    line-height: 18px;
+    word-break: break-word;
+  }
+  :global(.cs-note__item::before) {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 7px;
+    width: 4px;
+    height: 4px;
+    border-radius: 9999px;
+    background: currentColor;
+    opacity: 0.7;
+  }
+
+  /* Success note (converted, no migration caveats). */
+  :global(.cs-ok) {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    animation: cs-rise 0.18s ease both;
+  }
+  :global(.cs-ok__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    color: var(--color-success);
+  }
+  :global(.cs-ok__text) {
+    font-size: 13px;
+    line-height: 18px;
+  }
+
+  /* Parse / conversion error banner. */
+  :global(.cs-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+    animation: cs-rise 0.18s ease both;
+  }
+  :global(.cs-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.cs-error__body) {
+    min-width: 0;
+  }
+  :global(.cs-error__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.cs-error__detail) {
+    margin-top: 2px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 18px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  @keyframes cs-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.cs-note),
+    :global(.cs-ok),
+    :global(.cs-error) {
+      animation: none;
+    }
+  }
+
+  /* Empty state — generous, centered frame. */
+  :global(.cs-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    min-height: 64px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+  :global(.cs-empty code) {
+    color: var(--color-body);
+  }
+
+  /* Loading dots — animate opacity only; reduced-motion handled globally. */
+  :global(.cs-loading) {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--color-body);
+  }
+  :global(.cs-loading__dot) {
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background: var(--color-mute);
+    animation: cs-pulse 1.1s ease-in-out infinite;
+  }
+  :global(.cs-loading__dot:nth-child(2)) {
+    animation-delay: 0.18s;
+  }
+  :global(.cs-loading__dot:nth-child(3)) {
+    animation-delay: 0.36s;
+  }
+  @keyframes cs-pulse {
+    0%,
+    100% {
+      opacity: 0.3;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.cs-loading__dot) {
+      animation: none;
+      opacity: 0.6;
+    }
+  }
+
+  .is-busy {
+    opacity: 0.65;
+    pointer-events: none;
+    cursor: progress;
+  }
+  .is-busy .cs-convert-icon {
+    display: none;
+  }
+</style>
+
+<script>
+  import { EditorState } from '@codemirror/state';
+  import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
+  import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+  import { oneDark } from '@codemirror/theme-one-dark';
+  import { escapeHtml } from '../lib/escape-html';
+
+  /* ---- Types mirrored from the engine contract (structural, not imported). -- */
+  type SystemdResult = {
+    valid: boolean;
+    error?: string;
+    onCalendar: string;
+    timerUnit: string;
+    serviceUnit: string;
+    notes: string[];
+  };
+  type EngineModule = {
+    convert: (cronLine: string, opts?: { unitName?: string }) => SystemdResult | Promise<SystemdResult>;
+  };
+  type Example = { id: string; label: string; cron: string };
+
+  const ROOT_SEL = '.cs-pg';
+  const COPIED_RESET_MS = 1800;
+
+  /** Boot every (so far un-hydrated) playground instance on the page. */
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.csWired === 'true') return;
+      root.dataset.csWired = 'true';
+      void init(root);
+    });
+  }
+
+  /* ---- Small helpers -------------------------------------------------------- */
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  /** Normalise the sibling examples list defensively. */
+  function normaliseExamples(raw: unknown): Example[] {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((item, i) => {
+        const o = (item ?? {}) as Record<string, unknown>;
+        return {
+          id: typeof o.id === 'string' && o.id ? o.id : `example-${i + 1}`,
+          label: typeof o.label === 'string' && o.label ? o.label : `Example ${i + 1}`,
+          cron: typeof o.cron === 'string' ? o.cron : '',
+        } satisfies Example;
+      })
+      .filter((e) => e.cron.length > 0);
+  }
+
+  /** Sanitise a unit base name to systemd-safe characters; '' if none given. */
+  function sanitiseUnitName(raw: string): string {
+    return raw
+      .trim()
+      .replace(/\.(timer|service)$/i, '')
+      .replace(/[^A-Za-z0-9:_.@-]/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  /* ---- Editor factory ------------------------------------------------------- */
+
+  const baseTheme = EditorView.theme({
+    '&': { color: '#e6e6e6' },
+    '.cm-content': { caretColor: '#e6e6e6' },
+    '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
+    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
+      backgroundColor: 'rgba(0, 112, 243, 0.32)',
+    },
+    '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
+    '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+  });
+
+  function makeInputEditor(host: HTMLElement, doc: string): EditorView {
+    const state = EditorState.create({
+      doc,
+      extensions: [
+        lineNumbers(),
+        history(),
+        highlightActiveLine(),
+        oneDark,
+        EditorView.lineWrapping,
+        keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+        baseTheme,
+      ],
+    });
+    return new EditorView({ state, parent: host });
+  }
+
+  function makeOutputEditor(host: HTMLElement, doc: string): EditorView {
+    const state = EditorState.create({
+      doc,
+      extensions: [
+        lineNumbers(),
+        oneDark,
+        EditorView.lineWrapping,
+        EditorView.editable.of(false),
+        EditorState.readOnly.of(true),
+        baseTheme,
+      ],
+    });
+    return new EditorView({ state, parent: host });
+  }
+
+  function setEditorDoc(view: EditorView, doc: string): void {
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
+  }
+
+  /* ---- Note rendering (notes / error / success / empty) --------------------- */
+
+  const NOTE_SVG =
+    '<svg class="cs-note__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"></circle><path d="M10 9v4.5"></path><path d="M10 6.4v.01"></path></svg>';
+  const ALERT_SVG =
+    '<svg class="cs-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const CHECK_SVG =
+    '<svg class="cs-ok__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"></circle><path d="M6.5 10.5l2.4 2.4 4.6-5"></path></svg>';
+
+  const EMPTY_HTML =
+    '<p class="cs-empty body-sm text-mute">Paste a crontab line, then convert to see the equivalent systemd ' +
+    '<code class="code-mono">.timer</code> and <code class="code-mono">.service</code> units, plus any migration notes here.</p>';
+
+  function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
+    summary.textContent = '';
+    summary.classList.remove('text-error', 'text-warning-deep');
+    summary.classList.add('text-mute');
+    container.innerHTML = EMPTY_HTML;
+  }
+
+  function renderLoading(container: HTMLElement, summary: HTMLElement): void {
+    summary.textContent = '';
+    summary.classList.remove('text-error', 'text-warning-deep');
+    summary.classList.add('text-mute');
+    container.innerHTML =
+      '<div class="cs-loading"><span class="cs-loading__dot"></span>' +
+      '<span class="cs-loading__dot"></span><span class="cs-loading__dot"></span>' +
+      '<span>Converting…</span></div>';
+  }
+
+  function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
+    summary.textContent = 'Error';
+    summary.classList.remove('text-mute', 'text-warning-deep');
+    summary.classList.add('text-error');
+    container.innerHTML =
+      '<div class="cs-error" role="alert">' +
+      ALERT_SVG +
+      '<div class="cs-error__body"><p class="cs-error__title">Could not convert</p>' +
+      `<p class="cs-error__detail">${escapeHtml(message)}</p></div></div>`;
+  }
+
+  function renderNotes(container: HTMLElement, summary: HTMLElement, notes: string[]): void {
+    if (notes.length === 0) {
+      summary.textContent = 'Converted';
+      summary.classList.remove('text-error', 'text-warning-deep');
+      summary.classList.add('text-mute');
+      container.innerHTML =
+        '<div class="cs-ok">' +
+        CHECK_SVG +
+        '<span class="cs-ok__text">Converted cleanly. Install the units below with systemctl.</span></div>';
+      return;
+    }
+    const n = notes.length;
+    summary.textContent = `${n} ${n === 1 ? 'note' : 'notes'}`;
+    summary.classList.remove('text-error', 'text-mute');
+    summary.classList.add('text-warning-deep');
+    const items = notes
+      .map((note) => `<li class="cs-note__item">${escapeHtml(note)}</li>`)
+      .join('');
+    container.innerHTML =
+      '<div class="cs-note">' +
+      NOTE_SVG +
+      '<div class="cs-note__body">' +
+      `<p class="cs-note__title">${n === 1 ? 'Migration note' : 'Migration notes'}</p>` +
+      `<ul class="cs-note__list">${items}</ul>` +
+      '</div></div>';
+  }
+
+  /* ---- Clipboard ------------------------------------------------------------ */
+
+  async function copyText(text: string): Promise<boolean> {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      /* fall through to legacy path */
+    }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'absolute';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /* ---- Instance init -------------------------------------------------------- */
+
+  async function init(root: HTMLElement): Promise<void> {
+    const inputHost = el<HTMLElement>(root, '#cs-editor-input');
+    const timerHost = el<HTMLElement>(root, '#cs-editor-timer');
+    const serviceHost = el<HTMLElement>(root, '#cs-editor-service');
+    const exampleSel = el<HTMLSelectElement>(root, '#cs-example');
+    const unitInput = el<HTMLInputElement>(root, '#cs-unit');
+    const convertBtn = el<HTMLButtonElement>(root, '#cs-convert');
+    const copyTimerBtn = el<HTMLButtonElement>(root, '#cs-copy-timer');
+    const copyServiceBtn = el<HTMLButtonElement>(root, '#cs-copy-service');
+    const onCalendarEl = el<HTMLElement>(root, '#cs-oncalendar');
+    const notesBox = el<HTMLElement>(root, '#cs-notes');
+    const summaryEl = el<HTMLElement>(root, '#cs-summary');
+    const announce = el<HTMLElement>(root, '#cs-announce');
+    const timerNameEl = el<HTMLElement>(root, '#cs-timer-name');
+    const serviceNameEl = el<HTMLElement>(root, '#cs-service-name');
+    const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('.cs-tab'));
+
+    if (
+      !inputHost ||
+      !timerHost ||
+      !serviceHost ||
+      !exampleSel ||
+      !unitInput ||
+      !convertBtn ||
+      !copyTimerBtn ||
+      !copyServiceBtn ||
+      !onCalendarEl ||
+      !notesBox ||
+      !summaryEl
+    ) {
+      return;
+    }
+
+    // Lazily load the sibling engine + examples (off the initial path).
+    let engine: EngineModule;
+    let examples: Example[] = [];
+    try {
+      const [engineMod, examplesMod] = await Promise.all([
+        import('../lib/cron-systemd/engine'),
+        import('../lib/cron-systemd/examples'),
+      ]);
+      engine = engineMod as unknown as EngineModule;
+      examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+    } catch (err) {
+      renderError(
+        notesBox,
+        summaryEl,
+        'The converter engine failed to load. Reload the page to try again.'
+      );
+      // eslint-disable-next-line no-console
+      console.error('[CronToSystemd] engine/examples import failed:', err);
+      return;
+    }
+
+    // Seed from the first example when present.
+    const seed = examples[0];
+    const inputView = makeInputEditor(inputHost, seed?.cron ?? '');
+    const timerView = makeOutputEditor(timerHost, '');
+    const serviceView = makeOutputEditor(serviceHost, '');
+
+    // Populate the example picker (with a leading "Custom" sentinel).
+    exampleSel.innerHTML = '';
+    const customOpt = document.createElement('option');
+    customOpt.value = '-1';
+    customOpt.textContent = examples.length ? 'Custom input' : 'No examples';
+    exampleSel.appendChild(customOpt);
+    examples.forEach((ex, i) => {
+      const opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = ex.label;
+      exampleSel.appendChild(opt);
+    });
+    exampleSel.value = examples.length ? '0' : '-1';
+    if (!examples.length) exampleSel.disabled = true;
+
+    /** Current sanitised unit base name, defaulting to "cron-job". */
+    function unitBase(): string {
+      return sanitiseUnitName(unitInput!.value) || 'cron-job';
+    }
+
+    /** Sync the dark editor chrome filenames to the chosen unit name. */
+    function syncNames(): void {
+      const base = unitBase();
+      if (timerNameEl) timerNameEl.textContent = `${base}.timer`;
+      if (serviceNameEl) serviceNameEl.textContent = `${base}.service`;
+    }
+    syncNames();
+
+    /** Reset to the pre-conversion state (outputs cleared, copies disabled). */
+    function resetOutput(): void {
+      setEditorDoc(timerView, '');
+      setEditorDoc(serviceView, '');
+      copyTimerBtn!.disabled = true;
+      copyServiceBtn!.disabled = true;
+      if (onCalendarEl) onCalendarEl.textContent = '—';
+      renderEmpty(notesBox!, summaryEl!);
+    }
+
+    // Choosing an example swaps the input, then clears the output.
+    exampleSel.addEventListener('change', () => {
+      const idx = Number(exampleSel.value);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+      setEditorDoc(inputView, examples[idx].cron);
+      resetOutput();
+    });
+
+    // Editing the unit name re-labels the chrome and stales any shown output —
+    // the unit bodies embed the old name, so clear them and disable Copy until
+    // the user re-converts (mirrors the From/To reset in CveConverter).
+    unitInput.addEventListener('input', () => {
+      syncNames();
+      resetOutput();
+    });
+
+    // Mobile tab switching (panes are always visible on desktop via CSS).
+    const timerPane = el<HTMLElement>(root, '#cs-pane-timer');
+    const servicePane = el<HTMLElement>(root, '#cs-pane-service');
+
+    function activateTab(tab: HTMLButtonElement, focusTab: boolean): void {
+      const showTimer = tab.dataset.pane === 'timer';
+      tabs.forEach((t) => {
+        const active = t === tab;
+        t.classList.toggle('is-active', active);
+        t.setAttribute('aria-selected', active ? 'true' : 'false');
+        t.tabIndex = active ? 0 : -1;
+      });
+      timerPane?.classList.toggle('cs-pane--active', showTimer);
+      servicePane?.classList.toggle('cs-pane--active', !showTimer);
+      if (focusTab) tab.focus();
+      requestAnimationFrame(() => (showTimer ? timerView : serviceView).requestMeasure());
+    }
+
+    tabs.forEach((tab, i) => {
+      tab.addEventListener('click', () => activateTab(tab, false));
+      tab.addEventListener('keydown', (e) => {
+        let next = -1;
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (i + 1) % tabs.length;
+        else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
+          next = (i - 1 + tabs.length) % tabs.length;
+        else if (e.key === 'Home') next = 0;
+        else if (e.key === 'End') next = tabs.length - 1;
+        if (next < 0) return;
+        e.preventDefault();
+        activateTab(tabs[next], true);
+      });
+    });
+
+    // Convert — non-blocking; show loading, yield a frame, then render.
+    let running = false;
+    const convertLabel = convertBtn.querySelector<HTMLElement>('.cs-convert-label');
+    let spinner: HTMLElement | null = null;
+
+    async function convertNow(): Promise<void> {
+      if (running) return;
+      running = true;
+      convertBtn.classList.add('is-busy');
+      convertBtn.setAttribute('aria-disabled', 'true');
+      convertBtn.setAttribute('aria-busy', 'true');
+      if (!spinner) {
+        spinner = document.createElement('span');
+        spinner.setAttribute('aria-hidden', 'true');
+        // Inline the visual — this span is created at runtime and would not
+        // receive the component's scoped-style hash.
+        spinner.style.cssText =
+          'display:inline-block;width:14px;height:14px;flex:0 0 auto;border-radius:9999px;' +
+          'border:2px solid currentColor;border-top-color:transparent;';
+        if (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          spinner.animate(
+            [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }],
+            { duration: 700, iterations: Infinity }
+          );
+        }
+        convertBtn.insertBefore(spinner, convertBtn.firstChild);
+      }
+      if (convertLabel) convertLabel.textContent = 'Converting…';
+      renderLoading(notesBox!, summaryEl!);
+
+      // Yield so the loading state paints before (potentially heavy) work runs.
+      await new Promise<void>((resolve) => {
+        if ('requestAnimationFrame' in window) requestAnimationFrame(() => resolve());
+        else setTimeout(resolve, 0);
+      });
+
+      try {
+        const cronLine = inputView.state.doc.toString();
+        const result = await Promise.resolve(
+          engine.convert(cronLine, { unitName: unitBase() })
+        );
+
+        if (!result || result.valid === false || result.error) {
+          setEditorDoc(timerView, '');
+          setEditorDoc(serviceView, '');
+          copyTimerBtn!.disabled = true;
+          copyServiceBtn!.disabled = true;
+          if (onCalendarEl) onCalendarEl.textContent = '—';
+          renderError(
+            notesBox!,
+            summaryEl!,
+            result?.error ?? 'This crontab line could not be parsed.'
+          );
+          return;
+        }
+
+        const timerUnit = typeof result.timerUnit === 'string' ? result.timerUnit : '';
+        const serviceUnit = typeof result.serviceUnit === 'string' ? result.serviceUnit : '';
+        setEditorDoc(timerView, timerUnit);
+        setEditorDoc(serviceView, serviceUnit);
+        copyTimerBtn!.disabled = timerUnit.length === 0;
+        copyServiceBtn!.disabled = serviceUnit.length === 0;
+        if (onCalendarEl) {
+          onCalendarEl.textContent =
+            typeof result.onCalendar === 'string' && result.onCalendar ? result.onCalendar : '—';
+        }
+        const notes = Array.isArray(result.notes)
+          ? result.notes.filter((note): note is string => typeof note === 'string' && note.length > 0)
+          : [];
+        renderNotes(notesBox!, summaryEl!, notes);
+        // Re-measure the now-populated read-only editors next frame.
+        requestAnimationFrame(() => {
+          timerView.requestMeasure();
+          serviceView.requestMeasure();
+        });
+        if (announce) {
+          announce.textContent =
+            notes.length > 0
+              ? `Converted with ${notes.length} ${notes.length === 1 ? 'note' : 'notes'}.`
+              : 'Converted successfully.';
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unexpected error while converting.';
+        setEditorDoc(timerView, '');
+        setEditorDoc(serviceView, '');
+        copyTimerBtn!.disabled = true;
+        copyServiceBtn!.disabled = true;
+        if (onCalendarEl) onCalendarEl.textContent = '—';
+        renderError(notesBox!, summaryEl!, msg);
+      } finally {
+        running = false;
+        convertBtn.classList.remove('is-busy');
+        convertBtn.removeAttribute('aria-disabled');
+        convertBtn.removeAttribute('aria-busy');
+        if (spinner) {
+          spinner.remove();
+          spinner = null;
+        }
+        if (convertLabel) convertLabel.textContent = 'Convert';
+      }
+    }
+
+    convertBtn.addEventListener('click', () => void convertNow());
+
+    // Cmd/Ctrl+Enter from inside the editor / toolbar triggers a conversion.
+    root.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        void convertNow();
+      }
+    });
+
+    /** Wire a per-unit copy button to its read-only editor's document. */
+    function wireCopy(btn: HTMLButtonElement, view: EditorView, what: string): void {
+      const label = btn.querySelector<HTMLElement>('.cs-copy-label');
+      let timer: number | undefined;
+      btn.addEventListener('click', async () => {
+        const text = view.state.doc.toString();
+        if (!text) return;
+        const ok = await copyText(text);
+        if (label) label.textContent = ok ? 'Copied' : 'Failed';
+        if (announce) {
+          announce.textContent = ok
+            ? `${what} unit copied to your clipboard.`
+            : `Could not copy the ${what.toLowerCase()} unit. Select the text and copy it manually.`;
+        }
+        window.clearTimeout(timer);
+        timer = window.setTimeout(() => {
+          if (label) label.textContent = btn.dataset.defaultLabel ?? 'Copy';
+        }, COPIED_RESET_MS);
+      });
+    }
+    wireCopy(copyTimerBtn, timerView, 'Timer');
+    wireCopy(copyServiceBtn, serviceView, 'Service');
+
+    // Initial state.
+    renderEmpty(notesBox, summaryEl);
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

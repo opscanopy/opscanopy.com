@@ -34,6 +34,7 @@ declare module 'js-yaml' {
 }
 
 import yaml from 'js-yaml';
+import { checkRegexSafety } from '../regex-safety';
 import type { RunResult, TestResult, ShareState } from './types';
 
 /* ────────────────────────────────────────────────────────────────────────── *
@@ -324,6 +325,17 @@ const regexCache = new Map<string, RegExp>();
 function safeRegex(pattern: string): RegExp {
   let re = regexCache.get(pattern);
   if (!re) {
+    // Reject catastrophic-backtracking shapes before compiling so a malicious
+    // label-matcher or line-filter regex cannot wedge the evaluation thread.
+    // Surfaced through the existing { ok:false, error } path via EvalError.
+    const safety = checkRegexSafety(pattern);
+    if (!safety.safe) {
+      throw new EvalError(
+        `Unsafe regular expression "${pattern}": ${
+          safety.reason ?? 'it has a shape prone to catastrophic backtracking.'
+        }`,
+      );
+    }
     try {
       re = new RegExp(pattern);
     } catch {
