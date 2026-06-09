@@ -80,7 +80,9 @@ export function generate(input: string): PtrResult {
       }
     }
 
-    rows.push({ label: 'dig command', value: 'dig -x ' + ipv4ToString(net), mono: true });
+    // dig the ADDRESS as supplied, so the command matches the PTR record name above
+    // (for a bare host the address is the network, so this is unchanged there).
+    rows.push({ label: 'dig command', value: 'dig -x ' + ipv4ToString(c.addr), mono: true });
 
     return { valid: true, version: 4, rows };
   }
@@ -115,7 +117,8 @@ export function generate(input: string): PtrResult {
     });
   }
 
-  rows.push({ label: 'dig command', value: 'dig -x ' + ipv6Compress(net), mono: true });
+  // dig the ADDRESS as supplied so it matches the PTR record name above.
+  rows.push({ label: 'dig command', value: 'dig -x ' + ipv6Compress(c.addr), mono: true });
 
   return { valid: true, version: 6, rows };
 }

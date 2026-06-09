@@ -107,17 +107,17 @@ export function split(parent: string, allocated: string, newPrefix: number | nul
   for (const [s, e] of used) usedSum += e - s + 1n;
   const freeSum = totalBig - usedSum;
 
-  // For huge v6 parents the total can't be a sane decimal — use 2^N notation.
-  const HUGE = 1n << 64n;
-  const totalStr = totalBig > HUGE ? `2^${hostBits}` : totalBig.toString();
+  // Render all three counts the same way: small values stay exact decimals, but
+  // huge IPv6 counts collapse to 2^N / ≈2^N instead of 39-digit strings, so
+  // total, used and free always read consistently.
   let usedPct = totalBig === 0n ? 0 : Math.round((Number(usedSum) / Number(totalBig)) * 100);
   if (usedPct < 0) usedPct = 0;
   if (usedPct > 100) usedPct = 100;
 
   const stats = {
-    total: totalStr,
-    used: usedSum.toString(),
-    free: freeSum.toString(),
+    total: fmtCount(totalBig),
+    used: fmtCount(usedSum),
+    free: fmtCount(freeSum),
     usedPct,
   };
 
@@ -198,4 +198,21 @@ function intervalWithin(start: bigint, end: bigint, set: [bigint, bigint][]): bo
     if (start >= s && end <= e) return true;
   }
   return false;
+}
+
+/** Readable address count: exact decimal when small, else 2^N (exact power) or ≈2^N. */
+function fmtCount(n: bigint): string {
+  if (n <= 0n) return '0';
+  if (n < 1n << 53n) return n.toString();
+  return (isPow2(n) ? '2^' : '≈2^') + floorLog2(n);
+}
+
+function isPow2(n: bigint): boolean {
+  return n > 0n && (n & (n - 1n)) === 0n;
+}
+
+function floorLog2(n: bigint): number {
+  let k = -1;
+  for (let x = n; x > 0n; x >>= 1n) k++;
+  return k;
 }
