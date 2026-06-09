@@ -51,8 +51,4 @@ export const footerColumns: FooterColumn[] = [
       { label: 'Privacy', href: '/#privacy' },
     ],
   },
-  {
-    title: 'Project',
-    links: [{ label: 'Roadmap', href: '/tools#roadmap' }],
-  },
 ];
