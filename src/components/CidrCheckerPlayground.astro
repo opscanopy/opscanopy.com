@@ -1,0 +1,506 @@
+---
+/**
+ * CidrCheckerPlayground — the interactive CIDR / Subnet Checker island.
+ *
+ * Multi-line tool: paste one IP/CIDR per line and it reports the minimal
+ * covering CIDR set (aggregation), every overlap / containment between the
+ * inputs, and a parsed breakdown of each line. Updates live (debounced), fully
+ * client-side.
+ *
+ * Runtime contract (lazy-imported):
+ *   ../lib/cidr-checker/engine   → check(input: string): CheckResult
+ *   ../lib/cidr-checker/examples → examples: { id; label; input }[]
+ */
+---
+
+<section class="cdc-pg" aria-label="CIDR / Subnet Checker playground">
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    <div class="flex flex-col gap-1 border-b border-hairline px-4 py-3 sm:px-5">
+      <label class="eyebrow shrink-0" for="cdc-example">Example</label>
+      <div class="cdc-select-wrap relative min-w-0">
+        <select id="cdc-example" class="cdc-select code-mono" autocomplete="off">
+          <option value="">Loading examples…</option>
+        </select>
+        <svg
+          class="cdc-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.4"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M4 6l4 4 4-4"></path>
+        </svg>
+      </div>
+    </div>
+
+    <div class="border-b border-hairline px-4 py-4 sm:px-5">
+      <label class="eyebrow mb-2 block" for="cdc-input">IPs / CIDRs — one per line</label>
+      <textarea
+        id="cdc-input"
+        class="cdc-input code-mono"
+        spellcheck="false"
+        autocapitalize="off"
+        autocorrect="off"
+        autocomplete="off"
+        rows="6"
+        placeholder="10.0.0.0/24&#10;10.0.1.0/24&#10;2001:db8::/48"
+        aria-describedby="cdc-input-hint"></textarea>
+      <p id="cdc-input-hint" class="cdc-hint caption text-mute">
+        One IP or CIDR per line. Blank lines and <span class="code-mono">#</span> comments are
+        ignored. IPv4 and IPv6 are aggregated separately.
+      </p>
+    </div>
+
+    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <span class="eyebrow">Result</span>
+        <span id="cdc-summary" class="cdc-summary code-mono text-mute" role="status" aria-live="polite"></span>
+      </div>
+      <div id="cdc-results" class="cdc-results" aria-live="polite" aria-atomic="false">
+        <p class="cdc-empty body-sm text-mute">
+          Paste a list of IPs/CIDRs or pick an example to see the minimal covering set, any overlaps,
+          and a parsed breakdown here.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  .cdc-select {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    height: 32px;
+    min-width: 0;
+    max-width: 320px;
+    padding: 0 32px 0 12px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 13px;
+    line-height: 20px;
+    cursor: pointer;
+    text-overflow: ellipsis;
+    touch-action: manipulation;
+    transition: box-shadow 0.15s ease;
+  }
+  @media (min-width: 640px) {
+    .cdc-select {
+      width: auto;
+      min-width: 260px;
+    }
+  }
+  .cdc-select:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .cdc-select:disabled {
+    cursor: not-allowed;
+    color: var(--color-mute);
+    opacity: 0.7;
+  }
+  .cdc-select-wrap:hover .cdc-select-caret {
+    color: var(--color-body);
+  }
+
+  .cdc-input {
+    width: 100%;
+    min-height: 132px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 14px;
+    line-height: 22px;
+    resize: vertical;
+    transition: box-shadow 0.15s ease;
+  }
+  .cdc-input::placeholder {
+    color: var(--color-mute);
+  }
+  .cdc-input:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .cdc-input:focus {
+    outline: none;
+  }
+  .cdc-input:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-link);
+    outline: none;
+  }
+  .cdc-hint {
+    margin-top: 8px;
+    text-wrap: pretty;
+  }
+  .cdc-summary {
+    white-space: nowrap;
+  }
+  .cdc-results {
+    min-height: 44px;
+  }
+
+  /* ── Runtime-injected markup ─────────────────────────────────────────── */
+  :global(.cdc-block) {
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+    animation: cdc-rise 0.18s ease both;
+  }
+  :global(.cdc-block + .cdc-block) {
+    margin-top: 12px;
+  }
+  :global(.cdc-block__head) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+  :global(.cdc-line) {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 8px 14px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--color-ink);
+    word-break: break-word;
+  }
+  :global(.cdc-line + .cdc-line) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.cdc-dot) {
+    flex: 0 0 auto;
+    width: 7px;
+    height: 7px;
+    margin-top: 7px;
+    border-radius: 9999px;
+    background: var(--color-brand);
+  }
+  :global(.cdc-dot--ok) {
+    background: var(--color-success);
+  }
+  :global(.cdc-dot--bad) {
+    background: var(--color-error);
+  }
+  :global(.cdc-line__meta) {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--color-mute);
+    text-transform: none;
+    letter-spacing: 0;
+    white-space: nowrap;
+  }
+  :global(.cdc-line--bad) {
+    color: var(--color-error-deep);
+  }
+  :global(.cdc-rel) {
+    padding: 8px 14px;
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--color-ink);
+  }
+  :global(.cdc-rel + .cdc-rel) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.cdc-rel code) {
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+  :global(.cdc-none) {
+    padding: 10px 14px;
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--color-mute);
+  }
+
+  @keyframes cdc-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.cdc-block) {
+      animation: none;
+    }
+  }
+
+  :global(.cdc-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+  }
+  :global(.cdc-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.cdc-error__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.cdc-error__detail) {
+    margin-top: 2px;
+    font-size: 13px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  :global(.cdc-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+</style>
+
+<script>
+  import { escapeHtml } from '../lib/escape-html';
+
+  type Entry = { line: string; ok: boolean; version?: 4 | 6; cidr?: string; type?: string; error?: string };
+  type Overlap = { relation: string; kind: string };
+  type AggGroup = { version: 4 | 6; label: string; cidrs: string[] };
+  type Result = {
+    valid: boolean;
+    error?: string;
+    entries: Entry[];
+    overlaps: Overlap[];
+    aggregated: AggGroup[];
+    stats: { ok: number; invalid: number };
+  };
+  type Example = { id: string; label: string; input: string };
+  type EngineModule = { check: (input: string) => Result };
+
+  const ROOT_SEL = '.cdc-pg';
+  const DEBOUNCE_MS = 220;
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.cdcWired === 'true') return;
+      root.dataset.cdcWired = 'true';
+      void init(root);
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  function normaliseExamples(raw: unknown): Example[] {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((item, i) => {
+        const o = (item ?? {}) as Record<string, unknown>;
+        return {
+          id: typeof o.id === 'string' && o.id ? o.id : `example-${i + 1}`,
+          label: typeof o.label === 'string' && o.label ? o.label : `Example ${i + 1}`,
+          input: typeof o.input === 'string' ? o.input : '',
+        } satisfies Example;
+      })
+      .filter((e) => e.input.length > 0);
+  }
+
+  const ALERT_SVG =
+    '<svg class="cdc-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+
+  function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
+    summary.textContent = '';
+    container.innerHTML =
+      '<p class="cdc-empty body-sm text-mute">Paste a list of IPs/CIDRs or pick an example to see the minimal covering set, any overlaps, and a parsed breakdown here.</p>';
+  }
+
+  function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
+    summary.textContent = '';
+    container.innerHTML =
+      '<div class="cdc-error" role="alert">' +
+      ALERT_SVG +
+      '<div><p class="cdc-error__title">Nothing to check</p>' +
+      `<p class="cdc-error__detail">${escapeHtml(message)}</p></div></div>`;
+  }
+
+  function aggHtml(groups: AggGroup[]): string {
+    const cards = groups
+      .map((g) => {
+        const lines = g.cidrs
+          .map((c) => `<div class="cdc-line"><span class="cdc-dot"></span><span>${escapeHtml(c)}</span></div>`)
+          .join('');
+        return (
+          '<div class="cdc-block">' +
+          `<div class="cdc-block__head"><span>Minimal covering set — ${escapeHtml(g.label)}</span><span class="cdc-line__meta">${g.cidrs.length} block${g.cidrs.length === 1 ? '' : 's'}</span></div>` +
+          lines +
+          '</div>'
+        );
+      })
+      .join('');
+    return cards;
+  }
+
+  function overlapsHtml(overlaps: Overlap[]): string {
+    if (overlaps.length === 0) {
+      return (
+        '<div class="cdc-block"><div class="cdc-block__head"><span>Overlaps &amp; containment</span></div>' +
+        '<p class="cdc-none">None — every block is disjoint.</p></div>'
+      );
+    }
+    const rows = overlaps.map((o) => `<p class="cdc-rel">${escapeHtml(o.relation)}</p>`).join('');
+    return (
+      '<div class="cdc-block">' +
+      `<div class="cdc-block__head"><span>Overlaps &amp; containment</span><span class="cdc-line__meta">${overlaps.length} found</span></div>` +
+      rows +
+      '</div>'
+    );
+  }
+
+  function entriesHtml(entries: Entry[]): string {
+    const rows = entries
+      .map((e) => {
+        if (!e.ok) {
+          return (
+            '<div class="cdc-line cdc-line--bad"><span class="cdc-dot cdc-dot--bad"></span>' +
+            `<span>${escapeHtml(e.line)}</span>` +
+            `<span class="cdc-line__meta">${escapeHtml(e.error ?? 'invalid')}</span></div>`
+          );
+        }
+        return (
+          '<div class="cdc-line"><span class="cdc-dot cdc-dot--ok"></span>' +
+          `<span>${escapeHtml(e.cidr ?? e.line)}</span>` +
+          `<span class="cdc-line__meta">${escapeHtml(e.type ?? '')}</span></div>`
+        );
+      })
+      .join('');
+    return (
+      '<div class="cdc-block"><div class="cdc-block__head"><span>Parsed input</span>' +
+      `<span class="cdc-line__meta">${entries.length} line${entries.length === 1 ? '' : 's'}</span></div>` +
+      rows +
+      '</div>'
+    );
+  }
+
+  function renderResult(container: HTMLElement, summary: HTMLElement, result: Result): void {
+    const ok = result.stats?.ok ?? 0;
+    const invalid = result.stats?.invalid ?? 0;
+    summary.textContent = `${ok} valid${invalid ? ` · ${invalid} invalid` : ''}`;
+    container.innerHTML =
+      aggHtml(result.aggregated ?? []) +
+      overlapsHtml(result.overlaps ?? []) +
+      entriesHtml(result.entries ?? []);
+  }
+
+  async function init(root: HTMLElement): Promise<void> {
+    const input = el<HTMLTextAreaElement>(root, '#cdc-input');
+    const exampleSel = el<HTMLSelectElement>(root, '#cdc-example');
+    const resultsBox = el<HTMLElement>(root, '#cdc-results');
+    const summaryEl = el<HTMLElement>(root, '#cdc-summary');
+    if (!input || !exampleSel || !resultsBox || !summaryEl) return;
+
+    let engine: EngineModule;
+    let examples: Example[] = [];
+    try {
+      const [engineMod, examplesMod] = await Promise.all([
+        import('../lib/cidr-checker/engine'),
+        import('../lib/cidr-checker/examples'),
+      ]);
+      engine = engineMod as unknown as EngineModule;
+      examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+    } catch (err) {
+      renderError(resultsBox, summaryEl, 'The checker engine failed to load. Reload the page to try again.');
+      console.error('[CidrChecker] engine import failed:', err);
+      return;
+    }
+
+    exampleSel.innerHTML = '';
+    const customOpt = document.createElement('option');
+    customOpt.value = '-1';
+    customOpt.textContent = examples.length ? 'Custom list' : 'No examples';
+    exampleSel.appendChild(customOpt);
+    examples.forEach((ex, i) => {
+      const opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = ex.label;
+      exampleSel.appendChild(opt);
+    });
+    if (!examples.length) exampleSel.disabled = true;
+
+    function evaluate(): void {
+      const value = input!.value;
+      if (value.trim().length === 0) {
+        renderEmpty(resultsBox!, summaryEl!);
+        return;
+      }
+      let result: Result | null = null;
+      try {
+        result = engine.check(value);
+      } catch {
+        renderError(resultsBox!, summaryEl!, 'Unexpected error while checking the list.');
+        return;
+      }
+      if (!result || result.valid === false) {
+        renderError(resultsBox!, summaryEl!, result?.error ?? 'No valid IPs or CIDRs found.');
+        return;
+      }
+      renderResult(resultsBox!, summaryEl!, result);
+    }
+
+    let timer: number | undefined;
+    function scheduleEvaluate(): void {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(evaluate, DEBOUNCE_MS);
+    }
+
+    input.addEventListener('input', () => {
+      if (exampleSel.value !== '-1') exampleSel.value = '-1';
+      scheduleEvaluate();
+    });
+    exampleSel.addEventListener('change', () => {
+      const idx = Number(exampleSel.value);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+      input.value = examples[idx].input;
+      window.clearTimeout(timer);
+      evaluate();
+    });
+
+    const seed = examples[0];
+    if (seed) {
+      input.value = seed.input;
+      exampleSel.value = '0';
+      evaluate();
+    } else {
+      renderEmpty(resultsBox, summaryEl);
+    }
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

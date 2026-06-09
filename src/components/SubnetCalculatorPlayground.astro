@@ -1,0 +1,477 @@
+---
+/**
+ * SubnetCalculatorPlayground — the interactive Subnet / CIDR Calculator island.
+ *
+ * A no-framework, server-rendered shell hydrated by a single module <script>.
+ * Takes one IPv4/IPv6 address with a prefix in a labeled text input plus an
+ * example picker, and lists the network, broadcast/last, masks, host range and
+ * counts. Updates live on input — no button — and runs entirely client-side.
+ *
+ * Runtime contract (imported lazily in the script):
+ *   ../lib/subnet-calculator/engine → calculate(input: string): SubnetResult
+ *   ../lib/subnet-calculator/types  → SubnetResult { valid; error?; version?; title?; rows }
+ *   ../lib/subnet-calculator/examples → examples: { id; label; input }[]
+ */
+---
+
+<section class="snc-pg" aria-label="Subnet / CIDR Calculator playground">
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Toolbar: example picker ──────────────────────────────────────── */}
+    <div class="flex flex-col gap-1 border-b border-hairline px-4 py-3 sm:px-5">
+      <label class="eyebrow shrink-0" for="snc-example">Example</label>
+      <div class="snc-select-wrap relative min-w-0">
+        <select id="snc-example" class="snc-select code-mono" autocomplete="off">
+          <option value="">Loading examples…</option>
+        </select>
+        <svg
+          class="snc-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.4"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M4 6l4 4 4-4"></path>
+        </svg>
+      </div>
+    </div>
+
+    {/* ── Address input ────────────────────────────────────────────────── */}
+    <div class="border-b border-hairline px-4 py-4 sm:px-5">
+      <label class="eyebrow mb-2 block" for="snc-input">IP address / CIDR</label>
+      <div class="snc-input-wrap">
+        <svg
+          class="snc-input-icon pointer-events-none"
+          viewBox="0 0 20 20"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="2.75" y="4.75" width="14.5" height="10.5" rx="2"></rect>
+          <path d="M2.75 8.5h14.5"></path>
+        </svg>
+        <input
+          id="snc-input"
+          type="text"
+          class="snc-input code-mono"
+          spellcheck="false"
+          autocapitalize="off"
+          autocorrect="off"
+          autocomplete="off"
+          placeholder="192.168.1.0/24"
+          aria-describedby="snc-input-hint"
+        />
+      </div>
+      <p id="snc-input-hint" class="snc-hint caption text-mute">
+        IPv4 or IPv6 with a prefix — e.g. <span class="code-mono">10.0.0.0/8</span> or
+        <span class="code-mono">2001:db8::/48</span>. A bare address assumes /32 (or /128).
+      </p>
+    </div>
+
+    {/* ── Results panel ────────────────────────────────────────────────── */}
+    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <span class="eyebrow">Result</span>
+        <span id="snc-summary" class="snc-summary code-mono text-mute" role="status" aria-live="polite"></span>
+      </div>
+      <div id="snc-results" class="snc-results" aria-live="polite" aria-atomic="false">
+        <p class="snc-empty body-sm text-mute">
+          Type an address with a prefix or pick an example to see its network, broadcast, mask and
+          host range here.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  .snc-select {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    height: 32px;
+    min-width: 0;
+    max-width: 320px;
+    padding: 0 32px 0 12px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 13px;
+    line-height: 20px;
+    cursor: pointer;
+    text-overflow: ellipsis;
+    touch-action: manipulation;
+    transition: box-shadow 0.15s ease;
+  }
+  @media (min-width: 640px) {
+    .snc-select {
+      width: auto;
+      min-width: 260px;
+    }
+  }
+  .snc-select:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .snc-select:disabled {
+    cursor: not-allowed;
+    color: var(--color-mute);
+    opacity: 0.7;
+  }
+  .snc-select-wrap:hover .snc-select-caret {
+    color: var(--color-body);
+  }
+
+  .snc-input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .snc-input-icon {
+    position: absolute;
+    left: 14px;
+    width: 18px;
+    height: 18px;
+    color: var(--color-mute);
+    pointer-events: none;
+  }
+  .snc-input {
+    width: 100%;
+    height: 48px;
+    padding: 0 16px 0 42px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 15px;
+    line-height: 24px;
+    letter-spacing: 0.01em;
+    transition: box-shadow 0.15s ease;
+  }
+  .snc-input::placeholder {
+    color: var(--color-mute);
+  }
+  .snc-input:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .snc-input:focus {
+    outline: none;
+  }
+  .snc-input:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-link);
+    outline: none;
+  }
+  .snc-input.snc-input--error {
+    box-shadow: inset 0 0 0 1px var(--color-error);
+  }
+  .snc-input.snc-input--error:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-error);
+  }
+  .snc-hint {
+    margin-top: 8px;
+    text-wrap: pretty;
+  }
+  .snc-summary {
+    white-space: nowrap;
+  }
+  .snc-results {
+    min-height: 44px;
+  }
+
+  /* ── Runtime-injected markup (styled with :global) ──────────────────── */
+  :global(.snc-card) {
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+    animation: snc-rise 0.18s ease both;
+  }
+  :global(.snc-title) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 18px;
+    color: var(--color-ink);
+  }
+  :global(.snc-title__badge) {
+    flex: 0 0 auto;
+    font-size: 11px;
+    line-height: 16px;
+    padding: 1px 8px;
+    border-radius: 9999px;
+    background: var(--color-brand-soft);
+    color: var(--color-brand-strong);
+  }
+  :global(.snc-row) {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    gap: 12px;
+    padding: 9px 14px;
+    align-items: baseline;
+  }
+  :global(.snc-row + .snc-row) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.snc-row__k) {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 18px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+  :global(.snc-row__v) {
+    min-width: 0;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--color-ink);
+    word-break: break-word;
+  }
+  :global(.snc-row__v.is-mono) {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  @keyframes snc-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.snc-card) {
+      animation: none;
+    }
+  }
+
+  :global(.snc-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+  }
+  :global(.snc-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.snc-error__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.snc-error__detail) {
+    margin-top: 2px;
+    font-size: 13px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  :global(.snc-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+</style>
+
+<script>
+  import { escapeHtml } from '../lib/escape-html';
+
+  type Row = { label: string; value: string; mono?: boolean };
+  type Result = { valid: boolean; error?: string; version?: 4 | 6; title?: string; rows: Row[] };
+  type Example = { id: string; label: string; input: string };
+  type EngineModule = { calculate: (input: string) => Result };
+
+  const ROOT_SEL = '.snc-pg';
+  const DEBOUNCE_MS = 140;
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.sncWired === 'true') return;
+      root.dataset.sncWired = 'true';
+      void init(root);
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  function normaliseExamples(raw: unknown): Example[] {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((item, i) => {
+        const o = (item ?? {}) as Record<string, unknown>;
+        return {
+          id: typeof o.id === 'string' && o.id ? o.id : `example-${i + 1}`,
+          label: typeof o.label === 'string' && o.label ? o.label : `Example ${i + 1}`,
+          input: typeof o.input === 'string' ? o.input : '',
+        } satisfies Example;
+      })
+      .filter((e) => e.input.length > 0);
+  }
+
+  const ALERT_SVG =
+    '<svg class="snc-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+
+  function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
+    summary.textContent = '';
+    summary.classList.remove('text-error');
+    summary.classList.add('text-mute');
+    container.innerHTML =
+      '<p class="snc-empty body-sm text-mute">Type an address with a prefix or pick an example to see its network, broadcast, mask and host range here.</p>';
+  }
+
+  function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
+    summary.textContent = 'Invalid';
+    summary.classList.remove('text-mute');
+    summary.classList.add('text-error');
+    container.innerHTML =
+      '<div class="snc-error" role="alert">' +
+      ALERT_SVG +
+      '<div><p class="snc-error__title">Could not calculate this subnet</p>' +
+      `<p class="snc-error__detail">${escapeHtml(message)}</p></div></div>`;
+  }
+
+  function renderResult(container: HTMLElement, summary: HTMLElement, result: Result): void {
+    const version = result.version === 6 ? 'IPv6' : 'IPv4';
+    summary.textContent = version;
+    summary.classList.remove('text-error');
+    summary.classList.add('text-mute');
+    const rows = Array.isArray(result.rows) ? result.rows : [];
+    const rowsHtml = rows
+      .map((r) => {
+        const v = typeof r.value === 'string' ? r.value : '';
+        const cls = r.mono ? 'snc-row__v is-mono' : 'snc-row__v';
+        return (
+          '<div class="snc-row">' +
+          `<span class="snc-row__k">${escapeHtml(r.label ?? '')}</span>` +
+          `<span class="${cls}">${escapeHtml(v)}</span></div>`
+        );
+      })
+      .join('');
+    const title = result.title ?? '';
+    container.innerHTML =
+      '<div class="snc-card">' +
+      `<div class="snc-title"><span class="snc-title__badge">${version}</span><span>${escapeHtml(title)}</span></div>` +
+      rowsHtml +
+      '</div>';
+  }
+
+  async function init(root: HTMLElement): Promise<void> {
+    const input = el<HTMLInputElement>(root, '#snc-input');
+    const exampleSel = el<HTMLSelectElement>(root, '#snc-example');
+    const resultsBox = el<HTMLElement>(root, '#snc-results');
+    const summaryEl = el<HTMLElement>(root, '#snc-summary');
+    if (!input || !exampleSel || !resultsBox || !summaryEl) return;
+
+    let engine: EngineModule;
+    let examples: Example[] = [];
+    try {
+      const [engineMod, examplesMod] = await Promise.all([
+        import('../lib/subnet-calculator/engine'),
+        import('../lib/subnet-calculator/examples'),
+      ]);
+      engine = engineMod as unknown as EngineModule;
+      examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+    } catch (err) {
+      renderError(resultsBox, summaryEl, 'The calculator engine failed to load. Reload the page to try again.');
+      console.error('[SubnetCalculator] engine import failed:', err);
+      return;
+    }
+
+    exampleSel.innerHTML = '';
+    const customOpt = document.createElement('option');
+    customOpt.value = '-1';
+    customOpt.textContent = examples.length ? 'Custom input' : 'No examples';
+    exampleSel.appendChild(customOpt);
+    examples.forEach((ex, i) => {
+      const opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = ex.label;
+      exampleSel.appendChild(opt);
+    });
+    if (!examples.length) exampleSel.disabled = true;
+
+    function evaluate(): void {
+      const value = input!.value.trim();
+      if (value.length === 0) {
+        input!.classList.remove('snc-input--error');
+        renderEmpty(resultsBox!, summaryEl!);
+        return;
+      }
+      let result: Result | null = null;
+      try {
+        result = engine.calculate(value);
+      } catch {
+        input!.classList.add('snc-input--error');
+        renderError(resultsBox!, summaryEl!, 'Unexpected error while calculating.');
+        return;
+      }
+      if (!result || result.valid === false) {
+        input!.classList.add('snc-input--error');
+        renderError(resultsBox!, summaryEl!, result?.error ?? 'This is not a valid address or CIDR.');
+        return;
+      }
+      input!.classList.remove('snc-input--error');
+      renderResult(resultsBox!, summaryEl!, result);
+    }
+
+    let timer: number | undefined;
+    function scheduleEvaluate(): void {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(evaluate, DEBOUNCE_MS);
+    }
+
+    input.addEventListener('input', () => {
+      if (exampleSel.value !== '-1') exampleSel.value = '-1';
+      scheduleEvaluate();
+    });
+    exampleSel.addEventListener('change', () => {
+      const idx = Number(exampleSel.value);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+      input.value = examples[idx].input;
+      window.clearTimeout(timer);
+      evaluate();
+    });
+
+    const seed = examples[0];
+    if (seed) {
+      input.value = seed.input;
+      exampleSel.value = '0';
+      evaluate();
+    } else {
+      renderEmpty(resultsBox, summaryEl);
+    }
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

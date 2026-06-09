@@ -170,6 +170,57 @@ export const tools: Tool[] = [
     ],
     accent: 'ship',
   },
+  {
+    slug: 'subnet-calculator',
+    name: 'Subnet Calculator',
+    tagline: 'Network, broadcast, mask and host range from any IPv4/IPv6 CIDR.',
+    description:
+      'Enter an IPv4 or IPv6 address with a prefix and get the network and broadcast addresses, netmask, wildcard, usable host range and address counts. Pure client-side.',
+    status: 'live',
+    category: 'Networking',
+    keywords: [
+      'subnet calculator',
+      'cidr calculator',
+      'ip subnet calculator',
+      'ipv6 subnet calculator',
+      'netmask calculator',
+    ],
+    accent: 'develop',
+  },
+  {
+    slug: 'ip-address-converter',
+    name: 'IP Address Converter',
+    tagline: 'Convert an IP between dotted decimal, integer, hex and binary.',
+    description:
+      'Paste an IPv4 or IPv6 address in any form — dotted decimal, integer, hexadecimal or binary — and see every representation at once. Pure client-side.',
+    status: 'live',
+    category: 'Networking',
+    keywords: [
+      'ip to decimal',
+      'ip address to integer',
+      'ip to hex',
+      'ip to binary converter',
+      'ipv6 to integer',
+    ],
+    accent: 'preview',
+  },
+  {
+    slug: 'cidr-checker',
+    name: 'CIDR / Subnet Checker',
+    tagline: 'Aggregate CIDRs and find overlaps or containment in a list.',
+    description:
+      'Paste a list of IPs/CIDRs to find the minimal covering set, spot overlapping or contained ranges, and normalise each entry. Pure client-side.',
+    status: 'live',
+    category: 'Networking',
+    keywords: [
+      'cidr aggregator',
+      'cidr overlap checker',
+      'subnet overlap checker',
+      'merge cidr ranges',
+      'does cidr contain ip',
+    ],
+    accent: 'ship',
+  },
 ];
 
 export const liveTools = tools.filter((t) => t.status === 'live');
