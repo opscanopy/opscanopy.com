@@ -1,0 +1,749 @@
+---
+/**
+ * JwtDecoderPlayground — the interactive JWT Decoder island.
+ *
+ * Paste a compact JWS (header.payload.signature) and it decodes — fully
+ * client-side — the header and payload as pretty JSON, the registered claims
+ * (with freshness tones), and the raw signature. If a secret / public key is
+ * supplied it also runs an async signature verification and shows a badge.
+ * Decoding is live (debounced); verification reuses the same debounce.
+ *
+ * Runtime contract (lazy-imported):
+ *   ../lib/jwt-decoder/engine
+ *     → decode(token: string, nowMs?: number): JwtResult
+ *     → verify(token: string, secret: string): Promise<VerifyResult>
+ *   ../lib/jwt-decoder/examples → examples: { id; label; token }[]
+ */
+---
+
+<section class="jwt-pg" aria-label="JWT Decoder playground">
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    <div class="flex flex-col gap-1 border-b border-hairline px-4 py-3 sm:px-5">
+      <label class="eyebrow shrink-0" for="jwt-example">Example</label>
+      <div class="jwt-select-wrap relative min-w-0">
+        <select id="jwt-example" class="jwt-select code-mono" autocomplete="off">
+          <option value="">Loading examples…</option>
+        </select>
+        <svg
+          class="jwt-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.4"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M4 6l4 4 4-4"></path>
+        </svg>
+      </div>
+    </div>
+
+    <div class="border-b border-hairline px-4 py-4 sm:px-5">
+      <label class="eyebrow mb-2 block" for="jwt-input">JWT</label>
+      <textarea
+        id="jwt-input"
+        class="jwt-input code-mono"
+        spellcheck="false"
+        autocapitalize="off"
+        autocorrect="off"
+        autocomplete="off"
+        rows="5"
+        placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+        aria-describedby="jwt-input-hint"></textarea>
+
+      <label class="eyebrow mt-4 mb-2 block" for="jwt-secret"
+        >Secret / public key (optional)</label
+      >
+      <input
+        id="jwt-secret"
+        class="jwt-secret code-mono"
+        type="text"
+        spellcheck="false"
+        autocapitalize="off"
+        autocorrect="off"
+        autocomplete="off"
+        placeholder="your-256-bit-secret   ·or·   -----BEGIN PUBLIC KEY-----…"
+        aria-describedby="jwt-input-hint"
+      />
+      <p id="jwt-input-hint" class="jwt-hint caption text-mute">
+        Everything stays in your browser — nothing is sent anywhere. HS256/384/512 verify against a
+        shared secret; RS256/384/512 need a PEM <span class="code-mono">BEGIN PUBLIC KEY</span>.
+      </p>
+    </div>
+
+    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <span class="eyebrow">Result</span>
+        <span id="jwt-summary" class="jwt-summary code-mono text-mute" role="status" aria-live="polite"
+        ></span>
+      </div>
+      <div id="jwt-results" class="jwt-results" aria-live="polite" aria-atomic="false">
+        <p class="jwt-empty body-sm text-mute">
+          Paste a JWT or pick an example to see its header, payload, claims, and signature decoded
+          here.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  .jwt-select {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    height: 32px;
+    min-width: 0;
+    max-width: 320px;
+    padding: 0 32px 0 12px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 13px;
+    line-height: 20px;
+    cursor: pointer;
+    text-overflow: ellipsis;
+    touch-action: manipulation;
+    transition: box-shadow 0.15s ease;
+  }
+  @media (min-width: 640px) {
+    .jwt-select {
+      width: auto;
+      min-width: 260px;
+    }
+  }
+  .jwt-select:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .jwt-select:disabled {
+    cursor: not-allowed;
+    color: var(--color-mute);
+    opacity: 0.7;
+  }
+  .jwt-select-wrap:hover .jwt-select-caret {
+    color: var(--color-body);
+  }
+
+  .jwt-input {
+    width: 100%;
+    min-height: 116px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 13px;
+    line-height: 20px;
+    word-break: break-all;
+    resize: vertical;
+    transition: box-shadow 0.15s ease;
+  }
+  .jwt-secret {
+    width: 100%;
+    height: 40px;
+    padding: 0 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 13px;
+    line-height: 20px;
+    transition: box-shadow 0.15s ease;
+  }
+  .jwt-input::placeholder,
+  .jwt-secret::placeholder {
+    color: var(--color-mute);
+  }
+  .jwt-input:hover,
+  .jwt-secret:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .jwt-input:focus,
+  .jwt-secret:focus {
+    outline: none;
+  }
+  .jwt-input:focus-visible,
+  .jwt-secret:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-link);
+    outline: none;
+  }
+  .jwt-hint {
+    margin-top: 8px;
+    text-wrap: pretty;
+  }
+  .jwt-summary {
+    white-space: nowrap;
+  }
+  .jwt-results {
+    min-height: 44px;
+  }
+
+  /* ── Runtime-injected markup ─────────────────────────────────────────── */
+  :global(.jwt-block) {
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+    animation: jwt-rise 0.18s ease both;
+  }
+  :global(.jwt-block + .jwt-block) {
+    margin-top: 12px;
+  }
+  :global(.jwt-block__head) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+  :global(.jwt-block__meta) {
+    font-size: 11px;
+    color: var(--color-mute);
+    text-transform: none;
+    letter-spacing: 0;
+    white-space: nowrap;
+  }
+  :global(.jwt-code) {
+    margin: 0;
+    padding: 12px 14px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-ink);
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-x: auto;
+  }
+  :global(.jwt-sig) {
+    padding: 12px 14px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-ink);
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  /* Claim rows */
+  :global(.jwt-row) {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 8px 14px;
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--color-body);
+  }
+  :global(.jwt-row + .jwt-row) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.jwt-row__label) {
+    flex: 0 0 auto;
+    min-width: 132px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    color: var(--color-mute);
+  }
+  :global(.jwt-row__value) {
+    flex: 1 1 auto;
+    word-break: break-word;
+  }
+  :global(.jwt-row__value--mono) {
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+  :global(.jwt-row--warn .jwt-row__value) {
+    color: var(--color-warning-deep);
+  }
+  :global(.jwt-row--error .jwt-row__value) {
+    color: var(--color-error-deep);
+  }
+  :global(.jwt-none) {
+    padding: 10px 14px;
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--color-mute);
+  }
+
+  /* Warnings list */
+  :global(.jwt-warn) {
+    display: flex;
+    gap: 10px;
+    padding: 8px 14px;
+    font-size: 13px;
+    line-height: 18px;
+    color: var(--color-warning-deep);
+  }
+  :global(.jwt-warn + .jwt-warn) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.jwt-warn__dot) {
+    flex: 0 0 auto;
+    width: 7px;
+    height: 7px;
+    margin-top: 6px;
+    border-radius: 9999px;
+    background: var(--color-warning);
+  }
+
+  /* Verification line + badge */
+  :global(.jwt-verify) {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    font-size: 13px;
+    line-height: 18px;
+    color: var(--color-body);
+  }
+  :global(.jwt-badge) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 10px;
+    border-radius: 9999px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    line-height: 18px;
+  }
+  :global(.jwt-badge__dot) {
+    width: 7px;
+    height: 7px;
+    border-radius: 9999px;
+    background: currentColor;
+  }
+  :global(.jwt-badge--valid) {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+  }
+  :global(.jwt-badge--invalid) {
+    color: var(--color-error-deep);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+  }
+  :global(.jwt-badge--muted) {
+    color: var(--color-mute);
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  :global(.jwt-verify__detail) {
+    flex: 1 1 auto;
+    color: var(--color-mute);
+    word-break: break-word;
+  }
+
+  @keyframes jwt-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.jwt-block) {
+      animation: none;
+    }
+  }
+
+  :global(.jwt-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+  }
+  :global(.jwt-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.jwt-error__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.jwt-error__detail) {
+    margin-top: 2px;
+    font-size: 13px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  :global(.jwt-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+</style>
+
+<script>
+  import { escapeHtml } from '../lib/escape-html';
+
+  type ClaimTone = 'ok' | 'warn' | 'error';
+  type ClaimRow = { label: string; value: string; mono?: boolean; tone?: ClaimTone };
+  type JwtResult = {
+    valid: boolean;
+    error?: string;
+    alg?: string;
+    typ?: string;
+    header?: string;
+    payload?: string;
+    signatureB64?: string;
+    claims: ClaimRow[];
+    warnings: string[];
+  };
+  type VerifyStatus = 'valid' | 'invalid' | 'unsupported' | 'error';
+  type VerifyResult = { status: VerifyStatus; detail: string };
+  type Example = { id: string; label: string; token: string };
+  type EngineModule = {
+    decode: (token: string, nowMs?: number) => JwtResult;
+    verify: (token: string, secret: string) => Promise<VerifyResult>;
+  };
+
+  const ROOT_SEL = '.jwt-pg';
+  const DEBOUNCE_MS = 220;
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.jwtWired === 'true') return;
+      root.dataset.jwtWired = 'true';
+      void init(root);
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  function normaliseExamples(raw: unknown): Example[] {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((item, i) => {
+        const o = (item ?? {}) as Record<string, unknown>;
+        return {
+          id: typeof o.id === 'string' && o.id ? o.id : `example-${i + 1}`,
+          label: typeof o.label === 'string' && o.label ? o.label : `Example ${i + 1}`,
+          token: typeof o.token === 'string' ? o.token : '',
+        } satisfies Example;
+      })
+      .filter((e) => e.token.length > 0);
+  }
+
+  const ALERT_SVG =
+    '<svg class="jwt-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+
+  function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
+    summary.textContent = '';
+    container.innerHTML =
+      '<p class="jwt-empty body-sm text-mute">Paste a JWT or pick an example to see its header, payload, claims, and signature decoded here.</p>';
+  }
+
+  function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
+    summary.textContent = '';
+    container.innerHTML =
+      '<div class="jwt-error" role="alert">' +
+      ALERT_SVG +
+      '<div><p class="jwt-error__title">Can’t decode this token</p>' +
+      `<p class="jwt-error__detail">${escapeHtml(message)}</p></div></div>`;
+  }
+
+  function jsonBlock(title: string, json: string, meta?: string): string {
+    const metaHtml = meta ? `<span class="jwt-block__meta">${escapeHtml(meta)}</span>` : '';
+    return (
+      '<div class="jwt-block">' +
+      `<div class="jwt-block__head"><span>${escapeHtml(title)}</span>${metaHtml}</div>` +
+      `<pre class="jwt-code">${escapeHtml(json)}</pre>` +
+      '</div>'
+    );
+  }
+
+  function claimsBlock(claims: ClaimRow[]): string {
+    if (claims.length === 0) {
+      return (
+        '<div class="jwt-block"><div class="jwt-block__head"><span>Registered claims</span></div>' +
+        '<p class="jwt-none">No registered claims (iss/sub/aud/exp/nbf/iat/jti) in the payload.</p></div>'
+      );
+    }
+    const rows = claims
+      .map((c) => {
+        const toneCls = c.tone === 'warn' ? ' jwt-row--warn' : c.tone === 'error' ? ' jwt-row--error' : '';
+        const valueCls = 'jwt-row__value' + (c.mono ? ' jwt-row__value--mono' : '');
+        return (
+          `<div class="jwt-row${toneCls}">` +
+          `<span class="jwt-row__label">${escapeHtml(c.label)}</span>` +
+          `<span class="${valueCls}">${escapeHtml(c.value)}</span>` +
+          '</div>'
+        );
+      })
+      .join('');
+    return (
+      '<div class="jwt-block">' +
+      `<div class="jwt-block__head"><span>Registered claims</span><span class="jwt-block__meta">${claims.length} claim${claims.length === 1 ? '' : 's'}</span></div>` +
+      rows +
+      '</div>'
+    );
+  }
+
+  function signatureBlock(sig: string | undefined): string {
+    const raw = sig ?? '';
+    const body = raw.length
+      ? `<div class="jwt-sig">${escapeHtml(raw)}</div>`
+      : '<p class="jwt-none">Empty — this token carries no signature segment.</p>';
+    return (
+      '<div class="jwt-block"><div class="jwt-block__head"><span>Signature (base64url)</span></div>' +
+      body +
+      '</div>'
+    );
+  }
+
+  function warningsBlock(warnings: string[]): string {
+    if (!warnings.length) return '';
+    const rows = warnings
+      .map(
+        (w) =>
+          '<div class="jwt-warn"><span class="jwt-warn__dot"></span>' +
+          `<span>${escapeHtml(w)}</span></div>`,
+      )
+      .join('');
+    return (
+      '<div class="jwt-block"><div class="jwt-block__head"><span>Warnings</span>' +
+      `<span class="jwt-block__meta">${warnings.length}</span></div>` +
+      rows +
+      '</div>'
+    );
+  }
+
+  /** Verification block; `state` controls the badge while an async check resolves. */
+  function verifyBlock(state: 'no-key' | 'pending' | VerifyStatus, detail: string): string {
+    let badgeCls = 'jwt-badge--muted';
+    let badgeText = 'no key';
+    if (state === 'no-key') {
+      badgeCls = 'jwt-badge--muted';
+      badgeText = 'no key';
+    } else if (state === 'pending') {
+      badgeCls = 'jwt-badge--muted';
+      badgeText = 'checking…';
+    } else if (state === 'valid') {
+      badgeCls = 'jwt-badge--valid';
+      badgeText = 'valid';
+    } else if (state === 'invalid') {
+      badgeCls = 'jwt-badge--invalid';
+      badgeText = 'invalid';
+    } else if (state === 'unsupported') {
+      badgeCls = 'jwt-badge--muted';
+      badgeText = 'unsupported';
+    } else {
+      badgeCls = 'jwt-badge--muted';
+      badgeText = 'error';
+    }
+    return (
+      '<div class="jwt-block"><div class="jwt-block__head"><span>Signature verification</span></div>' +
+      '<div class="jwt-verify">' +
+      `<span class="jwt-badge ${badgeCls}"><span class="jwt-badge__dot"></span>${escapeHtml(badgeText)}</span>` +
+      `<span class="jwt-verify__detail">${escapeHtml(detail)}</span>` +
+      '</div></div>'
+    );
+  }
+
+  function renderResult(
+    container: HTMLElement,
+    summary: HTMLElement,
+    result: JwtResult,
+    verifyHtml: string,
+  ): void {
+    const bits: string[] = [];
+    if (result.alg) bits.push(result.alg);
+    if (result.typ) bits.push(result.typ);
+    summary.textContent = bits.join(' · ');
+    container.innerHTML =
+      jsonBlock('Header', result.header ?? '{}', result.alg) +
+      jsonBlock('Payload', result.payload ?? '{}') +
+      claimsBlock(result.claims ?? []) +
+      signatureBlock(result.signatureB64) +
+      warningsBlock(result.warnings ?? []) +
+      verifyHtml;
+  }
+
+  async function init(root: HTMLElement): Promise<void> {
+    const input = el<HTMLTextAreaElement>(root, '#jwt-input');
+    const secretInput = el<HTMLInputElement>(root, '#jwt-secret');
+    const exampleSel = el<HTMLSelectElement>(root, '#jwt-example');
+    const resultsBox = el<HTMLElement>(root, '#jwt-results');
+    const summaryEl = el<HTMLElement>(root, '#jwt-summary');
+    if (!input || !secretInput || !exampleSel || !resultsBox || !summaryEl) return;
+
+    let engine: EngineModule;
+    let examples: Example[] = [];
+    try {
+      const [engineMod, examplesMod] = await Promise.all([
+        import('../lib/jwt-decoder/engine'),
+        import('../lib/jwt-decoder/examples'),
+      ]);
+      engine = engineMod as unknown as EngineModule;
+      examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+    } catch (err) {
+      renderError(resultsBox, summaryEl, 'The decoder engine failed to load. Reload the page to try again.');
+      console.error('[JwtDecoder] engine import failed:', err);
+      return;
+    }
+
+    exampleSel.innerHTML = '';
+    const customOpt = document.createElement('option');
+    customOpt.value = '-1';
+    customOpt.textContent = examples.length ? 'Custom' : 'No examples';
+    exampleSel.appendChild(customOpt);
+    examples.forEach((ex, i) => {
+      const opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = ex.label;
+      exampleSel.appendChild(opt);
+    });
+    if (!examples.length) exampleSel.disabled = true;
+
+    // Monotonic token guard so a slow verify() never overwrites a newer render.
+    let runId = 0;
+
+    function evaluate(): void {
+      const value = input!.value;
+      if (value.trim().length === 0) {
+        runId++;
+        renderEmpty(resultsBox!, summaryEl!);
+        return;
+      }
+
+      const current = ++runId;
+      let result: JwtResult | null = null;
+      try {
+        result = engine.decode(value);
+      } catch {
+        renderError(resultsBox!, summaryEl!, 'Unexpected error while decoding the token.');
+        return;
+      }
+      if (!result || result.valid === false) {
+        renderError(resultsBox!, summaryEl!, result?.error ?? 'This does not look like a JWT.');
+        return;
+      }
+
+      const secret = secretInput!.value;
+      const hasSecret = secret.trim().length > 0;
+      const initialVerify = hasSecret
+        ? verifyBlock('pending', 'Checking the signature with the supplied secret / key…')
+        : verifyBlock('no-key', 'Add a secret or PEM public key above to verify the signature.');
+      renderResult(resultsBox!, summaryEl!, result, initialVerify);
+
+      if (!hasSecret) return;
+
+      void engine
+        .verify(value, secret)
+        .then((res) => {
+          if (current !== runId) return; // a newer evaluate() superseded this one
+          patchVerify(res);
+        })
+        .catch(() => {
+          if (current !== runId) return;
+          patchVerify({ status: 'error', detail: 'Verification failed unexpectedly.' });
+        });
+    }
+
+    /** Replace just the verification block in place (header/payload/claims stay put). */
+    function setVerifyBlock(status: VerifyResult['status'] | 'pending' | 'no-key', detail: string): void {
+      const blocks = resultsBox!.querySelectorAll('.jwt-block');
+      const last = blocks[blocks.length - 1];
+      if (!last) return;
+      const tmp = document.createElement('div');
+      tmp.innerHTML = verifyBlock(status, detail);
+      const fresh = tmp.firstElementChild;
+      if (fresh) last.replaceWith(fresh);
+    }
+    function patchVerify(res: VerifyResult): void {
+      setVerifyBlock(res.status, res.detail);
+    }
+
+    /** Editing only the secret must not re-decode / re-flash the whole panel — just re-verify. */
+    function verifyOnly(): void {
+      const value = input!.value;
+      if (value.trim().length === 0 || !resultsBox!.querySelector('.jwt-block')) {
+        scheduleEvaluate();
+        return;
+      }
+      const secret = secretInput!.value;
+      const current = ++runId;
+      if (secret.trim().length === 0) {
+        setVerifyBlock('no-key', 'Add a secret or PEM public key above to verify the signature.');
+        return;
+      }
+      setVerifyBlock('pending', 'Checking the signature with the supplied secret / key…');
+      void engine
+        .verify(value, secret)
+        .then((res) => { if (current === runId) patchVerify(res); })
+        .catch(() => { if (current === runId) patchVerify({ status: 'error', detail: 'Verification failed unexpectedly.' }); });
+    }
+
+    let timer: number | undefined;
+    function scheduleEvaluate(): void {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(evaluate, DEBOUNCE_MS);
+    }
+    let secretTimer: number | undefined;
+    function scheduleVerifyOnly(): void {
+      window.clearTimeout(secretTimer);
+      secretTimer = window.setTimeout(verifyOnly, DEBOUNCE_MS);
+    }
+
+    function onUserInput(): void {
+      if (exampleSel!.value !== '-1') exampleSel!.value = '-1';
+      scheduleEvaluate();
+    }
+
+    input.addEventListener('input', onUserInput);
+    // Editing only the secret re-verifies in place (no decode, no panel flash).
+    secretInput.addEventListener('input', scheduleVerifyOnly);
+    exampleSel.addEventListener('change', () => {
+      const idx = Number(exampleSel.value);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+      input.value = examples[idx].token;
+      window.clearTimeout(timer);
+      evaluate();
+    });
+
+    const seed = examples[0];
+    if (seed) {
+      input.value = seed.token;
+      exampleSel.value = '0';
+      evaluate();
+    } else {
+      renderEmpty(resultsBox, summaryEl);
+    }
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

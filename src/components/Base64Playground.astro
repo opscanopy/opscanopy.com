@@ -1,0 +1,745 @@
+---
+/**
+ * Base64Playground — the interactive Base64 Encoder / Decoder island.
+ *
+ * A bespoke input -> output converter (not a rows table): type or paste text /
+ * base64, flip the Encode|Decode toggle and the URL-safe switch, and the result
+ * renders live (debounced). Card chrome is modeled on IpConverterPlayground —
+ * light surface, scoped CSS, :global runtime markup — but the body is a single
+ * input textarea above a read-only output area with a Copy button. Fully
+ * client-side: no upload, no network.
+ *
+ * Runtime contract (lazy-imported):
+ *   ../lib/base64-codec/engine →
+ *     convert(input: string, mode: 'encode' | 'decode', urlSafe: boolean)
+ *       => { valid: boolean; error?: string; output: string; bytes?: number; note?: string }
+ *   ../lib/base64-codec/examples →
+ *     examples: { id; label; input; mode: 'encode' | 'decode'; urlSafe: boolean }[]
+ */
+---
+
+<section class="b64-pg" aria-label="Base64 encoder and decoder playground">
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Toolbar: example picker + mode toggle + url-safe switch ───────── */}
+    <div
+      class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-end sm:justify-between sm:px-5"
+    >
+      <div class="flex min-w-0 flex-col gap-1">
+        <label class="eyebrow shrink-0" for="b64-example">Example</label>
+        <div class="b64-select-wrap relative min-w-0">
+          <select id="b64-example" class="b64-select code-mono" autocomplete="off">
+            <option value="">Loading examples…</option>
+          </select>
+          <svg
+            class="b64-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M4 6l4 4 4-4"></path>
+          </svg>
+        </div>
+      </div>
+
+      <div class="flex shrink-0 flex-wrap items-center gap-4">
+        <div
+          id="b64-mode"
+          class="b64-seg"
+          role="group"
+          aria-label="Direction"
+        >
+          <button
+            type="button"
+            class="b64-seg__btn is-active"
+            aria-pressed="true"
+            data-mode="encode"
+          >
+            Encode
+          </button>
+          <button
+            type="button"
+            class="b64-seg__btn"
+            aria-pressed="false"
+            data-mode="decode"
+          >
+            Decode
+          </button>
+        </div>
+
+        <label class="b64-check" for="b64-urlsafe">
+          <input id="b64-urlsafe" type="checkbox" class="b64-check__box" autocomplete="off" />
+          <span class="b64-check__label">URL-safe</span>
+        </label>
+      </div>
+    </div>
+
+    {/* ── Input ────────────────────────────────────────────────────────── */}
+    <div class="border-b border-hairline px-4 py-4 sm:px-5">
+      <label id="b64-input-label" class="eyebrow mb-2 block" for="b64-input">Text to encode</label>
+      <textarea
+        id="b64-input"
+        class="b64-input code-mono"
+        spellcheck="false"
+        autocapitalize="off"
+        autocorrect="off"
+        autocomplete="off"
+        rows="4"
+        placeholder="hello world"
+        aria-describedby="b64-input-hint"></textarea>
+      <p id="b64-input-hint" class="b64-hint caption text-mute">
+        UTF-8 safe both ways. Decoding accepts standard <span class="code-mono">+/</span> or url-safe
+        <span class="code-mono">-_</span> alphabets, with or without <span class="code-mono">=</span>
+        padding; whitespace is ignored.
+      </p>
+    </div>
+
+    {/* ── Output ───────────────────────────────────────────────────────── */}
+    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <span id="b64-output-label" class="eyebrow">Base64</span>
+        <div class="flex shrink-0 items-center gap-3">
+          <span id="b64-summary" class="b64-summary code-mono text-mute" role="status" aria-live="polite"></span>
+          <button
+            id="b64-copy"
+            type="button"
+            class="b64-copy"
+            data-default-label="Copy"
+            aria-label="Copy result"
+            disabled
+          >
+            <svg
+              class="h-3.5 w-3.5 shrink-0"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="5.5" y="5.5" width="8" height="8" rx="1.5"></rect>
+              <path d="M3.5 10.5h-.5a1 1 0 01-1-1v-6a1 1 0 011-1h6a1 1 0 011 1v.5"></path>
+            </svg>
+            <span class="b64-copy-label">Copy</span>
+          </button>
+        </div>
+      </div>
+      <div id="b64-output" class="b64-output" aria-live="polite" aria-atomic="false">
+        <p class="b64-empty body-sm text-mute">
+          Type or paste on the left, then flip Encode / Decode — the result appears here, ready to
+          copy.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  {/* Polite announcer for clipboard feedback. */}
+  <span id="b64-announce" class="sr-only" role="status" aria-live="polite"></span>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  /* Example picker — the shared 6px in-app form control. */
+  .b64-select {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    height: 32px;
+    min-width: 0;
+    max-width: 320px;
+    padding: 0 32px 0 12px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 13px;
+    line-height: 20px;
+    cursor: pointer;
+    text-overflow: ellipsis;
+    touch-action: manipulation;
+    transition: box-shadow 0.15s ease;
+  }
+  @media (min-width: 640px) {
+    .b64-select {
+      width: auto;
+      min-width: 240px;
+    }
+  }
+  .b64-select:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .b64-select:disabled {
+    cursor: not-allowed;
+    color: var(--color-mute);
+    opacity: 0.7;
+  }
+  .b64-select-wrap:hover .b64-select-caret {
+    color: var(--color-body);
+  }
+
+  /* Segmented Encode | Decode toggle. */
+  .b64-seg {
+    display: inline-flex;
+    padding: 2px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+  .b64-seg__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 76px;
+    height: 28px;
+    padding: 0 14px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--color-mute);
+    background: transparent;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .b64-seg__btn:hover:not(.is-active) {
+    color: var(--color-body);
+  }
+  .b64-seg__btn.is-active {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+  .b64-seg__btn:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 2px;
+  }
+
+  /* URL-safe checkbox. */
+  .b64-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .b64-check__box {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    accent-color: var(--color-brand);
+    cursor: pointer;
+  }
+  .b64-check__box:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 2px;
+  }
+  .b64-check__label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--color-body);
+  }
+
+  /* Input textarea. */
+  .b64-input {
+    width: 100%;
+    min-height: 108px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 14px;
+    line-height: 22px;
+    resize: vertical;
+    word-break: break-word;
+    transition: box-shadow 0.15s ease;
+  }
+  .b64-input::placeholder {
+    color: var(--color-mute);
+  }
+  .b64-input:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .b64-input:focus {
+    outline: none;
+  }
+  .b64-input:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-link);
+    outline: none;
+  }
+  .b64-input.b64-input--error {
+    box-shadow: inset 0 0 0 1px var(--color-error);
+  }
+  .b64-input.b64-input--error:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-error);
+  }
+  .b64-hint {
+    margin-top: 8px;
+    text-wrap: pretty;
+  }
+
+  .b64-summary {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  /* Copy button — compact ghost control on the light surface. */
+  .b64-copy {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-hairline);
+    background: var(--color-canvas);
+    color: var(--color-body);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: box-shadow 0.15s ease, color 0.15s ease;
+  }
+  .b64-copy:hover:not(:disabled) {
+    color: var(--color-ink);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .b64-copy:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 2px;
+  }
+  .b64-copy:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .b64-output {
+    min-height: 64px;
+  }
+
+  /* ── Runtime-injected markup ─────────────────────────────────────────── */
+  :global(.b64-result) {
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+    animation: b64-rise 0.18s ease both;
+  }
+  :global(.b64-result__body) {
+    margin: 0;
+    padding: 12px 14px;
+    max-height: 320px;
+    overflow: auto;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--color-ink);
+    white-space: pre-wrap;
+    word-break: break-all;
+    overflow-wrap: anywhere;
+  }
+  :global(.b64-result__body.is-empty-text) {
+    color: var(--color-mute);
+    font-style: italic;
+    word-break: normal;
+  }
+  :global(.b64-result__meta) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    padding: 8px 14px;
+    border-top: 1px solid var(--color-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    color: var(--color-mute);
+  }
+  :global(.b64-result__note) {
+    color: var(--color-brand-strong);
+  }
+
+  @keyframes b64-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.b64-result) {
+      animation: none;
+    }
+  }
+
+  :global(.b64-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+  }
+  :global(.b64-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.b64-error__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.b64-error__detail) {
+    margin-top: 2px;
+    font-size: 13px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  :global(.b64-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+</style>
+
+<script>
+  import { escapeHtml } from '../lib/escape-html';
+
+  type Mode = 'encode' | 'decode';
+  type Result = { valid: boolean; error?: string; output: string; bytes?: number; note?: string };
+  type Example = { id: string; label: string; input: string; mode: Mode; urlSafe: boolean };
+  type EngineModule = { convert: (input: string, mode: Mode, urlSafe: boolean) => Result };
+
+  const ROOT_SEL = '.b64-pg';
+  const DEBOUNCE_MS = 140;
+  const COPIED_RESET_MS = 1800;
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.b64Wired === 'true') return;
+      root.dataset.b64Wired = 'true';
+      void init(root);
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  function normaliseExamples(raw: unknown): Example[] {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((item, i) => {
+        const o = (item ?? {}) as Record<string, unknown>;
+        return {
+          id: typeof o.id === 'string' && o.id ? o.id : `example-${i + 1}`,
+          label: typeof o.label === 'string' && o.label ? o.label : `Example ${i + 1}`,
+          input: typeof o.input === 'string' ? o.input : '',
+          mode: o.mode === 'decode' ? 'decode' : 'encode',
+          urlSafe: o.urlSafe === true,
+        } satisfies Example;
+      })
+      .filter((e) => e.input.length > 0);
+  }
+
+  const ALERT_SVG =
+    '<svg class="b64-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+
+  const EMPTY_HTML =
+    '<p class="b64-empty body-sm text-mute">Type or paste on the left, then flip Encode / Decode — the result appears here, ready to copy.</p>';
+
+  async function copyText(text: string): Promise<boolean> {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      /* fall through to legacy path */
+    }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'absolute';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function init(root: HTMLElement): Promise<void> {
+    const input = el<HTMLTextAreaElement>(root, '#b64-input');
+    const inputLabel = el<HTMLElement>(root, '#b64-input-label');
+    const outputLabel = el<HTMLElement>(root, '#b64-output-label');
+    const exampleSel = el<HTMLSelectElement>(root, '#b64-example');
+    const modeGroup = el<HTMLElement>(root, '#b64-mode');
+    const urlSafeBox = el<HTMLInputElement>(root, '#b64-urlsafe');
+    const outputBox = el<HTMLElement>(root, '#b64-output');
+    const summaryEl = el<HTMLElement>(root, '#b64-summary');
+    const copyBtn = el<HTMLButtonElement>(root, '#b64-copy');
+    const announce = el<HTMLElement>(root, '#b64-announce');
+    if (
+      !input ||
+      !inputLabel ||
+      !outputLabel ||
+      !exampleSel ||
+      !modeGroup ||
+      !urlSafeBox ||
+      !outputBox ||
+      !summaryEl ||
+      !copyBtn
+    ) {
+      return;
+    }
+
+    const modeBtns = Array.from(modeGroup.querySelectorAll<HTMLButtonElement>('.b64-seg__btn'));
+
+    let engine: EngineModule;
+    let examples: Example[] = [];
+    try {
+      const [engineMod, examplesMod] = await Promise.all([
+        import('../lib/base64-codec/engine'),
+        import('../lib/base64-codec/examples'),
+      ]);
+      engine = engineMod as unknown as EngineModule;
+      examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+    } catch (err) {
+      renderError(outputBox, summaryEl, copyBtn, 'The converter engine failed to load. Reload the page to try again.');
+      // eslint-disable-next-line no-console
+      console.error('[Base64] engine import failed:', err);
+      return;
+    }
+
+    // ── State ───────────────────────────────────────────────────────────────
+    let mode: Mode = 'encode';
+    let lastOutput = '';
+
+    function getMode(): Mode {
+      return mode;
+    }
+
+    /** Sync the toggle's active button + a11y state and the input/output labels. */
+    function applyMode(next: Mode): void {
+      mode = next === 'decode' ? 'decode' : 'encode';
+      modeBtns.forEach((b) => {
+        const active = b.dataset.mode === mode;
+        b.classList.toggle('is-active', active);
+        b.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+      const encoding = mode === 'encode';
+      inputLabel!.textContent = encoding ? 'Text to encode' : 'Base64 to decode';
+      outputLabel!.textContent = encoding ? 'Base64' : 'Decoded text';
+      input!.setAttribute(
+        'placeholder',
+        encoding ? 'hello world' : 'aGVsbG8gd29ybGQ='
+      );
+      copyBtn!.setAttribute('aria-label', encoding ? 'Copy base64' : 'Copy decoded text');
+    }
+
+    function setOutputEnabled(enabled: boolean): void {
+      copyBtn!.disabled = !enabled;
+    }
+
+    function renderEmpty(): void {
+      summaryEl!.textContent = '';
+      summaryEl!.classList.remove('text-error');
+      summaryEl!.classList.add('text-mute');
+      outputBox!.innerHTML = EMPTY_HTML;
+      lastOutput = '';
+      setOutputEnabled(false);
+    }
+
+    function renderResult(result: Result): void {
+      const out = typeof result.output === 'string' ? result.output : '';
+      lastOutput = out;
+      const bytes = typeof result.bytes === 'number' ? result.bytes : null;
+      const noun = bytes === 1 ? 'byte' : 'bytes';
+      summaryEl!.textContent = bytes === null ? '' : `${bytes} ${noun}`;
+      summaryEl!.classList.remove('text-error');
+      summaryEl!.classList.add('text-mute');
+
+      const isEmptyText = out.length === 0;
+      const bodyCls = isEmptyText ? 'b64-result__body is-empty-text' : 'b64-result__body';
+      const bodyText = isEmptyText ? '(empty result)' : out;
+
+      const metaBits: string[] = [];
+      if (bytes !== null) metaBits.push(`<span>${bytes} ${noun}</span>`);
+      if (result.note) metaBits.push(`<span class="b64-result__note">${escapeHtml(result.note)}</span>`);
+      const meta = metaBits.length
+        ? `<div class="b64-result__meta">${metaBits.join('')}</div>`
+        : '';
+
+      outputBox!.innerHTML =
+        '<div class="b64-result">' +
+        `<pre class="${bodyCls}"><code>${escapeHtml(bodyText)}</code></pre>` +
+        meta +
+        '</div>';
+      setOutputEnabled(out.length > 0);
+    }
+
+    function evaluate(): void {
+      const value = input!.value;
+      if (value.length === 0) {
+        input!.classList.remove('b64-input--error');
+        renderEmpty();
+        return;
+      }
+      const urlSafe = urlSafeBox!.checked;
+      let result: Result | null = null;
+      try {
+        result = engine.convert(value, getMode(), urlSafe);
+      } catch {
+        input!.classList.add('b64-input--error');
+        renderError(outputBox!, summaryEl!, copyBtn!, 'Unexpected error while converting.');
+        return;
+      }
+      if (!result || result.valid === false) {
+        input!.classList.add('b64-input--error');
+        renderError(
+          outputBox!,
+          summaryEl!,
+          copyBtn!,
+          result?.error ?? 'That input could not be converted.'
+        );
+        return;
+      }
+      input!.classList.remove('b64-input--error');
+      renderResult(result);
+    }
+
+    // ── Example picker ────────────────────────────────────────────────────────
+    exampleSel.innerHTML = '';
+    const customOpt = document.createElement('option');
+    customOpt.value = '-1';
+    customOpt.textContent = examples.length ? 'Custom input' : 'No examples';
+    exampleSel.appendChild(customOpt);
+    examples.forEach((ex, i) => {
+      const opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = ex.label;
+      exampleSel.appendChild(opt);
+    });
+    if (!examples.length) exampleSel.disabled = true;
+
+    // ── Live evaluation (debounced) ───────────────────────────────────────────
+    let timer: number | undefined;
+    function scheduleEvaluate(): void {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(evaluate, DEBOUNCE_MS);
+    }
+    function markCustom(): void {
+      if (exampleSel!.value !== '-1') exampleSel!.value = '-1';
+    }
+
+    input.addEventListener('input', () => {
+      markCustom();
+      scheduleEvaluate();
+    });
+
+    modeBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const next = btn.dataset.mode === 'decode' ? 'decode' : 'encode';
+        if (next === mode) return;
+        applyMode(next);
+        markCustom();
+        window.clearTimeout(timer);
+        evaluate();
+      });
+    });
+
+    urlSafeBox.addEventListener('change', () => {
+      markCustom();
+      window.clearTimeout(timer);
+      evaluate();
+    });
+
+    exampleSel.addEventListener('change', () => {
+      const idx = Number(exampleSel.value);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+      const ex = examples[idx];
+      applyMode(ex.mode);
+      urlSafeBox.checked = ex.urlSafe;
+      input.value = ex.input;
+      window.clearTimeout(timer);
+      evaluate();
+    });
+
+    // ── Copy ──────────────────────────────────────────────────────────────────
+    const copyLabel = copyBtn.querySelector<HTMLElement>('.b64-copy-label');
+    let copyTimer: number | undefined;
+    copyBtn.addEventListener('click', async () => {
+      if (!lastOutput) return;
+      const ok = await copyText(lastOutput);
+      if (copyLabel) copyLabel.textContent = ok ? 'Copied' : 'Failed';
+      if (announce) {
+        announce.textContent = ok
+          ? 'Result copied to your clipboard.'
+          : 'Could not copy. Select the text and copy it manually.';
+      }
+      window.clearTimeout(copyTimer);
+      copyTimer = window.setTimeout(() => {
+        if (copyLabel) copyLabel.textContent = copyBtn.dataset.defaultLabel ?? 'Copy';
+      }, COPIED_RESET_MS);
+    });
+
+    // ── Seed from the first example (or an empty custom state) ──────────────────
+    const seed = examples[0];
+    if (seed) {
+      applyMode(seed.mode);
+      urlSafeBox.checked = seed.urlSafe;
+      input.value = seed.input;
+      exampleSel.value = '0';
+      evaluate();
+    } else {
+      applyMode('encode');
+      renderEmpty();
+    }
+  }
+
+  function renderError(
+    container: HTMLElement,
+    summary: HTMLElement,
+    copyBtn: HTMLButtonElement,
+    message: string
+  ): void {
+    summary.textContent = 'Invalid';
+    summary.classList.remove('text-mute');
+    summary.classList.add('text-error');
+    container.innerHTML =
+      '<div class="b64-error" role="alert">' +
+      ALERT_SVG +
+      '<div><p class="b64-error__title">Could not convert that input</p>' +
+      `<p class="b64-error__detail">${escapeHtml(message)}</p></div></div>`;
+    copyBtn.disabled = true;
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

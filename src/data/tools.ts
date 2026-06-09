@@ -272,6 +272,91 @@ export const tools: Tool[] = [
     ],
     accent: 'ship',
   },
+  {
+    slug: 'jwt-decoder',
+    name: 'JWT Decoder',
+    tagline: 'Decode a JWT header and claims, and check expiry — without sending it anywhere.',
+    description:
+      'Paste a JSON Web Token to decode its header and payload, inspect standard claims, and see whether it is expired or not yet valid. Your token never leaves the page. Pure client-side.',
+    status: 'live',
+    category: 'Security',
+    keywords: [
+      'jwt decoder',
+      'decode jwt online',
+      'jwt token decoder',
+      'jwt claims viewer',
+      'jwt expiry checker',
+    ],
+    accent: 'develop',
+  },
+  {
+    slug: 'timestamp-converter',
+    name: 'Timestamp Converter',
+    tagline: 'Convert between Unix epoch, ISO 8601 and human-readable dates.',
+    description:
+      'Paste a Unix timestamp in seconds or milliseconds, or an ISO 8601 date, and convert it across epoch, UTC and local time with relative age. Pure client-side.',
+    status: 'live',
+    category: 'Encoding',
+    keywords: [
+      'unix timestamp converter',
+      'epoch to date',
+      'iso 8601 converter',
+      'epoch time converter',
+      'timestamp to date online',
+    ],
+    accent: 'preview',
+  },
+  {
+    slug: 'base64-encoder-decoder',
+    name: 'Base64 Encoder / Decoder',
+    tagline: 'Encode and decode Base64 and URL-safe Base64, with Unicode support.',
+    description:
+      'Paste text or Base64 to encode or decode in either direction, with standard and URL-safe alphabets and full UTF-8 handling. Pure client-side.',
+    status: 'live',
+    category: 'Encoding',
+    keywords: [
+      'base64 encoder decoder',
+      'base64 decode online',
+      'base64 encode online',
+      'url safe base64',
+      'base64 to text converter',
+    ],
+    accent: 'ship',
+  },
+  {
+    slug: 'hash-generator',
+    name: 'Hash Generator',
+    tagline: 'Compute MD5, SHA-1, SHA-256 and SHA-512 digests of any text — plus HMAC.',
+    description:
+      'Paste text and get its MD5, SHA-1, SHA-256 and SHA-512 hashes at once, plus an optional HMAC with a key — computed in your browser with the Web Crypto API. Pure client-side.',
+    status: 'live',
+    category: 'Security',
+    keywords: [
+      'hash generator',
+      'sha256 generator online',
+      'sha512 hash generator',
+      'text to hash converter',
+      'checksum generator',
+    ],
+    accent: 'develop',
+  },
+  {
+    slug: 'kubernetes-resource-calculator',
+    name: 'Kubernetes Resource Calculator',
+    tagline: 'Total CPU and memory requests and limits across pods and replicas.',
+    description:
+      'Enter container CPU and memory requests and limits with replica counts to total the resources a workload reserves, and convert millicores and Mi/Gi units. Pure client-side.',
+    status: 'live',
+    category: 'Kubernetes',
+    keywords: [
+      'kubernetes resource calculator',
+      'kubernetes cpu memory calculator',
+      'k8s requests limits calculator',
+      'pod resource calculator',
+      'millicores to cpu converter',
+    ],
+    accent: 'preview',
+  },
 ];
 
 export const liveTools = tools.filter((t) => t.status === 'live');

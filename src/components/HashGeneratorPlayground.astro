@@ -1,0 +1,649 @@
+---
+/**
+ * HashGeneratorPlayground — the interactive Hash Generator island.
+ *
+ * Async, live tool: type (or paste) text and every digest — MD5, SHA-1,
+ * SHA-256, SHA-512 — is rendered as a copyable lowercase-hex row. An optional
+ * HMAC section keys one SHA algorithm with a UTF-8 secret; when a key is
+ * present an extra "HMAC-<algo>" row appears. SHA digests come from the Web
+ * Crypto API (SubtleCrypto), so evaluation is asynchronous and stale results
+ * are discarded via a per-instance request id. Fully client-side — nothing is
+ * sent anywhere.
+ *
+ * Runtime contract (lazy-imported):
+ *   ../lib/hash-generator/engine   → async hash(input): Promise<HashResult>
+ *                                    async hmac(input, key, algo): Promise<string>
+ *   ../lib/hash-generator/examples → examples: { id; label; input }[]
+ */
+---
+
+<section class="hash-pg" aria-label="Hash Generator playground">
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    <div class="flex flex-col gap-1 border-b border-hairline px-4 py-3 sm:px-5">
+      <label class="eyebrow shrink-0" for="hash-example">Example</label>
+      <div class="hash-select-wrap relative min-w-0">
+        <select id="hash-example" class="hash-select code-mono" autocomplete="off">
+          <option value="">Loading examples…</option>
+        </select>
+        <svg
+          class="hash-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.4"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M4 6l4 4 4-4"></path>
+        </svg>
+      </div>
+    </div>
+
+    <div class="border-b border-hairline px-4 py-4 sm:px-5">
+      <label class="eyebrow mb-2 block" for="hash-input">Text to hash</label>
+      <textarea
+        id="hash-input"
+        class="hash-input code-mono"
+        spellcheck="false"
+        autocapitalize="off"
+        autocorrect="off"
+        autocomplete="off"
+        rows="5"
+        placeholder="The quick brown fox jumps over the lazy dog"
+        aria-describedby="hash-input-hint"></textarea>
+      <p id="hash-input-hint" class="hash-hint caption text-mute">
+        Hashed as UTF-8. The empty string is valid — its digests are well-known (MD5
+        <span class="code-mono">d41d8cd9…</span>).
+      </p>
+    </div>
+
+    <div class="border-b border-hairline px-4 py-4 sm:px-5">
+      <label class="eyebrow mb-2 block" for="hash-hmac-key">HMAC key — optional</label>
+      <div class="hash-hmac-row">
+        <input
+          id="hash-hmac-key"
+          type="text"
+          class="hash-hmac-input code-mono"
+          spellcheck="false"
+          autocapitalize="off"
+          autocorrect="off"
+          autocomplete="off"
+          placeholder="secret key"
+          aria-describedby="hash-hmac-hint"
+        />
+        <div class="hash-select-wrap relative min-w-0">
+          <select id="hash-hmac-algo" class="hash-select hash-select--algo code-mono" autocomplete="off" aria-label="HMAC algorithm">
+            <option value="SHA-256">SHA-256</option>
+            <option value="SHA-1">SHA-1</option>
+            <option value="SHA-512">SHA-512</option>
+          </select>
+          <svg
+            class="hash-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M4 6l4 4 4-4"></path>
+          </svg>
+        </div>
+      </div>
+      <p id="hash-hmac-hint" class="hash-hint caption text-mute">
+        Enter a secret to add a keyed <span class="code-mono">HMAC-&lt;algo&gt;</span> row below. Leave
+        blank for plain digests only.
+      </p>
+    </div>
+
+    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <span class="eyebrow">Digests</span>
+        <span id="hash-summary" class="hash-summary code-mono text-mute" role="status" aria-live="polite"></span>
+      </div>
+      <div id="hash-results" class="hash-results" aria-live="polite" aria-atomic="false">
+        <p class="hash-empty body-sm text-mute">
+          Type or paste text — or pick an example — to see its MD5, SHA-1, SHA-256 and SHA-512 digests
+          here, each with a Copy button.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  {/* Polite announcer for clipboard feedback. */}
+  <span id="hash-announce" class="sr-only" role="status" aria-live="polite"></span>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  .hash-select {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    height: 32px;
+    min-width: 0;
+    max-width: 320px;
+    padding: 0 32px 0 12px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 13px;
+    line-height: 20px;
+    cursor: pointer;
+    text-overflow: ellipsis;
+    touch-action: manipulation;
+    transition: box-shadow 0.15s ease;
+  }
+  @media (min-width: 640px) {
+    .hash-select {
+      width: auto;
+      min-width: 260px;
+    }
+  }
+  .hash-select--algo {
+    min-width: 0;
+    max-width: 130px;
+  }
+  @media (min-width: 640px) {
+    .hash-select--algo {
+      min-width: 120px;
+    }
+  }
+  .hash-select:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .hash-select:disabled {
+    cursor: not-allowed;
+    color: var(--color-mute);
+    opacity: 0.7;
+  }
+  .hash-select-wrap:hover .hash-select-caret {
+    color: var(--color-body);
+  }
+
+  .hash-input {
+    width: 100%;
+    min-height: 110px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 14px;
+    line-height: 22px;
+    resize: vertical;
+    transition: box-shadow 0.15s ease;
+  }
+  .hash-input::placeholder {
+    color: var(--color-mute);
+  }
+  .hash-input:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .hash-input:focus {
+    outline: none;
+  }
+  .hash-input:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-link);
+    outline: none;
+  }
+
+  .hash-hmac-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+  }
+  .hash-hmac-input {
+    flex: 1 1 200px;
+    min-width: 0;
+    height: 40px;
+    padding: 0 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 14px;
+    line-height: 22px;
+    transition: box-shadow 0.15s ease;
+  }
+  .hash-hmac-input::placeholder {
+    color: var(--color-mute);
+  }
+  .hash-hmac-input:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .hash-hmac-input:focus {
+    outline: none;
+  }
+  .hash-hmac-input:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-link);
+    outline: none;
+  }
+
+  .hash-hint {
+    margin-top: 8px;
+    text-wrap: pretty;
+  }
+  .hash-summary {
+    white-space: nowrap;
+  }
+  .hash-results {
+    min-height: 44px;
+  }
+
+  /* ── Runtime-injected markup ─────────────────────────────────────────── */
+  :global(.hash-card) {
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+    animation: hash-rise 0.18s ease both;
+  }
+  :global(.hash-row) {
+    display: grid;
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr) minmax(0, auto);
+    gap: 10px 12px;
+    padding: 10px 14px;
+    align-items: center;
+  }
+  :global(.hash-row + .hash-row) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.hash-row--hmac) {
+    background: var(--color-brand-soft);
+  }
+  :global(.hash-row__k) {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 18px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+    white-space: nowrap;
+  }
+  :global(.hash-row--hmac .hash-row__k) {
+    color: var(--color-brand-strong);
+  }
+  :global(.hash-row__v) {
+    min-width: 0;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--color-ink);
+    word-break: break-all;
+  }
+  :global(.hash-row__v.is-mono) {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  :global(.hash-copy) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 26px;
+    padding: 0 9px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: box-shadow 0.15s ease, color 0.15s ease;
+  }
+  :global(.hash-copy:hover) {
+    color: var(--color-ink);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  :global(.hash-copy:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 2px;
+  }
+  :global(.hash-copy__icon) {
+    width: 13px;
+    height: 13px;
+    flex: 0 0 auto;
+  }
+  :global(.hash-copy.is-copied) {
+    /* Use the AA-safe brand link colour (emerald-strong on light, bright on dark)
+       rather than --color-success, which is too light for label text on white. */
+    color: var(--color-link);
+  }
+
+  @keyframes hash-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.hash-card) {
+      animation: none;
+    }
+  }
+
+  :global(.hash-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+  }
+  :global(.hash-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.hash-error__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.hash-error__detail) {
+    margin-top: 2px;
+    font-size: 13px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  :global(.hash-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+</style>
+
+<script>
+  import { escapeHtml } from '../lib/escape-html';
+
+  type Row = { label: string; value: string; mono?: boolean };
+  type HashResult = { valid: boolean; error?: string; rows: Row[] };
+  type HmacAlgo = 'SHA-1' | 'SHA-256' | 'SHA-512';
+  type Example = { id: string; label: string; input: string };
+  type EngineModule = {
+    hash: (input: string) => Promise<HashResult>;
+    hmac: (input: string, key: string, algo: HmacAlgo) => Promise<string>;
+  };
+
+  const ROOT_SEL = '.hash-pg';
+  const DEBOUNCE_MS = 180;
+  const COPIED_RESET_MS = 1400;
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.hashWired === 'true') return;
+      root.dataset.hashWired = 'true';
+      void init(root);
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  function normaliseExamples(raw: unknown): Example[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((item, i) => {
+      const o = (item ?? {}) as Record<string, unknown>;
+      return {
+        id: typeof o.id === 'string' && o.id ? o.id : `example-${i + 1}`,
+        label: typeof o.label === 'string' && o.label ? o.label : `Example ${i + 1}`,
+        input: typeof o.input === 'string' ? o.input : '',
+      } satisfies Example;
+    });
+    // Note: unlike list tools we keep the empty-string example — its digests
+    // are well-defined and a useful fixture — so we do NOT filter on length.
+  }
+
+  const ALERT_SVG =
+    '<svg class="hash-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+
+  const COPY_ICON =
+    '<svg class="hash-copy__icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"></rect><path d="M3.5 10.5h-.5a1 1 0 01-1-1v-6a1 1 0 011-1h6a1 1 0 011 1v.5"></path></svg>';
+
+  async function copyText(text: string): Promise<boolean> {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      /* fall through to legacy path */
+    }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'absolute';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
+    summary.textContent = '';
+    summary.classList.remove('text-error');
+    summary.classList.add('text-mute');
+    container.innerHTML =
+      '<p class="hash-empty body-sm text-mute">Type or paste text — or pick an example — to see its MD5, SHA-1, SHA-256 and SHA-512 digests here, each with a Copy button.</p>';
+  }
+
+  function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
+    summary.textContent = 'Unavailable';
+    summary.classList.remove('text-mute');
+    summary.classList.add('text-error');
+    container.innerHTML =
+      '<div class="hash-error" role="alert">' +
+      ALERT_SVG +
+      '<div><p class="hash-error__title">Could not compute hashes</p>' +
+      `<p class="hash-error__detail">${escapeHtml(message)}</p></div></div>`;
+  }
+
+  function rowHtml(row: Row, hmac: boolean): string {
+    const label = row.label ?? '';
+    const value = typeof row.value === 'string' ? row.value : '';
+    const cls = row.mono ? 'hash-row__v is-mono' : 'hash-row__v';
+    const rowCls = hmac ? 'hash-row hash-row--hmac' : 'hash-row';
+    const safeLabel = escapeHtml(label);
+    return (
+      `<div class="${rowCls}">` +
+      `<span class="hash-row__k">${safeLabel}</span>` +
+      `<span class="${cls}">${escapeHtml(value)}</span>` +
+      `<button type="button" class="hash-copy hash-tap" data-copy="${escapeHtml(value)}" ` +
+      `aria-label="Copy ${safeLabel} digest">${COPY_ICON}<span class="hash-copy__lbl">Copy</span></button>` +
+      '</div>'
+    );
+  }
+
+  function renderResult(
+    container: HTMLElement,
+    summary: HTMLElement,
+    result: HashResult,
+    hmacRow: Row | null
+  ): void {
+    const rows = Array.isArray(result.rows) ? result.rows : [];
+    const baseCount = rows.length;
+    summary.textContent = hmacRow ? `${baseCount} digests · 1 HMAC` : `${baseCount} digests`;
+    summary.classList.remove('text-error');
+    summary.classList.add('text-mute');
+    const rowsHtml = rows.map((r) => rowHtml(r, false)).join('');
+    const hmacHtml = hmacRow ? rowHtml(hmacRow, true) : '';
+    container.innerHTML = '<div class="hash-card">' + rowsHtml + hmacHtml + '</div>';
+  }
+
+  async function init(root: HTMLElement): Promise<void> {
+    const input = el<HTMLTextAreaElement>(root, '#hash-input');
+    const keyInput = el<HTMLInputElement>(root, '#hash-hmac-key');
+    const algoSel = el<HTMLSelectElement>(root, '#hash-hmac-algo');
+    const exampleSel = el<HTMLSelectElement>(root, '#hash-example');
+    const resultsBox = el<HTMLElement>(root, '#hash-results');
+    const summaryEl = el<HTMLElement>(root, '#hash-summary');
+    const announce = el<HTMLElement>(root, '#hash-announce');
+    if (!input || !keyInput || !algoSel || !exampleSel || !resultsBox || !summaryEl) return;
+
+    let engine: EngineModule;
+    let examples: Example[] = [];
+    try {
+      const [engineMod, examplesMod] = await Promise.all([
+        import('../lib/hash-generator/engine'),
+        import('../lib/hash-generator/examples'),
+      ]);
+      engine = engineMod as unknown as EngineModule;
+      examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+    } catch (err) {
+      renderError(resultsBox, summaryEl, 'The hash engine failed to load. Reload the page to try again.');
+      console.error('[HashGenerator] engine import failed:', err);
+      return;
+    }
+
+    exampleSel.innerHTML = '';
+    const customOpt = document.createElement('option');
+    customOpt.value = '-1';
+    customOpt.textContent = examples.length ? 'Custom input' : 'No examples';
+    exampleSel.appendChild(customOpt);
+    examples.forEach((ex, i) => {
+      const opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = ex.label;
+      exampleSel.appendChild(opt);
+    });
+    if (!examples.length) exampleSel.disabled = true;
+
+    // Monotonic request id: only the latest async run is allowed to paint, so a
+    // slow earlier digest can never overwrite a newer one (stale-result guard).
+    let reqId = 0;
+
+    function normaliseAlgo(value: string): HmacAlgo {
+      return value === 'SHA-1' || value === 'SHA-512' ? value : 'SHA-256';
+    }
+
+    async function evaluate(): Promise<void> {
+      const value = input!.value;
+      const key = keyInput!.value;
+      const algo = normaliseAlgo(algoSel!.value);
+      const id = ++reqId;
+
+      let result: HashResult;
+      try {
+        result = await engine.hash(value);
+      } catch {
+        if (id !== reqId) return;
+        renderError(resultsBox!, summaryEl!, 'Unexpected error while hashing.');
+        return;
+      }
+      if (id !== reqId) return; // a newer request superseded this one
+      if (!result || result.valid === false) {
+        renderError(resultsBox!, summaryEl!, result?.error ?? 'Could not compute hashes.');
+        return;
+      }
+
+      let hmacRow: Row | null = null;
+      if (key.length > 0) {
+        try {
+          const hex = await engine.hmac(value, key, algo);
+          if (id !== reqId) return; // stale — drop
+          hmacRow = { label: `HMAC-${algo}`, value: hex, mono: true };
+        } catch {
+          if (id !== reqId) return;
+          renderError(resultsBox!, summaryEl!, 'Could not compute the HMAC with that key.');
+          return;
+        }
+      }
+      if (id !== reqId) return;
+      renderResult(resultsBox!, summaryEl!, result, hmacRow);
+    }
+
+    let timer: number | undefined;
+    function scheduleEvaluate(): void {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => void evaluate(), DEBOUNCE_MS);
+    }
+
+    input.addEventListener('input', () => {
+      if (exampleSel.value !== '-1') exampleSel.value = '-1';
+      scheduleEvaluate();
+    });
+    keyInput.addEventListener('input', scheduleEvaluate);
+    algoSel.addEventListener('change', () => {
+      window.clearTimeout(timer);
+      void evaluate();
+    });
+    exampleSel.addEventListener('change', () => {
+      const idx = Number(exampleSel.value);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+      input.value = examples[idx].input;
+      window.clearTimeout(timer);
+      void evaluate();
+    });
+
+    // Copy any digest via event delegation on the results container.
+    let copyResetTimer: number | undefined;
+    resultsBox.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement | null;
+      const btn = target?.closest<HTMLButtonElement>('.hash-copy');
+      if (!btn) return;
+      const text = btn.dataset.copy ?? '';
+      if (!text) return;
+      void (async () => {
+        const ok = await copyText(text);
+        const lbl = btn.querySelector<HTMLElement>('.hash-copy__lbl');
+        if (lbl) lbl.textContent = ok ? 'Copied' : 'Failed';
+        btn.classList.toggle('is-copied', ok);
+        if (announce) {
+          announce.textContent = ok
+            ? 'Copied the digest to your clipboard.'
+            : 'Could not copy. Select the value and copy it manually.';
+        }
+        window.clearTimeout(copyResetTimer);
+        copyResetTimer = window.setTimeout(() => {
+          if (lbl) lbl.textContent = 'Copy';
+          btn.classList.remove('is-copied');
+        }, COPIED_RESET_MS);
+      })();
+    });
+
+    // Seed the first example (the catalog "abc" vector). Empty-string examples
+    // are kept, so seed on presence rather than non-empty input.
+    if (examples.length > 0) {
+      input.value = examples[0].input;
+      exampleSel.value = '0';
+      void evaluate();
+    } else {
+      renderEmpty(resultsBox, summaryEl);
+    }
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

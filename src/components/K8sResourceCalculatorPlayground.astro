@@ -1,0 +1,597 @@
+---
+/**
+ * K8sResourceCalculatorPlayground — the interactive Kubernetes Resource Calculator island.
+ *
+ * Given a Pod's CPU request / limit, memory request / limit, and a replica
+ * count, it renders a per-pod and total-across-replicas breakdown as a rows
+ * table (mono values) plus any advisory warnings (limit below request, no
+ * limit set, …). Updates live (debounced), fully client-side.
+ *
+ * Runtime contract (lazy-imported):
+ *   ../lib/k8s-resources/engine   → calculate({ cpuRequest, cpuLimit, memRequest, memLimit, replicas }) → K8sResult
+ *   ../lib/k8s-resources/examples → examples: { id; label; input: {...five fields} }[]
+ */
+---
+
+<section class="k8s-pg" aria-label="Kubernetes Resource Calculator playground">
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    <div class="flex flex-col gap-1 border-b border-hairline px-4 py-3 sm:px-5">
+      <label class="eyebrow shrink-0" for="k8s-example">Example</label>
+      <div class="k8s-select-wrap relative min-w-0">
+        <select id="k8s-example" class="k8s-select code-mono" autocomplete="off">
+          <option value="">Loading examples…</option>
+        </select>
+        <svg
+          class="k8s-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.4"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M4 6l4 4 4-4"></path>
+        </svg>
+      </div>
+    </div>
+
+    <div class="border-b border-hairline px-4 py-4 sm:px-5">
+      <div class="k8s-fields">
+        <div class="k8s-field">
+          <label class="eyebrow mb-2 block" for="k8s-cpu-req">CPU request</label>
+          <input
+            id="k8s-cpu-req"
+            class="k8s-text code-mono"
+            type="text"
+            spellcheck="false"
+            autocapitalize="off"
+            autocorrect="off"
+            autocomplete="off"
+            placeholder="500m"
+            aria-describedby="k8s-input-hint"
+          />
+        </div>
+        <div class="k8s-field">
+          <label class="eyebrow mb-2 block" for="k8s-cpu-lim">CPU limit</label>
+          <input
+            id="k8s-cpu-lim"
+            class="k8s-text code-mono"
+            type="text"
+            spellcheck="false"
+            autocapitalize="off"
+            autocorrect="off"
+            autocomplete="off"
+            placeholder="1"
+            aria-describedby="k8s-input-hint"
+          />
+        </div>
+        <div class="k8s-field">
+          <label class="eyebrow mb-2 block" for="k8s-mem-req">Memory request</label>
+          <input
+            id="k8s-mem-req"
+            class="k8s-text code-mono"
+            type="text"
+            spellcheck="false"
+            autocapitalize="off"
+            autocorrect="off"
+            autocomplete="off"
+            placeholder="256Mi"
+            aria-describedby="k8s-input-hint"
+          />
+        </div>
+        <div class="k8s-field">
+          <label class="eyebrow mb-2 block" for="k8s-mem-lim">Memory limit</label>
+          <input
+            id="k8s-mem-lim"
+            class="k8s-text code-mono"
+            type="text"
+            spellcheck="false"
+            autocapitalize="off"
+            autocorrect="off"
+            autocomplete="off"
+            placeholder="512Mi"
+            aria-describedby="k8s-input-hint"
+          />
+        </div>
+        <div class="k8s-field">
+          <label class="eyebrow mb-2 block" for="k8s-replicas">Replicas</label>
+          <input
+            id="k8s-replicas"
+            class="k8s-text code-mono"
+            type="number"
+            inputmode="numeric"
+            min="1"
+            step="1"
+            autocomplete="off"
+            placeholder="3"
+            aria-describedby="k8s-input-hint"
+          />
+        </div>
+      </div>
+      <p id="k8s-input-hint" class="k8s-hint caption text-mute">
+        CPU takes cores or millicores (<span class="code-mono">500m</span>, <span class="code-mono">1</span>,
+        <span class="code-mono">2.5</span>). Memory takes binary (<span class="code-mono">256Mi</span>,
+        <span class="code-mono">4Gi</span>) or decimal (<span class="code-mono">1G</span>) suffixes, or bytes.
+        Leave a field blank to skip it.
+      </p>
+    </div>
+
+    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <span class="eyebrow">Result</span>
+        <span id="k8s-summary" class="k8s-summary code-mono text-mute" role="status" aria-live="polite"></span>
+      </div>
+      <div id="k8s-results" class="k8s-results" aria-live="polite" aria-atomic="false">
+        <p class="k8s-empty body-sm text-mute">
+          Enter a CPU or memory value — or pick an example — to see a per-pod and total-across-replicas
+          breakdown here.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  .k8s-select {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    height: 32px;
+    min-width: 0;
+    max-width: 360px;
+    padding: 0 32px 0 12px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 13px;
+    line-height: 20px;
+    cursor: pointer;
+    text-overflow: ellipsis;
+    touch-action: manipulation;
+    transition: box-shadow 0.15s ease;
+  }
+  @media (min-width: 640px) {
+    .k8s-select {
+      width: auto;
+      min-width: 300px;
+    }
+  }
+  .k8s-select:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .k8s-select:disabled {
+    cursor: not-allowed;
+    color: var(--color-mute);
+    opacity: 0.7;
+  }
+  .k8s-select-wrap:hover .k8s-select-caret {
+    color: var(--color-body);
+  }
+
+  .k8s-fields {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 14px 16px;
+  }
+  @media (min-width: 480px) {
+    .k8s-fields {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+  @media (min-width: 768px) {
+    .k8s-fields {
+      grid-template-columns: repeat(5, 1fr);
+    }
+  }
+  .k8s-field {
+    min-width: 0;
+  }
+
+  .k8s-text {
+    width: 100%;
+    height: 40px;
+    padding: 0 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 14px;
+    line-height: 22px;
+    transition: box-shadow 0.15s ease;
+  }
+  .k8s-text::placeholder {
+    color: var(--color-mute);
+  }
+  .k8s-text:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .k8s-text:focus {
+    outline: none;
+  }
+  .k8s-text:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-link);
+    outline: none;
+  }
+  .k8s-hint {
+    margin-top: 12px;
+    text-wrap: pretty;
+  }
+  .k8s-summary {
+    white-space: nowrap;
+  }
+  .k8s-results {
+    min-height: 44px;
+  }
+
+  /* ── Runtime-injected markup ─────────────────────────────────────────── */
+  :global(.k8s-table) {
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+    animation: k8s-rise 0.18s ease both;
+  }
+  :global(.k8s-row) {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 9px 14px;
+    font-size: 13px;
+    line-height: 20px;
+  }
+  :global(.k8s-row + .k8s-row) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.k8s-row__label) {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--color-mute);
+    word-break: break-word;
+  }
+  :global(.k8s-row__value) {
+    flex: 0 1 auto;
+    text-align: right;
+    color: var(--color-ink);
+    word-break: break-word;
+  }
+  :global(.k8s-row__value--mono) {
+    font-family: var(--font-mono);
+  }
+
+  :global(.k8s-warnings) {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  :global(.k8s-warn) {
+    display: flex;
+    gap: 8px;
+    padding: 9px 12px;
+    border-radius: var(--radius-md);
+    background: var(--color-warning-soft);
+    box-shadow: inset 0 0 0 1px var(--color-warning);
+    color: var(--color-warning-deep);
+    font-size: 12px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  :global(.k8s-warn__icon) {
+    flex: 0 0 auto;
+    width: 15px;
+    height: 15px;
+    margin-top: 1px;
+  }
+
+  @keyframes k8s-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.k8s-table) {
+      animation: none;
+    }
+  }
+
+  :global(.k8s-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+  }
+  :global(.k8s-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.k8s-error__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.k8s-error__detail) {
+    margin-top: 2px;
+    font-size: 13px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  :global(.k8s-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+</style>
+
+<script>
+  import { escapeHtml } from '../lib/escape-html';
+
+  type Row = { label: string; value: string; mono?: boolean };
+  type Result = {
+    valid: boolean;
+    error?: string;
+    rows: Row[];
+    warnings: string[];
+  };
+  type Input = {
+    cpuRequest?: string;
+    cpuLimit?: string;
+    memRequest?: string;
+    memLimit?: string;
+    replicas?: string;
+  };
+  type ExampleInput = {
+    cpuRequest: string;
+    cpuLimit: string;
+    memRequest: string;
+    memLimit: string;
+    replicas: string;
+  };
+  type Example = { id: string; label: string; input: ExampleInput };
+  type EngineModule = { calculate: (input: Input) => Result };
+
+  const ROOT_SEL = '.k8s-pg';
+  const DEBOUNCE_MS = 220;
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.k8sWired === 'true') return;
+      root.dataset.k8sWired = 'true';
+      void init(root);
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  function str(o: Record<string, unknown>, key: string): string {
+    const v = o[key];
+    return typeof v === 'string' ? v : '';
+  }
+
+  function normaliseExamples(raw: unknown): Example[] {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((item, i) => {
+        const o = (item ?? {}) as Record<string, unknown>;
+        const input = (o.input ?? {}) as Record<string, unknown>;
+        return {
+          id: typeof o.id === 'string' && o.id ? o.id : `example-${i + 1}`,
+          label: typeof o.label === 'string' && o.label ? o.label : `Example ${i + 1}`,
+          input: {
+            cpuRequest: str(input, 'cpuRequest'),
+            cpuLimit: str(input, 'cpuLimit'),
+            memRequest: str(input, 'memRequest'),
+            memLimit: str(input, 'memLimit'),
+            replicas: str(input, 'replicas'),
+          },
+        } satisfies Example;
+      })
+      .filter(
+        (e) =>
+          e.input.cpuRequest.length > 0 ||
+          e.input.cpuLimit.length > 0 ||
+          e.input.memRequest.length > 0 ||
+          e.input.memLimit.length > 0,
+      );
+  }
+
+  const ALERT_SVG =
+    '<svg class="k8s-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+
+  const WARN_SVG =
+    '<svg class="k8s-warn__icon" width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+
+  function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
+    summary.textContent = '';
+    container.innerHTML =
+      '<p class="k8s-empty body-sm text-mute">Enter a CPU or memory value — or pick an example — to see a per-pod and total-across-replicas breakdown here.</p>';
+  }
+
+  function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
+    summary.textContent = '';
+    container.innerHTML =
+      '<div class="k8s-error" role="alert">' +
+      ALERT_SVG +
+      '<div><p class="k8s-error__title">Nothing to calculate</p>' +
+      `<p class="k8s-error__detail">${escapeHtml(message)}</p></div></div>`;
+  }
+
+  function rowsHtml(rows: Row[]): string {
+    const lines = rows
+      .map((r) => {
+        const cls = r.mono ? 'k8s-row__value k8s-row__value--mono' : 'k8s-row__value';
+        return (
+          '<div class="k8s-row">' +
+          `<span class="k8s-row__label">${escapeHtml(r.label)}</span>` +
+          `<span class="${cls}">${escapeHtml(r.value)}</span></div>`
+        );
+      })
+      .join('');
+    return '<div class="k8s-table">' + lines + '</div>';
+  }
+
+  function warningsHtml(warnings: string[]): string {
+    if (!warnings.length) return '';
+    const notes = warnings
+      .map((w) => '<p class="k8s-warn">' + WARN_SVG + `<span>${escapeHtml(w)}</span></p>`)
+      .join('');
+    return `<div class="k8s-warnings">${notes}</div>`;
+  }
+
+  function renderResult(container: HTMLElement, summary: HTMLElement, result: Result): void {
+    const warnCount = result.warnings?.length ?? 0;
+    summary.textContent = warnCount
+      ? `${warnCount} warning${warnCount === 1 ? '' : 's'}`
+      : 'ok';
+    container.innerHTML = rowsHtml(result.rows ?? []) + warningsHtml(result.warnings ?? []);
+  }
+
+  async function init(root: HTMLElement): Promise<void> {
+    const cpuReqInput = el<HTMLInputElement>(root, '#k8s-cpu-req');
+    const cpuLimInput = el<HTMLInputElement>(root, '#k8s-cpu-lim');
+    const memReqInput = el<HTMLInputElement>(root, '#k8s-mem-req');
+    const memLimInput = el<HTMLInputElement>(root, '#k8s-mem-lim');
+    const replicasInput = el<HTMLInputElement>(root, '#k8s-replicas');
+    const exampleSel = el<HTMLSelectElement>(root, '#k8s-example');
+    const resultsBox = el<HTMLElement>(root, '#k8s-results');
+    const summaryEl = el<HTMLElement>(root, '#k8s-summary');
+    if (
+      !cpuReqInput ||
+      !cpuLimInput ||
+      !memReqInput ||
+      !memLimInput ||
+      !replicasInput ||
+      !exampleSel ||
+      !resultsBox ||
+      !summaryEl
+    )
+      return;
+
+    let engine: EngineModule;
+    let examples: Example[] = [];
+    try {
+      const [engineMod, examplesMod] = await Promise.all([
+        import('../lib/k8s-resources/engine'),
+        import('../lib/k8s-resources/examples'),
+      ]);
+      engine = engineMod as unknown as EngineModule;
+      examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+    } catch (err) {
+      renderError(resultsBox, summaryEl, 'The calculator engine failed to load. Reload the page to try again.');
+      console.error('[K8sResourceCalculator] engine import failed:', err);
+      return;
+    }
+
+    exampleSel.innerHTML = '';
+    const customOpt = document.createElement('option');
+    customOpt.value = '-1';
+    customOpt.textContent = examples.length ? 'Custom' : 'No examples';
+    exampleSel.appendChild(customOpt);
+    examples.forEach((ex, i) => {
+      const opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = ex.label;
+      exampleSel.appendChild(opt);
+    });
+    if (!examples.length) exampleSel.disabled = true;
+
+    function evaluate(): void {
+      const input: Input = {
+        cpuRequest: cpuReqInput!.value,
+        cpuLimit: cpuLimInput!.value,
+        memRequest: memReqInput!.value,
+        memLimit: memLimInput!.value,
+        replicas: replicasInput!.value,
+      };
+      if (
+        input.cpuRequest!.trim().length === 0 &&
+        input.cpuLimit!.trim().length === 0 &&
+        input.memRequest!.trim().length === 0 &&
+        input.memLimit!.trim().length === 0
+      ) {
+        renderEmpty(resultsBox!, summaryEl!);
+        return;
+      }
+      let result: Result | null = null;
+      try {
+        result = engine.calculate(input);
+      } catch {
+        renderError(resultsBox!, summaryEl!, 'Unexpected error while calculating resources.');
+        return;
+      }
+      if (!result || result.valid === false) {
+        renderError(resultsBox!, summaryEl!, result?.error ?? 'Enter at least one valid resource value.');
+        return;
+      }
+      renderResult(resultsBox!, summaryEl!, result);
+    }
+
+    let timer: number | undefined;
+    function scheduleEvaluate(): void {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(evaluate, DEBOUNCE_MS);
+    }
+
+    function onUserInput(): void {
+      if (exampleSel!.value !== '-1') exampleSel!.value = '-1';
+      scheduleEvaluate();
+    }
+
+    cpuReqInput.addEventListener('input', onUserInput);
+    cpuLimInput.addEventListener('input', onUserInput);
+    memReqInput.addEventListener('input', onUserInput);
+    memLimInput.addEventListener('input', onUserInput);
+    replicasInput.addEventListener('input', onUserInput);
+    exampleSel.addEventListener('change', () => {
+      const idx = Number(exampleSel.value);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+      const ex = examples[idx];
+      cpuReqInput.value = ex.input.cpuRequest;
+      cpuLimInput.value = ex.input.cpuLimit;
+      memReqInput.value = ex.input.memRequest;
+      memLimInput.value = ex.input.memLimit;
+      replicasInput.value = ex.input.replicas;
+      window.clearTimeout(timer);
+      evaluate();
+    });
+
+    const seed = examples[0];
+    if (seed) {
+      cpuReqInput.value = seed.input.cpuRequest;
+      cpuLimInput.value = seed.input.cpuLimit;
+      memReqInput.value = seed.input.memRequest;
+      memLimInput.value = seed.input.memLimit;
+      replicasInput.value = seed.input.replicas;
+      exampleSel.value = '0';
+      evaluate();
+    } else {
+      renderEmpty(resultsBox, summaryEl);
+    }
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>
