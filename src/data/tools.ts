@@ -221,6 +221,57 @@ export const tools: Tool[] = [
     ],
     accent: 'ship',
   },
+  {
+    slug: 'mac-address-formatter',
+    name: 'MAC Address Formatter',
+    tagline: 'Reformat a MAC across colon, hyphen, Cisco and bare — and read its bits.',
+    description:
+      'Paste a MAC address and get it normalised across colon, hyphen, Cisco dotted and bare forms, plus the U/L and I/G bit meaning, OUI and the EUI-64 IPv6 link-local address it derives. Pure client-side.',
+    status: 'live',
+    category: 'Networking',
+    keywords: [
+      'mac address formatter',
+      'mac address converter',
+      'eui-64 calculator',
+      'mac to ipv6 link local',
+      'normalize mac address',
+    ],
+    accent: 'develop',
+  },
+  {
+    slug: 'reverse-dns-ptr',
+    name: 'Reverse DNS / PTR Helper',
+    tagline: 'Build the in-addr.arpa / ip6.arpa PTR name and reverse zone for any IP.',
+    description:
+      'Enter an IPv4 or IPv6 address or CIDR and get the in-addr.arpa or ip6.arpa PTR name, the matching reverse zone and the nibble breakdown behind it. Pure client-side.',
+    status: 'live',
+    category: 'Networking',
+    keywords: [
+      'reverse dns generator',
+      'ptr record generator',
+      'in-addr.arpa',
+      'ip6.arpa generator',
+      'reverse zone calculator',
+    ],
+    accent: 'preview',
+  },
+  {
+    slug: 'subnet-splitter',
+    name: 'Subnet Splitter',
+    tagline: 'Split a parent CIDR into subnets and find the free space around allocations.',
+    description:
+      'Split a parent IPv4 or IPv6 CIDR into equal subnets or carve it up with VLSM, then list existing allocations to find the gaps and the next available subnet. Pure client-side.',
+    status: 'live',
+    category: 'Networking',
+    keywords: [
+      'subnet splitter',
+      'vlsm calculator',
+      'find free subnet',
+      'split cidr into subnets',
+      'next available subnet',
+    ],
+    accent: 'ship',
+  },
 ];
 
 export const liveTools = tools.filter((t) => t.status === 'live');

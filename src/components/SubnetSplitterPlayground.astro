@@ -1,0 +1,621 @@
+---
+/**
+ * SubnetSplitterPlayground — the interactive Subnet Splitter island.
+ *
+ * Given a parent CIDR, an optional "split into /N" prefix, and a list of
+ * already-allocated CIDRs (one per line), it reports the minimal FREE blocks
+ * left inside the parent, an equal-size split of the parent flagged
+ * free/used/partial, and a parsed breakdown of each allocation. Updates live
+ * (debounced), fully client-side.
+ *
+ * Runtime contract (lazy-imported):
+ *   ../lib/subnet-splitter/engine   → split(parent, allocated, newPrefix) → SplitResult
+ *   ../lib/subnet-splitter/examples → examples: { id; label; parent; allocated; newPrefix }[]
+ */
+---
+
+<section class="spl-pg" aria-label="Subnet Splitter playground">
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    <div class="flex flex-col gap-1 border-b border-hairline px-4 py-3 sm:px-5">
+      <label class="eyebrow shrink-0" for="spl-example">Example</label>
+      <div class="spl-select-wrap relative min-w-0">
+        <select id="spl-example" class="spl-select code-mono" autocomplete="off">
+          <option value="">Loading examples…</option>
+        </select>
+        <svg
+          class="spl-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.4"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M4 6l4 4 4-4"></path>
+        </svg>
+      </div>
+    </div>
+
+    <div class="border-b border-hairline px-4 py-4 sm:px-5">
+      <div class="spl-fields">
+        <div class="spl-field spl-field--parent">
+          <label class="eyebrow mb-2 block" for="spl-parent">Parent CIDR</label>
+          <input
+            id="spl-parent"
+            class="spl-text code-mono"
+            type="text"
+            spellcheck="false"
+            autocapitalize="off"
+            autocorrect="off"
+            autocomplete="off"
+            placeholder="10.0.0.0/24"
+            aria-describedby="spl-input-hint"
+          />
+        </div>
+        <div class="spl-field spl-field--prefix">
+          <label class="eyebrow mb-2 block" for="spl-prefix">Split into /</label>
+          <input
+            id="spl-prefix"
+            class="spl-num code-mono"
+            type="number"
+            inputmode="numeric"
+            min="1"
+            max="128"
+            step="1"
+            autocomplete="off"
+            placeholder="optional"
+          />
+        </div>
+      </div>
+
+      <label class="eyebrow mt-4 mb-2 block" for="spl-allocated"
+        >Already allocated — one CIDR per line</label
+      >
+      <textarea
+        id="spl-allocated"
+        class="spl-input code-mono"
+        spellcheck="false"
+        autocapitalize="off"
+        autocorrect="off"
+        autocomplete="off"
+        rows="5"
+        placeholder="10.0.0.0/26&#10;10.0.0.128/26"
+        aria-describedby="spl-input-hint"></textarea>
+      <p id="spl-input-hint" class="spl-hint caption text-mute">
+        Enter a parent block, then list the CIDRs already in use. Blank lines and
+        <span class="code-mono">#</span> comments are ignored. Add a "split into /N" to see every
+        equal-size subnet.
+      </p>
+    </div>
+
+    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <span class="eyebrow">Result</span>
+        <span id="spl-summary" class="spl-summary code-mono text-mute" role="status" aria-live="polite"></span>
+      </div>
+      <div id="spl-results" class="spl-results" aria-live="polite" aria-atomic="false">
+        <p class="spl-empty body-sm text-mute">
+          Enter a parent CIDR or pick an example to see the free space, an equal-size split, and a
+          parsed breakdown of your allocations here.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  .spl-select {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    height: 32px;
+    min-width: 0;
+    max-width: 320px;
+    padding: 0 32px 0 12px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 13px;
+    line-height: 20px;
+    cursor: pointer;
+    text-overflow: ellipsis;
+    touch-action: manipulation;
+    transition: box-shadow 0.15s ease;
+  }
+  @media (min-width: 640px) {
+    .spl-select {
+      width: auto;
+      min-width: 260px;
+    }
+  }
+  .spl-select:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .spl-select:disabled {
+    cursor: not-allowed;
+    color: var(--color-mute);
+    opacity: 0.7;
+  }
+  .spl-select-wrap:hover .spl-select-caret {
+    color: var(--color-body);
+  }
+
+  .spl-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .spl-field--parent {
+    flex: 1 1 220px;
+    min-width: 0;
+  }
+  .spl-field--prefix {
+    flex: 0 0 auto;
+    width: 120px;
+  }
+
+  .spl-text,
+  .spl-num {
+    width: 100%;
+    height: 40px;
+    padding: 0 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 14px;
+    line-height: 22px;
+    transition: box-shadow 0.15s ease;
+  }
+  .spl-text::placeholder,
+  .spl-num::placeholder {
+    color: var(--color-mute);
+  }
+  .spl-text:hover,
+  .spl-num:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .spl-text:focus,
+  .spl-num:focus {
+    outline: none;
+  }
+  .spl-text:focus-visible,
+  .spl-num:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-link);
+    outline: none;
+  }
+
+  .spl-input {
+    width: 100%;
+    min-height: 116px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 14px;
+    line-height: 22px;
+    resize: vertical;
+    transition: box-shadow 0.15s ease;
+  }
+  .spl-input::placeholder {
+    color: var(--color-mute);
+  }
+  .spl-input:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .spl-input:focus {
+    outline: none;
+  }
+  .spl-input:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-link);
+    outline: none;
+  }
+  .spl-hint {
+    margin-top: 8px;
+    text-wrap: pretty;
+  }
+  .spl-summary {
+    white-space: nowrap;
+  }
+  .spl-results {
+    min-height: 44px;
+  }
+
+  /* ── Runtime-injected markup ─────────────────────────────────────────── */
+  :global(.spl-block) {
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+    animation: spl-rise 0.18s ease both;
+  }
+  :global(.spl-block + .spl-block) {
+    margin-top: 12px;
+  }
+  :global(.spl-block__head) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+  :global(.spl-block__note) {
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-mute);
+  }
+  :global(.spl-line) {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 8px 14px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--color-ink);
+    word-break: break-word;
+  }
+  :global(.spl-line + .spl-line) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.spl-dot) {
+    flex: 0 0 auto;
+    width: 7px;
+    height: 7px;
+    margin-top: 7px;
+    border-radius: 9999px;
+    background: var(--color-brand);
+  }
+  :global(.spl-dot--ok) {
+    background: var(--color-success);
+  }
+  :global(.spl-dot--bad) {
+    background: var(--color-error);
+  }
+  :global(.spl-dot--free) {
+    background: var(--color-success);
+  }
+  :global(.spl-dot--used) {
+    background: var(--color-error);
+  }
+  :global(.spl-dot--partial) {
+    background: var(--color-warning);
+  }
+  :global(.spl-line__meta) {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--color-mute);
+    text-transform: none;
+    letter-spacing: 0;
+    white-space: nowrap;
+  }
+  :global(.spl-line--bad) {
+    color: var(--color-error-deep);
+  }
+  :global(.spl-none) {
+    padding: 10px 14px;
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--color-mute);
+  }
+
+  @keyframes spl-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.spl-block) {
+      animation: none;
+    }
+  }
+
+  :global(.spl-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+  }
+  :global(.spl-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.spl-error__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.spl-error__detail) {
+    margin-top: 2px;
+    font-size: 13px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  :global(.spl-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+</style>
+
+<script>
+  import { escapeHtml } from '../lib/escape-html';
+
+  type Allocation = { cidr: string; ok: boolean; note?: string };
+  type Subnet = { cidr: string; status: 'free' | 'used' | 'partial' };
+  type SplitSection = { prefix: number; truncated: boolean; subnets: Subnet[] };
+  type Stats = { total: string; used: string; free: string; usedPct: number };
+  type Result = {
+    valid: boolean;
+    error?: string;
+    version?: 4 | 6;
+    parentCidr?: string;
+    stats?: Stats;
+    allocated: Allocation[];
+    freeCidrs: string[];
+    split?: SplitSection | null;
+    nextFree?: string | null;
+  };
+  type Example = { id: string; label: string; parent: string; allocated: string; newPrefix: number | null };
+  type EngineModule = { split: (parent: string, allocated: string, newPrefix: number | null) => Result };
+
+  const ROOT_SEL = '.spl-pg';
+  const DEBOUNCE_MS = 220;
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.splWired === 'true') return;
+      root.dataset.splWired = 'true';
+      void init(root);
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  function normaliseExamples(raw: unknown): Example[] {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((item, i) => {
+        const o = (item ?? {}) as Record<string, unknown>;
+        const np = o.newPrefix;
+        return {
+          id: typeof o.id === 'string' && o.id ? o.id : `example-${i + 1}`,
+          label: typeof o.label === 'string' && o.label ? o.label : `Example ${i + 1}`,
+          parent: typeof o.parent === 'string' ? o.parent : '',
+          allocated: typeof o.allocated === 'string' ? o.allocated : '',
+          newPrefix: typeof np === 'number' && Number.isInteger(np) ? np : null,
+        } satisfies Example;
+      })
+      .filter((e) => e.parent.length > 0);
+  }
+
+  const ALERT_SVG =
+    '<svg class="spl-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+
+  function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
+    summary.textContent = '';
+    container.innerHTML =
+      '<p class="spl-empty body-sm text-mute">Enter a parent CIDR or pick an example to see the free space, an equal-size split, and a parsed breakdown of your allocations here.</p>';
+  }
+
+  function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
+    summary.textContent = '';
+    container.innerHTML =
+      '<div class="spl-error" role="alert">' +
+      ALERT_SVG +
+      '<div><p class="spl-error__title">Nothing to split</p>' +
+      `<p class="spl-error__detail">${escapeHtml(message)}</p></div></div>`;
+  }
+
+  function freeHtml(freeCidrs: string[]): string {
+    if (freeCidrs.length === 0) {
+      return (
+        '<div class="spl-block"><div class="spl-block__head"><span>Free space (minimal CIDRs)</span></div>' +
+        '<p class="spl-none">None — the parent is fully allocated.</p></div>'
+      );
+    }
+    const lines = freeCidrs
+      .map((c) => `<div class="spl-line"><span class="spl-dot"></span><span>${escapeHtml(c)}</span></div>`)
+      .join('');
+    return (
+      '<div class="spl-block">' +
+      `<div class="spl-block__head"><span>Free space (minimal CIDRs)</span><span class="spl-line__meta">${freeCidrs.length} block${freeCidrs.length === 1 ? '' : 's'}</span></div>` +
+      lines +
+      '</div>'
+    );
+  }
+
+  function splitHtml(split: SplitSection, nextFree: string | null | undefined): string {
+    const note =
+      `<p class="spl-block__note">Next free: ${escapeHtml(nextFree ?? 'none')}</p>`;
+    const rows = split.subnets
+      .map((s) => {
+        const cls =
+          s.status === 'used' ? 'spl-dot--used' : s.status === 'partial' ? 'spl-dot--partial' : 'spl-dot--free';
+        return (
+          '<div class="spl-line">' +
+          `<span class="spl-dot ${cls}"></span>` +
+          `<span>${escapeHtml(s.cidr)}</span>` +
+          `<span class="spl-line__meta">${escapeHtml(s.status)}</span></div>`
+        );
+      })
+      .join('');
+    const head =
+      `<div class="spl-block__head"><span>Split into /${escapeHtml(String(split.prefix))}</span>` +
+      `<span class="spl-line__meta">${split.subnets.length} subnet${split.subnets.length === 1 ? '' : 's'}${split.truncated ? ' (showing first 256)' : ''}</span></div>`;
+    return '<div class="spl-block">' + head + note + rows + '</div>';
+  }
+
+  function allocatedHtml(allocated: Allocation[]): string {
+    if (allocated.length === 0) {
+      return (
+        '<div class="spl-block"><div class="spl-block__head"><span>Allocations</span></div>' +
+        '<p class="spl-none">None — add allocated CIDRs above to track used space.</p></div>'
+      );
+    }
+    const rows = allocated
+      .map((a) => {
+        if (!a.ok) {
+          return (
+            '<div class="spl-line spl-line--bad"><span class="spl-dot spl-dot--bad"></span>' +
+            `<span>${escapeHtml(a.cidr)}</span>` +
+            `<span class="spl-line__meta">${escapeHtml(a.note ?? 'invalid')}</span></div>`
+          );
+        }
+        return (
+          '<div class="spl-line"><span class="spl-dot spl-dot--ok"></span>' +
+          `<span>${escapeHtml(a.cidr)}</span>` +
+          `<span class="spl-line__meta">${escapeHtml(a.note ?? '')}</span></div>`
+        );
+      })
+      .join('');
+    return (
+      '<div class="spl-block"><div class="spl-block__head"><span>Allocations</span>' +
+      `<span class="spl-line__meta">${allocated.length} line${allocated.length === 1 ? '' : 's'}</span></div>` +
+      rows +
+      '</div>'
+    );
+  }
+
+  function renderResult(container: HTMLElement, summary: HTMLElement, result: Result): void {
+    const stats = result.stats;
+    summary.textContent = stats ? `used ${stats.usedPct}% · ${stats.free} free` : '';
+    container.innerHTML =
+      freeHtml(result.freeCidrs ?? []) +
+      (result.split ? splitHtml(result.split, result.nextFree) : '') +
+      allocatedHtml(result.allocated ?? []);
+  }
+
+  async function init(root: HTMLElement): Promise<void> {
+    const parentInput = el<HTMLInputElement>(root, '#spl-parent');
+    const prefixInput = el<HTMLInputElement>(root, '#spl-prefix');
+    const allocatedInput = el<HTMLTextAreaElement>(root, '#spl-allocated');
+    const exampleSel = el<HTMLSelectElement>(root, '#spl-example');
+    const resultsBox = el<HTMLElement>(root, '#spl-results');
+    const summaryEl = el<HTMLElement>(root, '#spl-summary');
+    if (!parentInput || !prefixInput || !allocatedInput || !exampleSel || !resultsBox || !summaryEl) return;
+
+    let engine: EngineModule;
+    let examples: Example[] = [];
+    try {
+      const [engineMod, examplesMod] = await Promise.all([
+        import('../lib/subnet-splitter/engine'),
+        import('../lib/subnet-splitter/examples'),
+      ]);
+      engine = engineMod as unknown as EngineModule;
+      examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+    } catch (err) {
+      renderError(resultsBox, summaryEl, 'The splitter engine failed to load. Reload the page to try again.');
+      console.error('[SubnetSplitter] engine import failed:', err);
+      return;
+    }
+
+    exampleSel.innerHTML = '';
+    const customOpt = document.createElement('option');
+    customOpt.value = '-1';
+    customOpt.textContent = examples.length ? 'Custom' : 'No examples';
+    exampleSel.appendChild(customOpt);
+    examples.forEach((ex, i) => {
+      const opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = ex.label;
+      exampleSel.appendChild(opt);
+    });
+    if (!examples.length) exampleSel.disabled = true;
+
+    function evaluate(): void {
+      const parent = parentInput!.value;
+      if (parent.trim().length === 0) {
+        renderEmpty(resultsBox!, summaryEl!);
+        return;
+      }
+      const prefixRaw = prefixInput!.value.trim();
+      const newPrefix = prefixRaw === '' ? null : Number(prefixRaw);
+      let result: Result | null = null;
+      try {
+        result = engine.split(parent, allocatedInput!.value, newPrefix);
+      } catch {
+        renderError(resultsBox!, summaryEl!, 'Unexpected error while splitting the parent block.');
+        return;
+      }
+      if (!result || result.valid === false) {
+        renderError(resultsBox!, summaryEl!, result?.error ?? 'Enter a valid parent CIDR.');
+        return;
+      }
+      renderResult(resultsBox!, summaryEl!, result);
+    }
+
+    let timer: number | undefined;
+    function scheduleEvaluate(): void {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(evaluate, DEBOUNCE_MS);
+    }
+
+    function onUserInput(): void {
+      if (exampleSel!.value !== '-1') exampleSel!.value = '-1';
+      scheduleEvaluate();
+    }
+
+    parentInput.addEventListener('input', onUserInput);
+    prefixInput.addEventListener('input', onUserInput);
+    allocatedInput.addEventListener('input', onUserInput);
+    exampleSel.addEventListener('change', () => {
+      const idx = Number(exampleSel.value);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+      const ex = examples[idx];
+      parentInput.value = ex.parent;
+      prefixInput.value = ex.newPrefix === null ? '' : String(ex.newPrefix);
+      allocatedInput.value = ex.allocated;
+      window.clearTimeout(timer);
+      evaluate();
+    });
+
+    const seed = examples[0];
+    if (seed) {
+      parentInput.value = seed.parent;
+      prefixInput.value = seed.newPrefix === null ? '' : String(seed.newPrefix);
+      allocatedInput.value = seed.allocated;
+      exampleSel.value = '0';
+      evaluate();
+    } else {
+      renderEmpty(resultsBox, summaryEl);
+    }
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>
