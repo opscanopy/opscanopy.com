@@ -1,7 +1,7 @@
 ---
 title: "Migrating from cron to systemd timers"
 description: "A practical guide to converting crontab entries into systemd .timer and .service units — OnCalendar syntax, logging, randomized delays, catch-up runs, and the gotchas that bite during migration."
-pubDate: 2026-06-08
+pubDate: 2026-05-20
 tags: ["systemd", "cron", "linux"]
 ---
 

@@ -1,7 +1,7 @@
 ---
 title: "Unit Testing Loki Alert Rules: the gap promtool leaves"
 description: "Prometheus has promtool test rules. Loki has nothing equivalent. Here is why testing LogQL alert rules matters, what a Loki rule unit test should look like, and how to close the gap today."
-pubDate: 2026-06-08
+pubDate: 2026-04-15
 tags: ["loki", "observability", "testing"]
 ---
 

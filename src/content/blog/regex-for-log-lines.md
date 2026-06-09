@@ -1,7 +1,7 @@
 ---
 title: "Writing robust regular expressions for log lines"
 description: "A practical guide to building regexes that parse log lines reliably — anchoring, capture groups, escaping, greediness and the failure modes that bite you in production."
-pubDate: 2026-06-08
+pubDate: 2026-05-27
 tags: ["regex", "logs", "parsing"]
 ---
 
