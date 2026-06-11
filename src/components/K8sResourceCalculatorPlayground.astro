@@ -38,7 +38,7 @@
 
     <div class="border-b border-hairline px-4 py-4 sm:px-5">
       <div class="k8s-fields">
-        <div class="k8s-field">
+        <div class="k8s-field" data-k8s-field="cpuRequest">
           <label class="eyebrow mb-2 block" for="k8s-cpu-req">CPU request</label>
           <input
             id="k8s-cpu-req"
@@ -52,7 +52,7 @@
             aria-describedby="k8s-input-hint"
           />
         </div>
-        <div class="k8s-field">
+        <div class="k8s-field" data-k8s-field="cpuLimit">
           <label class="eyebrow mb-2 block" for="k8s-cpu-lim">CPU limit</label>
           <input
             id="k8s-cpu-lim"
@@ -66,7 +66,7 @@
             aria-describedby="k8s-input-hint"
           />
         </div>
-        <div class="k8s-field">
+        <div class="k8s-field" data-k8s-field="memRequest">
           <label class="eyebrow mb-2 block" for="k8s-mem-req">Memory request</label>
           <input
             id="k8s-mem-req"
@@ -80,7 +80,7 @@
             aria-describedby="k8s-input-hint"
           />
         </div>
-        <div class="k8s-field">
+        <div class="k8s-field" data-k8s-field="memLimit">
           <label class="eyebrow mb-2 block" for="k8s-mem-lim">Memory limit</label>
           <input
             id="k8s-mem-lim"
@@ -94,7 +94,7 @@
             aria-describedby="k8s-input-hint"
           />
         </div>
-        <div class="k8s-field">
+        <div class="k8s-field" data-k8s-field="replicas">
           <label class="eyebrow mb-2 block" for="k8s-replicas">Replicas</label>
           <input
             id="k8s-replicas"
@@ -104,7 +104,7 @@
             min="1"
             step="1"
             autocomplete="off"
-            placeholder="3"
+            placeholder="1"
             aria-describedby="k8s-input-hint"
           />
         </div>
@@ -330,6 +330,16 @@
     line-height: 18px;
     text-wrap: pretty;
   }
+  .k8s-text--error {
+    box-shadow: inset 0 0 0 2px var(--color-error) !important;
+  }
+  .k8s-field-error {
+    margin-top: 5px;
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--color-error-deep);
+  }
+
   :global(.k8s-empty) {
     display: flex;
     align-items: center;
@@ -439,8 +449,18 @@
       `<p class="k8s-error__detail">${escapeHtml(message)}</p></div></div>`;
   }
 
-  function rowsHtml(rows: Row[]): string {
+  /** Labels that are "Total …" rows produced by the engine. */
+  const TOTAL_LABELS = new Set([
+    'Total CPU request',
+    'Total CPU limit',
+    'Total memory request',
+    'Total memory limit',
+  ]);
+
+  function rowsHtml(rows: Row[], replicas: number): string {
+    const hideTotals = replicas <= 1;
     const lines = rows
+      .filter((r) => !(hideTotals && TOTAL_LABELS.has(r.label)))
       .map((r) => {
         const cls = r.mono ? 'k8s-row__value k8s-row__value--mono' : 'k8s-row__value';
         return (
@@ -461,12 +481,12 @@
     return `<div class="k8s-warnings">${notes}</div>`;
   }
 
-  function renderResult(container: HTMLElement, summary: HTMLElement, result: Result): void {
+  function renderResult(container: HTMLElement, summary: HTMLElement, result: Result, replicas: number): void {
     const warnCount = result.warnings?.length ?? 0;
     summary.textContent = warnCount
       ? `${warnCount} warning${warnCount === 1 ? '' : 's'}`
       : 'ok';
-    container.innerHTML = rowsHtml(result.rows ?? []) + warningsHtml(result.warnings ?? []);
+    container.innerHTML = rowsHtml(result.rows ?? [], replicas) + warningsHtml(result.warnings ?? []);
   }
 
   async function init(root: HTMLElement): Promise<void> {
@@ -518,7 +538,53 @@
     });
     if (!examples.length) exampleSel.disabled = true;
 
+    // ── Per-field error helpers ──────────────────────────────────────────────
+    /** Map from engine field name to the corresponding input element. */
+    const fieldInputMap: Record<string, HTMLInputElement> = {
+      cpuRequest: cpuReqInput!,
+      cpuLimit: cpuLimInput!,
+      memRequest: memReqInput!,
+      memLimit: memLimInput!,
+      replicas: replicasInput!,
+    };
+
+    function clearFieldErrors(): void {
+      root.querySelectorAll<HTMLInputElement>('.k8s-text--error').forEach((inp) => {
+        inp.classList.remove('k8s-text--error');
+      });
+      root.querySelectorAll<HTMLElement>('.k8s-field-error').forEach((el) => el.remove());
+    }
+
+    /**
+     * Highlight a specific field input and append an error message below it.
+     * fieldName matches keys in fieldInputMap (cpuRequest, cpuLimit, etc.).
+     */
+    function setFieldError(fieldName: string, message: string): void {
+      const inp = fieldInputMap[fieldName];
+      if (!inp) return;
+      inp.classList.add('k8s-text--error');
+      const fieldDiv = inp.closest<HTMLElement>('[data-k8s-field]');
+      if (fieldDiv) {
+        const errEl = document.createElement('p');
+        errEl.className = 'k8s-field-error';
+        errEl.setAttribute('aria-live', 'polite');
+        errEl.textContent = message;
+        fieldDiv.appendChild(errEl);
+      }
+    }
+
+    /**
+     * Extract the field name from an engine error string.
+     * Engine errors follow the pattern: `<fieldName> "..." is not a valid...`
+     * or `replicas "..." must be a positive integer.`
+     */
+    function parseErrorField(error: string): string | null {
+      const match = /^(cpuRequest|cpuLimit|memRequest|memLimit|replicas)\s+"/.exec(error);
+      return match ? match[1] : null;
+    }
+
     function evaluate(): void {
+      clearFieldErrors();
       const input: Input = {
         cpuRequest: cpuReqInput!.value,
         cpuLimit: cpuLimInput!.value,
@@ -543,10 +609,14 @@
         return;
       }
       if (!result || result.valid === false) {
-        renderError(resultsBox!, summaryEl!, result?.error ?? 'Enter at least one valid resource value.');
+        const errMsg = result?.error ?? 'Enter at least one valid resource value.';
+        renderError(resultsBox!, summaryEl!, errMsg);
+        const fieldName = parseErrorField(errMsg);
+        if (fieldName) setFieldError(fieldName, errMsg);
         return;
       }
-      renderResult(resultsBox!, summaryEl!, result);
+      const replicas = Number(input.replicas) || 1;
+      renderResult(resultsBox!, summaryEl!, result, replicas);
     }
 
     let timer: number | undefined;

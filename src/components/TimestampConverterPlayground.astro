@@ -37,7 +37,10 @@
     </div>
 
     <div class="border-b border-hairline px-4 py-4 sm:px-5">
-      <label class="eyebrow mb-2 block" for="ts-input">Timestamp</label>
+      <div class="ts-label-row mb-2 flex items-center gap-2">
+        <label class="eyebrow" for="ts-input">Timestamp</label>
+        <span id="ts-sample-badge" class="ts-sample-badge" aria-label="pre-filled sample value" hidden>(sample)</span>
+      </div>
       <div class="ts-input-row">
         <div class="ts-input-wrap">
           <svg
@@ -250,10 +253,10 @@
   }
   :global(.ts-row) {
     display: grid;
-    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr) 30px;
     gap: 12px;
     padding: 9px 14px;
-    align-items: baseline;
+    align-items: center;
   }
   :global(.ts-row + .ts-row) {
     border-top: 1px solid var(--color-hairline);
@@ -322,6 +325,48 @@
     line-height: 18px;
     text-wrap: pretty;
   }
+  .ts-sample-badge {
+    display: inline-block;
+    font-size: 11px;
+    line-height: 16px;
+    padding: 1px 7px;
+    border-radius: 9999px;
+    background: var(--color-canvas-soft, #f3f4f6);
+    color: var(--color-mute);
+    font-family: var(--font-sans);
+    font-weight: 400;
+    vertical-align: middle;
+  }
+  .ts-sample-badge[hidden] {
+    display: none;
+  }
+
+  :global(.ts-copy-btn) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  :global(.ts-copy-btn:hover) {
+    background: var(--color-canvas-soft, #f3f4f6);
+    color: var(--color-ink);
+  }
+  :global(.ts-copy-btn.ts-copied) {
+    color: var(--color-success, #16a34a);
+  }
+  :global(.ts-copy-btn svg) {
+    width: 14px;
+    height: 14px;
+    pointer-events: none;
+  }
+
   :global(.ts-empty) {
     display: flex;
     align-items: center;
@@ -373,6 +418,11 @@
       .filter((e) => e.input.length > 0);
   }
 
+  const COPY_SVG =
+    '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1.2"></rect><path d="M3 11V3a1 1 0 0 1 1-1h7"></path></svg>';
+  const CHECK_SVG =
+    '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 8.5l3.5 3.5 7-7"></path></svg>';
+
   const ALERT_SVG =
     '<svg class="ts-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
 
@@ -408,7 +458,9 @@
         return (
           '<div class="ts-row">' +
           `<span class="ts-row__k">${escapeHtml(r.label ?? '')}</span>` +
-          `<span class="${cls}">${escapeHtml(v)}</span></div>`
+          `<span class="${cls}">${escapeHtml(v)}</span>` +
+          `<button class="ts-copy-btn" type="button" data-copy-value="${escapeHtml(v)}" aria-label="Copy ${escapeHtml(r.label ?? '')} value">${COPY_SVG}</button>` +
+          '</div>'
         );
       })
       .join('');
@@ -420,13 +472,32 @@
       '</div>';
   }
 
+  function wireResultCopyClicks(container: HTMLElement): void {
+    container.addEventListener('click', (e) => {
+      const btn = (e.target as Element).closest<HTMLButtonElement>('.ts-copy-btn');
+      if (!btn) return;
+      const text = btn.dataset.copyValue ?? '';
+      navigator.clipboard.writeText(text).then(() => {
+        btn.innerHTML = CHECK_SVG;
+        btn.classList.add('ts-copied');
+        setTimeout(() => {
+          btn.innerHTML = COPY_SVG;
+          btn.classList.remove('ts-copied');
+        }, 1500);
+      }).catch(() => {/* clipboard denied — silent fail */});
+    });
+  }
+
   async function init(root: HTMLElement): Promise<void> {
     const input = el<HTMLInputElement>(root, '#ts-input');
     const exampleSel = el<HTMLSelectElement>(root, '#ts-example');
     const nowBtn = el<HTMLButtonElement>(root, '#ts-now');
     const resultsBox = el<HTMLElement>(root, '#ts-results');
     const summaryEl = el<HTMLElement>(root, '#ts-summary');
+    const sampleBadge = el<HTMLElement>(root, '#ts-sample-badge');
     if (!input || !exampleSel || !nowBtn || !resultsBox || !summaryEl) return;
+
+    wireResultCopyClicks(resultsBox);
 
     let engine: EngineModule;
     let examples: Example[] = [];
@@ -488,18 +559,21 @@
 
     input.addEventListener('input', () => {
       if (exampleSel.value !== '-1') exampleSel.value = '-1';
+      if (sampleBadge) sampleBadge.hidden = true;
       scheduleEvaluate();
     });
     exampleSel.addEventListener('change', () => {
       const idx = Number(exampleSel.value);
       if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
       input.value = examples[idx].input;
+      if (sampleBadge) sampleBadge.hidden = idx !== 0;
       window.clearTimeout(timer);
       evaluate();
     });
     nowBtn.addEventListener('click', () => {
       input.value = String((Date.now() / 1000) | 0);
       exampleSel.value = '-1';
+      if (sampleBadge) sampleBadge.hidden = true;
       window.clearTimeout(timer);
       evaluate();
       input.focus();
@@ -509,6 +583,7 @@
     if (seed) {
       input.value = seed.input;
       exampleSel.value = '0';
+      if (sampleBadge) sampleBadge.hidden = false;
       evaluate();
     } else {
       renderEmpty(resultsBox, summaryEl);

@@ -14,6 +14,12 @@ export interface CheckEntry {
   cidr?: string;
   type?: string;
   error?: string;
+  /**
+   * Present when the user supplied a host address (host bits were set) and the
+   * engine silently normalised it to the network address, e.g. "10.0.0.5/24"
+   * → "10.0.0.0/24". Holds the original raw input string so the UI can warn.
+   */
+  normalizedFrom?: string;
 }
 
 /** A non-disjoint relationship found between two inputs. */

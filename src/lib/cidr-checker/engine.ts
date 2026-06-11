@@ -45,7 +45,17 @@ export function check(input: string): CheckResult {
     }
     const net = networkAddr(c);
     const norm = `${formatAddr(c.version, net)}/${c.prefix}`;
-    entries.push({ line, ok: true, version: c.version, cidr: norm, type: classify(c.version, net) });
+    // Detect whether the user supplied host bits (addr differs from network addr).
+    const hostBitsStripped = c.addr !== net;
+    const entry: CheckEntry = {
+      line,
+      ok: true,
+      version: c.version,
+      cidr: norm,
+      type: classify(c.version, net),
+    };
+    if (hostBitsStripped) entry.normalizedFrom = line;
+    entries.push(entry);
     parsed.push({ cidr: { version: c.version, addr: net, prefix: c.prefix }, norm });
   }
 

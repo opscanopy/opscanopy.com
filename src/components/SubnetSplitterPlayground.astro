@@ -474,10 +474,14 @@
         );
       })
       .join('');
+    const totalCount = split.subnets.length;
+    const truncatedBanner = split.truncated
+      ? `<div class="mt-3 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-700 px-4 py-2.5 text-sm text-amber-800 dark:text-amber-300">Showing first 256 of ${escapeHtml(String(totalCount))}+ subnets — narrow your prefix to see all results.</div>`
+      : '';
     const head =
       `<div class="spl-block__head"><span>Split into /${escapeHtml(String(split.prefix))}</span>` +
-      `<span class="spl-line__meta">${split.subnets.length} subnet${split.subnets.length === 1 ? '' : 's'}${split.truncated ? ' (showing first 256)' : ''}</span></div>`;
-    return '<div class="spl-block">' + head + note + rows + '</div>';
+      `<span class="spl-line__meta">${totalCount} subnet${totalCount === 1 ? '' : 's'}</span></div>`;
+    return '<div class="spl-block">' + head + note + rows + truncatedBanner + '</div>';
   }
 
   function allocatedHtml(allocated: Allocation[]): string {
@@ -557,7 +561,19 @@
     });
     if (!examples.length) exampleSel.disabled = true;
 
+    function clearFieldErrors(): void {
+      parentInput!.classList.remove('ring-2', 'ring-red-500');
+      prefixInput!.classList.remove('ring-2', 'ring-red-500');
+      allocatedInput!.classList.remove('ring-2', 'ring-red-500');
+    }
+
+    function markFieldError(field: HTMLElement): void {
+      clearFieldErrors();
+      field.classList.add('ring-2', 'ring-red-500');
+    }
+
     function evaluate(): void {
+      clearFieldErrors();
       const parent = parentInput!.value;
       if (parent.trim().length === 0) {
         renderEmpty(resultsBox!, summaryEl!);
@@ -565,6 +581,25 @@
       }
       const prefixRaw = prefixInput!.value.trim();
       const newPrefix = prefixRaw === '' ? null : Number(prefixRaw);
+
+      // CHANGE 1 — Validate new prefix against parent prefix before calling engine
+      if (newPrefix !== null) {
+        const parentMatch = parent.trim().match(/\/(\d+)$/);
+        if (parentMatch) {
+          const parentPrefix = Number(parentMatch[1]);
+          if (newPrefix <= parentPrefix) {
+            const suggested = parentPrefix + 1;
+            markFieldError(prefixInput!);
+            renderError(
+              resultsBox!,
+              summaryEl!,
+              `The new prefix (/${newPrefix}) must be larger than the parent prefix (/${parentPrefix}). For a /${parentPrefix} parent, try /${suggested} or smaller.`,
+            );
+            return;
+          }
+        }
+      }
+
       let result: Result | null = null;
       try {
         result = engine.split(parent, allocatedInput!.value, newPrefix);
@@ -573,6 +608,12 @@
         return;
       }
       if (!result || result.valid === false) {
+        // CHANGE 3 — highlight the field most likely responsible for the error
+        if (result?.error && /prefix|split/i.test(result.error)) {
+          markFieldError(prefixInput!);
+        } else {
+          markFieldError(parentInput!);
+        }
         renderError(resultsBox!, summaryEl!, result?.error ?? 'Enter a valid parent CIDR.');
         return;
       }
