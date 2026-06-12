@@ -20,13 +20,23 @@ const ptBr: Partial<SiteContent> = {
     },
     {
       title: 'Recursos',
-      links: [{ href: '/blog', label: 'Blog' }],
+      links: [
+        { href: '/blog', label: 'Blog' },
+        { href: '/#why', label: 'Por que o OpsCanopy' },
+      ],
     },
     {
-      title: 'Plataforma',
+      title: 'Empresa',
       links: [
-        { href: '/#why', label: 'Por que o OpsCanopy' },
-        { href: '/#privacy', label: 'Privacidade' },
+        { href: '/about', label: 'Sobre' },
+        { href: '/contact', label: 'Contato' },
+      ],
+    },
+    {
+      title: 'Legal',
+      links: [
+        { href: '/privacy', label: 'Privacidade' },
+        { href: '/terms', label: 'Termos' },
       ],
     },
   ],

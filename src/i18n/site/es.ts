@@ -19,13 +19,23 @@ const es: Partial<SiteContent> = {
     },
     {
       title: 'Recursos',
-      links: [{ href: '/blog', label: 'Blog' }],
+      links: [
+        { href: '/blog', label: 'Blog' },
+        { href: '/#why', label: 'Por qué OpsCanopy' },
+      ],
     },
     {
-      title: 'Plataforma',
+      title: 'Empresa',
       links: [
-        { href: '/#why', label: 'Por qué OpsCanopy' },
-        { href: '/#privacy', label: 'Privacidad' },
+        { href: '/about', label: 'Acerca de' },
+        { href: '/contact', label: 'Contacto' },
+      ],
+    },
+    {
+      title: 'Legal',
+      links: [
+        { href: '/privacy', label: 'Privacidad' },
+        { href: '/terms', label: 'Términos' },
       ],
     },
   ],

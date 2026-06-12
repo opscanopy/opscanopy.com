@@ -46,13 +46,23 @@ const en: SiteContent = {
     },
     {
       title: 'Resources',
-      links: [{ href: '/blog', label: 'Blog' }],
+      links: [
+        { href: '/blog', label: 'Blog' },
+        { href: '/#why', label: 'Why OpsCanopy' },
+      ],
     },
     {
-      title: 'Platform',
+      title: 'Company',
       links: [
-        { href: '/#why', label: 'Why OpsCanopy' },
-        { href: '/#privacy', label: 'Privacy' },
+        { href: '/about', label: 'About' },
+        { href: '/contact', label: 'Contact' },
+      ],
+    },
+    {
+      title: 'Legal',
+      links: [
+        { href: '/privacy', label: 'Privacy' },
+        { href: '/terms', label: 'Terms' },
       ],
     },
   ],

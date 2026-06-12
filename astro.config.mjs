@@ -26,7 +26,10 @@ export default defineConfig({
         locales: { en: 'en', es: 'es', de: 'de', fr: 'fr', 'pt-br': 'pt-BR' },
       },
       // Keep noindex routes out of the sitemap.
-      filter: (page) => !page.includes('/alertlint-wasm-demo') && !page.includes('/404'),
+      filter: (page) =>
+        !page.includes('/alertlint-wasm-demo') &&
+        !page.includes('/404') &&
+        !page.includes('/500'),
     }),
   ],
   vite: {

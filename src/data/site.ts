@@ -42,13 +42,23 @@ export const footerColumns: FooterColumn[] = [
   },
   {
     title: 'Resources',
-    links: [{ label: 'Blog', href: '/blog' }],
+    links: [
+      { label: 'Blog', href: '/blog' },
+      { label: 'Why OpsCanopy', href: '/#why' },
+    ],
   },
   {
-    title: 'Platform',
+    title: 'Company',
     links: [
-      { label: 'Why OpsCanopy', href: '/#why' },
-      { label: 'Privacy', href: '/#privacy' },
+      { label: 'About', href: '/about' },
+      { label: 'Contact', href: '/contact' },
+    ],
+  },
+  {
+    title: 'Legal',
+    links: [
+      { label: 'Privacy', href: '/privacy' },
+      { label: 'Terms', href: '/terms' },
     ],
   },
 ];
