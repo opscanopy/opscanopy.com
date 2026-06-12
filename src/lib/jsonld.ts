@@ -46,6 +46,26 @@ export function softwareAppLd(o: {
 }
 
 /**
+ * BreadcrumbList object for a tool page's breadcrumb trail.
+ * `items` is an ordered list of { name, item } where `item` is an ABSOLUTE url.
+ * Positions are 1-based, in array order.
+ */
+export function breadcrumbLd(
+  items: { name: string; item: string }[],
+): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: items.map((it, i) => ({
+      '@type': 'ListItem',
+      position: i + 1,
+      name: it.name,
+      item: it.item,
+    })),
+  };
+}
+
+/**
  * FAQPage object mirroring a list of rendered question/answer pairs.
  */
 export function faqPageLd(faqs: { q: string; a: string }[]): Record<string, unknown> {

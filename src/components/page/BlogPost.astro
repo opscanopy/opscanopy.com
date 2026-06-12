@@ -10,10 +10,19 @@ import { render } from 'astro:content';
 import { getAbsoluteLocaleUrl } from 'astro:i18n';
 import Shell from '../Shell.astro';
 import LangSwitcher from '../LangSwitcher.astro';
+import Button from '../Button.astro';
 import { site } from '../../data/site';
-import { BCP47, type Locale } from '../../i18n/config';
+import { BCP47, DEFAULT_LOCALE, type Locale } from '../../i18n/config';
 import { useTranslations, localizeKey } from '../../i18n/utils';
-import { formatPostDate, type LocalizedPost } from '../../i18n/blog';
+import { breadcrumbLd } from '../../lib/jsonld';
+import {
+  formatPostDate,
+  estimateReadingTime,
+  getAllPosts,
+  getRelatedPosts,
+  getPrevNext,
+  type LocalizedPost,
+} from '../../i18n/blog';
 
 interface Props {
   post: LocalizedPost;
@@ -31,20 +40,51 @@ const t = useTranslations(lang);
 const canonical = `/blog/${slug}`;
 const isoDate = entry.data.pubDate.toISOString();
 
+// Optional revision date — drives the "Last updated" line + JSON-LD dateModified.
+const updatedDate = entry.data.updatedDate;
+const updatedIso = updatedDate?.toISOString();
+
+// Reading time off the raw markdown body, and the byline line under the date.
+const readingTime = estimateReadingTime(entry.body);
+const readingLabel = t('blog.readingTime', { minutes: readingTime });
+
+// Optional in-article conversion CTA to the tool this post discusses.
+const relatedTool = entry.data.relatedTool;
+
+// Same-language related posts, ranked by shared tags then recency. Fetched here
+// (rather than threaded through every route) so all locale routes get it free.
+const allPosts = await getAllPosts();
+const relatedPosts = getRelatedPosts(post, allPosts, 3);
+
+// Chronological prev/next within the same language (oldest → newest).
+const { prev, next } = getPrevNext(post, allPosts);
+
+// Breadcrumb trail (Home / Blog / {title}) — localized hrefs for the links,
+// absolute URLs for the BreadcrumbList JSON-LD per the shared contract.
+const blogIndexHref = localizeKey('/blog', lang);
+const breadcrumbJsonLd = breadcrumbLd([
+  { name: t('blog.breadcrumbHome'), item: `${site.url}/` },
+  { name: t('blog.breadcrumbBlog'), item: `${site.url}/blog` },
+  { name: entry.data.title, item: `${site.url}/blog/${slug}` },
+]);
+
 const jsonLd = {
   '@context': 'https://schema.org',
   '@type': 'BlogPosting',
   headline: entry.data.title,
   description: entry.data.description,
   datePublished: isoDate,
-  dateModified: isoDate,
+  dateModified: updatedIso ?? isoDate,
   inLanguage: BCP47[lang],
   keywords: entry.data.tags?.join(', '),
   mainEntityOfPage: {
     '@type': 'WebPage',
     '@id': getAbsoluteLocaleUrl(lang, canonical),
   },
-  author: { '@type': 'Organization', name: site.author, url: site.url },
+  author:
+    entry.data.author === site.author
+      ? { '@type': 'Organization', name: site.author, url: site.url }
+      : { '@type': 'Person', name: entry.data.author },
   publisher: { '@type': 'Organization', name: site.name, url: site.url },
 };
 ---
@@ -59,7 +99,28 @@ const jsonLd = {
 >
   <article class="bg-canvas-soft">
     <div class="container-page py-16 sm:py-24">
-      <div class="mx-auto max-w-[44rem]">
+      <div class="container-article">
+        <nav aria-label={t('blog.breadcrumbAriaLabel')} class="mb-6">
+          <ol role="list" class="caption flex flex-wrap items-center gap-x-1.5 gap-y-1 text-mute">
+            <li>
+              <a
+                href={localizeKey('/', lang)}
+                class="rounded px-0.5 transition-colors hover:text-ink"
+              >
+                {t('blog.breadcrumbHome')}
+              </a>
+            </li>
+            <li aria-hidden="true">/</li>
+            <li>
+              <a href={blogIndexHref} class="rounded px-0.5 transition-colors hover:text-ink">
+                {t('blog.breadcrumbBlog')}
+              </a>
+            </li>
+            <li aria-hidden="true">/</li>
+            <li class="min-w-0 truncate text-body" aria-current="page">{entry.data.title}</li>
+          </ol>
+        </nav>
+
         <div class="flex items-center justify-between gap-4">
           <a
             href={localizeKey('/blog', lang)}
@@ -86,15 +147,41 @@ const jsonLd = {
         </div>
 
         <header class="mt-8">
-          <time datetime={isoDate} class="eyebrow tabular-nums">{formatPostDate(lang, entry.data.pubDate)}</time>
+          <p class="caption flex flex-wrap items-center gap-x-1.5 gap-y-1 text-mute">
+            <span class="text-body">{entry.data.author}</span>
+            <span aria-hidden="true">·</span>
+            <time datetime={isoDate} class="tabular-nums">{formatPostDate(lang, entry.data.pubDate)}</time>
+            <span aria-hidden="true">·</span>
+            <span class="tabular-nums">{readingLabel}</span>
+          </p>
+          {
+            updatedDate && updatedIso && (
+              <p class="caption mt-1.5 text-mute">
+                <time datetime={updatedIso} class="tabular-nums">
+                  {t('blog.updatedOn', { date: formatPostDate(lang, updatedDate) })}
+                </time>
+              </p>
+            )
+          }
           <h1 class="display-lg mt-3 text-balance text-ink">{entry.data.title}</h1>
           <p class="body-lg mt-5 text-pretty text-body">{entry.data.description}</p>
           {
             entry.data.tags && entry.data.tags.length > 0 && (
               <ul role="list" class="mt-6 flex flex-wrap gap-2">
-                {entry.data.tags.map((tag) => (
-                  <li class="badge code-mono lowercase">{tag}</li>
-                ))}
+                {entry.data.tags.map((tag) =>
+                  lang === DEFAULT_LOCALE ? (
+                    <li>
+                      <a
+                        href={`/blog/tag/${tag.toLowerCase()}`}
+                        class="badge code-mono lowercase transition-colors hover:border-brand/40 hover:text-brand-strong"
+                      >
+                        {tag}
+                      </a>
+                    </li>
+                  ) : (
+                    <li class="badge code-mono lowercase">{tag}</li>
+                  ),
+                )}
               </ul>
             )
           }
@@ -102,12 +189,225 @@ const jsonLd = {
 
         <hr class="my-10 border-0 border-t border-hairline" />
 
-        <div class="rich-text">
+        <div
+          class="rich-text"
+          data-copy-label={t('blog.copyCode')}
+          data-copied-label={t('blog.copiedCode')}
+          data-copy-aria={t('blog.copyCodeAriaLabel')}
+        >
           <Content />
         </div>
+
+        {
+          relatedTool && (
+            <aside class="mt-12 rounded-xl border border-brand/30 bg-brand/5 p-6 sm:flex sm:items-center sm:justify-between sm:gap-6">
+              <div class="min-w-0">
+                <p class="eyebrow text-brand-strong">{t('blog.ctaEyebrow')}</p>
+                <p class="body-md mt-2 text-pretty text-ink">
+                  {t('blog.ctaLead')}
+                </p>
+              </div>
+              <div class="mt-5 shrink-0 sm:mt-0">
+                <Button href={relatedTool.href} size="sm">
+                  {t('blog.ctaButton', { name: relatedTool.name })}
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    aria-hidden="true"
+                    class="ml-1.5 inline-block align-[-1px]"
+                  >
+                    <path
+                      d="M6 3.5 10.5 8 6 12.5"
+                      stroke="currentColor"
+                      stroke-width="1.5"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </Button>
+              </div>
+            </aside>
+          )
+        }
+
+        {
+          relatedPosts.length > 0 && (
+            <section class="mt-16 border-t border-hairline pt-12" aria-labelledby="related-heading">
+              <h2 id="related-heading" class="display-sm text-ink">{t('blog.relatedTitle')}</h2>
+              <ul role="list" class="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {relatedPosts.map((rp) => (
+                  <li class="h-full">
+                    <a
+                      href={localizeKey(`/blog/${rp.slug}`, lang)}
+                      class="card group flex h-full min-w-0 flex-col p-6 transition-[transform,box-shadow] duration-150 ease-out hover:-translate-y-0.5 hover:shadow-soft focus-visible:-translate-y-0.5 focus-visible:shadow-soft motion-reduce:transform-none motion-reduce:hover:translate-y-0"
+                    >
+                      <p class="caption flex flex-wrap items-center gap-x-1.5 gap-y-1 text-mute">
+                        <time datetime={rp.entry.data.pubDate.toISOString()} class="tabular-nums">
+                          {formatPostDate(lang, rp.entry.data.pubDate)}
+                        </time>
+                        <span aria-hidden="true">·</span>
+                        <span class="tabular-nums">
+                          {t('blog.readingTime', { minutes: estimateReadingTime(rp.entry.body) })}
+                        </span>
+                      </p>
+                      <h3 class="body-lg mt-3 text-balance font-semibold text-ink">
+                        {rp.entry.data.title}
+                      </h3>
+                      <p class="body-sm mt-3 line-clamp-3 grow text-pretty text-body">
+                        {rp.entry.data.description}
+                      </p>
+                      <span
+                        class="body-sm mt-5 inline-flex items-center gap-1 font-medium text-link"
+                        aria-hidden="true"
+                      >
+                        {t('blog.readPost')}
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 16 16"
+                          fill="none"
+                          class="transition-transform duration-150 ease-out group-hover:translate-x-0.5 group-focus-visible:translate-x-0.5 motion-reduce:transform-none"
+                        >
+                          <path
+                            d="M6 3.5 10.5 8 6 12.5"
+                            stroke="currentColor"
+                            stroke-width="1.5"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          />
+                        </svg>
+                      </span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )
+        }
+
+        {
+          (prev || next) && (
+            <nav
+              aria-label={t('blog.pagerAriaLabel')}
+              class="mt-16 grid grid-cols-1 gap-4 border-t border-hairline pt-12 sm:grid-cols-2"
+            >
+              {prev ? (
+                <a
+                  href={localizeKey(`/blog/${prev.slug}`, lang)}
+                  rel="prev"
+                  class="card group flex min-w-0 flex-col p-5 transition-[transform,box-shadow] duration-150 ease-out hover:-translate-y-0.5 hover:shadow-soft focus-visible:-translate-y-0.5 focus-visible:shadow-soft motion-reduce:transform-none motion-reduce:hover:translate-y-0"
+                >
+                  <span class="caption inline-flex items-center gap-1 text-mute">
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      aria-hidden="true"
+                      class="transition-transform duration-150 ease-out group-hover:-translate-x-0.5 motion-reduce:transform-none"
+                    >
+                      <path
+                        d="M10 3.5 5.5 8 10 12.5"
+                        stroke="currentColor"
+                        stroke-width="1.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                    {t('blog.prevPost')}
+                  </span>
+                  <span class="body-sm mt-2 text-balance font-semibold text-ink">
+                    {prev.entry.data.title}
+                  </span>
+                </a>
+              ) : (
+                <span aria-hidden="true" class="hidden sm:block" />
+              )}
+              {next && (
+                <a
+                  href={localizeKey(`/blog/${next.slug}`, lang)}
+                  rel="next"
+                  class="card group flex min-w-0 flex-col p-5 text-right transition-[transform,box-shadow] duration-150 ease-out hover:-translate-y-0.5 hover:shadow-soft focus-visible:-translate-y-0.5 focus-visible:shadow-soft motion-reduce:transform-none motion-reduce:hover:translate-y-0"
+                >
+                  <span class="caption inline-flex items-center justify-end gap-1 text-mute">
+                    {t('blog.nextPost')}
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      aria-hidden="true"
+                      class="transition-transform duration-150 ease-out group-hover:translate-x-0.5 motion-reduce:transform-none"
+                    >
+                      <path
+                        d="M6 3.5 10.5 8 6 12.5"
+                        stroke="currentColor"
+                        stroke-width="1.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </span>
+                  <span class="body-sm mt-2 text-balance font-semibold text-ink">
+                    {next.entry.data.title}
+                  </span>
+                </a>
+              )}
+            </nav>
+          )
+        }
       </div>
     </div>
   </article>
+
+  <script type="application/ld+json" set:html={JSON.stringify(breadcrumbJsonLd)} />
+
+  <script>
+    // Progressive enhancement: add a Copy button to each rendered <pre> in the
+    // article. No-ops where the Clipboard API is unavailable. Labels come from
+    // data-* attributes on .rich-text so the strings stay localized.
+    document.addEventListener('astro:page-load', () => {
+      const root = document.querySelector<HTMLElement>('.rich-text');
+      if (!root || !navigator.clipboard) return;
+
+      const copyLabel = root.dataset.copyLabel ?? 'Copy';
+      const copiedLabel = root.dataset.copiedLabel ?? 'Copied';
+      const ariaLabel = root.dataset.copyAria ?? 'Copy code to clipboard';
+
+      root.querySelectorAll<HTMLPreElement>('pre').forEach((pre) => {
+        if (pre.dataset.copyReady) return;
+        pre.dataset.copyReady = 'true';
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'rich-code-copy';
+        btn.textContent = copyLabel;
+        btn.setAttribute('aria-label', ariaLabel);
+
+        let resetTimer: number | undefined;
+        btn.addEventListener('click', async () => {
+          const code = pre.querySelector('code');
+          const text = (code ?? pre).textContent ?? '';
+          try {
+            await navigator.clipboard.writeText(text);
+            btn.textContent = copiedLabel;
+            btn.dataset.copied = 'true';
+            window.clearTimeout(resetTimer);
+            resetTimer = window.setTimeout(() => {
+              btn.textContent = copyLabel;
+              delete btn.dataset.copied;
+            }, 2000);
+          } catch {
+            /* Clipboard write blocked — leave the button label unchanged. */
+          }
+        });
+
+        pre.appendChild(btn);
+      });
+    });
+  </script>
 </Shell>
 
 <style>
@@ -142,10 +442,16 @@ const jsonLd = {
     scroll-margin-top: 88px;
   }
 
+  /*
+   * Heading sizes/line-heights mirror the global type scale in global.css
+   * (h2 → display-md, h3 → display-sm, h4 → body-md) so global.css remains the
+   * single source of truth. Vertical margins below are intentionally local to
+   * the article rhythm. Keep these values in sync if the display tokens change.
+   */
   .rich-text h2 {
     margin-top: 48px;
     margin-bottom: 16px;
-    font-size: 24px;
+    font-size: clamp(22px, 2.4vw, 24px);
     line-height: 32px;
     letter-spacing: -0.04em;
   }
@@ -153,8 +459,9 @@ const jsonLd = {
   .rich-text h3 {
     margin-top: 36px;
     margin-bottom: 12px;
-    font-size: 20px;
+    font-size: clamp(18px, 2vw, 20px);
     line-height: 28px;
+    letter-spacing: -0.03em;
   }
 
   .rich-text h4 {
@@ -218,6 +525,12 @@ const jsonLd = {
     font-style: normal;
   }
 
+  /*
+   * Inline code: theme-aware soft surface (--color-canvas-soft-2) with the
+   * darkest text token (--color-ink). A --color-hairline-strong border replaces
+   * the near-invisible hairline shadow so the chip stays delineated and the
+   * text/background pairing clears WCAG AA in both light and dark themes.
+   */
   .rich-text :not(pre) > code {
     font-family: var(--font-mono);
     font-size: 13px;
@@ -225,12 +538,13 @@ const jsonLd = {
     color: var(--color-ink);
     padding: 2px 6px;
     border-radius: var(--radius-xs);
-    box-shadow: var(--shadow-hairline);
+    border: 1px solid var(--color-hairline-strong);
     overflow-wrap: anywhere;
     overflow-wrap: break-word;
   }
 
   .rich-text pre {
+    position: relative;
     margin-block: 24px;
     padding: 20px 24px;
     border-radius: var(--radius-md);
@@ -241,6 +555,54 @@ const jsonLd = {
     -webkit-overflow-scrolling: touch;
     box-shadow: var(--shadow-subtle);
     tab-size: 2;
+  }
+
+  /*
+   * Copy button injected by the progressive-enhancement script above. Lives in
+   * the top-right of each code block; sticks to the viewport edge horizontally
+   * so it stays reachable when the <pre> scrolls. Colors ride on the dark code
+   * surface tokens (--color-on-primary), so it reads in both themes.
+   */
+  .rich-text pre .rich-code-copy {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 1;
+    padding: 4px 10px;
+    border: 1px solid color-mix(in srgb, var(--color-on-primary) 28%, transparent);
+    border-radius: var(--radius-xs);
+    background: color-mix(in srgb, var(--color-on-primary) 10%, transparent);
+    color: var(--color-on-primary);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.7;
+    transition:
+      opacity 0.15s ease,
+      background-color 0.15s ease,
+      border-color 0.15s ease;
+  }
+
+  .rich-text pre:hover .rich-code-copy,
+  .rich-text pre .rich-code-copy:focus-visible {
+    opacity: 1;
+  }
+
+  .rich-text pre .rich-code-copy:hover {
+    background: color-mix(in srgb, var(--color-on-primary) 18%, transparent);
+  }
+
+  .rich-text pre .rich-code-copy[data-copied] {
+    opacity: 1;
+    border-color: color-mix(in srgb, var(--color-success) 60%, transparent);
+    color: var(--color-success);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .rich-text pre .rich-code-copy {
+      transition: none;
+    }
   }
 
   .rich-text pre code {

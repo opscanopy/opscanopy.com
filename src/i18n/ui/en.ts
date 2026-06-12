@@ -62,6 +62,33 @@ const en = {
   'blog.readPost': 'Read post',
   'blog.allPosts': 'All posts',
   'blog.notTranslated': 'This post is not available in your language yet — showing it in English.',
+  'blog.readingTime': '{minutes} min read',
+  'blog.updatedOn': 'Last updated {date}',
+  'blog.breadcrumbHome': 'Home',
+  'blog.breadcrumbBlog': 'Blog',
+  'blog.breadcrumbAriaLabel': 'Breadcrumb',
+  'blog.relatedTitle': 'Related posts',
+  'blog.ctaEyebrow': 'Try it live',
+  'blog.ctaLead': 'This post pairs with a free, browser-based tool.',
+  'blog.ctaButton': 'Open {name}',
+
+  // Prev/next pager
+  'blog.pagerAriaLabel': 'Post navigation',
+  'blog.prevPost': 'Previous',
+  'blog.nextPost': 'Next',
+
+  // Code copy (progressive enhancement)
+  'blog.copyCode': 'Copy',
+  'blog.copiedCode': 'Copied',
+  'blog.copyCodeAriaLabel': 'Copy code to clipboard',
+
+  // Tag pages
+  'blog.tagEyebrow': 'Tag',
+  'blog.tagTitle': 'Posts tagged “{tag}”',
+  'blog.tagLead': 'Every post filed under “{tag}”, newest first.',
+  'blog.tagCountSingular': 'post.',
+  'blog.tagCountPlural': 'posts.',
+  'blog.breadcrumbTag': 'Tag',
 
   // Category filter labels (key = stable English category name)
   'category.Networking': 'Networking',

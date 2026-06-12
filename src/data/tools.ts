@@ -23,6 +23,14 @@ export interface Tool {
   /** Primary + long-tail SEO keywords. */
   keywords: string[];
   accent: ToolAccent;
+  /**
+   * Optional ISO date the tool was added. The "Newest" catalog sort uses
+   * registry order as its primary proxy for recency (later-registered = newer),
+   * so this field is intentionally NOT populated with fabricated dates. It
+   * exists so a real ship date can be recorded later without a schema change;
+   * the sort falls back to registry position whenever it is absent.
+   */
+  addedAt?: string;
 }
 
 export const tools: Tool[] = [
@@ -453,4 +461,96 @@ export const accentEdgeClass: Record<ToolAccent, string> = {
   develop: 'from-[#007cf0] to-[#00dfd8]',
   preview: 'from-[#7928ca] to-[#ff0080]',
   ship: 'from-[#ff4d4d] to-[#f9cb28]',
+};
+
+/**
+ * Semantic category color system — color now MEANS category. Each category in
+ * the registry maps to one muted -600/-700 hue, used (via inline style) for
+ * both the card's solid top accent bar and the dot inside the category pill.
+ * This replaces the decorative develop/preview/ship gradient for those grids,
+ * so a card's color tells you what kind of tool it is at a glance. The dot
+ * carries the hue while the pill label stays in dark text for AA legibility.
+ * Keep this keyed by the EXACT `category` strings used above.
+ */
+export const categoryAccent: Record<string, string> = {
+  Networking: '#2563eb',
+  Security: '#e11d48',
+  Encoding: '#b45309',
+  Kubernetes: '#4f46e5',
+  Observability: '#7c3aed',
+  'CI/CD': '#0e7490',
+  Scheduling: '#c2410c',
+  Logs: '#be185d',
+  Config: '#0f766e',
+};
+
+/* ─── Category landing pages ──────────────────────────────────────────────
+ * Slug ⇄ category mapping + per-category metadata that drives the static
+ * /tools/{slug} category pages and the "Browse by category" link row on the
+ * catalog. Slugs are derived from the category label (e.g. "CI/CD" → "ci-cd")
+ * so a category never needs hand-maintained slugs.
+ */
+
+/** Slugify a category label for use in a /tools/{slug} URL ("CI/CD" → "ci-cd"). */
+export function categoryToSlug(category: string): string {
+  return category
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-') // any run of non-alphanumerics → single hyphen
+    .replace(/^-+|-+$/g, ''); // trim leading/trailing hyphens
+}
+
+/**
+ * Distinct categories in first-appearance (registry) order, each paired with
+ * its URL slug and a count of live tools. Drives getStaticPaths + the
+ * "Browse by category" row. Only categories that have at least one LIVE tool
+ * are emitted, so no category page is ever an orphan/empty.
+ */
+export interface CategoryEntry {
+  category: string;
+  slug: string;
+  count: number;
+}
+
+export const categories: CategoryEntry[] = (() => {
+  const order: string[] = [];
+  const counts = new Map<string, number>();
+  for (const tool of liveTools) {
+    if (!counts.has(tool.category)) order.push(tool.category);
+    counts.set(tool.category, (counts.get(tool.category) ?? 0) + 1);
+  }
+  return order.map((category) => ({
+    category,
+    slug: categoryToSlug(category),
+    count: counts.get(category) ?? 0,
+  }));
+})();
+
+/** Resolve a URL slug back to its canonical category label, or undefined. */
+export function slugToCategory(slug: string): string | undefined {
+  return categories.find((c) => c.slug === slug)?.category;
+}
+
+/** Live tools in a single category, preserving registry order. */
+export function toolsInCategory(category: string): Tool[] {
+  return liveTools.filter((t) => t.category === category);
+}
+
+/**
+ * One-line, human blurb per category for the landing-page header + meta
+ * description. Keyed by the EXACT `category` strings used above; any category
+ * without an entry falls back to a generic line at the call site.
+ */
+export const categoryBlurb: Record<string, string> = {
+  Networking:
+    'Subnet, CIDR, IP and DNS calculators that do exact 32- and 128-bit math in your browser.',
+  Security:
+    'Decode, hash and convert security artefacts locally — nothing you paste ever leaves the page.',
+  Encoding: 'Encode, decode and convert between common text and time formats, instantly.',
+  Kubernetes: 'Size and reason about Kubernetes workloads without leaving the browser.',
+  Observability:
+    'Write, translate and explain Loki and Prometheus queries and alert rules.',
+  'CI/CD': 'Validate and harden your pipeline configuration before it runs.',
+  Scheduling: 'Understand, convert and verify cron and systemd timer schedules.',
+  Logs: 'Build and test the patterns that parse your logs, against real sample lines.',
+  Config: 'Catch configuration drift between your code and its environment files.',
 };

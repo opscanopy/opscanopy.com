@@ -52,6 +52,33 @@ const es: Partial<UiDict> = {
   'blog.readPost': 'Leer publicación',
   'blog.allPosts': 'Todas las publicaciones',
   'blog.notTranslated': 'Esta publicación aún no está disponible en tu idioma; se muestra en inglés.',
+  'blog.readingTime': '{minutes} min de lectura',
+  'blog.updatedOn': 'Última actualización: {date}',
+  'blog.breadcrumbHome': 'Inicio',
+  'blog.breadcrumbBlog': 'Blog',
+  'blog.breadcrumbAriaLabel': 'Ruta de navegación',
+  'blog.relatedTitle': 'Publicaciones relacionadas',
+  'blog.ctaEyebrow': 'Pruébalo en vivo',
+  'blog.ctaLead': 'Esta publicación se acompaña de una herramienta gratuita que funciona en el navegador.',
+  'blog.ctaButton': 'Abrir {name}',
+
+  // Prev/next pager
+  'blog.pagerAriaLabel': 'Navegación de publicaciones',
+  'blog.prevPost': 'Anterior',
+  'blog.nextPost': 'Siguiente',
+
+  // Code copy (progressive enhancement)
+  'blog.copyCode': 'Copiar',
+  'blog.copiedCode': 'Copiado',
+  'blog.copyCodeAriaLabel': 'Copiar código al portapapeles',
+
+  // Tag pages
+  'blog.tagEyebrow': 'Etiqueta',
+  'blog.tagTitle': 'Publicaciones con la etiqueta «{tag}»',
+  'blog.tagLead': 'Todas las publicaciones archivadas en «{tag}», de la más reciente a la más antigua.',
+  'blog.tagCountSingular': 'publicación.',
+  'blog.tagCountPlural': 'publicaciones.',
+  'blog.breadcrumbTag': 'Etiqueta',
 
   // Category filter labels (key = stable English category name)
   'category.Networking': 'Redes',

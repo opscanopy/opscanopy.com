@@ -55,6 +55,33 @@ const fr: Partial<UiDict> = {
   'blog.allPosts': 'Tous les articles',
   'blog.notTranslated':
     'Cet article n’est pas encore disponible dans votre langue — il est affiché en anglais.',
+  'blog.readingTime': '{minutes} min de lecture',
+  'blog.updatedOn': 'Dernière mise à jour : {date}',
+  'blog.breadcrumbHome': 'Accueil',
+  'blog.breadcrumbBlog': 'Blog',
+  'blog.breadcrumbAriaLabel': 'Fil d’Ariane',
+  'blog.relatedTitle': 'Articles liés',
+  'blog.ctaEyebrow': 'Essayez-le en direct',
+  'blog.ctaLead': 'Cet article s’accompagne d’un outil gratuit qui fonctionne dans le navigateur.',
+  'blog.ctaButton': 'Ouvrir {name}',
+
+  // Prev/next pager
+  'blog.pagerAriaLabel': 'Navigation des articles',
+  'blog.prevPost': 'Précédent',
+  'blog.nextPost': 'Suivant',
+
+  // Code copy (progressive enhancement)
+  'blog.copyCode': 'Copier',
+  'blog.copiedCode': 'Copié',
+  'blog.copyCodeAriaLabel': 'Copier le code dans le presse-papiers',
+
+  // Tag pages
+  'blog.tagEyebrow': 'Étiquette',
+  'blog.tagTitle': 'Articles étiquetés « {tag} »',
+  'blog.tagLead': 'Tous les articles classés sous « {tag} », du plus récent au plus ancien.',
+  'blog.tagCountSingular': 'article.',
+  'blog.tagCountPlural': 'articles.',
+  'blog.breadcrumbTag': 'Étiquette',
 
   // Category filter labels (key = stable English category name)
   'category.Networking': 'Réseau',

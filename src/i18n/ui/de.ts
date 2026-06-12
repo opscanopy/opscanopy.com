@@ -55,6 +55,33 @@ const de: Partial<UiDict> = {
   'blog.allPosts': 'Alle Beiträge',
   'blog.notTranslated':
     'Dieser Beitrag ist noch nicht in Ihrer Sprache verfügbar — er wird auf Englisch angezeigt.',
+  'blog.readingTime': '{minutes} Min. Lesezeit',
+  'blog.updatedOn': 'Zuletzt aktualisiert: {date}',
+  'blog.breadcrumbHome': 'Startseite',
+  'blog.breadcrumbBlog': 'Blog',
+  'blog.breadcrumbAriaLabel': 'Brotkrümelnavigation',
+  'blog.relatedTitle': 'Ähnliche Beiträge',
+  'blog.ctaEyebrow': 'Live ausprobieren',
+  'blog.ctaLead': 'Zu diesem Beitrag gibt es ein kostenloses, browserbasiertes Tool.',
+  'blog.ctaButton': '{name} öffnen',
+
+  // Prev/next pager
+  'blog.pagerAriaLabel': 'Beitragsnavigation',
+  'blog.prevPost': 'Zurück',
+  'blog.nextPost': 'Weiter',
+
+  // Code copy (progressive enhancement)
+  'blog.copyCode': 'Kopieren',
+  'blog.copiedCode': 'Kopiert',
+  'blog.copyCodeAriaLabel': 'Code in die Zwischenablage kopieren',
+
+  // Tag pages
+  'blog.tagEyebrow': 'Schlagwort',
+  'blog.tagTitle': 'Beiträge mit dem Schlagwort „{tag}“',
+  'blog.tagLead': 'Alle Beiträge unter „{tag}“, neueste zuerst.',
+  'blog.tagCountSingular': 'Beitrag.',
+  'blog.tagCountPlural': 'Beiträge.',
+  'blog.breadcrumbTag': 'Schlagwort',
 
   // Category filter labels (key = stable English category name)
   'category.Networking': 'Netzwerk',
