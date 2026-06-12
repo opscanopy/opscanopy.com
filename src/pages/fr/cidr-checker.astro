@@ -1,0 +1,264 @@
+---
+/**
+ * CIDR / Subnet Checker — the cidr-checker tool page (SEO surface).
+ * Paste a list of IPs/CIDRs; get the minimal covering set, overlaps and
+ * containment, and a parsed breakdown — entirely in the browser.
+ */
+import Shell from '../../components/Shell.astro';
+import CidrCheckerPlayground from '../../components/CidrCheckerPlayground.astro';
+import Button from '../../components/Button.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import ToolHero from '../../components/ToolHero.astro';
+import ToolPipeline from '../../components/ToolPipeline.astro';
+import FaqList from '../../components/FaqList.astro';
+import ToolCrossLinks from '../../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../../data/site';
+import { getTool } from '../../data/tools';
+import { softwareAppLd, faqPageLd } from '../../lib/jsonld';
+
+const tool = getTool('cidr-checker');
+const pagePath = '/cidr-checker';
+const pageUrl = `${site.url}${pagePath}`;
+
+const faqs = [
+  {
+    q: 'Que fait le CIDR / Subnet Checker ?',
+    a: 'Collez une liste d’IP ou de CIDR — un par ligne — et l’outil fait trois choses : il les agrège en l’ensemble minimal de blocs CIDR qui couvre exactement les mêmes adresses, il signale chaque chevauchement et chaque inclusion entre les entrées, et il affiche une décomposition analysée et normalisée de chaque ligne. Tout s’exécute dans votre navigateur.',
+  },
+  {
+    q: 'Ma liste quitte-t-elle un jour mon navigateur ?',
+    a: 'Non. L’analyse, la comparaison et l’agrégation s’exécutent toutes à 100 % côté client dans votre onglet — aucun serveur, aucun compte, aucune journalisation. Vous pouvez coller en toute sécurité des listes d’autorisation internes et des tables de routage.',
+  },
+  {
+    q: 'Que signifie « agrégation » ici ?',
+    a: 'L’agrégation (aussi appelée résumé ou supernetting) remplace plusieurs blocs adjacents ou se chevauchant par le plus petit nombre de CIDR qui couvrent exactement les mêmes adresses — par exemple, de 192.168.0.0/24 à 192.168.3.0/24 se réduit à un seul 192.168.0.0/22. Cela raccourcit les règles de pare-feu et les tables de routage sans changer ce qu’elles correspondent.',
+  },
+  {
+    q: 'Quelle est la différence entre chevauchement et inclusion ?',
+    a: 'L’inclusion signifie qu’un bloc est entièrement contenu dans un autre (10.0.5.0/24 est à l’intérieur de 10.0.0.0/16). Un simple chevauchement signifie que deux blocs partagent certaines adresses sans que l’un n’englobe complètement l’autre. Le vérificateur étiquette chaque relation — identique, contient, à l’intérieur ou se chevauche — afin que vous puissiez repérer les entrées redondantes ou en conflit.',
+  },
+  {
+    q: 'Gère-t-il l’IPv6 et les listes mixtes ?',
+    a: 'Oui. Les entrées IPv4 et IPv6 sont analysées ensemble ; la comparaison et l’agrégation se font au sein de chaque famille (un bloc v4 et un bloc v6 ne se chevauchent jamais), et l’ensemble couvrant minimal est indiqué par famille en utilisant une précision complète de 128 bits pour l’IPv6.',
+  },
+  {
+    q: 'Quelle entrée accepte-t-il ?',
+    a: 'Une IP ou un CIDR par ligne. Une adresse seule est traitée comme un /32 (ou /128). Les lignes vides et les lignes commençant par # sont ignorées, ce qui vous permet de coller directement un bloc de configuration commenté. Tout ce qui n’est pas une IP ou un CIDR valide est signalé plutôt que supprimé silencieusement.',
+  },
+  {
+    q: 'Comment vérifier si deux sous-réseaux se chevauchent ?',
+    a: 'Chaque CIDR est converti en sa première et sa dernière adresse sous forme de plage numérique. Deux CIDR se chevauchent lorsque leurs plages partagent une adresse — ne serait-ce qu’une seule. Collez votre liste dans l’outil et chaque paire qui se chevauche ou est incluse est étiquetée automatiquement, en distinguant les blocs identiques, l’inclusion de l’un dans l’autre, et les chevauchements partiels.',
+  },
+  {
+    q: 'Comment trouver l’ensemble couvrant minimal d’une liste de CIDR ?',
+    a: 'Collez la liste complète et l’outil trie les entrées, fusionne les plages adjacentes et se chevauchant en intervalles numériques contigus, puis redécoupe chaque intervalle dans le plus petit nombre de blocs CIDR alignés qui le couvrent exactement. Le résultat est le plus petit ensemble possible de CIDR qui couvre encore chaque adresse de la liste d’origine — utile pour réduire les tables de routage, les règles de pare-feu et les listes de préfixes BGP.',
+  },
+  {
+    q: 'Comment vérifier les CIDR qui se chevauchent avant un appairage de VPC AWS ou la mise en place d’un VPN ?',
+    a: 'AWS rejette l’appairage de VPC, les attachements Transit Gateway et les connexions VPN lorsque des plages CIDR se chevauchent. Collez tous les CIDR de VPC et de sous-réseaux dans le vérificateur avant le déploiement : il signale chaque paire qui se chevauche ou est incluse afin que vous puissiez replanifier l’espace d’adressage à l’avance. Comme tout s’exécute dans le navigateur, aucune donnée d’IP interne n’est téléversée.',
+  },
+  {
+    q: 'Quelle est la différence entre le sous-réseautage (subnetting) et le supernetting (résumé de routes) ?',
+    a: 'Le sous-réseautage divise un bloc en sous-réseaux plus petits en allongeant le préfixe — par exemple, un /24 en huit /27. Le supernetting, aussi appelé agrégation CIDR ou résumé de routes, est l’inverse : il fusionne plusieurs blocs contigus en un bloc plus grand en raccourcissant le préfixe — par exemple, huit /27 redeviennent un seul /24. L’agrégation réduit la taille de la table de routage et le nombre de règles de pare-feu tout en préservant une couverture d’adresses complète.',
+  },
+];
+
+const softwareApp = softwareAppLd({
+  name: 'CIDR / Subnet Checker',
+  description:
+    'Agrégateur CIDR et vérificateur de chevauchement de sous-réseaux gratuit, dans le navigateur. Collez une liste pour fusionner des plages CIDR, détecter les chevauchements et trouver l’ensemble minimal. Sans inscription, s’exécute en local.',
+  url: pageUrl,
+  subCategory: 'Networking',
+  featureList: [
+    'Agréger des IP/CIDR en l’ensemble couvrant minimal',
+    'Détecter les chevauchements et les inclusions entre blocs',
+    'IPv4 et IPv6, agrégés par famille',
+    '100 % côté client, sans téléversement, sans inscription',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+const faqPage = faqPageLd(faqs);
+
+const pipeline = [
+  {
+    title: 'Analyser chaque ligne.',
+    body: 'Chaque ligne est lue comme une IP ou un CIDR et normalisée à son réseau ; les lignes vides et les commentaires # sont ignorés.',
+  },
+  {
+    title: 'Comparer deux à deux.',
+    body: 'Chaque paire d’une même famille est vérifiée pour l’égalité, l’inclusion ou le chevauchement, puis étiquetée.',
+  },
+  {
+    title: 'Fusionner les plages.',
+    body: 'Les entrées deviennent des intervalles numériques, triés et fusionnés partout où ils se touchent ou se chevauchent.',
+  },
+  {
+    title: 'Redécouper en CIDR.',
+    body: 'Chaque intervalle fusionné est décomposé dans le plus petit nombre de blocs CIDR alignés qui le couvrent exactement.',
+  },
+];
+
+const aggregateExample = `# four adjacent /24s
+192.168.0.0/24
+192.168.1.0/24      →   192.168.0.0/22
+192.168.2.0/24
+192.168.3.0/24`;
+
+const overlapExample = `10.0.0.0/16
+10.0.5.0/24         →   10.0.0.0/16 contains 10.0.5.0/24
+10.0.5.0/24         →   10.0.5.0/24 is the same block as 10.0.5.0/24`;
+import type { Locale as __Locale } from '../../i18n/config';
+import { localizeKey as __l } from '../../i18n/utils';
+const __lang = (Astro.currentLocale ?? 'en') as __Locale;
+
+---
+
+<Shell
+  title="CIDR / Subnet Checker — Agrégateur CIDR et outil de chevauchement"
+  description="Agrégateur CIDR et vérificateur de chevauchement de sous-réseaux gratuit, dans le navigateur. Collez une liste pour fusionner des plages CIDR, détecter les chevauchements et trouver l’ensemble minimal. Sans inscription, s’exécute en local."
+  canonical="/cidr-checker"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <ToolHero
+    eyebrow="CIDR / Subnet Checker · Réseaux"
+    badges={[
+      { label: 'S’exécute dans votre navigateur', variant: 'live' },
+      { label: 'IPv4 et IPv6', variant: 'neutral' },
+      { label: 'Sans inscription', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">Agrégez des CIDR et repérez les chevauchements.</Fragment>
+    <Fragment slot="lead">
+      Collez une liste d’IP/CIDR pour obtenir l’ensemble couvrant minimal, chaque chevauchement et
+      inclusion, ainsi qu’une décomposition analysée de chaque ligne — le tout dans votre navigateur.
+    </Fragment>
+  </ToolHero>
+
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pt-8 pb-20 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">Espace de test du CIDR / Subnet Checker</h2>
+      <CidrCheckerPlayground />
+    </div>
+  </section>
+
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">Le manque</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            Des règles tentaculaires masquent les chevauchements et les entrées mortes.
+          </h2>
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            Les groupes de sécurité, les tables de routage et les listes d’autorisation accumulent
+            des CIDR au fil du temps. Bientôt deux entrées se chevauchent, l’une est entièrement à
+            l’intérieur d’une autre, ou quatre blocs adjacents auraient pu tenir sur une seule
+            ligne. Inspecter cela à l’œil nu sur des dizaines de plages, c’est exactement là que se
+            cachent les erreurs — et trouver à la main les plages CIDR qui se chevauchent dans une
+            longue liste est source d’erreurs, même pour des ingénieurs expérimentés.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Ce vérificateur lit la liste entière d’un seul coup : il signale chaque chevauchement et
+            chaque inclusion, et réduit l’ensemble au plus petit nombre de CIDR qui couvrent les
+            mêmes adresses. Des règles plus propres, moins de surprises — et un contrôle préalable
+            fiable avant un appairage de VPC AWS ou toute configuration où des plages qui se
+            chevauchent provoquent des échecs bloquants. S’exécute entièrement dans le navigateur,
+            sans rien à installer.
+          </p>
+          <p class="body-sm text-mute">
+            Besoin d’inspecter un seul bloc ? Ouvrez le
+            <a class="link-inline" href={__l("/subnet-calculator", __lang)}>Subnet Calculator</a>.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="Le pipeline"
+    heading="Comment ça marche."
+    lead="Quatre étapes déterministes s’exécutent à mesure que vous tapez — le tout dans l’onglet de votre navigateur, avec une arithmétique BigInt exacte."
+    steps={pipeline}
+  />
+
+  <section id="examples" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Par l’exemple</p>
+        <h2 class="display-lg mt-3 text-ink">Agrégez et repérez les chevauchements.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          Deux des tâches les plus courantes : réduire des blocs contigus, et faire ressortir les
+          entrées qui se chevauchent ou se dupliquent.
+        </p>
+      </div>
+      <div class="mx-auto mt-10 grid max-w-5xl gap-8 lg:grid-cols-2">
+        <div class="min-w-0">
+          <h3 class="display-sm text-ink">Agrégation</h3>
+          <p class="body-sm mt-2 mb-4 text-pretty text-body">
+            Les blocs adjacents se réduisent à l’ensemble couvrant minimal.
+          </p>
+          <CodeBlock lang="text" filename="aggregate" code={aggregateExample} />
+        </div>
+        <div class="min-w-0">
+          <h3 class="display-sm text-ink">Chevauchement et inclusion</h3>
+          <p class="body-sm mt-2 mb-4 text-pretty text-body">
+            Les entrées redondantes et englobantes sont étiquetées.
+          </p>
+          <CodeBlock lang="text" filename="overlap" code={overlapExample} />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="next" class="scroll-mt-24 bg-inverse text-inverse-fg">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+        <div class="min-w-0">
+          <p class="eyebrow !text-cyan">Étape suivante</p>
+          <h2 class="display-lg mt-3 text-balance text-inverse-fg">
+            Inspectez l’un des blocs en détail.
+          </h2>
+          <p class="body-md mt-4 text-pretty text-white/70">
+            Quand une entrée semble incorrecte, glissez-la dans le
+            <span translate="no">Subnet Calculator</span> pour voir son réseau, son adresse de
+            diffusion, son masque et sa plage d’hôtes complète pour l’IPv4 ou l’IPv6 — le complément,
+            bloc par bloc, à la vérification d’une liste entière.
+          </p>
+          <div class="mt-7 flex flex-wrap items-center gap-3">
+            <Button href={__l("/subnet-calculator", __lang)} variant="secondary">Ouvrir le Subnet Calculator</Button>
+          </div>
+        </div>
+        <CodeBlock
+          lang="text"
+          filename="result.txt"
+          code={`in:   192.168.0.0/24 … /23
+out:  192.168.0.0/22
+note: 1 block covers all four`}
+        />
+      </div>
+    </div>
+  </section>
+
+  <FaqList faqs={faqs} />
+
+  <ToolCrossLinks>
+    <Fragment slot="lead">
+      Le CIDR / Subnet Checker est l’un des outils de
+      <span translate="no">{site.name}</span> — une canopée grandissante de validateurs,
+      convertisseurs et testeurs basés sur le navigateur qui ne touchent jamais à un serveur.
+    </Fragment>
+    <Fragment slot="links">
+      Plus de réseaux : le
+      <a class="link-inline" href={__l("/subnet-calculator", __lang)}>Subnet Calculator</a> et le
+      <a class="link-inline" href={__l("/ip-address-converter", __lang)}>IP Address Converter</a>, ou parcourez le
+      <a class="link-inline" href={__l(navLinks[0].href, __lang)}>répertoire des outils</a> complet.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      Fourni tel quel, par commodité ; confirmez toujours les modifications réseau critiques auprès
+      de votre propre autorité. <span translate="no">{site.name}</span> est gratuit et ouvert.
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>

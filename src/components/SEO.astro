@@ -3,7 +3,10 @@
  * SEO head component — meta, Open Graph, Twitter, canonical, JSON-LD.
  * Used by Layout.astro. Pass per-page overrides through Layout props.
  */
+import { getAbsoluteLocaleUrl } from 'astro:i18n';
 import { site } from '../data/site';
+import { BCP47, OG_LOCALE, LOCALES, DEFAULT_LOCALE, type Locale } from '../i18n/config';
+import { stripLocale } from '../i18n/utils';
 
 export interface Props {
   title: string;
@@ -16,6 +19,16 @@ export interface Props {
   noindex?: boolean;
   /** Optional JSON-LD structured data object(s). */
   jsonLd?: Record<string, unknown> | Record<string, unknown>[];
+  /**
+   * Suppress hreflang alternates. Set on pages that exist in English only
+   * (404, the WASM demo) so we never advertise non-existent localized URLs.
+   */
+  noAlternates?: boolean;
+  /**
+   * Locales in which THIS page actually exists (used by blog posts that are
+   * only translated into some locales). Defaults to all locales.
+   */
+  availableLocales?: Locale[];
 }
 
 const {
@@ -26,25 +39,59 @@ const {
   type = 'website',
   noindex = false,
   jsonLd,
+  noAlternates = false,
+  availableLocales = [...LOCALES],
 } = Astro.props;
 
-const canonicalURL = new URL(canonical ?? Astro.url.pathname, Astro.site ?? Astro.url);
+const lang: Locale = (Astro.currentLocale as Locale) ?? DEFAULT_LOCALE;
+// Locale-neutral page key (strip any /xx prefix) → drives canonical + alternates.
+const pageKey = stripLocale(canonical ?? Astro.url.pathname);
+
+const canonicalURL = getAbsoluteLocaleUrl(lang, pageKey);
 const imageURL = new URL(image, Astro.site ?? Astro.url);
 const ldBlocks = jsonLd ? (Array.isArray(jsonLd) ? jsonLd : [jsonLd]) : [];
+
+// Reciprocal hreflang set: one per available locale + x-default → English.
+const alternates = noAlternates
+  ? []
+  : LOCALES.filter((l) => availableLocales.includes(l)).map((l) => ({
+      hreflang: BCP47[l],
+      href: getAbsoluteLocaleUrl(l, pageKey),
+    }));
+// x-default should point at English when it exists; otherwise the first
+// available locale — never at a URL this page isn't built in.
+const xDefaultLocale = availableLocales.includes(DEFAULT_LOCALE)
+  ? DEFAULT_LOCALE
+  : LOCALES.find((l) => availableLocales.includes(l));
+const xDefaultHref = xDefaultLocale ? getAbsoluteLocaleUrl(xDefaultLocale, pageKey) : null;
 ---
 
 <title>{title}</title>
 <meta name="description" content={description} />
-<link rel="canonical" href={canonicalURL.href} />
+<link rel="canonical" href={canonicalURL} />
 {noindex && <meta name="robots" content="noindex,nofollow" />}
+
+{/* hreflang alternates — reciprocal across all locales where this page exists */}
+{
+  alternates.map((alt) => (
+    <link rel="alternate" hreflang={alt.hreflang} href={alt.href} />
+  ))
+}
+{!noAlternates && xDefaultHref && <link rel="alternate" hreflang="x-default" href={xDefaultHref} />}
 
 <!-- Open Graph -->
 <meta property="og:type" content={type} />
 <meta property="og:site_name" content={site.name} />
-<meta property="og:locale" content="en_US" />
+<meta property="og:locale" content={OG_LOCALE[lang]} />
+{
+  !noAlternates &&
+    LOCALES.filter((l) => l !== lang && availableLocales.includes(l)).map((l) => (
+      <meta property="og:locale:alternate" content={OG_LOCALE[l]} />
+    ))
+}
 <meta property="og:title" content={title} />
 <meta property="og:description" content={description} />
-<meta property="og:url" content={canonicalURL.href} />
+<meta property="og:url" content={canonicalURL} />
 <meta property="og:image" content={imageURL.href} />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />

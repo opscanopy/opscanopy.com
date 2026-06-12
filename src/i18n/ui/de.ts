@@ -1,0 +1,71 @@
+/** Localized UI dictionary — German (de). */
+import type { UiDict } from './en';
+
+const de: Partial<UiDict> = {
+  // Accessibility / skip link
+  'a11y.skipToContent': 'Zum Inhalt springen',
+  'a11y.homeLabel': '{name}, Startseite',
+  'a11y.openMenu': 'Menü öffnen',
+  'a11y.closeMenu': 'Menü schließen',
+  'a11y.themeToDark': 'Zum dunklen Design wechseln',
+  'a11y.themeToLight': 'Zum hellen Design wechseln',
+  'a11y.opensNewTab': '(wird in einem neuen Tab geöffnet)',
+
+  // Header
+  'nav.browseTools': 'Tools durchsuchen',
+  'theme.dark': 'Dunkles Design',
+  'theme.light': 'Helles Design',
+
+  // Mega menu
+  'megamenu.dialogLabel': 'Alle Tools durchsuchen',
+  'megamenu.searchPlaceholder': '{count} Tools durchsuchen…',
+  'megamenu.searchLabel': 'Tools durchsuchen',
+  'megamenu.clearSearch': 'Suche zurücksetzen',
+  'megamenu.emptyPrefix': 'Keine Tools gefunden für',
+  'megamenu.emptySuffix': '.',
+  'megamenu.browseAll': 'Alle Tools durchsuchen',
+  'megamenu.footerCount': '{count} Tools — 100 % browserbasiert, nichts wird hochgeladen',
+  'megamenu.viewAll': 'Alle Tools anzeigen',
+
+  // Footer
+  'footer.copyright': 'Kostenlos & offen.',
+  'footer.disclaimer.lead': 'Nicht mit Grafana Labs verbunden oder von Grafana Labs unterstützt.',
+  'footer.disclaimer.trademark': 'und',
+  'footer.disclaimer.tail': 'sind Marken von Raintank, Inc.',
+
+  // Language switcher
+  'lang.switcherLabel': 'Sprache',
+
+  // Blog
+  'blog.metaTitle': 'Blog',
+  'blog.metaDescription':
+    'Notizen zu DevOps-Tooling, Observability und den Lücken, die sich zu schließen lohnen.',
+  'blog.eyebrow': 'Beiträge',
+  'blog.indexTitle': 'Notizen aus dem Blätterdach.',
+  'blog.indexLead':
+    'Beobachtungen zu DevOps-Tooling, Observability und den kleinen Lücken im Ökosystem, die sich zu schließen lohnen — geschrieben für die Engineers, die auf sie stoßen.',
+  'blog.countSuffixSingular': 'Beitrag und es werden mehr.',
+  'blog.countSuffixPlural': 'Beiträge und es werden mehr.',
+  'blog.emptyEyebrow': 'Notizen',
+  'blog.emptyTitle': 'Hier ist derzeit nichts.',
+  'blog.emptyBody':
+    'Neue Notizen sind unterwegs. Erkunden Sie in der Zwischenzeit die Tools.',
+  'blog.emptyCta': 'Tools durchsuchen',
+  'blog.readPost': 'Beitrag lesen',
+  'blog.allPosts': 'Alle Beiträge',
+  'blog.notTranslated':
+    'Dieser Beitrag ist noch nicht in Ihrer Sprache verfügbar — er wird auf Englisch angezeigt.',
+
+  // Category filter labels (key = stable English category name)
+  'category.Networking': 'Netzwerk',
+  'category.Security': 'Sicherheit',
+  'category.Encoding': 'Kodierung',
+  'category.Kubernetes': 'Kubernetes',
+  'category.Observability': 'Observability',
+  'category.CI/CD': 'CI/CD',
+  'category.Scheduling': 'Zeitplanung',
+  'category.Logs': 'Logs',
+  'category.Config': 'Config',
+};
+
+export default de;

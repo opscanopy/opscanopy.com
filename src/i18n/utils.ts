@@ -1,0 +1,77 @@
+/**
+ * i18n runtime helpers — used by layouts, chrome components, and pages.
+ *
+ *  - useTranslations(lang): returns a `t(key, vars?)` function over the UI
+ *    dictionary, with per-key English fallback and `{var}` interpolation.
+ *  - getLocaleFromUrl(url): derive the active locale from a URL path.
+ *  - stripLocale(path): remove a leading locale prefix → the locale-neutral
+ *    "page key" used to compute canonical/hreflang/equivalent-page URLs.
+ *  - localizeKey(path, locale): inverse — turn a page key into a localized path.
+ */
+import { DEFAULT_LOCALE, LOCALES, isLocale, type Locale } from './config';
+import en, { type UiKey } from './ui/en';
+import es from './ui/es';
+import de from './ui/de';
+import fr from './ui/fr';
+import ptBr from './ui/pt-br';
+
+const DICTS: Record<Locale, Partial<Record<UiKey, string>>> = {
+  en,
+  es,
+  de,
+  fr,
+  'pt-br': ptBr,
+};
+
+/** Interpolate `{name}` placeholders with values from `vars`. */
+function interpolate(template: string, vars?: Record<string, string | number>): string {
+  if (!vars) return template;
+  return template.replace(/\{(\w+)\}/g, (match, key) =>
+    key in vars ? String(vars[key]) : match,
+  );
+}
+
+/**
+ * Returns a translator bound to `lang`. Missing keys fall back to English so a
+ * half-translated locale still renders.
+ */
+export function useTranslations(lang: Locale) {
+  const dict = DICTS[lang] ?? {};
+  return function t(key: UiKey, vars?: Record<string, string | number>): string {
+    // Locale value → English source → the key itself (never crash on a missing
+    // key, e.g. a runtime-cast `category.${x}` with no dictionary entry).
+    const value = dict[key] ?? en[key] ?? key;
+    return interpolate(value, vars);
+  };
+}
+
+/** Derive the active locale from a URL path (first segment). en if none. */
+export function getLocaleFromUrl(url: URL): Locale {
+  const seg = url.pathname.split('/').filter(Boolean)[0];
+  return isLocale(seg) && seg !== DEFAULT_LOCALE ? seg : DEFAULT_LOCALE;
+}
+
+/**
+ * Strip a leading locale prefix, returning the locale-neutral page key with a
+ * leading slash. "/de/tools" → "/tools"; "/tools" → "/tools"; "/de" → "/".
+ */
+export function stripLocale(pathname: string): string {
+  const parts = pathname.split('/').filter(Boolean);
+  if (parts.length && isLocale(parts[0]) && parts[0] !== DEFAULT_LOCALE) {
+    parts.shift();
+  }
+  return '/' + parts.join('/');
+}
+
+/**
+ * Turn a locale-neutral page key into a localized path. en stays un-prefixed.
+ * "/tools" + "de" → "/de/tools"; "/tools" + "en" → "/tools"; "/" + "de" → "/de".
+ */
+export function localizeKey(pageKey: string, locale: Locale): string {
+  const key = pageKey.startsWith('/') ? pageKey : '/' + pageKey;
+  if (locale === DEFAULT_LOCALE) return key;
+  return key === '/' ? `/${locale}` : `/${locale}${key}`;
+}
+
+export { LOCALES, DEFAULT_LOCALE, isLocale };
+export type { Locale };

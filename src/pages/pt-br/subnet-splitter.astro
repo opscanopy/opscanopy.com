@@ -1,0 +1,275 @@
+---
+/**
+ * Subnet Splitter — the subnet-splitter tool page (SEO surface).
+ * Enter a parent block and any existing allocations; get the free space around
+ * them decomposed into minimal CIDRs, and split a block into /N subnets —
+ * entirely in the browser.
+ */
+import Shell from '../../components/Shell.astro';
+import SubnetSplitterPlayground from '../../components/SubnetSplitterPlayground.astro';
+import Button from '../../components/Button.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import ToolHero from '../../components/ToolHero.astro';
+import ToolPipeline from '../../components/ToolPipeline.astro';
+import FaqList from '../../components/FaqList.astro';
+import ToolCrossLinks from '../../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../../data/site';
+import { getTool } from '../../data/tools';
+import { softwareAppLd, faqPageLd } from '../../lib/jsonld';
+
+const tool = getTool('subnet-splitter');
+const pagePath = '/subnet-splitter';
+const pageUrl = `${site.url}${pagePath}`;
+
+const faqs = [
+  {
+    q: 'O que o Subnet Splitter faz?',
+    a: 'Você informa um bloco pai — por exemplo 10.0.0.0/24 — mais quaisquer sub-redes já alocadas dentro dele, e ele subtrai o espaço usado e relata as lacunas como um conjunto mínimo de CIDRs. Ele também pode dividir o bloco pai (ou qualquer lacuna livre) de forma uniforme em sub-redes /N e indicar o próximo bloco livre do tamanho que você pedir. Tudo roda no seu navegador; nada é enviado.',
+  },
+  {
+    q: 'Meus dados saem do meu navegador em algum momento?',
+    a: 'Não. A análise e todos os cálculos rodam 100% no lado do cliente, na sua aba — não há servidor, conta nem registro de logs. Você pode colar com toda a segurança blocos pais e alocações internos.',
+  },
+  {
+    q: 'O que significam aqui "espaço livre" e VLSM?',
+    a: 'O espaço livre é a parte do bloco pai que nenhuma das suas alocações existentes cobre. Como essa região restante raramente coincide com um único limite de potência de dois, o splitter a expressa como um conjunto de máscaras de sub-rede de comprimento variável (VLSM): a menor lista de CIDRs de tamanhos diferentes que preenche a lacuna exatamente, em vez de forçar um único prefixo fixo.',
+  },
+  {
+    q: 'O que a "próxima /N livre" retorna?',
+    a: 'Ela percorre o espaço livre em ordem e retorna o primeiro bloco de prefixo /N que está totalmente sem alocação e corretamente alinhado ao seu próprio limite — o bloco que você entregaria em seguida se estivesse fatiando o pai em sub-redes /N. Se nenhuma /N alinhada couber no espaço livre restante, ela avisa em vez de adivinhar.',
+  },
+  {
+    q: 'Ele suporta IPv6 além de IPv4?',
+    a: 'Sim. O IPv6 é tratado com precisão completa de 128 bits usando BigInt, então você pode dividir um /48 de um site em /64s ou encontrar o espaço livre dentro de um /56 com a mesma exatidão com que subtrai /26s de um /24 de IPv4. Tanto os pais IPv4 quanto os IPv6 são tratados como cidadãos de primeira classe.',
+  },
+  {
+    q: 'Como eu divido um bloco CIDR em sub-redes iguais?',
+    a: 'Informe o CIDR pai — por exemplo 10.0.0.0/16 — e escolha um novo comprimento de prefixo, como /24. A ferramenta enumera todas as sub-redes de mesmo tamanho daquele prefixo dentro do pai, marcando cada uma como livre, usada ou parcialmente alocada. Dividir um /16 em /24s produz 2^(24-16) = 256 sub-redes, cada uma com seu próprio endereço de rede e 254 endereços de host utilizáveis.',
+  },
+  {
+    q: 'Como eu encontro a próxima sub-rede disponível dentro de um CIDR pai?',
+    a: 'Forneça o CIDR pai, informe suas alocações existentes e selecione o comprimento de prefixo alvo. A ferramenta percorre os intervalos livres que restam após subtrair o espaço usado e retorna o primeiro bloco daquele tamanho corretamente alinhado que não se sobrepõe a nenhuma alocação existente. Essa é a próxima sub-rede disponível que você pode entregar sem causar um conflito.',
+  },
+  {
+    q: 'Como posso encontrar espaço IP livre ou lacunas entre alocações de sub-rede existentes?',
+    a: 'Cole suas alocações existentes sob um CIDR pai e a ferramenta subtrai os intervalos usados do intervalo do pai. Em seguida, ela expressa cada região sem alocação como o conjunto mínimo de CIDRs alinhados, para que você veja cada lacuna — incluindo o maior bloco livre contíguo — num relance.',
+  },
+  {
+    q: 'Quantas sub-redes /24 cabem em um /16?',
+    a: 'Use 2^(prefixo novo menos prefixo pai): 2^(24-16) = 256. Um /16 contém 256 sub-redes /24, cada uma com 256 endereços no total (254 utilizáveis após os endereços de rede e de broadcast). Você pode conferir isso informando 10.0.0.0/16 com um prefixo de divisão de /24 e vendo todos os 256 blocos listados.',
+  },
+  {
+    q: 'Como eu evito sub-redes sobrepostas ao alocar faixas de IP?',
+    a: 'Sub-redes sobrepostas causam conflitos de roteamento porque um endereço pareceria pertencer a duas faixas. A ferramenta verifica cada sub-rede candidata em relação às suas alocações existentes e a marca como usada ou parcial se houver conflito, sinalizando uma sub-rede como livre apenas quando ela está totalmente sem alocação e corretamente alinhada dentro do CIDR pai.',
+  },
+];
+
+const softwareApp = softwareAppLd({
+  name: 'Subnet Splitter',
+  description:
+    'Subnet splitter gratuito: divida um CIDR IPv4/IPv6 em sub-redes iguais ou VLSM, encontre o espaço livre e a próxima sub-rede disponível. Funciona no navegador, sem precisar de cadastro.',
+  url: pageUrl,
+  subCategory: 'Networking',
+  featureList: [
+    'Encontre o espaço livre dentro de um bloco pai ao redor das alocações existentes',
+    'Decomponha as lacunas em um conjunto mínimo de CIDRs VLSM',
+    'Divida um bloco em sub-redes /N de tamanho uniforme e escolha a próxima livre',
+    '100% no lado do cliente, sem envios, sem cadastro',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+const faqPage = faqPageLd(faqs);
+
+const pipeline = [
+  {
+    title: 'Lê as entradas.',
+    body: 'O bloco pai e cada alocação existente são analisados em faixas exatas de 32 ou 128 bits.',
+  },
+  {
+    title: 'Subtrai o que foi usado.',
+    body: 'As alocações são removidas do pai, deixando as regiões de endereços sem alocação.',
+  },
+  {
+    title: 'Decompõe as lacunas.',
+    body: 'Cada região restante é expressa como o conjunto mínimo de CIDRs alinhados que a preenche exatamente.',
+  },
+  {
+    title: 'Divide e escolhe.',
+    body: 'Divide em sub-redes /N e exibe a próxima /N livre corretamente alinhada para entrega.',
+  },
+];
+
+const splitExample = `parent      10.0.0.0/24
+allocated   10.0.0.0/26     (used)
+            10.0.0.128/26   (used)
+
+free space
+  10.0.0.64/26              next free /26
+  10.0.0.192/26`;
+
+const vlsmExample = `parent      10.0.0.0/24
+allocated   10.0.0.0/25     (used)
+            10.0.0.128/27   (used)
+
+free space (minimal VLSM set)
+  10.0.0.160/27
+  10.0.0.192/26`;
+import type { Locale as __Locale } from '../../i18n/config';
+import { localizeKey as __l } from '../../i18n/utils';
+const __lang = (Astro.currentLocale ?? 'en') as __Locale;
+
+---
+
+<Shell
+  title="Subnet Splitter — Divida um CIDR em sub-redes, grátis"
+  description="Subnet splitter gratuito: divida um CIDR IPv4/IPv6 em sub-redes iguais ou VLSM, encontre o espaço livre e a próxima sub-rede disponível. Funciona no navegador, sem precisar de cadastro."
+  canonical="/subnet-splitter"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <ToolHero
+    eyebrow="Subnet Splitter · Networking"
+    badges={[
+      { label: 'Funciona no seu navegador', variant: 'live' },
+      { label: 'IPv4 e IPv6', variant: 'neutral' },
+      { label: 'Sem cadastro', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">Divida um bloco e encontre o espaço livre ao redor dele.</Fragment>
+    <Fragment slot="lead">
+      Informe um pai como
+      <span class="code-mono text-ink" translate="no">10.0.0.0/24</span> mais as sub-redes já
+      alocadas, e obtenha o espaço livre como CIDRs mínimos — depois divida um CIDR em sub-redes de
+      qualquer prefixo e encontre a próxima sub-rede disponível, tudo no seu navegador.
+    </Fragment>
+  </ToolHero>
+
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pt-8 pb-20 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">Ambiente de testes do Subnet Splitter</h2>
+      <SubnetSplitterPlayground />
+    </div>
+  </section>
+
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">O problema</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            O espaço restante é onde os erros se escondem.
+          </h2>
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            Fatiar um bloco em sub-redes é fácil até que algo já esteja alocado. Agora o espaço
+            livre é um conjunto irregular de lacunas de tamanhos diferentes, e calcular de cabeça a
+            próxima /26 ou /27 alinhada entre duas alocações existentes é exatamente o tipo de
+            aritmética binária que produz uma sobreposição ou uma faixa desperdiçada.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Este splitter subtrai o que você já entregou e relata o espaço restante como o
+            conjunto mínimo de CIDRs — encontre o espaço de sub-rede livre no seu bloco CIDR num
+            relance, depois divida-o em sub-redes /N e escolha a próxima disponível. Para IPv4 e IPv6
+            por igual, inteiramente no navegador, sem nada para instalar.
+          </p>
+          <p class="body-sm text-mute">
+            Precisa confirmar primeiro que uma lista não tem sobreposições? Experimente o
+            <a class="link-inline" href={__l("/cidr-checker", __lang)}>CIDR / Subnet Checker</a>.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="O processo"
+    heading="Como funciona."
+    lead="Quatro etapas determinísticas rodam a cada tecla pressionada — todas dentro da aba do seu navegador, com aritmética BigInt exata."
+    steps={pipeline}
+  />
+
+  <section id="reference" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Um exemplo resolvido</p>
+        <h2 class="display-lg mt-3 text-ink">Duas /26 em um /24, o que sobra?</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          Subtraia os blocos usados do pai e o espaço livre aparece como CIDRs alinhados —
+          mínimo mesmo quando as lacunas têm tamanhos diferentes.
+        </p>
+      </div>
+      <div class="mx-auto mt-10 grid max-w-5xl gap-8 lg:grid-cols-2">
+        <div class="min-w-0">
+          <h3 class="display-sm text-ink">Divisão uniforme</h3>
+          <p class="body-sm mt-2 mb-4 text-pretty text-body">
+            Com a primeira e a terceira <span class="code-mono text-ink" translate="no">/26</span> usadas,
+            o espaço livre são as outras duas — e a próxima /26 livre é
+            <span class="code-mono text-ink" translate="no">10.0.0.64/26</span>.
+          </p>
+          <CodeBlock lang="text" filename="split-/24" code={splitExample} />
+        </div>
+        <div class="min-w-0">
+          <h3 class="display-sm text-ink">Uma lacuna VLSM</h3>
+          <p class="body-sm mt-2 mb-4 text-pretty text-body">
+            Quando as alocações são desiguais, o que sobra não cabe em um único prefixo — vira
+            a mistura mínima de uma <span class="code-mono text-ink" translate="no">/27</span> e uma
+            <span class="code-mono text-ink" translate="no">/26</span>.
+          </p>
+          <CodeBlock lang="text" filename="vlsm-gap" code={vlsmExample} />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="next" class="scroll-mt-24 bg-inverse text-inverse-fg">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+        <div class="min-w-0">
+          <p class="eyebrow !text-cyan">Próximo passo</p>
+          <h2 class="display-lg mt-3 text-balance text-inverse-fg">
+            Tem uma lista de sub-redes? Verifique se há sobreposições.
+          </h2>
+          <p class="body-md mt-4 text-pretty text-white/70">
+            Antes de reservar mais espaço, o
+            <span translate="no">CIDR / Subnet Checker</span> pega suas alocações existentes e
+            encontra sobreposições e contenções, depois agrega tudo no conjunto de cobertura
+            mínimo — para que o pai que você entrega ao splitter já comece limpo.
+          </p>
+          <div class="mt-7 flex flex-wrap items-center gap-3">
+            <Button href={__l("/cidr-checker", __lang)} variant="secondary">Abrir o CIDR Checker</Button>
+          </div>
+        </div>
+        <CodeBlock
+          lang="text"
+          filename="free.txt"
+          code={`10.0.0.0/24
+  − 10.0.0.0/26
+  − 10.0.0.128/26
+  →  10.0.0.64/26
+  →  10.0.0.192/26`}
+        />
+      </div>
+    </div>
+  </section>
+
+  <FaqList faqs={faqs} />
+
+  <ToolCrossLinks>
+    <Fragment slot="lead">
+      O Subnet Splitter é uma das ferramentas do
+      <span translate="no">{site.name}</span> — uma copa crescente de validadores, conversores e
+      testadores baseados no navegador que nunca tocam um servidor.
+    </Fragment>
+    <Fragment slot="links">
+      Mais sobre redes: o
+      <a class="link-inline" href={__l("/cidr-checker", __lang)}>CIDR / Subnet Checker</a> e a
+      <a class="link-inline" href={__l("/subnet-calculator", __lang)}>Subnet Calculator</a>, ou explore o
+      <a class="link-inline" href={__l(navLinks[0].href, __lang)}>diretório de ferramentas</a> completo.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      Fornecido no estado em que se encontra, por conveniência; sempre confirme mudanças críticas de
+      rede com a sua própria autoridade. <span translate="no">{site.name}</span> é gratuito e aberto.
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>

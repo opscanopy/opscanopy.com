@@ -1,0 +1,347 @@
+---
+/**
+ * Cron Expression Tester — the cron-expression-tester tool page (SEO surface).
+ * Paste a cron expression, get a plain-English description plus the next run
+ * times. Supports ranges, steps, lists and @macros — entirely in the browser.
+ *
+ * Imports the interactive island (CronTesterPlayground, self-mounting) plus the
+ * brand primitives. JSON-LD (SoftwareApplication + FAQPage) is assembled in
+ * frontmatter and handed to Shell via the `jsonLd` prop.
+ */
+import Shell from '../../components/Shell.astro';
+import CronTesterPlayground from '../../components/CronTesterPlayground.astro';
+import Button from '../../components/Button.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import ToolHero from '../../components/ToolHero.astro';
+import ToolPipeline from '../../components/ToolPipeline.astro';
+import FaqList from '../../components/FaqList.astro';
+import ToolCrossLinks from '../../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../../data/site';
+import { getTool } from '../../data/tools';
+import { softwareAppLd, faqPageLd } from '../../lib/jsonld';
+
+const tool = getTool('cron-expression-tester');
+
+const pagePath = '/cron-expression-tester';
+const pageUrl = `${site.url}${pagePath}`;
+
+// ── FAQ content — single source for both the rendered section and FAQPage LD ─
+const faqs = [
+  {
+    q: 'Was ist der Cron Expression Tester?',
+    a: 'Es ist ein kostenloses, browserbasiertes Tool, das jeden Cron-Ausdruck im crontab-Stil liest, ihn in eine verständliche Beschreibung in Klartext übersetzt und die nächsten Ausführungszeitpunkte berechnet. Fügen Sie eine Zeile wie „*/15 9-17 * * 1-5“ ein, und Sie sehen sofort „Alle 15 Minuten, zwischen 09:00 und 17:00 Uhr, Montag bis Freitag“ sowie die anstehenden Ausführungszeitpunkte — ohne Registrierung, ohne Server-Roundtrip.',
+  },
+  {
+    q: 'Verlässt mein Cron-Ausdruck jemals meinen Browser?',
+    a: 'Nein. Das Parsen, die Erklärung in Klartext und die Berechnung der nächsten Ausführung erfolgen allesamt clientseitig in Ihrem Tab. Es wird nichts an einen Server hochgeladen, es gibt kein Konto und kein Logging. Sie können Zeitpläne aus internen oder sensiblen Systemen bedenkenlos einfügen.',
+  },
+  {
+    q: 'Welche Cron-Syntax wird unterstützt?',
+    a: 'Das standardmäßige crontab-Format mit fünf Feldern — Minute, Stunde, Tag des Monats, Monat, Wochentag — einschließlich Bereichen (1-5), Schritten (*/15), Listen (1,15,30), Namen (JAN, MON) und den gängigen @macros (@hourly, @daily, @weekly, @monthly, @yearly, @midnight). Herstellerspezifische Erweiterungen wie Sekundenfelder oder „L“/„W“/„#“-Qualifizierer sind nicht Teil der klassischen crontab-Spezifikation und werden gekennzeichnet, statt stillschweigend erraten zu werden.',
+  },
+  {
+    q: 'Wie werden die nächsten Ausführungszeitpunkte berechnet?',
+    a: 'Ausgehend von der aktuellen Zeit in Ihrer gewählten Zeitzone durchläuft der Tester den Zeitplan Feld für Feld vorwärts und listet die nächsten Vorkommen auf. Da alles lokal läuft, spiegeln die Zeitstempel die Uhr Ihres Rechners wider — praktisch, um einen Zeitplan auf Plausibilität zu prüfen, bevor Sie ihn auf einen Server übertragen, dessen Zeitzone abweichen kann.',
+  },
+  {
+    q: 'Warum verhalten sich Tag des Monats und Wochentag zusammen merkwürdig?',
+    a: 'Klassisches cron behandelt Tag des Monats und Wochentag als ein ODER, wenn beide eingeschränkt sind: Der Job läuft, wenn eines der beiden Felder zutrifft, nicht nur, wenn beide zutreffen. Das ist eine bekannte Stolperfalle. Der Tester macht dies in der Beschreibung in Klartext explizit, damit eine Zeile im Stil von „0 0 13 * 5“ Sie in der Produktion nicht überrascht.',
+  },
+  {
+    q: 'Kann ich eine Cron-Zeile in einen systemd-Timer umwandeln?',
+    a: 'Ja — sobald ein Zeitplan hier korrekt gelesen wird, wechseln Sie zum Cron to systemd Converter, um eine äquivalente .timer- und .service-Unit mit einem OnCalendar-Ausdruck und Migrationshinweisen zu erzeugen. Die beiden Tools sind darauf ausgelegt, nahtlos hintereinander verwendet zu werden.',
+  },
+  {
+    q: 'Was bedeutet */5 * * * * in cron?',
+    a: 'Der Schrittausdruck „*/5“ im Minutenfeld bedeutet „jede 5. Minute“, sodass der Job zu den Minuten 0, 5, 10, 15 … 55 jeder Stunde ausgeführt wird — also praktisch rund um die Uhr alle 5 Minuten. Dasselbe Schrittmuster gilt für andere Felder: „*/15“ im Minutenfeld löst alle 15 Minuten zu :00, :15, :30 und :45 aus. Fügen Sie den Ausdruck in den Tester ein, um die menschenlesbare Beschreibung und die nächsten anstehenden Ausführungszeitpunkte sofort zu erhalten.',
+  },
+  {
+    q: 'Was bedeuten die Cron-Makros @daily, @hourly und @weekly?',
+    a: 'Makros sind Kurzschreibweisen, die mit „@“ beginnen. Der Tester unterstützt @hourly (0 * * * *), @daily und @midnight (beide 0 0 * * *), @weekly (0 0 * * 0), @monthly (0 0 1 * *), @yearly und @annually (beide 0 0 1 1 *) sowie @reboot (einmalig beim Start des Daemons, keine wiederkehrenden Ausführungszeitpunkte). Jedes Makro wird vor dem Parsen in seinen äquivalenten Ausdruck mit fünf Feldern expandiert, sodass die Beschreibung in Klartext und die Ausgabe der nächsten Ausführung den vollständig expandierten Zeitplan widerspiegeln.',
+  },
+  {
+    q: 'Wie validiere ich Cron-Syntax online ohne Registrierung?',
+    a: 'Fügen Sie einen beliebigen standardmäßigen Cron-Ausdruck mit 5 Feldern ein, und der Tester prüft, ob er die korrekte Anzahl an Feldern hat und ob jeder Wert in seinem gültigen Bereich liegt — Minute 0-59, Stunde 0-23, Tag des Monats 1-31, Monat 1-12, Wochentag 0-7. Ist die Syntax gültig, zeigt er die Bedeutung in Klartext und die nächsten Ausführungszeitpunkte; ist ein Feld außerhalb des Bereichs oder fehlerhaft, benennt die Fehlermeldung das betreffende Feld, damit Sie es korrigieren können. Es ist kein Konto erforderlich, und nichts verlässt Ihren Browser.',
+  },
+];
+
+// ── JSON-LD: SoftwareApplication ─────────────────────────────────────────────
+const softwareApp = softwareAppLd({
+  name: 'Cron Expression Tester',
+  description:
+    'Kostenloser Cron Expression Tester im Browser. Fügen Sie eine beliebige crontab ein und erhalten Sie eine Erklärung in Klartext sowie die nächsten Ausführungszeitpunkte. Keine Registrierung, Ihre Daten bleiben auf Ihrem Gerät.',
+  url: pageUrl,
+  subCategory: 'Scheduling',
+  featureList: [
+    'Jeden crontab-Ausdruck in Klartext erklären',
+    'Die nächsten Ausführungszeitpunkte für einen Zeitplan berechnen',
+    'Unterstützt Bereiche, Schritte, Listen, Namen und @macros',
+    '100 % clientseitig, kein Upload, keine Registrierung',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+
+// ── JSON-LD: FAQPage (mirrors the rendered FAQ) ──────────────────────────────
+const faqPage = faqPageLd(faqs);
+
+// ── HOW IT WORKS pipeline ────────────────────────────────────────────────────
+const pipeline = [
+  {
+    title: 'Die Zeile tokenisieren.',
+    body: 'Ihr Ausdruck wird in seine fünf Felder zerlegt — oder aus einem @macro wie @daily expandiert — genau so, wie cron ihn liest.',
+  },
+  {
+    title: 'Jedes Feld parsen.',
+    body: 'Jedes Feld wird in die Menge der Werte decodiert, auf die es zutrifft: Bereiche, Schritte, Listen sowie benannte Monate oder Wochentage werden allesamt zu konkreten Zahlen aufgelöst.',
+  },
+  {
+    title: 'In Klartext beschreiben.',
+    body: 'Die zutreffenden Mengen werden zu einem lesbaren Satz zusammengesetzt, einschließlich der ODER-Regel für Tag des Monats / Wochentag, wenn beide eingeschränkt sind.',
+  },
+  {
+    title: 'Die nächsten Ausführungen projizieren.',
+    body: 'Ausgehend von jetzt in Ihrer Zeitzone wird der Zeitplan vorwärts durchlaufen, um die nächsten Auslösezeitpunkte aufzulisten.',
+  },
+];
+
+// ── The five crontab fields ───────────────────────────────────────────────────
+const fields = [
+  { name: 'Minute', range: '0–59', note: 'Minute der Stunde.' },
+  { name: 'Stunde', range: '0–23', note: 'Stunde des Tages (24-Stunden-Format).' },
+  { name: 'Tag des Monats', range: '1–31', note: 'Kalendertag.' },
+  { name: 'Monat', range: '1–12 or JAN–DEC', note: 'Monat des Jahres.' },
+  { name: 'Wochentag', range: '0–7 or SUN–SAT', note: '0 und 7 bedeuten beide Sonntag.' },
+];
+
+// ── Example: a five-field cron expression ────────────────────────────────────
+const cronFieldsExample = `┌───────────── minute        (0 - 59)
+│ ┌─────────── hour          (0 - 23)
+│ │ ┌───────── day of month  (1 - 31)
+│ │ │ ┌─────── month         (1 - 12)
+│ │ │ │ ┌───── day of week    (0 - 6)
+│ │ │ │ │
+*/15 9-17 * * 1-5`;
+
+// ── Example: operators in a single line ──────────────────────────────────────
+const cronOperatorsExample = `# Operators, by example
+*        every value           (every minute, every hour, …)
+5        a single value        (at minute 5)
+1-5      a range               (Monday through Friday)
+*/15     a step over a range   (every 15th minute)
+0,30     a list                (on the hour and the half hour)
+MON-FRI  named weekdays        (same as 1-5)`;
+
+// ── Example: the @macro shorthands ───────────────────────────────────────────
+const cronMacrosExample = `@yearly    →  0 0 1 1 *     once a year, at midnight on Jan 1
+@monthly   →  0 0 1 * *     once a month, at midnight on the 1st
+@weekly    →  0 0 * * 0     once a week, at midnight on Sunday
+@daily     →  0 0 * * *     once a day, at midnight
+@hourly    →  0 * * * *     once an hour, at minute 0`;
+import type { Locale as __Locale } from '../../i18n/config';
+import { localizeKey as __l } from '../../i18n/utils';
+const __lang = (Astro.currentLocale ?? 'en') as __Locale;
+
+---
+
+<Shell
+  title="Cron Expression Tester — Cron in Klartext erklären"
+  description="Kostenloser Cron Expression Tester im Browser. Fügen Sie eine beliebige crontab ein und erhalten Sie eine Erklärung in Klartext sowie die nächsten Ausführungszeitpunkte. Keine Registrierung, Ihre Daten bleiben auf Ihrem Gerät."
+  canonical="/cron-expression-tester"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <!-- ════════════════════════════════════════════════════════════════════
+       1) HERO — compact, mesh gradient behind
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolHero
+    eyebrow="Cron Expression Tester · Scheduling"
+    badges={[
+      { label: 'Läuft in Ihrem Browser', variant: 'live' },
+      { label: 'Keine Registrierung', variant: 'neutral' },
+      { label: 'Kostenlos & offen', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">Lesen Sie jeden Cron-Ausdruck auf einen Blick.</Fragment>
+    <Fragment slot="lead">
+      Fügen Sie eine crontab-Zeile wie
+      <span class="code-mono text-ink" translate="no">*/15 9-17 * * 1-5</span> ein, um eine Erklärung in Klartext
+      darüber zu erhalten, was sie tut, sowie die nächsten Ausführungszeitpunkte — komplett in Ihrem Browser, kostenlos, ohne
+      Registrierung.
+    </Fragment>
+  </ToolHero>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       2) THE PLAYGROUND
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pt-8 pb-20 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">Cron Expression Tester Playground</h2>
+      <CronTesterPlayground />
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       3) WHY IT EXISTS — the gap
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">Die Lücke</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            Fünf Felder, hundert Arten, sie falsch zu lesen.
+          </h2>
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            Die Syntax von cron ist bekanntermaßen knapp. Der Unterschied zwischen
+            <span class="code-mono text-ink" translate="no">*/5</span> und
+            <span class="code-mono text-ink" translate="no">5</span> oder zwischen einem Job, der
+            einmal am Tag läuft, und einem, der jede Minute eines Tages läuft, ist ein einziges Zeichen — und die
+            klassische ODER-Regel für Tag des Monats / Wochentag
+            <span class="code-mono text-ink" translate="no">OR</span> bringt selbst erfahrene
+            Ingenieure ins Straucheln. Ein Tippfehler hier wirft keinen Fehler; er führt einfach stillschweigend zur falschen Zeit aus.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Dieser Tester wandelt jeden Cron-Ausdruck in Klartext um — einen menschenlesbaren Satz,
+            den Sie tatsächlich überprüfen können — und zeigt dann die nächsten Ausführungszeitpunkte, sodass der Zeitplan konkret
+            statt abstrakt ist. Es ist die schnelle Plausibilitätsprüfung, die zwischen das Schreiben einer
+            crontab-Zeile und ihre Auslieferung gehört — komplett im Browser, ohne etwas installieren zu müssen.
+          </p>
+          <p class="body-sm text-mute">
+            Neu in diesem Format? Springen Sie zu <a class="link-inline" href="#syntax">der Syntax</a> oder probieren Sie
+            das <a class="link-inline" href="#playground">interaktive Playground</a> oben aus.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       4) HOW IT WORKS — numbered pipeline
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="Die Pipeline"
+    heading="So funktioniert es."
+    lead="Vier deterministische Schritte laufen bei jedem Tastendruck end-to-end durch — jedes Mal vollständig in Ihrem Browser-Tab."
+    steps={pipeline}
+  />
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       5) SYNTAX — the crontab format docs
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="syntax" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Cron-Syntax</p>
+        <h2 class="display-lg mt-3 text-ink">Fünf Felder, ein paar Operatoren.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          Eine standardmäßige crontab-Zeile besteht aus fünf durch Leerzeichen getrennten Feldern, von links nach rechts gelesen. Jedes akzeptiert
+          dieselbe kleine Menge an Operatoren, und eine Handvoll
+          <span class="code-mono text-ink" translate="no">@macros</span> stehen für die
+          gängigsten Zeitpläne.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 grid max-w-5xl gap-8 lg:grid-cols-2">
+        <div class="min-w-0">
+          <h3 class="display-sm text-ink">Die fünf Felder</h3>
+          <p class="body-sm mt-2 mb-4 text-pretty text-body">
+            Minute, Stunde, Tag des Monats, Monat und Wochentag — in dieser Reihenfolge. Ein
+            <span class="code-mono text-ink" translate="no">*</span> bedeutet „jeder Wert“ für dieses
+            Feld.
+          </p>
+          <CodeBlock lang="cron" filename="crontab" code={cronFieldsExample} />
+
+          <dl class="mt-6 divide-y divide-hairline overflow-hidden rounded-md card">
+            {
+              fields.map((f) => (
+                <div class="flex items-baseline justify-between gap-4 px-4 py-3">
+                  <dt class="body-sm font-medium text-ink">{f.name}</dt>
+                  <dd class="flex min-w-0 items-baseline gap-3 text-right">
+                    <span class="code-mono shrink-0 text-body">{f.range}</span>
+                    <span class="caption hidden text-mute sm:inline">{f.note}</span>
+                  </dd>
+                </div>
+              ))
+            }
+          </dl>
+        </div>
+
+        <div class="min-w-0">
+          <h3 class="display-sm text-ink">Operatoren &amp; Makros</h3>
+          <p class="body-sm mt-2 mb-4 text-pretty text-body">
+            Bereiche, Schritte, Listen und Namen lassen sich innerhalb jedes Feldes kombinieren. Die
+            <span class="code-mono text-ink" translate="no">@macros</span> sind exakte Kurzschreibweisen —
+            jede expandiert zu einer einfachen Zeile mit fünf Feldern.
+          </p>
+          <CodeBlock lang="cron" filename="operators" code={cronOperatorsExample} />
+          <div class="mt-6">
+            <CodeBlock lang="cron" filename="macros" code={cronMacrosExample} />
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       6) NEXT STEP — cross-link to the systemd converter
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="next" class="scroll-mt-24 bg-inverse text-inverse-fg">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+        <div class="min-w-0">
+          <p class="eyebrow !text-cyan">Nächster Schritt</p>
+          <h2 class="display-lg mt-3 text-balance text-inverse-fg">
+            Weg von crontab? Wandeln Sie es in einen systemd-Timer um.
+          </h2>
+          <p class="body-md mt-4 text-pretty text-white/70">
+            Sobald ein Zeitplan hier korrekt gelesen wird, verwandelt der
+            <span translate="no">Cron to systemd</span> Converter dieselbe Zeile in eine
+            äquivalente <span class="code-mono" translate="no">.timer</span>- und
+            <span class="code-mono" translate="no">.service</span>-Unit — mit einem
+            <span class="code-mono" translate="no">OnCalendar</span>-Ausdruck und Migrationshinweisen,
+            sodass das Verhalten sauber übernommen wird.
+          </p>
+          <div class="mt-7 flex flex-wrap items-center gap-3">
+            <Button href={__l("/cron-to-systemd", __lang)} variant="secondary">Den systemd Converter öffnen</Button>
+          </div>
+        </div>
+        <CodeBlock
+          lang="ini"
+          filename="backup.timer"
+          code={`[Timer]
+# from:  */15 9-17 * * 1-5
+OnCalendar=Mon..Fri *-*-* 09..17:00/15
+Persistent=true`}
+        />
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       7) FAQ
+       ════════════════════════════════════════════════════════════════════ -->
+  <FaqList faqs={faqs} />
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       Cross-links + footer note
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolCrossLinks>
+    <Fragment slot="lead">
+      Der Cron Expression Tester ist eines von mehreren Tools in
+      <span translate="no">{site.name}</span> — einem wachsenden Schirm browserbasierter Validatoren,
+      Konverter und Tester, die niemals einen Server berühren.
+    </Fragment>
+    <Fragment slot="links">
+      Scheduling unter Linux? Kombinieren Sie dies mit dem
+      <a class="link-inline" href={__l("/cron-to-systemd", __lang)}>Cron to systemd Converter</a>, oder durchstöbern Sie das
+      vollständige <a class="link-inline" href={__l(navLinks[0].href, __lang)}>Tools-Verzeichnis</a>.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      Nicht mit irgendeiner <span translate="no">cron</span>-Implementierung verbunden oder von dieser unterstützt. Format-
+      namen werden nur verwendet, um zu beschreiben, was dieses Tool liest.
+      <span translate="no">{site.name}</span> ist kostenlos und offen.
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>

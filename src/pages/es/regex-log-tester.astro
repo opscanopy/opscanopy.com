@@ -1,0 +1,330 @@
+---
+/**
+ * Regex Log Tester — the tool page (primary SEO surface).
+ * Paste a regular expression and sample log lines, see live matches, capture
+ * groups and named groups — entirely in the browser. No server, no signup.
+ *
+ * Imports the interactive island (RegexLogTesterPlayground, self-mounting) plus
+ * the brand primitives. JSON-LD (SoftwareApplication + FAQPage) is assembled in
+ * frontmatter and handed to Shell via the `jsonLd` prop.
+ */
+import Shell from '../../components/Shell.astro';
+import RegexLogTesterPlayground from '../../components/RegexLogTesterPlayground.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import ToolHero from '../../components/ToolHero.astro';
+import ToolPipeline from '../../components/ToolPipeline.astro';
+import FaqList from '../../components/FaqList.astro';
+import ToolCrossLinks from '../../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../../data/site';
+import { getTool } from '../../data/tools';
+import { softwareAppLd, faqPageLd } from '../../lib/jsonld';
+
+const tool = getTool('regex-log-tester');
+
+const pagePath = '/regex-log-tester';
+const pageUrl = `${site.url}${pagePath}`;
+
+// ── FAQ content — single source for both the rendered section and FAQPage LD ─
+const faqs = [
+  {
+    q: '¿Qué es el Regex Log Tester?',
+    a: 'Es una herramienta gratuita, basada en el navegador, para probar una expresión regular contra líneas de log reales. Pegas un patrón y un bloque de logs de muestra, y resalta cada coincidencia, lista cada grupo de captura y nombra cualquier grupo con nombre, línea por línea. Está creada específicamente para los patrones de análisis de logs que escribes para Loki, Promtail, Grafana Agent, Fluent Bit, Logstash y similares.',
+  },
+  {
+    q: '¿Mis datos salen alguna vez de mi navegador?',
+    a: 'No. El tester se ejecuta 100% del lado del cliente usando el propio motor de regex de tu navegador. Tu patrón y tus líneas de log se evalúan en la página: nada se sube a un servidor y no hay cuenta ni registro. Puedes pegar muestras de logs internos o sensibles con total seguridad.',
+  },
+  {
+    q: '¿Qué variante de regex usa?',
+    a: 'Usa el motor de expresiones regulares de JavaScript (ECMAScript) integrado en tu navegador, así que sintaxis como \\d, clases de caracteres, anclas, alternancia, grupos con nombre ((?<name>…)) y flags como g, i, m y s se comportan exactamente igual que en JavaScript. La variante difiere en algunos puntos de RE2 (que usan los agentes de logs basados en Go como Loki y Promtail) y de PCRE, así que confirma siempre un patrón en tu motor de destino antes de ponerlo en producción.',
+  },
+  {
+    q: '¿Cómo capturo campos como timestamp, level y message?',
+    a: 'Usa grupos de captura con nombre. Envuelve cada campo que quieras extraer en (?<name>…) — por ejemplo (?<ts>\\S+) (?<level>\\w+) (?<msg>.*). El tester lista cada grupo con nombre que capturó por cada línea coincidente, lo que refleja cómo los parsers pattern/regexp de Loki y la etapa regex de Promtail convierten las coincidencias en etiquetas.',
+  },
+  {
+    q: '¿Por qué mi patrón no coincide a través de varias líneas?',
+    a: 'De forma predeterminada el punto (.) no coincide con saltos de línea, y ^/$ coinciden con el inicio y el final de toda la entrada en lugar de cada línea. Agrega el flag m para que ^ y $ se anclen a cada línea, y el flag s (dotAll) si necesitas que . abarque saltos de línea. El tester evalúa cada línea de log de forma independiente, lo que coincide con cómo la mayoría de los agentes de logs aplican una regex por línea.',
+  },
+  {
+    q: '¿Puede advertirme sobre el backtracking catastrófico?',
+    a: 'El tester ejecuta tu patrón con una protección para que una expresión patológica no congele la pestaña, y muestra un error en lugar de quedarse colgado. Aun así, conviene evitar cuantificadores anidados sobre clases que se solapan (la forma clásica (a+)+): esos pueden ser lentos en cualquier motor, no solo en el navegador.',
+  },
+  {
+    q: '¿Cómo pruebo una regex contra líneas de log en línea?',
+    a: 'Pega tus líneas de log de muestra y tu expresión regular en los campos de entrada, y luego observa cómo las coincidencias se resaltan en vivo mientras escribes. El tester aplica el patrón a cada línea de forma independiente, así que ves de un vistazo qué líneas coinciden y cuáles no, sin ejecutar un pipeline ni desplegar un cambio de configuración. Como todo se ejecuta en tu navegador, puedes probar contra muestras de logs reales o redactados sin necesidad de subir nada.',
+  },
+  {
+    q: '¿Qué flags de regex debo usar para el análisis de logs?',
+    a: 'Para la mayoría del trabajo de análisis de logs, empieza con m (multiline) para que ^ y $ se anclen a cada línea en vez de a toda la entrada, y g (global) para encontrar cada coincidencia en lugar de detenerse en la primera. El tester agrega g automáticamente, así que el modo de todas las coincidencias siempre está activo. Agrega i (insensible a mayúsculas) cuando los niveles de log o los métodos HTTP varían en mayúsculas y minúsculas, y s (dotAll) solo cuando una coincidencia necesita abarcar un salto de línea dentro de una sola entrada de log.',
+  },
+  {
+    q: '¿Cómo escribo una regex para analizar logs de acceso de Apache o Nginx?',
+    a: 'Construye el patrón campo por campo — dirección IP, timestamp, método de la petición, ruta, código de estado, tamaño de la respuesta — y usa grupos con nombre como (?<ip>\\S+) y (?<status>\\d{3}) para etiquetar cada campo extraído. Pega varias líneas reales de logs de acceso en el tester para verificar que el patrón coincide con cada variación antes de colocarlo en una etapa de pipeline de Promtail o en un filtro grok de Logstash. El tester muestra exactamente qué grupos coincidieron en cada línea, de modo que las lagunas son inmediatamente visibles.',
+  },
+  {
+    q: '¿Cuál es la diferencia entre un regex log tester y un tester de patrones grok?',
+    a: 'Un regex log tester trabaja con expresiones regulares en bruto —incluidos los grupos de captura con nombre— directamente contra las líneas de log. Un tester de grok usa macros con nombre %{PATTERN:field} que se compilan a regex para herramientas como Logstash o la pila Elastic. Si quieres control total sobre el patrón subyacente, o si tu agente de logs (como Loki o Promtail) admite una etapa regexp en bruto, un regex log tester es la herramienta más directa. Grok y la regex en bruto son complementarios: puedes prototipar aquí una regex con grupos con nombre y luego traducir los campos capturados a un pipeline compatible con grok.',
+  },
+];
+
+// ── JSON-LD: SoftwareApplication ─────────────────────────────────────────────
+const softwareApp = softwareAppLd({
+  name: tool?.name ?? 'Regex Log Tester',
+  description:
+    'Regex log tester gratuito en el navegador. Pega una regex y líneas de log para ver coincidencias en vivo, grupos de captura y grupos con nombre. Sin registro; los logs nunca salen de tu dispositivo.',
+  url: pageUrl,
+  subCategory: 'Logs',
+  featureList: [
+    'Coincidencias de regex en vivo contra líneas de log pegadas',
+    'Grupos de captura numerados y grupos con nombre por línea',
+    'Flags estándar: g, i, m, s y más',
+    '100% del lado del cliente, sin subidas, sin registro',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+
+// ── JSON-LD: FAQPage (mirrors the rendered FAQ) ──────────────────────────────
+const faqPage = faqPageLd(faqs);
+
+// ── HOW IT WORKS pipeline ────────────────────────────────────────────────────
+const pipeline = [
+  {
+    title: 'Compila el patrón.',
+    body: 'Tu expresión y tus flags se compilan con el motor de regex nativo del navegador, el mismo sobre el que ya se ejecuta tu código de front-end.',
+  },
+  {
+    title: 'Divide las líneas de log.',
+    body: 'El bloque de muestra se divide en líneas individuales para que cada una se pruebe por separado, exactamente como lo aplicaría un agente de logs por línea.',
+  },
+  {
+    title: 'Coincide con cada línea.',
+    body: 'Cada línea se analiza en busca de coincidencias. Con el flag global, se encuentra cada coincidencia de una línea, no solo la primera.',
+  },
+  {
+    title: 'Extrae los grupos.',
+    body: 'Por cada coincidencia, el tester extrae los grupos de captura numerados y cualquier grupo con nombre, listos para leerse como campos.',
+  },
+  {
+    title: 'Renderiza en vivo.',
+    body: 'Las coincidencias se resaltan en su lugar y los grupos se listan debajo, actualizándose mientras editas, todo sin salir de la página.',
+  },
+];
+
+// ── Example: a regex for structured app logs ─────────────────────────────────
+const patternExample = `^(?<ts>\\d{4}-\\d{2}-\\d{2}T\\S+)\\s+
+(?<level>INFO|WARN|ERROR)\\s+
+(?<logger>[\\w.]+)\\s+-\\s+
+(?<msg>.*)$`;
+
+// ── Example: sample log lines to test against ────────────────────────────────
+const logLinesExample = `2026-06-08T09:14:02Z INFO  app.checkout - order 4821 placed
+2026-06-08T09:14:05Z WARN  app.payment  - retrying charge for order 4821
+2026-06-08T09:14:07Z ERROR app.payment  - charge failed: gateway timeout
+2026-06-08T09:14:09Z INFO  app.checkout - order 4821 cancelled`;
+
+// ── Example: common flags cheat-sheet ────────────────────────────────────────
+const flagsExample = `g   global    find every match on a line, not just the first
+i   ignore    case-insensitive matching (ERROR == error)
+m   multiline ^ and $ anchor to each line, not the whole input
+s   dotAll    . also matches newline characters
+u   unicode   treat the pattern as a sequence of code points`;
+import type { Locale as __Locale } from '../../i18n/config';
+import { localizeKey as __l } from '../../i18n/utils';
+const __lang = (Astro.currentLocale ?? 'en') as __Locale;
+
+---
+
+<Shell
+  title="Regex Log Tester — Prueba regex contra líneas de log gratis"
+  description="Regex log tester gratuito en el navegador. Pega una regex y líneas de log para ver coincidencias en vivo, grupos de captura y grupos con nombre. Sin registro; los logs nunca salen de tu dispositivo."
+  canonical="/regex-log-tester"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <!-- ════════════════════════════════════════════════════════════════════
+       1) HERO — compact, mesh gradient behind
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolHero
+    eyebrow="Regex Log Tester · Logs"
+    badges={[
+      { label: 'Se ejecuta en tu navegador', variant: 'live' },
+      { label: 'Sin registro', variant: 'neutral' },
+      { label: 'Gratis y abierto', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">Prueba tu regex de logs contra líneas reales.</Fragment>
+    <Fragment slot="lead">
+      Pega una expresión regular y líneas de log de muestra de <span translate="no">Loki</span>,
+      <span translate="no">Promtail</span> o <span translate="no">Fluent Bit</span> para
+      probar la regex contra líneas de log de muestra en vivo: cada coincidencia, grupo de captura y grupo con nombre se ilumina
+      al instante en tu navegador, gratis y sin registro.
+    </Fragment>
+  </ToolHero>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       2) THE PLAYGROUND
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pt-8 pb-20 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">Playground del Regex Log Tester</h2>
+      <RegexLogTesterPlayground />
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       3) WHY IT EXISTS — the gap
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">La brecha</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            Acierta con el patrón antes de que llegue a producción.
+          </h2>
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            Una regex de análisis de logs suele fallar en silencio. Pones en producción una etapa
+            <span class="code-mono text-ink" translate="no">regexp</span> o un parser
+            <span class="code-mono text-ink" translate="no">pattern</span>, lo despliegas, y solo
+            más tarde notas que un campo nunca se rellenó o que toda una secuencia de líneas se coló. El
+            ciclo de retroalimentación pasa por un pipeline y un dashboard en lugar de por el patrón
+            que tienes delante.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Este tester cierra ese ciclo. Pega las líneas exactas que estás analizando, observa cómo las coincidencias y
+            los grupos con nombre se resuelven mientras editas, y corrige la expresión en segundos, antes de que llegue a un
+            archivo de configuración. Es el bloc de notas rápido que los grandes playgrounds de regex no son: orientado a líneas,
+            ajustado para el análisis de logs y seguro para logs sensibles de forma predeterminada, porque todo se ejecuta
+            del lado del cliente y tus datos nunca salen de la página.
+          </p>
+          <p class="body-sm text-mute">
+            ¿Nuevo con los grupos de captura? Salta a <a class="link-inline" href="#syntax">las notas de sintaxis</a> o
+            prueba el <a class="link-inline" href="#playground">playground en vivo</a> de arriba.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       4) HOW IT WORKS — numbered pipeline
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="El pipeline"
+    heading="Cómo funciona."
+    lead="Cinco pasos deterministas se ejecutan en cada edición, todos dentro de la pestaña de tu navegador, cada vez."
+    steps={pipeline}
+  />
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       5) SYNTAX — pattern + log lines + flags docs
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="syntax" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Sintaxis</p>
+        <h2 class="display-lg mt-3 text-ink">Un patrón, tus líneas, los flags.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          El tester toma dos entradas —una expresión regular y un bloque de líneas de log— y aplica
+          los flags estándar de <span translate="no">JavaScript</span>. Si has escrito un parser para
+          cualquier agente de logs, esto te resultará familiar.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 grid max-w-5xl gap-8 lg:grid-cols-2">
+        <div class="min-w-0">
+          <h3 class="display-sm text-ink">El patrón</h3>
+          <p class="body-sm mt-2 mb-4 text-pretty text-body">
+            Nombra los campos que quieres extraer con grupos de captura
+            <span class="code-mono text-ink" translate="no">(?&lt;name&gt;…)</span>.
+            El tester lista cada grupo con nombre que capturó, igual que
+            los parsers
+            <span class="code-mono text-ink" translate="no">pattern</span> /
+            <span class="code-mono text-ink" translate="no">regexp</span> de
+            <span translate="no">Loki</span> y la etapa regex de
+            <span translate="no">Promtail</span> convierten las coincidencias en etiquetas.
+          </p>
+          <CodeBlock lang="regex" filename="pattern.re" code={patternExample} />
+        </div>
+
+        <div class="min-w-0">
+          <h3 class="display-sm text-ink">Las líneas de log</h3>
+          <p class="body-sm mt-2 mb-4 text-pretty text-body">
+            Pega las líneas reales que estás analizando, una por fila. Cada línea se prueba por su cuenta, así que una
+            coincidencia o un fallo en una línea nunca afecta a la siguiente. Mete una mezcla representativa de muestras
+            <span class="code-mono text-ink" translate="no">INFO</span>,
+            <span class="code-mono text-ink" translate="no">WARN</span> y
+            <span class="code-mono text-ink" translate="no">ERROR</span> para confirmar que el
+            patrón generaliza.
+          </p>
+          <CodeBlock lang="log" filename="sample.log" code={logLinesExample} />
+        </div>
+      </div>
+
+      <div class="mx-auto mt-8 max-w-5xl">
+        <h3 class="display-sm text-ink">Los flags</h3>
+        <p class="body-sm mt-2 mb-4 max-w-2xl text-pretty text-body">
+          Los flags cambian cómo el motor lee tu patrón. Para el análisis de logs por línea, los dos a los que
+          recurrirás más son <span class="code-mono text-ink" translate="no">m</span> (para que las anclas se ciñan a
+          cada línea) y <span class="code-mono text-ink" translate="no">i</span> (niveles insensibles a
+          mayúsculas).
+        </p>
+        <CodeBlock lang="text" filename="flags.txt" code={flagsExample} />
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       6) NOTE — honest engine callout (RE2 vs ECMAScript)
+       ════════════════════════════════════════════════════════════════════ -->
+  <section class="bg-canvas-soft">
+    <div class="container-page py-12 sm:py-16">
+      <div class="card-soft mx-auto max-w-3xl p-6">
+        <p class="eyebrow">Una nota sobre las variantes</p>
+        <p class="body-md mt-3 text-pretty text-body">
+          Este tester usa el motor de regex <strong class="font-medium text-ink"
+            ><span translate="no">JavaScript</span> (ECMAScript)</strong
+          > de tu navegador. Muchos agentes de logs —<span translate="no">Loki</span>,
+          <span translate="no">Promtail</span> y el <span translate="no">Grafana Agent</span>— están
+          escritos en <span translate="no">Go</span> y usan el motor
+          <span translate="no">RE2</span>, que omite deliberadamente las referencias hacia atrás y
+          el lookaround para garantizar un rendimiento lineal.
+          Las herramientas basadas en <span translate="no">PCRE</span> difieren de nuevo. La sintaxis básica —clases,
+          anclas, cuantificadores y grupos con nombre— es compartida, así que esta es una excelente primera pasada; solo
+          confirma cualquier cosa exótica en tu motor de destino antes de ponerla en producción.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       7) FAQ
+       ════════════════════════════════════════════════════════════════════ -->
+  <FaqList faqs={faqs} />
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       Cross-links
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolCrossLinks>
+    <Fragment slot="lead">
+      El <span translate="no">Regex Log Tester</span> es una herramienta dentro de
+      <span translate="no">{site.name}</span>: una creciente cubierta de validadores, conversores y
+      testers basados en el navegador que nunca tocan un servidor.
+    </Fragment>
+    <Fragment slot="links">
+      ¿Analizando logs de <span translate="no">Loki</span>? Combínalo con
+      <a class="link-inline" href={__l("/loki-alert-rule-tester", __lang)}>AlertLint</a>, el
+      tester unitario al estilo <span translate="no">promtool</span> para reglas de alerta de <span translate="no">Loki</span>,
+      o explora el
+      <a class="link-inline" href={__l(navLinks[0].href, __lang)}>directorio de herramientas</a> completo.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      No afiliado ni respaldado por <span translate="no">Grafana Labs</span>.
+      <span translate="no">Loki</span>, <span translate="no">Promtail</span> y
+      <span translate="no">Grafana</span> son marcas registradas de <span translate="no">Raintank, Inc.</span>
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>

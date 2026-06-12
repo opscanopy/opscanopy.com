@@ -1,0 +1,426 @@
+---
+/**
+ * GitHub Actions Workflow Validator — the primary SEO surface for the GHA tool.
+ * Paste a GitHub Actions workflow and get YAML errors PLUS the dangerous
+ * security misconfigurations that linters skip: pull_request_target + checkout,
+ * script injection via ${{ github.* }}, unpinned third-party actions, and
+ * over-broad permissions. 100% client-side — no server, no signup.
+ *
+ * Mirrors the AlertLint page structure (hero with scrimmed MeshGradient,
+ * playground island, why/checks docs, FAQ + JSON-LD, cross-links, footer note).
+ * The interactive island (GhaValidatorPlayground) self-mounts; JSON-LD
+ * (SoftwareApplication + FAQPage) is assembled here and handed to Shell.
+ */
+import Shell from '../../components/Shell.astro';
+import GhaValidatorPlayground from '../../components/GhaValidatorPlayground.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import Badge from '../../components/Badge.astro';
+import ToolHero from '../../components/ToolHero.astro';
+import ToolPipeline from '../../components/ToolPipeline.astro';
+import FaqList from '../../components/FaqList.astro';
+import ToolCrossLinks from '../../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../../data/site';
+import { getTool } from '../../data/tools';
+import { softwareAppLd, faqPageLd } from '../../lib/jsonld';
+
+const tool = getTool('github-actions-validator');
+
+const pagePath = '/github-actions-validator';
+const pageUrl = `${site.url}${pagePath}`;
+
+// ── External references (the "why it exists" gap + canonical docs) ───────────
+const ghDocsPermissions =
+  'https://docs.github.com/actions/using-jobs/assigning-permissions-to-jobs';
+const ghSecurityHardening =
+  'https://docs.github.com/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions';
+const ghPwnRequest =
+  'https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/';
+
+// ── FAQ content — single source for both the rendered section and FAQPage LD ─
+const faqs = [
+  {
+    q: 'O que o validador do GitHub Actions verifica?',
+    a: 'Duas coisas ao mesmo tempo. Primeiro, ele analisa o YAML do seu workflow e reporta erros de sintaxe, indentação incorreta e falhas estruturais — as coisas que fazem uma execução falhar antes que um único passo seja executado. Segundo, e mais importante, ele roda um conjunto de verificações de configurações de segurança incorretas que os linters comuns deixam passar: o padrão "pwn request" de pull_request_target + checkout, a injeção de scripts por meio de expressões ${{ github.* }} não confiáveis, ações de terceiros fixadas em uma tag mutável em vez de em um SHA de commit, e permissões amplas demais como write-all. Você recebe erros e padrões perigosos em uma única passada.',
+  },
+  {
+    q: 'Meu workflow chega a sair do meu navegador em algum momento?',
+    a: 'Não. O validador roda 100% no lado do cliente. O YAML do seu workflow é analisado dentro da aba do seu navegador: nada é enviado para um servidor, e não há conta nem cadastro. Você pode colar com segurança workflows internos ou proprietários, inclusive os que têm nomes de secrets e labels de runners privados.',
+  },
+  {
+    q: 'Como isso difere do actionlint?',
+    a: 'O actionlint é excelente em sintaxe, tipagem de expressões e integração com o shellcheck — e você deve continuar usando-o. Mas os erros que de fato acabam comprometendo repositórios são os de segurança: rodar código não confiável com um token privilegiado, interpolar texto controlado por um atacante diretamente em um shell, ou puxar uma ação de terceiros por uma tag que o autor pode mover silenciosamente. Esta ferramenta foca nessas configurações de segurança incorretas, valida também o YAML e não precisa instalar nada.',
+  },
+  {
+    q: 'Por que o pull_request_target é tão perigoso?',
+    a: 'Um workflow disparado por pull_request_target roda no contexto do repositório base — com acesso aos seus secrets e a um GITHUB_TOKEN de leitura/escrita — mas pode ser disparado por um pull request de qualquer fork. Se esse workflow também fizer checkout do head do PR (actions/checkout com a ref do PR) e então compilar, testar ou rodar scripts a partir dele, o código do fork de um atacante é executado com os seus secrets. Esse é o clássico "pwn request". O validador sinaliza pull_request_target sempre que ele for combinado com um checkout de código não confiável do PR.',
+  },
+  {
+    q: 'O que é injeção de scripts em um workflow?',
+    a: 'Quando você embute uma expressão como ${{ github.event.issue.title }} ou ${{ github.head_ref }} diretamente dentro de um bloco run:, o GitHub substitui o valor bruto, controlável por um atacante, dentro do seu script antes que o shell o analise. Um título como a"; rm -rf / # se torna executável. A solução é passar os valores não confiáveis por uma variável env: e referenciá-los como "$TITLE" para que o shell os trate como dados, nunca como código. O validador sinaliza as expressões do contexto github não confiáveis usadas dentro de passos run.',
+  },
+  {
+    q: 'Por que eu deveria fixar as ações em um SHA de commit?',
+    a: 'Uma referência como actions/checkout@v4 ou some-org/action@main aponta para uma tag ou branch que o mantenedor da ação — ou um atacante que comprometa a conta dele — pode mover para um código novo a qualquer momento, e esse código roda no seu pipeline com o seu token. Fixar em um SHA de commit completo de 40 caracteres (uses: actions/checkout@<sha>) torna a versão imutável. O validador sinaliza as ações de terceiros fixadas em uma tag ou branch mutável.',
+  },
+  {
+    q: 'Esta ferramenta é afiliada ao GitHub?',
+    a: 'Não. Este validador é uma ferramenta independente e comunitária, e não é afiliada, endossada nem patrocinada pela GitHub, Inc. "GitHub" e "GitHub Actions" são usados aqui apenas de forma descritiva, para identificar o formato de workflow que a ferramenta verifica.',
+  },
+  {
+    q: 'Como valido um workflow do GitHub Actions sem fazer push?',
+    a: 'Cole o YAML do workflow em um validador baseado em navegador para detectar erros antes de fazer commit — sem instalar nada e sem precisar de push. Esta ferramenta roda o conjunto completo de verificações (estrutura YAML mais configurações de segurança incorretas) inteiramente no seu navegador, então você recebe feedback instantâneo sobre erros de sintaxe, runs-on faltando, nomes de trigger incorretos e padrões perigosos como ações não fixadas ou injeção de scripts antes que o workflow chegue ao GitHub.',
+  },
+  {
+    q: 'Quais erros comuns quebram um workflow do GitHub Actions?',
+    a: 'Os problemas frequentes incluem um runs-on faltando em um job, um passo que especifica ao mesmo tempo uses e run, uma referência needs que aponta para um job que não existe, um nome de evento de trigger inválido e uma indentação YAML incorreta. O validador detecta cada um desses como erros estruturais com o número da linha onde o problema ocorre, para que você possa corrigi-los antes que a execução falhe no GitHub.',
+  },
+  {
+    q: 'Existe um linter de GitHub Actions gratuito e online que não precise de instalação?',
+    a: 'A maioria dos verificadores estáticos — actionlint, zizmor, action-validator — exige uma CLI ou uma toolchain de Rust/Go. Este validador é gratuito, não precisa de instalação nem cadastro, e roda inteiramente no seu navegador. Ele verifica tanto a validade do YAML quanto as configurações de segurança incorretas (ações não fixadas, injeção de templates, triggers perigosos, permissões de token amplas demais) que as ferramentas de CLI cobrem, sem nenhuma configuração local.',
+  },
+];
+
+// ── JSON-LD: SoftwareApplication + FAQPage (shared builders) ─────────────────
+const softwareApp = softwareAppLd({
+  name: 'GitHub Actions Workflow Validator',
+  description:
+    'Validador de YAML do GitHub Actions gratuito. Cole um workflow para encontrar erros de YAML e configurações de segurança incorretas na hora. 100% no navegador, sem instalação, sem cadastro.',
+  url: pageUrl,
+  subCategory: 'CI/CD Security',
+  featureList: [
+    'Valida o YAML de workflows do GitHub Actions em busca de erros de sintaxe e estrutura',
+    'Detecta o risco de pwn-request de pull_request_target + checkout',
+    'Detecta injeção de scripts via expressões ${{ github.* }} não confiáveis',
+    'Sinaliza ações de terceiros fixadas em tags mutáveis em vez de em um SHA de commit',
+    'Sinaliza permissões amplas demais do GITHUB_TOKEN (write-all)',
+    '100% no lado do cliente, sem upload, sem cadastro',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+
+const faqPage = faqPageLd(faqs);
+
+// ── HOW IT WORKS pipeline ────────────────────────────────────────────────────
+const pipeline = [
+  {
+    title: 'Analisa o YAML.',
+    body: 'Seu workflow é analisado com um leitor de YAML: os erros de sintaxe, a indentação incorreta e os problemas estruturais são reportados com a linha que falhou.',
+  },
+  {
+    title: 'Mapeia o workflow.',
+    body: 'Os triggers, os jobs, as permissões e cada passo são lidos em um modelo para que o analisador saiba o que roda, quando e com qual token.',
+  },
+  {
+    title: 'Roda as verificações.',
+    body: 'Cada regra de segurança percorre o modelo, procurando combinações arriscadas de trigger + checkout, expressões não confiáveis em blocos run, fixações de ações mutáveis e permissões amplas.',
+  },
+  {
+    title: 'Ordena por severidade.',
+    body: 'Os achados são classificados como altos, médios ou baixos para que os riscos de pwn-request e de injeção subam para o topo, à frente das picuinhas de estilo.',
+  },
+  {
+    title: 'Mostra a solução.',
+    body: 'Cada achado liga a localização exata a uma correção concreta: o trigger seguro, o padrão de variável env, o SHA fixado, a permissão restrita.',
+  },
+];
+
+// ── SECURITY CHECKS — each with a risky pattern + the fix ─────────────────────
+const checks = [
+  {
+    id: 'pwn-request',
+    name: 'pull_request_target + checkout (pwn request)',
+    severity: 'High',
+    blurb:
+      'Um workflow com pull_request_target roda com os secrets do repo base e um token de leitura/escrita, mas pode ser disparado a partir de qualquer fork. Fazer checkout e rodar o head do PR executa código não confiável com os seus secrets.',
+    badLabel: '.github/workflows/ci.yml',
+    bad: `# DANGEROUS — runs fork code with base-repo secrets
+on: pull_request_target
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: \${{ github.event.pull_request.head.sha }}
+      - run: npm ci && npm run build   # attacker's code, your token`,
+    goodLabel: '.github/workflows/ci.yml',
+    good: `# SAFE — untrusted code runs with no secrets
+on: pull_request          # not pull_request_target
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4   # checks out the PR safely
+      - run: npm ci && npm run build`,
+  },
+  {
+    id: 'script-injection',
+    name: 'Script injection via ${{ github.* }}',
+    severity: 'High',
+    blurb:
+      'Interpolar um valor controlável por um atacante — um título de PR, um nome de branch ou o corpo de uma issue — diretamente em um bloco run permite que esse valor escape da string e seja executado como comandos de shell.',
+    badLabel: 'step',
+    bad: `# DANGEROUS — title is substituted into the shell verbatim
+- run: echo "Title: \${{ github.event.pull_request.title }}"
+  # a title of  a"; rm -rf ~ #  runs as a command`,
+    goodLabel: 'step',
+    good: `# SAFE — pass through env, quote, treat as data
+- env:
+    TITLE: \${{ github.event.pull_request.title }}
+  run: echo "Title: $TITLE"`,
+  },
+  {
+    id: 'unpinned-actions',
+    name: 'Unpinned third-party actions',
+    severity: 'Medium',
+    blurb:
+      'Uma referência de tag ou branch (@v4, @main) é mutável: o mantenedor da ação, ou qualquer um que comprometa a conta dele, pode movê-la para um código novo que então roda no seu pipeline com o seu token.',
+    badLabel: 'step',
+    bad: `# RISKY — mutable references can change under you
+- uses: some-org/deploy-action@v2
+- uses: another-org/setup@main`,
+    goodLabel: 'step',
+    good: `# SAFE — pin to an immutable full commit SHA
+- uses: some-org/deploy-action@a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0  # v2.3.1
+- uses: another-org/setup@0f1e2d3c4b5a69788796a5b4c3d2e1f00112233  # main @ 2024-05`,
+  },
+  {
+    id: 'broad-permissions',
+    name: 'Over-broad GITHUB_TOKEN permissions',
+    severity: 'Medium',
+    blurb:
+      'permissions: write-all (ou um bloco permissions omitido sobre um valor padrão permissivo) entrega a cada passo um token que pode fazer push de código, publicar pacotes e editar issues — muito mais do que a maioria dos jobs precisa.',
+    badLabel: '.github/workflows/ci.yml',
+    bad: `# RISKY — every job gets a fully privileged token
+permissions: write-all
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: ./run-tests.sh`,
+    goodLabel: '.github/workflows/ci.yml',
+    good: `# SAFE — least privilege, scoped to what's needed
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: ./run-tests.sh`,
+  },
+];
+
+const severityCount = checks.length;
+import type { Locale as __Locale } from '../../i18n/config';
+import { localizeKey as __l } from '../../i18n/utils';
+const __lang = (Astro.currentLocale ?? 'en') as __Locale;
+
+---
+
+<Shell
+  title="Validador de YAML do GitHub Actions — Grátis e online, sem instalação"
+  description="Validador de YAML do GitHub Actions gratuito. Cole um workflow para encontrar erros de YAML e configurações de segurança incorretas na hora. 100% no navegador, sem instalação, sem cadastro."
+  canonical="/github-actions-validator"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <!-- ════════════════════════════════════════════════════════════════════
+       1) HERO — compact, mesh gradient behind (fixed scrim treatment)
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolHero
+    eyebrow="Validador do GitHub Actions · CI/CD"
+    badges={[
+      { label: 'Roda no seu navegador', variant: 'live' },
+      { label: 'Sem cadastro', variant: 'neutral' },
+      { label: 'Focado em segurança', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">
+      Detecte erros de workflow e brechas de segurança antes de fazer push.
+    </Fragment>
+    <Fragment slot="lead">
+      Cole um workflow do <span class="code-mono text-ink" translate="no">GitHub Actions</span> e obtenha
+      seus erros de YAML mais as configurações de segurança incorretas que os linters comuns deixam passar — na hora, no seu
+      navegador. Sem instalação, sem cadastro.
+    </Fragment>
+  </ToolHero>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       2) THE PLAYGROUND
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pb-20 pt-8 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">Playground do validador de workflows do GitHub Actions</h2>
+      <GhaValidatorPlayground />
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       3) WHY IT EXISTS — the gap
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">A lacuna</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            A sintaxe é a parte fácil.
+          </h2>
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            <span class="code-mono text-ink" translate="no">actionlint</span> acerta a sintaxe do workflow —
+            tipagem de expressões, dependências de jobs, até shellcheck nos seus blocos
+            <span class="code-mono text-ink" translate="no">run</span>. Continue usando-o. Mas um
+            workflow pode ser YAML perfeitamente válido e ainda assim entregar os seus secrets a um atacante.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Os erros perigosos são os de <strong class="font-medium text-ink">segurança</strong>:
+            rodar código de fork não confiável sob
+            <span class="code-mono text-ink" translate="no">pull_request_target</span>, interpolar
+            texto controlado por um atacante dentro de um shell, puxar uma ação de terceiros por uma tag que o autor
+            pode mover silenciosamente, ou conceder um token
+            <span class="code-mono text-ink" translate="no">write-all</span> a um job que só
+            precisa ler. Esses são os padrões por trás de incidentes reais de cadeia de suprimentos — veja
+            o
+            <a
+              class="link-inline"
+              href={ghSecurityHardening}
+              target="_blank"
+              rel="noopener noreferrer">guia de fortalecimento de segurança</a
+            > do <span translate="no">GitHub</span> e a
+            <a
+              class="link-inline"
+              href={ghPwnRequest}
+              target="_blank"
+              rel="noopener noreferrer">análise do pwn-request</a
+            >.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Este validador verifica as duas coisas — o YAML <em>e</em> as configurações de segurança incorretas — para que
+            você possa validar um workflow do GitHub Actions antes do push, sem nada para instalar e
+            sem nada enviado.
+          </p>
+          <p class="body-sm text-mute">
+            Veja a lista completa nas <a class="link-inline" href="#checks">verificações de segurança</a>, ou
+            experimente o <a class="link-inline" href="#playground">playground ao vivo</a> acima.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       4) HOW IT WORKS — numbered pipeline
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="O pipeline"
+    heading="Como funciona."
+    lead="Cinco passos determinísticos rodam de ponta a ponta em cada validação — todos dentro da aba do seu navegador, toda vez."
+    steps={pipeline}
+  />
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       5) SECURITY CHECKS — each with risky pattern + fix
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="checks" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Verificações de segurança</p>
+        <h2 class="display-lg mt-3 text-ink">As {severityCount} verificações que importam.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          Além da validade do YAML, o analisador busca as configurações incorretas que levam a secrets vazados
+          e pipelines comprometidos. Cada uma abaixo mostra o padrão arriscado e a solução.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 grid max-w-5xl gap-6">
+        {
+          checks.map((check) => (
+            <article class="card-soft p-6 sm:p-7">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <h3 class="display-sm text-balance text-ink">{check.name}</h3>
+                <Badge variant={check.severity === 'High' ? 'high' : 'medium'}>
+                  Severidade {check.severity}
+                </Badge>
+              </div>
+              <p class="body-md mt-3 max-w-3xl text-pretty text-body">{check.blurb}</p>
+              <div class="mt-5 grid gap-5 lg:grid-cols-2">
+                <div class="min-w-0">
+                  <p class="eyebrow !text-error mb-2">Arriscado</p>
+                  <CodeBlock lang="yaml" filename={check.badLabel} code={check.bad} />
+                </div>
+                <div class="min-w-0">
+                  <p class="eyebrow !text-success mb-2">Corrigido</p>
+                  <CodeBlock lang="yaml" filename={check.goodLabel} code={check.good} />
+                </div>
+              </div>
+            </article>
+          ))
+        }
+      </div>
+
+      <p class="caption mx-auto mt-10 max-w-3xl text-center text-pretty text-mute">
+        As permissões podem ser restritas por job ou para todo o workflow — veja a
+        <a
+          class="link-inline"
+          href={ghDocsPermissions}
+          target="_blank"
+          rel="noopener noreferrer">referência de permissões</a
+        > do <span translate="no">GitHub</span>. A detecção de pipe-to-shell e de secrets em pull requests também funciona hoje, com mais por vir em breve.
+      </p>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       6) NOTE — honest preview-engine callout
+       ════════════════════════════════════════════════════════════════════ -->
+  <section class="bg-canvas-soft">
+    <div class="container-page py-12 sm:py-16">
+      <div class="card-soft mx-auto max-w-3xl p-6">
+        <p class="eyebrow">Análise estática</p>
+        <p class="body-md mt-3 text-pretty text-body">
+          Uma nota sobre o escopo: isto é um <strong class="font-medium text-ink">analisador estático</strong> —
+          ele lê o seu workflow sem executá-lo, então detecta os padrões de configuração incorreta de alto sinal
+          acima e os erros de YAML, mas não executa jobs nem resolve o conteúdo ao vivo
+          das ações referenciadas. Trate um resultado limpo como uma sólida confiança antes do push, e
+          ainda assim combine-o com <span class="code-mono text-ink" translate="no">actionlint</span>,
+          proteções de branch e padrões de menor privilégio no nível da organização.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       7) FAQ
+       ════════════════════════════════════════════════════════════════════ -->
+  <FaqList faqs={faqs} />
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       Cross-links + footer disclaimer
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolCrossLinks>
+    <Fragment slot="lead">
+      O validador do <span translate="no">GitHub</span> Actions é uma ferramenta dentro do
+      <span translate="no">{site.name}</span> — uma copa crescente de validadores, conversores e
+      testadores baseados em navegador que nunca tocam um servidor.
+    </Fragment>
+    <Fragment slot="links">
+      Ferramentas relacionadas: o
+      <a class="link-inline" href={__l("/cve-ignore-converter", __lang)}>conversor de ignores de <span translate="no">CVE</span></a
+      > e
+      <a class="link-inline" href={__l("/loki-alert-rule-tester", __lang)}><span translate="no">AlertLint</span>, o
+        testador de regras do <span translate="no">Loki</span></a
+      >. Explore o
+      <a class="link-inline" href={__l(navLinks[0].href, __lang)}>diretório completo de ferramentas</a>.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      Não é afiliado, endossado nem patrocinado pela <span translate="no">GitHub, Inc.</span>
+      <span translate="no">GitHub</span> e <span translate="no">GitHub Actions</span> são marcas comerciais
+      da <span translate="no">GitHub, Inc.</span>, usadas aqui apenas de forma descritiva para identificar o
+      formato de workflow que esta ferramenta verifica.
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>

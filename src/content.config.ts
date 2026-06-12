@@ -17,6 +17,10 @@ const blog = defineCollection({
     pubDate: z.coerce.date(),
     tags: z.array(z.string()).optional(),
     draft: z.boolean().default(false),
+    /** Locale of this post; normally derived from the folder, declared for clarity. */
+    lang: z.enum(['en', 'es', 'de', 'fr', 'pt-br']).optional(),
+    /** Neutral slug of the English source this is a translation of. */
+    translationOf: z.string().optional(),
   }),
 });
 

@@ -6,8 +6,25 @@ import sitemap from '@astrojs/sitemap';
 // https://astro.build/config
 export default defineConfig({
   site: 'https://opscanopy.com',
+  // Native i18n routing. English is the default and stays un-prefixed at the
+  // root (/tools, /cron-expression-tester …) so existing URLs/SEO are intact;
+  // other locales are prefixed (/es/…, /de/…, /fr/…, /pt-br/…).
+  i18n: {
+    defaultLocale: 'en',
+    locales: ['en', 'es', 'de', 'fr', 'pt-br'],
+    routing: {
+      prefixDefaultLocale: false,
+      redirectToDefaultLocale: false,
+    },
+  },
   integrations: [
     sitemap({
+      // Emit <xhtml:link rel="alternate" hreflang> groups. Map the URL path id
+      // (pt-br) to its BCP-47 hreflang value (pt-BR).
+      i18n: {
+        defaultLocale: 'en',
+        locales: { en: 'en', es: 'es', de: 'de', fr: 'fr', 'pt-br': 'pt-BR' },
+      },
       // Keep noindex routes out of the sitemap.
       filter: (page) => !page.includes('/alertlint-wasm-demo') && !page.includes('/404'),
     }),

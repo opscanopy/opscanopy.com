@@ -1,0 +1,335 @@
+---
+/**
+ * PromQL Explainer — the PromQL Explainer tool page (primary SEO surface).
+ * Paste a Prometheus PromQL query and get a plain-English breakdown —
+ * selectors, rates, aggregations, functions and comparisons — entirely in the
+ * browser. No server, no signup.
+ *
+ * Imports the interactive island (PromqlExplainerPlayground, self-mounting) plus
+ * the brand primitives. JSON-LD (SoftwareApplication + FAQPage) is assembled in
+ * frontmatter and handed to Shell via the `jsonLd` prop.
+ */
+import Shell from '../../components/Shell.astro';
+import PromqlExplainerPlayground from '../../components/PromqlExplainerPlayground.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import ToolHero from '../../components/ToolHero.astro';
+import ToolPipeline from '../../components/ToolPipeline.astro';
+import FaqList from '../../components/FaqList.astro';
+import ToolCrossLinks from '../../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../../data/site';
+import { getTool } from '../../data/tools';
+import { softwareAppLd, faqPageLd } from '../../lib/jsonld';
+
+const tool = getTool('promql-explainer');
+
+const pagePath = '/promql-explainer';
+const pageUrl = `${site.url}${pagePath}`;
+
+// ── External references (the Prometheus docs the explainer mirrors) ──────────
+const promqlBasics = 'https://prometheus.io/docs/prometheus/latest/querying/basics/';
+const promqlFunctions = 'https://prometheus.io/docs/prometheus/latest/querying/functions/';
+
+// ── FAQ content — single source for both the rendered section and FAQPage LD ─
+const faqs = [
+  {
+    q: '¿Qué es el PromQL Explainer?',
+    a: 'El PromQL Explainer es una herramienta gratuita, que funciona en el navegador, que toma una consulta PromQL de Prometheus y la descompone en una explicación en lenguaje claro. Recorre cada parte de la expresión —el selector de métrica y sus emparejadores de etiquetas, cualquier rango u offset, el rate o la agregación que lo envuelve, y la comparación de umbral al final— para que puedas leer lo que una consulta hace realmente sin analizarla mentalmente.',
+  },
+  {
+    q: '¿Mi consulta sale alguna vez de mi navegador?',
+    a: 'No. El explainer se ejecuta 100% en el lado del cliente. Tu consulta se analiza y se explica dentro de la pestaña de tu navegador: nada se sube a un servidor, y no hay cuenta ni registro. Puedes pegar con seguridad consultas que hagan referencia a nombres internos de métricas o etiquetas.',
+  },
+  {
+    q: '¿Qué funciones de PromQL entiende?',
+    a: 'El explainer cubre los patrones que encuentras con más frecuencia en alertas y paneles: selectores de vectores instantáneos y de rango con emparejadores de etiquetas (=, !=, =~, !~), duraciones de rango y offsets, rate / irate / increase, los operadores de agregación (sum, avg, max, min, count y compañía) con agrupación by / without, funciones comunes como histogram_quantile y clamp, y comparaciones binarias contra un umbral. Las subconsultas exóticas o profundamente anidadas pueden resumirse en lugar de descomponerse por completo.',
+  },
+  {
+    q: '¿En qué se diferencia esto de ejecutar la consulta en Prometheus?',
+    a: 'Prometheus te dice el resultado de una consulta; el explainer te dice su significado. No se conecta a un servidor de Prometheus ni devuelve datos de series temporales: lee la propia expresión y describe su intención. Eso lo hace útil para revisar la regla de alerta de un compañero, aprender PromQL o comprobar la cordura de una consulta antes de publicarla.',
+  },
+  {
+    q: '¿Puedo usarlo para aprender PromQL?',
+    a: 'Sí. Como cada cláusula se nombra y describe, el explainer también sirve como apoyo didáctico: pega un ejemplo de un runbook o un panel y lee de qué selector, rango, agregación y comparación está construido exactamente. Combínalo con la documentación oficial de consultas de Prometheus para la gramática formal.',
+  },
+  {
+    q: '¿El PromQL Explainer está afiliado a Prometheus?',
+    a: 'No. Es una herramienta independiente y comunitaria, y no está afiliada ni respaldada por el proyecto Prometheus ni por la Cloud Native Computing Foundation. Prometheus es una marca registrada de The Linux Foundation. La herramienta modela la sintaxis de PromQL por familiaridad y usa el nombre del proveedor solo para describir lo que explica.',
+  },
+  {
+    q: '¿Qué significa la función rate() en una consulta de PromQL?',
+    a: 'rate() calcula la tasa media de incremento por segundo de un contador a lo largo de la ventana de rango; por ejemplo, rate(http_requests_total[5m]) promedia el incremento por segundo durante los cinco minutos completos. Suaviza los picos y es la opción estándar para métricas de contador y reglas de alerta. El explainer identifica rate() y nombra la duración del rango para que puedas leer la ventana de un vistazo.',
+  },
+  {
+    q: '¿Cuál es la diferencia entre rate() e irate() en PromQL?',
+    a: 'rate() promedia el incremento por segundo a lo largo de todo el vector de rango, produciendo valores estables que se adaptan a las alertas y a los contadores de movimiento lento. irate() usa solo las dos últimas muestras de la ventana, lo que lo hace más reactivo pero más ruidoso: lo mejor es reservarlo para graficar contadores de movimiento rápido donde quieras ver picos breves. El explainer etiqueta el que aparezca en tu consulta y describe su comportamiento.',
+  },
+  {
+    q: '¿Qué significa [5m] en una consulta de PromQL?',
+    a: 'Los corchetes con una duración definen un vector de rango: le indican a PromQL que devuelva todas las muestras de cada serie coincidente durante esa ventana de retrospección. [5m] significa los últimos cinco minutos de datos. Funciones como rate(), increase() y avg_over_time() requieren un vector de rango como entrada, así que los corchetes son lo que hace que esas funciones funcionen.',
+  },
+  {
+    q: '¿Cómo leo los emparejadores de etiquetas de PromQL como {job="api", status!="200"}?',
+    a: 'Las llaves contienen una lista separada por comas de emparejadores de etiquetas que filtran qué series temporales se seleccionan. El operador = coincide con un valor exacto, != lo excluye, =~ coincide por expresión regular y !~ excluye por expresión regular. Así que {job="api", status!="200"} selecciona las series del job api descartando cualquiera con un estado HTTP 200. El explainer nombra cada emparejador y su operador en lenguaje claro.',
+  },
+];
+
+// ── JSON-LD: SoftwareApplication ─────────────────────────────────────────────
+const softwareApp = softwareAppLd({
+  name: 'PromQL Explainer',
+  description:
+    'Pega cualquier consulta PromQL y obtén una explicación en lenguaje claro de selectores, rates y agregaciones. Gratis, en el navegador, sin registro.',
+  url: pageUrl,
+  subCategory: 'Observability',
+  featureList: [
+    'Desglose en lenguaje claro de cualquier consulta PromQL',
+    'Explica selectores, emparejadores de etiquetas, rangos y offsets',
+    'Decodifica rate / agregaciones / funciones / comparaciones',
+    '100% en el lado del cliente, sin subida, sin registro',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+
+// ── JSON-LD: FAQPage (mirrors the rendered FAQ) ──────────────────────────────
+const faqPage = faqPageLd(faqs);
+
+// ── HOW IT WORKS pipeline ────────────────────────────────────────────────────
+const pipeline = [
+  {
+    title: 'Analiza la consulta.',
+    body: 'Tu expresión PromQL se analiza en un árbol de sintaxis —selectores, rangos, llamadas a funciones, agregaciones y operadores binarios— con la misma forma que lee Prometheus.',
+  },
+  {
+    title: 'Nombra cada cláusula.',
+    body: 'Cada nodo se etiqueta por su rol: la métrica y sus emparejadores de etiquetas, cualquier vector de rango y offset, el rate o la agregación que lo envuelve, y la comparación.',
+  },
+  {
+    title: 'Traduce a lenguaje claro.',
+    body: 'Cada cláusula nombrada se convierte en una frase breve y legible que describe lo que selecciona, calcula o afirma, sin dejar jerga sin definir.',
+  },
+  {
+    title: 'Muestra el desglose.',
+    body: 'Las cláusulas anotadas se unen en un único resumen en lenguaje claro más una lista parte por parte, para que puedas leer la consulta de arriba abajo o cláusula a cláusula.',
+  },
+];
+
+// ── Example: a typical alerting PromQL query ─────────────────────────────────
+const alertQueryExample = `sum by (job) (
+  rate(http_requests_total{status=~"5.."}[5m])
+)
+/
+sum by (job) (
+  rate(http_requests_total[5m])
+) > 0.05`;
+
+// ── Example: a histogram-quantile latency query ──────────────────────────────
+const latencyQueryExample = `histogram_quantile(
+  0.99,
+  sum by (le) (
+    rate(http_request_duration_seconds_bucket[5m])
+  )
+)`;
+import type { Locale as __Locale } from '../../i18n/config';
+import { localizeKey as __l } from '../../i18n/utils';
+const __lang = (Astro.currentLocale ?? 'en') as __Locale;
+
+---
+
+<Shell
+  title="PromQL Explainer — Herramienta gratuita de PromQL a lenguaje claro"
+  description="Pega cualquier consulta PromQL y obtén una explicación en lenguaje claro de selectores, rates y agregaciones. Gratis, en el navegador, sin registro."
+  canonical="/promql-explainer"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <!-- ════════════════════════════════════════════════════════════════════
+       1) HERO — compact, mesh gradient behind
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolHero
+    eyebrow="PromQL Explainer · Observabilidad"
+    badges={[
+      { label: 'Funciona en tu navegador', variant: 'live' },
+      { label: 'Sin registro', variant: 'neutral' },
+      { label: 'Gratis y abierto', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">
+      Entiende cualquier consulta de <span translate="no">PromQL</span>.
+    </Fragment>
+    <Fragment slot="lead">
+      Pega una consulta de <span translate="no">PromQL</span> y obtén un desglose en lenguaje claro de cada
+      cláusula —selectores, rangos, <span class="code-mono text-ink" translate="no">rate</span>,
+      agregaciones y comparaciones— gratis, enteramente en tu navegador, sin registro.
+    </Fragment>
+  </ToolHero>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       2) THE PLAYGROUND
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pt-8 pb-20 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">Playground del PromQL Explainer</h2>
+      <PromqlExplainerPlayground />
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       3) WHY IT EXISTS — the gap
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">La brecha</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            <span translate="no">PromQL</span> se escribe una vez y no se vuelve a leer.
+          </h2>
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            Una alerta de <span translate="no">PromQL</span> es fácil de escribir y difícil de releer. Seis
+            meses después —o en el pull request de un compañero— una línea como
+            <span class="code-mono text-ink" translate="no"
+              >sum by (job) (rate(...[5m])) / sum by (job) (rate(...[5m])) &gt; 0.05</span
+            > requiere un esfuerzo real para descifrarla: ¿qué ventana, qué etiquetas, qué umbral, y por qué
+            una proporción siquiera?
+          </p>
+          <p class="body-md text-pretty text-body">
+            El explainer convierte ese trabajo en un vistazo. Analiza la expresión y narra cada
+            cláusula —el selector y sus emparejadores, el rango, el
+            <span class="code-mono text-ink" translate="no">rate</span>, la
+            agrupación <span class="code-mono text-ink" translate="no">sum by</span>, y la
+            comparación final— para que un revisor, un ingeniero de guardia o cualquiera que intente entender
+            la expresión de una regla de alerta de <span translate="no">Prometheus</span> pueda leer la intención sin
+            reconstruir la consulta en su cabeza.
+          </p>
+          <p class="body-sm text-mute">
+            ¿Nuevo en la sintaxis? Echa un vistazo a la <a class="link-inline" href="#syntax">sintaxis que decodificamos</a> o
+            prueba el <a class="link-inline" href="#playground">playground en vivo</a> de arriba.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       4) HOW IT WORKS — numbered pipeline
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="El pipeline"
+    heading="Cómo funciona."
+    lead="Cuatro pasos deterministas se ejecutan de principio a fin con cada pulsación de Explicar, todos dentro de la pestaña de tu navegador, siempre."
+    steps={pipeline}
+  />
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       5) SYNTAX — what the explainer decodes
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="syntax" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">La sintaxis</p>
+        <h2 class="display-lg mt-3 text-ink">Qué decodifica.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          El explainer lee <span translate="no">PromQL</span> estándar. Si alguna vez has escrito una
+          consulta de alerta o de panel de <span translate="no">Prometheus</span>, estos ejemplos te
+          resultarán familiares: pega cualquiera de ellos en el
+          <a class="link-inline" href="#playground">playground</a> para ver el desglose completo.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 grid max-w-5xl gap-8 lg:grid-cols-2">
+        <div class="min-w-0">
+          <h3 class="display-sm text-ink">Una proporción de alerta</h3>
+          <p class="body-sm mt-2 mb-4 text-pretty text-body">
+            Una alerta clásica de tasa de error: un emparejador de regex <span class="code-mono text-ink" translate="no">=~</span>
+            sobre <span class="code-mono text-ink" translate="no">status</span>, un rango
+            <span class="code-mono text-ink" translate="no">5m</span>, un
+            <span class="code-mono text-ink" translate="no">rate</span>, dos
+            agregaciones <span class="code-mono text-ink" translate="no">sum by (job)</span> divididas
+            en una proporción, y un umbral <span class="code-mono text-ink" translate="no">&gt; 0.05</span>.
+            El explainer nombra cada uno.
+          </p>
+          <CodeBlock lang="promql" filename="error-rate.promql" code={alertQueryExample} />
+        </div>
+
+        <div class="min-w-0">
+          <h3 class="display-sm text-ink">Un cuantil de latencia</h3>
+          <p class="body-sm mt-2 mb-4 text-pretty text-body">
+            Una consulta de latencia p99:
+            <span class="code-mono text-ink" translate="no">histogram_quantile</span> sobre un
+            <span class="code-mono text-ink" translate="no">sum by (le)</span> de los
+            <span class="code-mono text-ink" translate="no">rate</span>s de buckets. El explainer destaca el
+            cuantil <span class="code-mono text-ink" translate="no">0.99</span>, la
+            agrupación <span class="code-mono text-ink" translate="no">le</span> que hace funcionar el
+            histograma, y la ventana de rango.
+          </p>
+          <CodeBlock lang="promql" filename="p99-latency.promql" code={latencyQueryExample} />
+        </div>
+      </div>
+
+      <p class="body-sm mx-auto mt-8 max-w-3xl text-center text-pretty text-mute">
+        Para la gramática formal, consulta los
+        <a class="link-inline" href={promqlBasics} target="_blank" rel="noopener noreferrer"
+          >fundamentos de consulta</a
+        > y la
+        <a class="link-inline" href={promqlFunctions} target="_blank" rel="noopener noreferrer"
+          >referencia de funciones</a
+        > de <span translate="no">Prometheus</span>.
+      </p>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       6) NOTE — honest scope callout
+       ════════════════════════════════════════════════════════════════════ -->
+  <section class="bg-canvas-soft">
+    <div class="container-page py-12 sm:py-16">
+      <div class="card-soft mx-auto max-w-3xl p-6">
+        <p class="eyebrow">Una nota sobre el alcance</p>
+        <p class="body-md mt-3 text-pretty text-body">
+          El explainer describe <strong class="font-medium text-ink">lo que significa una consulta</strong>,
+          no lo que devuelve: nunca se conecta a un servidor de <span translate="no">Prometheus</span>
+          y no evalúa ningún dato. Cubre los patrones comunes de alertas y paneles —selectores y
+          emparejadores, rangos y offsets,
+          <span class="code-mono text-ink" translate="no">rate</span> /
+          <span class="code-mono text-ink" translate="no">increase</span>, los operadores de agregación,
+          <span class="code-mono text-ink" translate="no">histogram_quantile</span> y compañía, y
+          comparaciones binarias. Las subconsultas profundamente anidadas pueden resumirse en lugar de
+          descomponerse por completo. Considera la salida como una lectura fiel de la expresión, no un sustituto
+          de la documentación oficial.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       7) FAQ
+       ════════════════════════════════════════════════════════════════════ -->
+  <FaqList faqs={faqs} />
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       Cross-links + footer disclaimer (the observability cluster)
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolCrossLinks heading="Más herramientas de observabilidad gratuitas y privadas.">
+    <Fragment slot="lead">
+      El PromQL Explainer forma parte del clúster de observabilidad de <span translate="no">{site.name}</span>
+      — traduce consultas con el
+      <a class="link-inline" href={__l("/logql-promql-helper", __lang)}
+        >Helper <span translate="no">LogQL</span> ↔ <span translate="no">PromQL</span></a
+      >, o haz pruebas unitarias de tus reglas de <span translate="no">Loki</span> con
+      <a class="link-inline" href={__l("/loki-alert-rule-tester", __lang)}>AlertLint</a>. Cada uno se ejecuta enteramente en tu
+      navegador y nunca toca un servidor.
+    </Fragment>
+    <Fragment slot="links">
+      ¿Trabajas también en <span translate="no">Loki</span>? Combínalo con
+      <a class="link-inline" href={__l("/loki-alert-rule-tester", __lang)}>AlertLint</a>, o explora el
+      <a class="link-inline" href={__l(navLinks[0].href, __lang)}>directorio completo de herramientas</a>.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      No está afiliado ni respaldado por el proyecto <span translate="no">Prometheus</span> ni por la
+      <span translate="no">Cloud Native Computing Foundation</span>.
+      <span translate="no">Prometheus</span> es una marca registrada de
+      <span translate="no">The Linux Foundation</span>.
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>

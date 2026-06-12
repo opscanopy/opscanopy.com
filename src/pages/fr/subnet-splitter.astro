@@ -1,0 +1,278 @@
+---
+/**
+ * Subnet Splitter — the subnet-splitter tool page (SEO surface).
+ * Enter a parent block and any existing allocations; get the free space around
+ * them decomposed into minimal CIDRs, and split a block into /N subnets —
+ * entirely in the browser.
+ */
+import Shell from '../../components/Shell.astro';
+import SubnetSplitterPlayground from '../../components/SubnetSplitterPlayground.astro';
+import Button from '../../components/Button.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import ToolHero from '../../components/ToolHero.astro';
+import ToolPipeline from '../../components/ToolPipeline.astro';
+import FaqList from '../../components/FaqList.astro';
+import ToolCrossLinks from '../../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../../data/site';
+import { getTool } from '../../data/tools';
+import { softwareAppLd, faqPageLd } from '../../lib/jsonld';
+
+const tool = getTool('subnet-splitter');
+const pagePath = '/subnet-splitter';
+const pageUrl = `${site.url}${pagePath}`;
+
+const faqs = [
+  {
+    q: 'Que fait le Subnet Splitter ?',
+    a: 'Vous lui indiquez un bloc parent — par exemple 10.0.0.0/24 — ainsi que tout sous-réseau déjà attribué à l’intérieur, et il soustrait l’espace utilisé puis signale les espaces vides sous forme d’un ensemble minimal de CIDR. Il peut aussi diviser le bloc parent (ou n’importe quel espace libre) de façon uniforme en sous-réseaux /N et vous indiquer le prochain bloc libre de la taille que vous demandez. Tout s’exécute dans votre navigateur ; rien n’est envoyé.',
+  },
+  {
+    q: 'Mes données quittent-elles jamais mon navigateur ?',
+    a: 'Non. L’analyse et tous les calculs s’exécutent à 100 % côté client, dans votre onglet : pas de serveur, pas de compte, pas de journalisation. Vous pouvez coller en toute sécurité des blocs parents et des attributions internes.',
+  },
+  {
+    q: 'Que signifient ici « espace libre » et VLSM ?',
+    a: 'L’espace libre est la partie du bloc parent qu’aucune de vos attributions existantes ne couvre. Comme cette région restante coïncide rarement avec une unique limite de puissance de deux, le splitter l’exprime sous forme d’un ensemble de masques de sous-réseau de longueur variable (VLSM) : la plus petite liste de CIDR de tailles différentes qui pave exactement l’espace vide, plutôt que de forcer un unique préfixe fixe.',
+  },
+  {
+    q: 'Que renvoie le « prochain /N libre » ?',
+    a: 'Il parcourt l’espace libre dans l’ordre et renvoie le premier bloc de préfixe /N qui est entièrement non attribué et correctement aligné sur sa propre limite : le bloc que vous distribueriez ensuite si vous découpiez le parent en sous-réseaux /N. Si aucun /N aligné ne tient dans l’espace libre restant, il vous l’indique plutôt que de deviner.',
+  },
+  {
+    q: 'Prend-il en charge l’IPv6 en plus de l’IPv4 ?',
+    a: 'Oui. L’IPv6 est géré avec une précision complète de 128 bits grâce à BigInt, vous pouvez donc diviser un /48 de site en /64 ou trouver l’espace libre dans un /56 avec la même exactitude que lorsque vous soustrayez des /26 d’un /24 IPv4. Les parents IPv4 comme IPv6 sont traités en première classe.',
+  },
+  {
+    q: 'Comment diviser un bloc CIDR en sous-réseaux égaux ?',
+    a: 'Saisissez le CIDR parent — par exemple 10.0.0.0/16 — et choisissez une nouvelle longueur de préfixe, comme /24. L’outil énumère tous les sous-réseaux de même taille de ce préfixe à l’intérieur du parent, en marquant chacun comme libre, utilisé ou partiellement attribué. Diviser un /16 en /24 produit 2^(24-16) = 256 sous-réseaux, chacun avec sa propre adresse réseau et 254 adresses d’hôte utilisables.',
+  },
+  {
+    q: 'Comment trouver le prochain sous-réseau disponible dans un CIDR parent ?',
+    a: 'Indiquez le CIDR parent, saisissez vos attributions existantes et sélectionnez la longueur de préfixe cible. L’outil parcourt les intervalles libres qui restent après soustraction de l’espace utilisé et renvoie le premier bloc de cette taille correctement aligné qui ne chevauche aucune attribution existante. C’est le prochain sous-réseau disponible que vous pouvez distribuer sans provoquer de conflit.',
+  },
+  {
+    q: 'Comment trouver de l’espace IP libre ou les vides entre des attributions de sous-réseaux existantes ?',
+    a: 'Collez vos attributions existantes sous un CIDR parent et l’outil soustrait les intervalles utilisés de la plage du parent. Il exprime ensuite chaque région non attribuée sous forme de l’ensemble minimal de CIDR alignés, de sorte que vous puissiez voir chaque espace vide — y compris le plus grand bloc libre contigu — d’un seul coup d’œil.',
+  },
+  {
+    q: 'Combien de sous-réseaux /24 y a-t-il dans un /16 ?',
+    a: 'Utilisez 2^(préfixe nouveau moins préfixe parent) : 2^(24-16) = 256. Un /16 contient 256 sous-réseaux /24, chacun avec 256 adresses au total (254 utilisables après les adresses de réseau et de diffusion). Vous pouvez le vérifier en saisissant 10.0.0.0/16 avec un préfixe de division /24 et en voyant les 256 blocs listés.',
+  },
+  {
+    q: 'Comment éviter les sous-réseaux qui se chevauchent lors de l’attribution de plages IP ?',
+    a: 'Les sous-réseaux qui se chevauchent provoquent des conflits de routage, car une adresse semblerait appartenir à deux plages. L’outil compare chaque sous-réseau candidat à vos attributions existantes et le marque comme utilisé ou partiel s’il entre en conflit, ne signalant un sous-réseau comme libre que lorsqu’il est entièrement non attribué et correctement aligné dans le CIDR parent.',
+  },
+];
+
+const softwareApp = softwareAppLd({
+  name: 'Subnet Splitter',
+  description:
+    'Subnet splitter gratuit : divisez un CIDR IPv4/IPv6 en sous-réseaux égaux ou en VLSM, trouvez l’espace libre et le prochain sous-réseau disponible. Fonctionne dans le navigateur, sans inscription.',
+  url: pageUrl,
+  subCategory: 'Networking',
+  featureList: [
+    'Trouvez l’espace libre dans un bloc parent autour des attributions existantes',
+    'Décomposez les espaces vides en un ensemble minimal de CIDR VLSM',
+    'Divisez un bloc en sous-réseaux /N de taille uniforme et choisissez le prochain libre',
+    '100 % côté client, sans envoi, sans inscription',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+const faqPage = faqPageLd(faqs);
+
+const pipeline = [
+  {
+    title: 'Lecture des entrées.',
+    body: 'Le bloc parent et chaque attribution existante sont analysés en plages exactes de 32 ou 128 bits.',
+  },
+  {
+    title: 'Soustraction de l’utilisé.',
+    body: 'Les attributions sont retirées du parent, laissant les régions d’adresses non attribuées.',
+  },
+  {
+    title: 'Décomposition des espaces vides.',
+    body: 'Chaque région restante est exprimée comme l’ensemble minimal de CIDR alignés qui la pave exactement.',
+  },
+  {
+    title: 'Division et choix.',
+    body: 'Divisez en sous-réseaux /N et le prochain /N libre correctement aligné est mis en avant pour la distribution.',
+  },
+];
+
+const splitExample = `parent      10.0.0.0/24
+allocated   10.0.0.0/26     (used)
+            10.0.0.128/26   (used)
+
+free space
+  10.0.0.64/26              next free /26
+  10.0.0.192/26`;
+
+const vlsmExample = `parent      10.0.0.0/24
+allocated   10.0.0.0/25     (used)
+            10.0.0.128/27   (used)
+
+free space (minimal VLSM set)
+  10.0.0.160/27
+  10.0.0.192/26`;
+import type { Locale as __Locale } from '../../i18n/config';
+import { localizeKey as __l } from '../../i18n/utils';
+const __lang = (Astro.currentLocale ?? 'en') as __Locale;
+
+---
+
+<Shell
+  title="Subnet Splitter — Divisez un CIDR en sous-réseaux, gratuit"
+  description="Subnet splitter gratuit : divisez un CIDR IPv4/IPv6 en sous-réseaux égaux ou en VLSM, trouvez l’espace libre et le prochain sous-réseau disponible. Fonctionne dans le navigateur, sans inscription."
+  canonical="/subnet-splitter"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <ToolHero
+    eyebrow="Subnet Splitter · Networking"
+    badges={[
+      { label: 'Fonctionne dans votre navigateur', variant: 'live' },
+      { label: 'IPv4 et IPv6', variant: 'neutral' },
+      { label: 'Sans inscription', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">Divisez un bloc et trouvez l’espace libre tout autour.</Fragment>
+    <Fragment slot="lead">
+      Indiquez un parent comme
+      <span class="code-mono text-ink" translate="no">10.0.0.0/24</span> ainsi que les sous-réseaux
+      déjà attribués, et obtenez l’espace libre sous forme de CIDR minimaux — puis divisez un CIDR en
+      sous-réseaux de n’importe quel préfixe et trouvez le prochain sous-réseau disponible, le tout
+      dans votre navigateur.
+    </Fragment>
+  </ToolHero>
+
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pt-8 pb-20 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">Espace de test du Subnet Splitter</h2>
+      <SubnetSplitterPlayground />
+    </div>
+  </section>
+
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">Le problème</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            L’espace restant est là où se cachent les erreurs.
+          </h2>
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            Découper un bloc en sous-réseaux est facile jusqu’à ce que quelque chose soit déjà
+            attribué. L’espace libre devient alors un ensemble irrégulier de vides de tailles
+            différentes, et calculer à l’œil le prochain /26 ou /27 aligné entre deux attributions
+            existantes est exactement le genre d’arithmétique binaire qui produit un chevauchement ou
+            une plage gaspillée.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Ce splitter soustrait ce que vous avez déjà distribué et signale l’espace restant comme
+            l’ensemble minimal de CIDR — trouvez l’espace de sous-réseau libre dans votre bloc CIDR
+            d’un coup d’œil, puis divisez-le en sous-réseaux /N et choisissez le prochain disponible.
+            Pour l’IPv4 comme pour l’IPv6, entièrement dans le navigateur, sans rien à installer.
+          </p>
+          <p class="body-sm text-mute">
+            Besoin de confirmer d’abord qu’une liste ne se chevauche pas ? Essayez le
+            <a class="link-inline" href={__l("/cidr-checker", __lang)}>CIDR / Subnet Checker</a>.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="Le processus"
+    heading="Comment ça marche."
+    lead="Quatre étapes déterministes s’exécutent à chaque frappe — toutes dans l’onglet de votre navigateur, avec une arithmétique BigInt exacte."
+    steps={pipeline}
+  />
+
+  <section id="reference" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Un exemple résolu</p>
+        <h2 class="display-lg mt-3 text-ink">Deux /26 dans un /24, que reste-t-il ?</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          Soustrayez les blocs utilisés du parent et l’espace libre apparaît sous forme de CIDR
+          alignés — minimal même lorsque les vides sont de tailles différentes.
+        </p>
+      </div>
+      <div class="mx-auto mt-10 grid max-w-5xl gap-8 lg:grid-cols-2">
+        <div class="min-w-0">
+          <h3 class="display-sm text-ink">Division uniforme</h3>
+          <p class="body-sm mt-2 mb-4 text-pretty text-body">
+            Avec le premier et le troisième <span class="code-mono text-ink" translate="no">/26</span> utilisés,
+            l’espace libre correspond aux deux autres — et le prochain /26 libre est
+            <span class="code-mono text-ink" translate="no">10.0.0.64/26</span>.
+          </p>
+          <CodeBlock lang="text" filename="split-/24" code={splitExample} />
+        </div>
+        <div class="min-w-0">
+          <h3 class="display-sm text-ink">Un vide VLSM</h3>
+          <p class="body-sm mt-2 mb-4 text-pretty text-body">
+            Lorsque les attributions sont inégales, le reste ne tient pas dans un seul préfixe — il
+            devient le mélange minimal d’un <span class="code-mono text-ink" translate="no">/27</span> et d’un
+            <span class="code-mono text-ink" translate="no">/26</span>.
+          </p>
+          <CodeBlock lang="text" filename="vlsm-gap" code={vlsmExample} />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="next" class="scroll-mt-24 bg-inverse text-inverse-fg">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+        <div class="min-w-0">
+          <p class="eyebrow !text-cyan">Étape suivante</p>
+          <h2 class="display-lg mt-3 text-balance text-inverse-fg">
+            Vous avez une liste de sous-réseaux ? Vérifiez s’ils se chevauchent.
+          </h2>
+          <p class="body-md mt-4 text-pretty text-white/70">
+            Avant de réserver davantage d’espace, le
+            <span translate="no">CIDR / Subnet Checker</span> prend vos attributions existantes et
+            trouve les chevauchements et les inclusions, puis agrège le tout en l’ensemble de
+            couverture minimal — pour que le parent que vous donnez au splitter soit propre dès le
+            départ.
+          </p>
+          <div class="mt-7 flex flex-wrap items-center gap-3">
+            <Button href={__l("/cidr-checker", __lang)} variant="secondary">Ouvrir le CIDR Checker</Button>
+          </div>
+        </div>
+        <CodeBlock
+          lang="text"
+          filename="free.txt"
+          code={`10.0.0.0/24
+  − 10.0.0.0/26
+  − 10.0.0.128/26
+  →  10.0.0.64/26
+  →  10.0.0.192/26`}
+        />
+      </div>
+    </div>
+  </section>
+
+  <FaqList faqs={faqs} />
+
+  <ToolCrossLinks>
+    <Fragment slot="lead">
+      Le Subnet Splitter est l’un des outils de
+      <span translate="no">{site.name}</span> — une canopée grandissante de validateurs,
+      convertisseurs et testeurs basés sur le navigateur qui ne touchent jamais un serveur.
+    </Fragment>
+    <Fragment slot="links">
+      Plus sur les réseaux : le
+      <a class="link-inline" href={__l("/cidr-checker", __lang)}>CIDR / Subnet Checker</a> et la
+      <a class="link-inline" href={__l("/subnet-calculator", __lang)}>Subnet Calculator</a>, ou parcourez le
+      <a class="link-inline" href={__l(navLinks[0].href, __lang)}>répertoire d’outils</a> complet.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      Fourni tel quel pour votre commodité ; confirmez toujours les changements réseau critiques
+      auprès de votre propre autorité. <span translate="no">{site.name}</span> est gratuit et ouvert.
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>

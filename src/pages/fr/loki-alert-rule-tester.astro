@@ -1,0 +1,385 @@
+---
+/**
+ * AlertLint — the AlertLint tool page (primary SEO surface).
+ * "promtool for Loki" — paste Loki ruler YAML + a promtool-modeled test file,
+ * assert pass/fail, entirely in the browser. No server, no signup.
+ *
+ * Imports the interactive island (AlertLintPlayground, self-mounting) plus the
+ * brand primitives. JSON-LD (SoftwareApplication + FAQPage) is assembled in
+ * frontmatter and handed to Shell via the `jsonLd` prop.
+ */
+import Shell from '../../components/Shell.astro';
+import AlertLintPlayground from '../../components/AlertLintPlayground.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import ToolHero from '../../components/ToolHero.astro';
+import ToolPipeline from '../../components/ToolPipeline.astro';
+import FaqList from '../../components/FaqList.astro';
+import ToolCrossLinks from '../../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../../data/site';
+import { getTool } from '../../data/tools';
+import { softwareAppLd, faqPageLd } from '../../lib/jsonld';
+
+const tool = getTool('loki-alert-rule-tester');
+
+const pagePath = '/loki-alert-rule-tester';
+const pageUrl = `${site.url}${pagePath}`;
+
+// ── Loki issue references (the "why it exists" gap) ──────────────────────────
+const lokiIssue7655 = 'https://github.com/grafana/loki/issues/7655';
+const lokiIssue16659 = 'https://github.com/grafana/loki/issues/16659';
+
+// ── FAQ content — single source for both the rendered section and FAQPage LD ─
+const faqs = [
+  {
+    q: 'Qu’est-ce qu’AlertLint ?',
+    a: 'AlertLint est un testeur unitaire gratuit, exécuté dans le navigateur, pour les règles d’alerte et d’enregistrement de Grafana Loki. Vous collez votre YAML de ruler Loki ainsi qu’un fichier de test calqué sur promtool contenant des flux de logs synthétiques, vous appuyez sur Run, et AlertLint évalue le LogQL puis indique si les alertes que vous attendiez se sont réellement déclenchées. C’est l’équivalent du « test rules » de promtool que Loki n’a jamais livré.',
+  },
+  {
+    q: 'Mes données quittent-elles un jour mon navigateur ?',
+    a: 'Non. AlertLint s’exécute à 100 % côté client. Vos règles et vos logs synthétiques sont évalués dans votre onglet de navigateur — rien n’est envoyé à un serveur, et il n’y a ni compte ni inscription. Vous pouvez l’utiliser en toute sécurité sur des définitions de règles internes ou sensibles.',
+  },
+  {
+    q: 'En quoi est-ce différent de promtool ?',
+    a: 'Prometheus livre promtool test rules pour tester unitairement les règles d’alerte par rapport à des échantillons synthétiques. Loki n’a aucun équivalent intégré — il n’existe pas de commande loki test. AlertLint comble ce manque pour LogQL : vous affirmez quelles alertes devraient se déclencher à partir d’un ensemble donné de lignes de logs, avant même que les règles n’atteignent la production.',
+  },
+  {
+    q: 'Quelles fonctionnalités LogQL le moteur dans le navigateur prend-il en charge ?',
+    a: 'L’évaluateur en préversion couvre les schémas d’alerte et d’enregistrement courants — requêtes de logs et de métriques, sélecteurs de flux, matchers de labels, filtres de lignes, agrégations rate et count_over_time, agrégations sum et comparaisons de seuils par rapport aux alertes attendues. Une parité complète avec le moteur de requêtes Loki en amont (Go compilé en WebAssembly) est prévue pour une future version.',
+  },
+  {
+    q: 'Puis-je affirmer qu’aucune alerte ne se déclenche ?',
+    a: 'Oui. Une liste exp_alerts vide sur un cas de test affirme que la règle ne produit aucune alerte au moment de l’évaluation — la même sémantique de cas négatif qu’utilise promtool. C’est la manière canonique de prouver qu’une règle ne se déclenchera pas sur un volume de logs anodin.',
+  },
+  {
+    q: 'AlertLint est-il affilié à Grafana Labs ?',
+    a: 'Non. AlertLint est un outil communautaire indépendant qui n’est ni affilié à Grafana Labs ni approuvé par lui. Loki et Grafana sont des marques de Raintank, Inc. AlertLint modélise le format de fichier de test de promtool par souci de familiarité et n’utilise les noms des éditeurs que pour décrire ce qu’il teste.',
+  },
+  {
+    q: 'Comment tester les règles d’alerte Loki avant qu’elles n’atteignent la production ?',
+    a: 'Avant le déploiement, vérifiez votre YAML de règles avec lokitool rules lint ou cortextool rules lint --backend=loki et testez vos requêtes à blanc dans Grafana Explore ou logcli. Pour des tests préliminaires de type assertion — l’étape que ces outils ne couvrent pas — collez vos règles ainsi que des flux de logs synthétiques dans AlertLint et affirmez quelles alertes devraient se déclencher, y compris les cas négatifs. Une exécution au vert apporte une solide confiance préliminaire, même si l’évaluateur dans le navigateur est un moteur en préversion plutôt qu’une rediffusion complète de production.',
+  },
+  {
+    q: 'En quoi AlertLint diffère-t-il de lokitool et cortextool ?',
+    a: 'lokitool et cortextool proposent des commandes rules lint et sync qui valident la structure des règles et poussent les règles vers un ruler Loki — mais aucun n’exécute d’assertions d’alerte sur des logs synthétiques ni ne vous indique si une règle se déclenche. AlertLint apporte à LogQL le flux de travail basé sur les assertions, de style promtool : vous fournissez des flux de logs synthétiques, vous déclarez quelles alertes vous attendez, et vous obtenez un verdict réussite ou échec, entièrement dans le navigateur et sans installation.',
+  },
+  {
+    q: 'Comment valider du YAML de ruler Loki en ligne ?',
+    a: 'AlertLint analyse le YAML de ruler Loki standard — des groupes de règles d’alerte et d’enregistrement, chacune avec une expr LogQL, une durée for optionnelle et des labels/annotations — et signale les problèmes structurels en ligne. Pour des vérifications plus poussées de politique d’expression par rapport aux métadonnées des règles, promruval avec --support-loki est une option en ligne de commande. AlertLint s’exécute entièrement dans le navigateur, sans inscription requise.',
+  },
+];
+
+// ── JSON-LD: SoftwareApplication + FAQPage (shared builders) ─────────────────
+const softwareApp = softwareAppLd({
+  name: 'AlertLint',
+  description:
+    'Testeur gratuit en ligne de règles d’alerte Loki. Collez le YAML de ruler + des logs synthétiques, affirmez quelles alertes se déclenchent — l’équivalent de promtool qui manque à Loki. Dans le navigateur, sans inscription.',
+  url: pageUrl,
+  subCategory: 'Observability',
+  featureList: [
+    'Tester unitairement les règles d’alerte Loki (LogQL) avec des logs synthétiques',
+    'Format de fichier de test calqué sur promtool',
+    'Affirmer quelles alertes se déclenchent — y compris les cas négatifs',
+    '100 % côté client, sans envoi, sans inscription',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+
+const faqPage = faqPageLd(faqs);
+
+// ── HOW IT WORKS pipeline ────────────────────────────────────────────────────
+const pipeline = [
+  {
+    title: 'Analyser les règles.',
+    body: 'Votre YAML de ruler Loki est analysé en groupes de règles d’alerte et d’enregistrement — exactement la forme que charge le ruler Loki.',
+  },
+  {
+    title: 'Analyser le fichier de test.',
+    body: 'Le fichier de test calqué sur promtool est lu pour ses séries de logs d’entrée, son intervalle d’évaluation et les alertes que vous attendez.',
+  },
+  {
+    title: 'Construire un magasin en mémoire.',
+    body: 'Les lignes de logs synthétiques sont chargées dans un magasin de logs éphémère, dans le navigateur, pour que les requêtes aient de quoi lire.',
+  },
+  {
+    title: 'Évaluer le LogQL.',
+    body: 'Chaque expression de règle est exécutée sur le magasin au moment d’évaluation du test, produisant les alertes qui se déclencheraient.',
+  },
+  {
+    title: 'Comparer aux attentes.',
+    body: 'Les alertes réelles sont comparées à vos exp_alerts. Tout écart constitue un cas en échec, signalé en ligne.',
+  },
+];
+
+// ── Example: Loki ruler rule file ────────────────────────────────────────────
+const ruleFileExample = `groups:
+  - name: app-errors
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          sum(rate({app="checkout"} |= "error" [5m])) > 0.2
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "Checkout error rate is high"`;
+
+// ── Example: promtool-modeled test file ──────────────────────────────────────
+const testFileExample = `tests:
+  - interval: 1m
+    input_series:
+      - stream: '{app="checkout"}'
+        # 5 error lines/min for 6 minutes
+        values: '{level="error"}x6'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: HighErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              app: checkout
+            exp_annotations:
+              summary: "Checkout error rate is high"
+
+  # Negative case — empty exp_alerts asserts NO alert fires.
+  - interval: 1m
+    input_series:
+      - stream: '{app="checkout"}'
+        values: '{level="info"}x6'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: HighErrorRate
+        exp_alerts: []`;
+
+// ── CLI teaser ───────────────────────────────────────────────────────────────
+const cliExample = `# Coming soon — the same engine as a CLI
+$ alertlint test ./tests/**.yaml
+
+  ✓ app-errors › HighErrorRate (fires)
+  ✓ app-errors › HighErrorRate (no-fire on info logs)
+
+  2 passed, 0 failed`;
+import type { Locale as __Locale } from '../../i18n/config';
+import { localizeKey as __l } from '../../i18n/utils';
+const __lang = (Astro.currentLocale ?? 'en') as __Locale;
+
+---
+
+<Shell
+  title="AlertLint — Testeur de règles d’alerte Loki, gratuit et dans le navigateur"
+  description="Testeur gratuit en ligne de règles d’alerte Loki. Collez le YAML de ruler + des logs synthétiques, affirmez quelles alertes se déclenchent — l’équivalent de promtool qui manque à Loki. Dans le navigateur, sans inscription."
+  canonical="/loki-alert-rule-tester"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <!-- ════════════════════════════════════════════════════════════════════
+       1) HERO — compact, mesh gradient behind
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolHero
+    eyebrow="AlertLint · Observability"
+    badges={[
+      { label: 'S’exécute dans votre navigateur', variant: 'live' },
+      { label: 'Sans inscription', variant: 'neutral' },
+      { label: 'Gratuit et ouvert', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">
+      Testez vos règles d’alerte <span translate="no">Loki</span> avant qu’elles ne se déclenchent en production.
+    </Fragment>
+    <Fragment slot="lead">
+      <span translate="no">AlertLint</span> vous permet de tester les règles d’alerte
+      <span translate="no">Loki</span> avant la production — collez vos règles et vos logs synthétiques,
+      affirmez quelles alertes devraient se déclencher,
+      et obtenez une réussite ou un échec, le tout en ligne, sans installation ni inscription.
+    </Fragment>
+  </ToolHero>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       2) THE PLAYGROUND
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pt-8 pb-20 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">Bac à sable AlertLint</h2>
+      <AlertLintPlayground />
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       3) WHY IT EXISTS — the gap
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">Le manque</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            <span translate="no">Loki</span> n’a pas de <span translate="no">promtool</span>.
+          </h2>
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            Les ingénieurs <span translate="no">Prometheus</span> livrent des règles d’alerte testées depuis
+            des années avec <span class="code-mono text-ink" translate="no">promtool test rules</span> —
+            des échantillons synthétiques en entrée, une réussite ou un échec en sortie. <span translate="no">Loki</span> a adopté le
+            même format de règles mais n’a jamais livré l’exécuteur de tests, si bien que les alertes <span translate="no">LogQL</span>
+            sont livrées sans tests : la seule manière de savoir si une règle s’était déclenchée était d’attendre le
+            trafic de production.
+          </p>
+          <p class="body-md text-pretty text-body">
+            La communauté réclame cela depuis des années — voir <span translate="no">Loki</span>
+            <a
+              class="link-inline"
+              href={lokiIssue7655}
+              target="_blank"
+              rel="noopener noreferrer">issue #7655</a
+            > et
+            <a
+              class="link-inline"
+              href={lokiIssue16659}
+              target="_blank"
+              rel="noopener noreferrer">issue #16659</a
+            >. <span translate="no">AlertLint</span> comble ce manque dès aujourd’hui : un testeur unitaire gratuit de règles d’alerte
+            <span translate="no">Loki</span>, dans le navigateur, qui utilise le fichier de test familier
+            de style <span translate="no">promtool</span> et s’exécute entièrement côté client.
+          </p>
+          <p class="body-sm text-mute">
+            Nouveau dans ce format ? Rendez-vous sur <a class="link-inline" href="#formats">les deux fichiers</a> ou
+            essayez le <a class="link-inline" href="#playground">bac à sable interactif</a> ci-dessus.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       4) HOW IT WORKS — numbered pipeline
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="Le pipeline"
+    heading="Comment ça marche."
+    lead="Cinq étapes déterministes s’exécutent de bout en bout à chaque appui sur Run — toutes dans votre onglet de navigateur, à chaque fois."
+    steps={pipeline}
+  />
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       5) FORMATS — rule file + test file docs
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="formats" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Formats de fichiers</p>
+        <h2 class="display-lg mt-3 text-ink">Deux fichiers, tous deux familiers.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          <span translate="no">AlertLint</span> lit exactement deux entrées : votre
+          YAML de ruler <span translate="no">Loki</span> et un fichier de test calqué sur <span translate="no">promtool</span>.
+          Si vous en avez déjà écrit pour <span translate="no">Prometheus</span> ou
+          <span translate="no">Loki</span> auparavant, vous serez en terrain connu.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 grid max-w-5xl gap-8 lg:grid-cols-2">
+        <div class="min-w-0">
+          <h3 class="display-sm text-ink">Le fichier de règles</h3>
+          <p class="body-sm mt-2 mb-4 text-pretty text-body">
+            YAML de ruler <span translate="no">Loki</span> standard —
+            des <span class="code-mono text-ink" translate="no">groups</span> de règles d’alerte et d’enregistrement,
+            chacune avec une <span class="code-mono text-ink" translate="no">expr</span> <span translate="no">LogQL</span>, une durée
+            <span class="code-mono text-ink" translate="no">for</span> optionnelle, et des
+            <span class="code-mono text-ink" translate="no">labels</span> /
+            <span class="code-mono text-ink" translate="no">annotations</span>. C’est exactement le
+            fichier que votre ruler charge déjà.
+          </p>
+          <CodeBlock lang="yaml" filename="rules.yaml" code={ruleFileExample} />
+        </div>
+
+        <div class="min-w-0">
+          <h3 class="display-sm text-ink">Le fichier de test</h3>
+          <p class="body-sm mt-2 mb-4 text-pretty text-body">
+            Calqué sur <span translate="no">promtool</span> :
+            des <span class="code-mono text-ink" translate="no">input_series</span> de flux de logs
+            synthétiques, un <span class="code-mono text-ink" translate="no">interval</span> d’évaluation,
+            et un <span class="code-mono text-ink" translate="no">alert_rule_test</span> listant
+            les alertes que vous attendez. Un <span class="code-mono text-ink" translate="no">exp_alerts: []</span> vide
+            affirme qu’<em>aucune</em> alerte ne se déclenche.
+          </p>
+          <CodeBlock lang="yaml" filename="tests.yaml" code={testFileExample} />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       6) CLI TEASER — polarity-flipped dark band
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="cli" class="scroll-mt-24 bg-inverse text-inverse-fg">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-2 lg:gap-16">
+        <div class="min-w-0">
+          <p class="eyebrow !text-cyan">Bientôt disponible</p>
+          <h2 class="display-lg mt-3 text-balance text-inverse-fg">Exécutez les mêmes vérifications en CI.</h2>
+          <p class="body-md mt-4 text-pretty text-white/70">
+            Le moteur dans le navigateur n’est que la première étape. Une CLI prête à l’emploi exécutera les mêmes assertions sur un
+            ensemble de fichiers de test dans votre pipeline, de sorte qu’une alerte cassée fasse échouer le build au lieu de vous bipper
+            à 3 h du matin.
+          </p>
+          <p class="body-sm mt-4 text-pretty text-white/55">
+            Une Action <span translate="no">GitHub</span> de première partie qui encapsule la CLI est prévue
+            en parallèle. Les deux arrivent bientôt — le testeur dans le navigateur ci-dessus fonctionne dès aujourd’hui.
+          </p>
+        </div>
+        <CodeBlock lang="bash" filename="ci.sh" code={cliExample} />
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       7) NOTE — honest preview-engine callout
+       ════════════════════════════════════════════════════════════════════ -->
+  <section class="bg-canvas-soft">
+    <div class="container-page py-12 sm:py-16">
+      <div class="card-soft mx-auto max-w-3xl p-6">
+        <p class="eyebrow">Moteur en préversion</p>
+        <p class="body-md mt-3 text-pretty text-body">
+          Une note sur la précision : l’évaluateur dans le navigateur est un <strong class="font-medium text-ink"
+            >moteur en préversion</strong
+          > qui couvre les schémas d’alerte <span translate="no">LogQL</span> courants — matchers de
+          labels, filtres de lignes et de labels, agrégations
+          <span class="code-mono text-ink" translate="no">rate</span> /
+          <span class="code-mono text-ink" translate="no">count_over_time</span>, et
+          comparaisons de seuils. Une version à parité complète qui compile le moteur de requêtes
+          <span translate="no">Loki</span> en amont vers WebAssembly arrive bientôt. D’ici là,
+          considérez une exécution au vert comme une solide confiance préliminaire plutôt qu’une rediffusion de production
+          à l’octet près.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       8) FAQ
+       ════════════════════════════════════════════════════════════════════ -->
+  <FaqList faqs={faqs} />
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       Cross-links + footer disclaimer
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolCrossLinks>
+    <Fragment slot="lead">
+      <span translate="no">AlertLint</span> est un outil parmi d’autres dans
+      <span translate="no">{site.name}</span> — une canopée grandissante de validateurs, convertisseurs
+      et testeurs dans le navigateur qui ne touchent jamais un serveur.
+    </Fragment>
+    <Fragment slot="links">
+      Associez-le au désormais disponible
+      <a class="link-inline" href={__l("/cve-ignore-converter", __lang)}>convertisseur d’ignore
+        <span translate="no">CVE</span></a> et au
+      <a class="link-inline" href={__l("/github-actions-validator", __lang)}>validateur <span translate="no">GitHub</span>
+        Actions</a>, ou parcourez le
+      <a class="link-inline" href={__l(navLinks[0].href, __lang)}>répertoire complet des outils</a>.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      Non affilié à <span translate="no">Grafana Labs</span> ni approuvé par lui.
+      <span translate="no">Loki</span> et <span translate="no">Grafana</span> sont des marques de
+      <span translate="no">Raintank, Inc.</span>
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>
