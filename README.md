@@ -1,46 +1,76 @@
-# Astro Starter Kit: Basics
+# OpsCanopy
 
-```sh
-npm create astro@latest -- --template basics
-```
+**A canopy of free, private, browser-based tools for platform & DevOps engineers.**
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+🌐 **[opscanopy.com](https://opscanopy.com)** · 20+ tools · no signup · no servers · MIT licensed
 
-## 🚀 Project Structure
+OpsCanopy is a growing collection of focused utilities for DevOps and SRE work —
+validators, converters, testers and linters. Every tool runs **100% client-side**
+in your browser using JavaScript and (where it helps) WebAssembly. There is no
+backend, no API and no account system, so **anything you paste never leaves your
+device**. Most tools keep working even with the network disconnected.
 
-Inside of your Astro project, you'll see the following folders and files:
+## Why it exists
 
-```text
-/
-├── public/
-│   └── favicon.svg
-├── src
-│   ├── assets
-│   │   └── astro.svg
-│   ├── components
-│   │   └── Welcome.astro
-│   ├── layouts
-│   │   └── Layout.astro
-│   └── pages
-│       └── index.astro
-└── package.json
-```
+Engineers reach for quick tools dozens of times a day — validate a workflow file,
+decode a token, test a regex against log lines, work out a subnet, convert a
+suppression file. Too many of those tools ask you to paste sensitive internal data
+into a website that quietly uploads it to a server. OpsCanopy takes the opposite
+approach: fast, free, and private by construction, because there is nowhere for
+your data to go.
 
-To learn more about the folder structure of an Astro project, refer to [our guide on project structure](https://docs.astro.build/en/basics/project-structure/).
+## What's inside
 
-## 🧞 Commands
+20+ tools across 9 categories. A few highlights:
 
-All commands are run from the root of the project, from a terminal:
+| Category | Tools |
+| :--- | :--- |
+| **Observability** | AlertLint (Loki alert-rule tester), PromQL Explainer, LogQL ↔ PromQL Helper |
+| **Security** | JWT Decoder, Hash Generator, CVE-Ignore Converter |
+| **CI/CD** | GitHub Actions Validator, `.env.example` Checker |
+| **Scheduling** | Cron Expression Tester, Cron → systemd Converter |
+| **Networking** | Subnet Calculator, CIDR / Subnet Checker, IP Address Converter, Subnet Splitter, MAC Formatter, Reverse DNS / PTR Helper |
+| **Encoding** | Base64 Encoder / Decoder, Timestamp Converter |
+| **Kubernetes** | Resource Calculator |
+| **Logs** | Regex Log Tester |
 
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `npm install`             | Installs dependencies                            |
-| `npm run dev`             | Starts local dev server at `localhost:4321`      |
-| `npm run build`           | Build your production site to `./dist/`          |
-| `npm run preview`         | Preview your build locally, before deploying     |
-| `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `npm run astro -- --help` | Get help using the Astro CLI                     |
+👉 **Browse the full catalog at [opscanopy.com/tools](https://opscanopy.com/tools).**
 
-## 👀 Want to learn more?
+## Tech
 
-Feel free to check [our documentation](https://docs.astro.build) or jump into our [Discord server](https://astro.build/chat).
+- [Astro](https://astro.build) (static output, native i18n) + [Tailwind CSS v4](https://tailwindcss.com)
+- TypeScript, with WebAssembly for compute-heavy tools (e.g. AlertLint)
+- Fully static, deployed on Cloudflare — no server-side code paths
+- Localized in English, Spanish, German, French and Brazilian Portuguese
+
+## Local development
+
+All commands run from the project root:
+
+| Command | Action |
+| :--- | :--- |
+| `npm install` | Install dependencies |
+| `npm run dev` | Start the dev server at `localhost:4321` |
+| `npm run build` | Build the production site to `./dist/` |
+| `npm run preview` | Preview the build locally |
+| `npm run test` | Run the unit tests |
+
+## Contributing
+
+Issues and pull requests are welcome — bug reports, new tool ideas, translations
+and fixes. Tools are engineered against real specifications and test vectors, so
+PRs that add or change behavior should include tests.
+
+## Privacy
+
+OpsCanopy collects nothing you type. All processing happens in your browser; there
+is no upload, no account, and no logging of tool input. See
+[opscanopy.com/privacy](https://opscanopy.com/privacy).
+
+## Maintainers
+
+Built and maintained by **Pushkar Kumar** and **Asif Khan**.
+
+## License
+
+[MIT](./LICENSE) © 2026 Pushkar Kumar and Asif Khan
