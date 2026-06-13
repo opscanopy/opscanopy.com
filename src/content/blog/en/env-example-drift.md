@@ -3,6 +3,9 @@ title: "Stop shipping a stale .env.example"
 description: "Your .env.example is documentation that silently rots. Here is why env drift breaks onboarding and deploys, how to detect missing and unused keys, and how to keep the example file honest."
 pubDate: 2026-06-02
 tags: ["configuration", "developer-experience", "twelve-factor"]
+relatedTool:
+  name: "Env Example Checker"
+  href: "/env-example-checker"
 ---
 
 A `.env.example` is the one file in your repo that nobody runs, nobody tests, and everybody trusts. It’s the contract a new teammate reads on day one to answer the only question that matters: which environment variables do I need to set before this thing boots? When that file is right, onboarding is a five-minute copy-and-fill. When it’s wrong, you get the most demoralising kind of bug — the app crashes on startup with `undefined is not a function`, or worse, runs happily with a feature silently disabled because a flag defaulted to off.

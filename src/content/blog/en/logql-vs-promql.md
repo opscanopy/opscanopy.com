@@ -3,6 +3,9 @@ title: "LogQL vs PromQL: the same query in both languages"
 description: "LogQL borrows PromQL’s shape but starts from log lines, not metrics. Here is how the two query languages line up, where they translate cleanly, and where they simply don’t."
 pubDate: 2026-06-05
 tags: ["logql", "promql", "observability"]
+relatedTool:
+  name: "LogQL ↔ PromQL Helper"
+  href: "/logql-promql-helper"
 ---
 
 If you’ve written Prometheus queries, Grafana Loki’s LogQL looks reassuringly familiar — `rate(...)`, `sum by (...)`, `[5m]` range vectors, the same comparison operators. That familiarity is deliberate, and it’s genuinely useful: a lot of PromQL muscle memory transfers directly. But the two languages start from different raw material, and the moment you forget that, your translation breaks in ways that are hard to spot. PromQL queries a **metrics** database. LogQL queries **log lines** and turns them into metrics on the fly. Everything that maps cleanly, and everything that doesn’t, follows from that one difference.

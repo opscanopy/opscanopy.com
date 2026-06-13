@@ -3,6 +3,9 @@ title: "The GitHub Actions security mistakes linters miss"
 description: "YAML validators catch syntax, not exposure. Here are the five high-impact GitHub Actions misconfigurations — pull_request_target, script injection, unpinned actions, broad GITHUB_TOKEN scopes, and curl|bash — with the bad pattern and the fix for each."
 pubDate: 2026-05-06
 tags: ["github-actions", "security", "ci-cd"]
+relatedTool:
+  name: "GitHub Actions Validator"
+  href: "/github-actions-validator"
 ---
 
 A YAML linter will tell you when your workflow won’t parse. It won’t tell you when your workflow hands a fork’s pull request a write token, or runs an attacker-controlled branch name as shell code. Those bugs are syntactically perfect — they pass every schema check, run green on the first try, and quietly widen your attack surface until someone notices.

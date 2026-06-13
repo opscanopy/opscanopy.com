@@ -3,6 +3,9 @@ title: "Unit Testing Loki Alert Rules: the gap promtool leaves"
 description: "Prometheus has promtool test rules. Loki has nothing equivalent. Here is why testing LogQL alert rules matters, what a Loki rule unit test should look like, and how to close the gap today."
 pubDate: 2026-04-15
 tags: ["loki", "observability", "testing"]
+relatedTool:
+  name: "AlertLint"
+  href: "/loki-alert-rule-tester"
 ---
 
 If you run Prometheus, you already have a safety net for your alerting logic: `promtool test rules`. You feed it a series of synthetic samples, declare what should fire and when, and CI tells you the moment a refactor breaks an alert. It’s the difference between catching a broken page rule in code review and discovering it during an incident.

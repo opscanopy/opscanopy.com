@@ -3,6 +3,9 @@ title: "Reading cron expressions: a field-by-field guide"
 description: "A practical, field-by-field guide to reading cron expressions — the five time fields, ranges, steps, lists and @macros — plus the gotchas that make schedules fire when you least expect."
 pubDate: 2026-05-13
 tags: ["cron", "scheduling", "devops"]
+relatedTool:
+  name: "Cron Expression Tester"
+  href: "/cron-expression-tester"
 ---
 
 Almost everyone who runs a backend has stared at a line like `*/15 9-17 * * 1-5` and half-remembered what it does. Cron’s syntax is compact, which is its great virtue and its great trap: five tiny fields encode a recurring schedule, and a single misplaced character can turn “every weekday afternoon” into “every minute, forever.” This guide reads a cron expression the way the daemon does — field by field — so the next time you meet one you can decode it on sight.

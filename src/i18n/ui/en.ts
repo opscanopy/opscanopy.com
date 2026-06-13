@@ -39,6 +39,7 @@ const en = {
 
   // Footer
   'footer.copyright': 'Free & open.',
+  'footer.builtBy': 'Built by',
   'footer.disclaimer.lead': 'Not affiliated with or endorsed by Grafana Labs.',
   'footer.disclaimer.trademark': 'and',
   'footer.disclaimer.tail': 'are trademarks of Raintank, Inc.',
@@ -88,7 +89,6 @@ const en = {
   'blog.tagLead': 'Every post filed under “{tag}”, newest first.',
   'blog.tagCountSingular': 'post.',
   'blog.tagCountPlural': 'posts.',
-  'blog.breadcrumbTag': 'Tag',
 
   // Category filter labels (key = stable English category name)
   'category.Networking': 'Networking',

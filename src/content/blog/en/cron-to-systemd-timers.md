@@ -3,6 +3,9 @@ title: "Migrating from cron to systemd timers"
 description: "A practical guide to converting crontab entries into systemd .timer and .service units — OnCalendar syntax, logging, randomized delays, catch-up runs, and the gotchas that bite during migration."
 pubDate: 2026-05-20
 tags: ["systemd", "cron", "linux"]
+relatedTool:
+  name: "Cron to systemd Converter"
+  href: "/cron-to-systemd"
 ---
 
 Cron has run the world’s scheduled jobs for forty years, and on most servers it still works fine. But the moment a job needs structured logging, a controlled environment, dependency ordering, or a way to catch up after the machine was off, the cron model starts to creak. That’s where systemd timers come in — and if your distribution already runs systemd (Debian, Ubuntu, RHEL, Fedora, Arch, SUSE all do), you have a more capable scheduler sitting unused.

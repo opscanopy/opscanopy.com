@@ -3,6 +3,9 @@ title: "How to read a PromQL query"
 description: "A PromQL query is read from the inside out, not left to right. Learn the four layers — selectors, ranges, functions and aggregations — so you can decode any Prometheus expression at a glance."
 pubDate: 2026-06-08
 tags: ["promql", "prometheus", "observability"]
+relatedTool:
+  name: "PromQL Explainer"
+  href: "/promql-explainer"
 ---
 
 PromQL looks dense the first time you meet it. A line like `histogram_quantile(0.99, sum by (le, route) (rate(http_request_duration_seconds_bucket[5m])))` reads like one long word, and the instinct is to scan it left to right like a sentence. That’s the wrong direction. PromQL is a functional language, so the meaning flows from the **innermost** expression outward — the same way you’d evaluate a nested formula in maths. Once you read it inside-out, almost every query decomposes into the same four layers.

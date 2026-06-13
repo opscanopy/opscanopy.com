@@ -29,6 +29,7 @@ const es: Partial<UiDict> = {
 
   // Footer
   'footer.copyright': 'Gratis y abierto.',
+  'footer.builtBy': 'Hecho por',
   'footer.disclaimer.lead': 'No está afiliado a Grafana Labs ni cuenta con su respaldo.',
   'footer.disclaimer.trademark': 'y',
   'footer.disclaimer.tail': 'son marcas comerciales de Raintank, Inc.',
@@ -78,7 +79,6 @@ const es: Partial<UiDict> = {
   'blog.tagLead': 'Todas las publicaciones archivadas en «{tag}», de la más reciente a la más antigua.',
   'blog.tagCountSingular': 'publicación.',
   'blog.tagCountPlural': 'publicaciones.',
-  'blog.breadcrumbTag': 'Etiqueta',
 
   // Category filter labels (key = stable English category name)
   'category.Networking': 'Redes',

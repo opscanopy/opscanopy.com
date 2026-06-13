@@ -3,6 +3,9 @@ title: "Writing robust regular expressions for log lines"
 description: "A practical guide to building regexes that parse log lines reliably — anchoring, capture groups, escaping, greediness and the failure modes that bite you in production."
 pubDate: 2026-05-27
 tags: ["regex", "logs", "parsing"]
+relatedTool:
+  name: "Regex Log Tester"
+  href: "/regex-log-tester"
 ---
 
 A regular expression that parses a log line in your editor and a regular expression that survives a week of real traffic are rarely the same expression. Logs are noisier than the three sample lines you tested against: timestamps drift formats, fields go missing, an unescaped path sneaks a metacharacter into your pattern, and a `.*` that looked harmless quietly eats half the line. This post walks through the techniques that make a log-line regex robust — and the failure modes that catch people out.
