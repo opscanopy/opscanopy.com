@@ -64,7 +64,7 @@ document.addEventListener('astro:page-load', () => boot());
 function boot() { /* set up DOM refs, load example, wire events */ }
 ```
 
-CodeMirror v6 is used in 8 tools: `AlertLint`, `GHA Validator`, `Env Checker`, `Cron to Systemd`, `LogQL↔PromQL`, `Regex Log Tester`, `PromQL Explainer`, `CVE Converter`. For all of these the CM keymap includes an `Escape` binding to release focus (Tab-trap fix).
+CodeMirror v6 is used in 9 tools: `AlertLint`, `GHA Validator`, `GHA Expression Tester`, `Env Checker`, `Cron to Systemd`, `LogQL↔PromQL`, `Regex Log Tester`, `PromQL Explainer`, `CVE Converter`. For all of these the CM keymap includes an `Escape` binding to release focus (Tab-trap fix). The `GHA Expression Tester` engine (`src/lib/github-actions-expression-tester/`) fans out into multiple modules behind one public `engine.ts` façade and is pinned to a versioned conformance corpus (`conformance.ts`, `GHA_SEMANTICS_VERSION`).
 
 Engines are dynamically imported inside the boot closure so the heavy logic code-splits away from the page shell.
 

@@ -1,0 +1,376 @@
+---
+/**
+ * GitHub Actions Expression & Trigger Tester — the primary SEO surface.
+ *
+ * Two client-side tools on one page: an expression evaluator that replicates
+ * GitHub's exact ${{ }} semantics (and warns on the always-true literal footgun,
+ * actions/runner#1173), and a trigger simulator that decides per-job RUNS/SKIPPED
+ * for a push / pull_request / tag event. 100% in-browser — no server, no signup.
+ *
+ * Mirrors the github-actions-validator page structure (hero, playground island,
+ * why/cheat-sheet docs, scope note, FAQ + JSON-LD, cross-links).
+ */
+import Shell from '../../components/Shell.astro';
+import GithubActionsExpressionPlayground from '../../components/GithubActionsExpressionPlayground.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import Badge from '../../components/Badge.astro';
+import ToolHero from '../../components/ToolHero.astro';
+import ToolGapVisual from '../../components/ToolGapVisual.astro';
+import ToolPipeline from '../../components/ToolPipeline.astro';
+import FaqList from '../../components/FaqList.astro';
+import ToolCrossLinks from '../../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../../data/site';
+import { getTool } from '../../data/tools';
+import { softwareAppLd, faqPageLd } from '../../lib/jsonld';
+
+const tool = getTool('github-actions-expression-tester');
+
+const pagePath = '/github-actions-expression-tester';
+const pageUrl = `${site.url}${pagePath}`;
+
+// Literal token kept out of Astro's `{}` expression parser.
+const EXPR = '${{ }}';
+
+// ── External references ──────────────────────────────────────────────────────
+const ghExpressions = 'https://docs.github.com/actions/learn-github-actions/expressions';
+const ghTriggers =
+  'https://docs.github.com/actions/using-workflows/events-that-trigger-workflows';
+const ghIssue1173 = 'https://github.com/actions/runner/issues/1173';
+
+// ── FAQ content — single source for both the rendered section and FAQPage LD ─
+const faqs = [
+  {
+    q: 'O que o Testador de Expressões e Triggers do GitHub Actions faz?',
+    a: 'Ele tem duas abas. O Avaliador de Expressões roda as suas expressões ${{ }} contra um contexto fictício editável (github, env, matrix, steps, needs) usando a semântica exata do GitHub Actions — os operadores, o == de strings que ignora maiúsculas e minúsculas, as regras de coerção parecidas com as do JS e funções documentadas como contains, startsWith, endsWith, format, join, toJSON, fromJSON, success(), failure(), always() e cancelled(). O Simulador de Triggers permite que você descreva um evento de push, pull_request ou tag e mostra uma tabela RUN ou SKIPPED por job que explica exatamente qual filtro on:, branches, tags, paths ou paths-ignore decidiu o resultado. Juntos, eles respondem "este if: vai ser verdadeiro?" e "este workflow vai sequer disparar?" antes de você fazer o push.',
+  },
+  {
+    q: 'Por que minha condição if do GitHub Actions sempre roda como verdadeira?',
+    a: 'Quase sempre porque o if: contém texto literal fora de ${{ }} — por exemplo if: "${{ github.event_name }}" == \'push\' ou if: always-deploy. O GitHub não avalia a linha inteira como uma única expressão; os caracteres literais transformam a condição em uma string não vazia, e uma string não vazia é truthy, então o passo roda toda vez. Envolva a condição inteira em um único ${{ }} (por exemplo if: ${{ github.event_name == \'push\' }}) e o Avaliador de Expressões vai sinalizar a armadilha (actions/runner#1173) e mostrar o resultado corrigido, truthy ou falsy.',
+  },
+  {
+    q: 'Como posso testar uma condição if ou expressão do GitHub Actions sem fazer push?',
+    a: 'Cole a expressão na aba do Avaliador de Expressões e edite o contexto fictício github/env/matrix/steps/needs para corresponder à execução que lhe interessa — sem commit, sem push, sem esperar por um runner. Você recebe o valor avaliado na hora, além de um aviso caso a sintaxe fosse silenciosamente coergida para sempre verdadeira. É a maneira mais rápida de verificar uma condição if: ou uma interpolação ${{ }} antes que ela chegue ao GitHub Actions.',
+  },
+  {
+    q: 'Qual é a diferença entre success(), failure(), always() e cancelled()?',
+    a: 'Essas são funções de verificação de status que você usa em um if:. success() é verdadeira apenas quando todos os passos anteriores ou jobs necessários tiveram sucesso (é o padrão implícito no momento em que você não escreve nenhum if:), failure() é verdadeira quando algum deles falhou, cancelled() é verdadeira quando o workflow foi cancelado, e always() força o passo a rodar independentemente do status anterior — inclusive em caso de cancelamento. O detalhe é que escrever qualquer if: personalizado remove a proteção implícita de success(), então if: env.DEPLOY == \'true\' vai rodar mesmo depois que um passo anterior falhou, a menos que você adicione && success(). O avaliador permite que você alterne o status fictício e veja cada função ser resolvida.',
+  },
+  {
+    q: 'Por que meu workflow do GitHub Actions não disparou?',
+    a: 'As causas usuais são uma ref que não corresponde ao glob de on: branches ou tags, o arquivo de workflow ainda não existir na branch de destino, ou um filtro de paths excluindo todos os arquivos alterados. Uma sutil: quando você define tanto branches quanto paths sob o mesmo evento, eles se combinam com AND — o evento precisa corresponder a ambos, não a um ou outro. Descreva o seu evento no Simulador de Triggers e ele reproduz os filtros on: e diz o motivo decisivo para cada job.',
+  },
+  {
+    q: 'Os filtros de branch e paths do GitHub Actions usam AND ou OR?',
+    a: 'Dentro de um único evento, branches (ou tags) e paths são combinados com AND: um push precisa estar em uma branch que corresponda e tocar em um path que corresponda para o workflow rodar. Dentro de um único filtro, os padrões são combinados com OR — qualquer um glob de branch ou qualquer um path alterado que corresponda já é suficiente. O Simulador de Triggers torna isso explícito ao mostrar separadamente a decisão de branch e a decisão de path, e em seguida o veredito combinado RUN ou SKIPPED.',
+  },
+  {
+    q: 'O que ** significa em um filtro de branch ou paths do GitHub Actions?',
+    a: '* corresponde a quaisquer caracteres exceto o separador de caminho /, enquanto ** corresponde através dos separadores, incluindo o /, então feature/** corresponde a feature/a/b mas feature/* corresponde apenas a feature/a. O motor de glob também respeita +, ?, a negação ! e o escape \\ da mesma forma que o GitHub faz. O Simulador de Triggers usa uma reimplementação fiel dessas regras para que você possa testar um padrão como \'release/**\' ou \'!**/*.md\' contra uma ref ou lista de arquivos reais e ver o que corresponde.',
+  },
+  {
+    q: 'Como a ferramenta sabe quais jobs vão rodar ou ser pulados?',
+    a: 'No Simulador de Triggers você fornece o tipo de evento, o nome da ref e a lista de arquivos alterados; a ferramenta então avalia os filtros on: de cada job e qualquer if: no nível do job contra esse evento simulado e renderiza uma linha RUN ou SKIPPED com o motivo decisivo — "branch correspondeu mas o path não", "sem filtro de paths", "if: avaliado como falso" e assim por diante. Ela espelha a ordem de decisão do GitHub Actions em vez de adivinhar, então o veredito corresponde ao que o runner real faria para aquele evento.',
+  },
+  {
+    q: 'Como isso difere do act ou do actionlint?',
+    a: 'O actionlint é um linter estático para a sintaxe de workflows e a tipagem de expressões, e o act de fato executa os seus jobs em containers Docker locais — ambos são ótimos e valem a pena usar. Esta ferramenta não faz nenhum dos dois: ela não roda os seus passos e não é um verificador de tipos. É um playground de semântica que avalia uma única expressão ${{ }} ou simula a filtragem de triggers contra um contexto que você controla, no navegador, para que você possa raciocinar sobre por que um if: é truthy ou por que um workflow disparou ou não, sem subir containers nem fazer commits.',
+  },
+  {
+    q: 'O que não pode ser reproduzido no navegador?',
+    a: 'Qualquer coisa que dependa do estado real do runner. hashFiles() precisa dos arquivos reais em disco, então o avaliador o trata como um placeholder opaco em vez de calcular um hash verdadeiro; o payload completo do webhook é muito maior do que o contexto github fictício que expomos; e o conteúdo ao vivo das ações, os secrets e os labels do runner não são resolvidos. Trate um resultado limpo como uma forte confiança antes do push sobre a lógica de expressões e triggers — não como uma garantia sobre o hashing de arquivos ou o payload completo do evento.',
+  },
+  {
+    q: 'O YAML do meu workflow ou o payload do evento chega a sair do meu navegador em algum momento?',
+    a: 'Não. As duas abas rodam 100% no lado do cliente. As expressões, o contexto fictício, os filtros do workflow e os payloads de eventos que você insere são avaliados dentro da aba do seu navegador — nada é enviado, não há conta e não há cadastro. Você pode colar com segurança workflows internos ou proprietários, inclusive nomes de secrets, labels de runners privados e listas reais de branches e paths.',
+  },
+  {
+    q: 'Esta ferramenta é afiliada ao GitHub?',
+    a: 'Não. Esta é uma ferramenta independente e comunitária, e não é afiliada, endossada nem patrocinada pela GitHub, Inc. "GitHub" e "GitHub Actions" são usados aqui apenas de forma descritiva, para identificar o formato de expressões e triggers de workflow que a ferramenta avalia.',
+  },
+];
+
+// ── JSON-LD ──────────────────────────────────────────────────────────────────
+const softwareApp = softwareAppLd({
+  name: 'Testador de Expressões e Triggers do GitHub Actions',
+  description:
+    'Teste expressões ${{ }} do GitHub Actions e simule triggers de workflow online. Avalie condições if:, contains/startsWith, filtros de branch e paths. Grátis, 100% no navegador.',
+  url: pageUrl,
+  subCategory: 'CI/CD',
+  featureList: [
+    "Avalia expressões ${{ }} contra um contexto fictício editável github/env/matrix/steps/needs com a semântica exata de operadores e coerção do GitHub",
+    'Avisa sobre a armadilha do if: "sempre verdadeiro" por texto literal (actions/runner#1173)',
+    'Suporta contains, startsWith, endsWith, format, join, toJSON, fromJSON, hashFiles, success(), failure(), always(), cancelled()',
+    'Simulador de Triggers: descreva um evento de push, pull_request ou tag e veja quais jobs vão RUN ou serão SKIPPED com o motivo decisivo',
+    'Motor de glob fiel para branches, tags, paths e paths-ignore, incluindo a semântica de AND entre branch e path',
+    '100% no lado do cliente: o YAML do seu workflow e os payloads de eventos nunca saem do navegador',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+const faqPage = faqPageLd(faqs);
+
+// ── HOW IT WORKS pipeline ─────────────────────────────────────────────────────
+const pipeline = [
+  {
+    title: 'Escolha uma aba.',
+    body: 'Avalie um único if: / expressão, ou troque para o simulador de triggers para testar um workflow inteiro contra um evento.',
+  },
+  {
+    title: 'Defina o contexto.',
+    body: 'Edite o JSON fictício github/env/matrix/steps/needs (ou descreva o evento: tipo, ref, arquivos alterados) para que ele corresponda à execução que lhe interessa.',
+  },
+  {
+    title: 'Analise com a gramática do GitHub.',
+    body: 'A expressão é tokenizada e analisada com a mesma precedência de operadores e o mesmo conjunto de funções que o runner usa — sem shell-out, sem rede.',
+  },
+  {
+    title: 'Aplique a semântica exata.',
+    body: 'A coerção, a igualdade que ignora maiúsculas e minúsculas, o && / || que retornam um operando, os filtros de glob e a regra de AND entre branch e path são replicados contra um corpus de conformidade versionado.',
+  },
+  {
+    title: 'Mostre o veredito + o porquê.',
+    body: 'Você recebe o resultado truthy/falsy e o valor retornado, o aviso da armadilha do sempre verdadeiro onde ele se aplica, e uma tabela RUNS/SKIPPED por job com o motivo decisivo.',
+  },
+];
+
+// ── CHEAT-SHEET cards ─────────────────────────────────────────────────────────
+const footgunBad = `# ALWAYS TRUE — operators sit OUTSIDE \${{ }}
+jobs:
+  deploy:
+    if: \${{ github.ref }} == 'refs/heads/main'
+    # after substitution this is the literal string
+    #   refs/heads/main == 'refs/heads/main'
+    # a non-empty string => truthy => runs on EVERY branch`;
+const footgunGood = `# CORRECT — wrap the WHOLE condition in one \${{ }}
+jobs:
+  deploy:
+    if: \${{ github.ref == 'refs/heads/main' }}
+    # now GitHub evaluates the comparison, not a literal string`;
+
+const coercionExample = `# GitHub's coercion is JS-like and case-insensitive:
+\${{ 'ABC' == 'abc' }}      # true  (strings compare case-insensitively)
+\${{ null == 0 }}           # true  (both coerce to the number 0)
+\${{ '' || 'fallback' }}    # 'fallback'  (|| returns an OPERAND, not a bool)
+\${{ github.x && 'yes' }}   # 'yes' when github.x is truthy
+\${{ 'true' == true }}      # false (string 'true' coerces to NaN)`;
+
+const functionsExample = `\${{ contains('refs/heads/main', 'main') }}     # true (substring, case-insensitive)
+\${{ startsWith(github.ref, 'refs/tags/') }}    # is this a tag push?
+\${{ format('{0}-{1}', 'app', github.sha) }}    # 'app-d6cd1e2…'
+\${{ fromJSON('["a","b"]') }}                   # a real array
+\${{ always() }}  \${{ success() }}  \${{ failure() }}  # status checks`;
+
+const triggerExample = `on:
+  push:
+    branches: [main]      # AND
+    paths: ['src/**']     # — both must match to trigger
+# feature/* matches feature/a but NOT feature/a/b
+# feature/** matches both (** crosses '/')`;
+
+const cheats = [
+  {
+    title: 'A armadilha do "sempre verdadeiro"',
+    badge: 'Mais comum',
+    blurb:
+      'O GitHub só avalia o que está dentro de ${{ }}. Os operadores deixados de fora viram texto literal após a substituição — uma string não vazia, que é sempre truthy. O avaliador sinaliza isso (actions/runner#1173).',
+    bad: footgunBad,
+    good: footgunGood,
+  },
+];
+
+const refs = [
+  { title: 'Operadores e coerção', code: coercionExample },
+  { title: 'Funções', code: functionsExample },
+  { title: 'Triggers, branches e paths', code: triggerExample },
+];
+import type { Locale as __Locale } from '../../i18n/config';
+import { localizeKey as __l } from '../../i18n/utils';
+const __lang = (Astro.currentLocale ?? 'en') as __Locale;
+---
+
+<Shell
+  title="Testador de Expressões e Simulador de Triggers do GitHub Actions"
+  description="Teste expressões ${{ }} do GitHub Actions e simule triggers de workflow online. Avalie condições if:, contains/startsWith, filtros de branch e paths. Grátis, 100% no navegador."
+  canonical="/github-actions-expression-tester"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <!-- 1) HERO -->
+  <ToolHero
+    eyebrow="Testador de Expressões do GitHub Actions · CI/CD"
+    badges={[
+      { label: 'Roda no seu navegador', variant: 'live' },
+      { label: 'Sem cadastro', variant: 'neutral' },
+      { label: 'Semântica exata do GitHub', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">
+      Teste suas condições <span translate="no">if:</span> e seus triggers antes de fazer push.
+    </Fragment>
+    <Fragment slot="lead">
+      Avalie expressões <span class="code-mono text-ink" translate="no">{EXPR}</span> contra um
+      contexto fictício editável, pegue o <span translate="no">if:</span> que é silenciosamente
+      <em>sempre verdadeiro</em>, e simule quais jobs rodam para um push, PR ou tag — na hora, no seu
+      navegador. Sem o ciclo <span translate="no">commit-push-pray</span>.
+    </Fragment>
+  </ToolHero>
+
+  <!-- 2) PLAYGROUND -->
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pb-20 pt-8 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">Playground de expressões e triggers do GitHub Actions</h2>
+      <GithubActionsExpressionPlayground />
+    </div>
+  </section>
+
+  <!-- 3) WHY IT EXISTS -->
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">A lacuna</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">Pare de depurar fazendo push.</h2>
+          <ToolGapVisual />
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            Todo mundo já fez isso: adiciona um <span class="code-mono text-ink" translate="no">if:</span> a um
+            passo, faz push, vê ele rodar quando não deveria, ajusta, faz push de novo — vinte commits inúteis depois
+            você descobre que a condição era uma string literal o tempo todo. O GitHub só avalia o que está
+            dentro de <span class="code-mono text-ink" translate="no">{EXPR}</span>; qualquer coisa de fora é
+            texto literal, e uma string não vazia é sempre truthy.
+          </p>
+          <p class="body-md text-pretty text-body">
+            O lado dos triggers é igualmente opaco: um workflow que não roda não produz
+            <strong class="font-medium text-ink">saída nenhuma</strong> — a decisão acontece na
+            filtragem de eventos do GitHub antes que qualquer runner inicie. Os filtros de branch e path se combinam com
+            <span class="code-mono text-ink" translate="no">AND</span>, os pushes de tag são excluídos quando você
+            define <span class="code-mono text-ink" translate="no">branches</span> mas não
+            <span class="code-mono text-ink" translate="no">tags</span>, e
+            <span class="code-mono text-ink" translate="no">**</span> se comporta de forma diferente de
+            <span class="code-mono text-ink" translate="no">*</span>.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Esta ferramenta avalia os dois — uma única expressão, ou um workflow inteiro contra um evento — usando
+            as regras exatas do <span translate="no">GitHub</span>, para que você obtenha a resposta no navegador. Veja a
+            documentação de
+            <a class="link-inline" href={ghExpressions} target="_blank" rel="noopener noreferrer">expressões</a>
+            e de
+            <a class="link-inline" href={ghTriggers} target="_blank" rel="noopener noreferrer">triggers de workflow</a>
+            do <span translate="no">GitHub</span>, e a issue da
+            <a class="link-inline" href={ghIssue1173} target="_blank" rel="noopener noreferrer">armadilha do sempre verdadeiro</a>.
+          </p>
+          <p class="body-sm text-mute">
+            Pule para a <a class="link-inline" href="#reference">cola</a> ou para o
+            <a class="link-inline" href="#playground">playground ao vivo</a> acima.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4) HOW IT WORKS -->
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="O pipeline"
+    heading="Como funciona."
+    lead="Cinco passos determinísticos rodam de ponta a ponta em cada avaliação — todos dentro da aba do seu navegador, toda vez."
+    steps={pipeline}
+  />
+
+  <!-- 5) CHEAT-SHEET -->
+  <section id="reference" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Cola</p>
+        <h2 class="display-lg mt-3 text-ink">As regras que pegam as pessoas de surpresa.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          A armadilha, as surpresas da coerção, as funções e os globs de trigger — cada um com um
+          exemplo executável que você pode colar no playground.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 grid max-w-5xl gap-6">
+        {
+          cheats.map((c) => (
+            <article class="card-soft p-6 sm:p-7">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <h3 class="display-sm text-balance text-ink">{c.title}</h3>
+                <Badge variant="high">{c.badge}</Badge>
+              </div>
+              <p class="body-md mt-3 max-w-3xl text-pretty text-body">{c.blurb}</p>
+              <div class="mt-5 grid gap-5 lg:grid-cols-2">
+                <div class="min-w-0">
+                  <p class="eyebrow !text-error mb-2">Sempre verdadeiro</p>
+                  <CodeBlock lang="yaml" filename=".github/workflows/ci.yml" code={c.bad} />
+                </div>
+                <div class="min-w-0">
+                  <p class="eyebrow !text-success mb-2">Corrigido</p>
+                  <CodeBlock lang="yaml" filename=".github/workflows/ci.yml" code={c.good} />
+                </div>
+              </div>
+            </article>
+          ))
+        }
+
+        <div class="grid gap-6 lg:grid-cols-3">
+          {
+            refs.map((r) => (
+              <article class="card-soft p-6">
+                <h3 class="display-sm text-balance text-ink">{r.title}</h3>
+                <div class="mt-4">
+                  <CodeBlock lang="yaml" code={r.code} />
+                </div>
+              </article>
+            ))
+          }
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6) SCOPE NOTE -->
+  <section class="bg-canvas-soft">
+    <div class="container-page py-12 sm:py-16">
+      <div class="card-soft mx-auto max-w-3xl p-6">
+        <p class="eyebrow">Fidelidade e escopo</p>
+        <p class="body-md mt-3 text-pretty text-body">
+          Isto é um <strong class="font-medium text-ink">playground de semântica</strong>, não um runner. Ele
+          replica o comportamento documentado de expressões e triggers do <span translate="no">GitHub</span>
+          contra um corpus de conformidade versionado (mostrado como o rótulo
+          <span class="code-mono text-ink" translate="no">semantics:</span> na ferramenta), mas
+          não executa jobs, não busca o conteúdo ao vivo das ações referenciadas, nem calcula um
+          <span class="code-mono text-ink" translate="no">hashFiles()</span> real — isso precisa de arquivos que só o
+          runner consegue ver, então é exibido como um placeholder. O payload completo de
+          <span class="code-mono text-ink" translate="no">github.event</span> é modelado como um
+          mock editável que você controla. Trate um resultado limpo como uma forte confiança antes do push, e
+          ainda assim combine-o com o <span class="code-mono text-ink" translate="no">actionlint</span> para a sintaxe.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7) FAQ -->
+  <FaqList faqs={faqs} />
+
+  <!-- Cross-links + disclaimer -->
+  <ToolCrossLinks>
+    <Fragment slot="lead">
+      O Testador de Expressões do <span translate="no">GitHub</span> Actions é uma ferramenta dentro do
+      <span translate="no">{site.name}</span> — uma copa crescente de validadores, conversores e
+      testadores baseados em navegador que nunca tocam um servidor.
+    </Fragment>
+    <Fragment slot="links">
+      Ferramentas relacionadas: o
+      <a class="link-inline" href={__l('/github-actions-validator', __lang)}>Validador do <span translate="no">GitHub</span>
+        Actions</a> e o
+      <a class="link-inline" href={__l('/loki-alert-rule-tester', __lang)}><span translate="no">AlertLint</span>, o
+        testador de regras do <span translate="no">Loki</span></a>. Explore o
+      <a class="link-inline" href={__l(navLinks[0].href, __lang)}>diretório completo de ferramentas</a>.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      Não é afiliado, endossado nem patrocinado pela <span translate="no">GitHub, Inc.</span>
+      <span translate="no">GitHub</span> e <span translate="no">GitHub Actions</span> são marcas comerciais da
+      <span translate="no">GitHub, Inc.</span>, usadas aqui apenas de forma descritiva para identificar o formato de expressões
+      e triggers de workflow que esta ferramenta avalia.
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>

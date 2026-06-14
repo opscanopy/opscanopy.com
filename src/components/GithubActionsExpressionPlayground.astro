@@ -1,0 +1,632 @@
+---
+/**
+ * GithubActionsExpressionPlayground — the interactive two-tab island for the
+ * GitHub Actions Expression & Trigger Tester.
+ *
+ * No framework. A server-rendered shell hydrated by one module <script> that
+ * lazily boots CodeMirror 6 editors and the engine. Two WAI-ARIA tabs:
+ *   • Expression evaluator — evaluate a ${{ }} / if: against an editable mock
+ *     context, with GitHub's exact semantics and the always-true footgun warning.
+ *   • Trigger simulator — describe an event and see per-job RUNS / SKIPPED.
+ *
+ * Runtime contract (imported lazily in the script):
+ *   ../lib/github-actions-expression-tester/engine →
+ *     evaluateIfCondition(raw, ctx), simulateTriggers(yaml, event),
+ *     defaultContext(), parseContext(json), GHA_SEMANTICS_VERSION
+ *   ../lib/github-actions-expression-tester/examples →
+ *     expressionExamples[], triggerExamples[]
+ *
+ * Everything runs client-side — no upload, no network. Show/hide is driven by an
+ * `is-active` class (never the hidden attribute) so CodeMirror can re-measure on
+ * tab switch. The CM keymap binds Escape→blur (Tab-trap fix, per CLAUDE.md).
+ */
+const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
+---
+
+<section class="ga-pg" aria-label="GitHub Actions expression and trigger playground">
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Tab bar ──────────────────────────────────────────────────────── */}
+    <div class="ga-tabs flex gap-1 border-b border-hairline px-3 py-2 sm:px-4" role="tablist" aria-label="Tool mode">
+      <button
+        id="ga-tab-expr"
+        class="ga-tab is-active"
+        role="tab"
+        type="button"
+        aria-selected="true"
+        aria-controls="ga-panel-expr"
+      >
+        <span aria-hidden="true" class="ga-tab-glyph code-mono">{exprToken}</span>
+        Expression evaluator
+      </button>
+      <button
+        id="ga-tab-trig"
+        class="ga-tab"
+        role="tab"
+        type="button"
+        aria-selected="false"
+        aria-controls="ga-panel-trig"
+        tabindex="-1"
+      >
+        <svg class="h-4 w-4 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M2 4.5h12M2 8h12M2 11.5h7"></path>
+        </svg>
+        Trigger simulator
+      </button>
+    </div>
+
+    {/* ═══════════════ TAB 1 — EXPRESSION EVALUATOR ═══════════════ */}
+    <div id="ga-panel-expr" class="ga-panel is-active" role="tabpanel" aria-labelledby="ga-tab-expr">
+      {/* Toolbar */}
+      <div class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <div class="flex min-w-0 items-center gap-3">
+          <label class="eyebrow shrink-0" for="ga-expr-example">Example</label>
+          <div class="ga-select-wrap relative min-w-0">
+            <select id="ga-expr-example" class="ga-select code-mono" autocomplete="off">
+              <option value="">Loading…</option>
+            </select>
+            <svg class="ga-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"></path></svg>
+          </div>
+        </div>
+        <div class="flex shrink-0 flex-wrap items-center gap-2">
+          <span class="caption text-mute hidden items-center sm:inline-flex">⌘/Ctrl + Enter</span>
+          <button id="ga-share-expr" type="button" class="btn btn-secondary btn-sm ga-tap" data-default-label="Share">
+            <svg class="h-4 w-4 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 8.5l5-3M5.5 7.5l5 3"></path><circle cx="12" cy="4" r="2"></circle><circle cx="4" cy="8" r="2"></circle><circle cx="12" cy="12" r="2"></circle></svg>
+            <span class="ga-share-label">Share</span>
+          </button>
+          <button id="ga-eval" type="button" class="btn btn-primary btn-sm ga-tap" title="Evaluate (⌘/Ctrl + Enter)" aria-keyshortcuts="Meta+Enter Control+Enter">
+            <svg class="ga-eval-icon h-4 w-4 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3l8 5-8 5z"></path></svg>
+            <span class="ga-eval-label">Evaluate</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Editors: expression + context (side-by-side on lg) */}
+      <div class="grid gap-px bg-hairline lg:grid-cols-2">
+        <div class="flex min-w-0 flex-col bg-inverse">
+          <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
+            <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true"><span class="h-2.5 w-2.5 rounded-full bg-white/15"></span><span class="h-2.5 w-2.5 rounded-full bg-white/15"></span><span class="h-2.5 w-2.5 rounded-full bg-white/15"></span></span>
+            <span class="code-mono text-white/45">if-condition</span>
+          </div>
+          <div id="ga-expr-editor" class="ga-editor min-h-32" aria-label="GitHub Actions if condition or expression"></div>
+        </div>
+        <div class="flex min-w-0 flex-col bg-inverse">
+          <div class="flex flex-wrap items-center gap-2 border-b border-white/10 px-4 py-2">
+            <span class="code-mono mr-auto text-white/45">context (editable mock)</span>
+            <button type="button" class="ga-preset" data-preset="push">push</button>
+            <button type="button" class="ga-preset" data-preset="pull_request">pull_request</button>
+            <button type="button" class="ga-preset" data-preset="tag">tag</button>
+          </div>
+          <div id="ga-ctx-editor" class="ga-editor min-h-32" aria-label="Editable mock evaluation context (JSON)"></div>
+        </div>
+      </div>
+      <p class="caption px-4 py-2 text-mute">
+        Press <kbd class="ga-kbd">Esc</kbd> to release the editor. Your input never leaves the browser.
+      </p>
+
+      {/* Results */}
+      <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
+        <div class="mb-3 flex items-center justify-between gap-3">
+          <span class="eyebrow">Result</span>
+          <span id="ga-expr-summary" class="ga-summary code-mono text-mute" role="status" aria-live="polite"></span>
+        </div>
+        <div id="ga-expr-results" class="ga-results" aria-live="polite">
+          <p class="ga-empty body-sm text-mute">Load an example or write an <span class="code-mono">if:</span> condition, then Evaluate to see whether it is true, the returned value, and a token-by-token breakdown.</p>
+        </div>
+      </div>
+    </div>
+
+    {/* ═══════════════ TAB 2 — TRIGGER SIMULATOR ═══════════════ */}
+    <div id="ga-panel-trig" class="ga-panel" role="tabpanel" aria-labelledby="ga-tab-trig">
+      <div class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <div class="flex min-w-0 items-center gap-3">
+          <label class="eyebrow shrink-0" for="ga-trig-example">Example</label>
+          <div class="ga-select-wrap relative min-w-0">
+            <select id="ga-trig-example" class="ga-select code-mono" autocomplete="off"><option value="">Loading…</option></select>
+            <svg class="ga-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"></path></svg>
+          </div>
+        </div>
+        <div class="flex shrink-0 flex-wrap items-center gap-2">
+          <span class="caption text-mute hidden items-center sm:inline-flex">⌘/Ctrl + Enter</span>
+          <button id="ga-share-trig" type="button" class="btn btn-secondary btn-sm ga-tap" data-default-label="Share">
+            <svg class="h-4 w-4 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 8.5l5-3M5.5 7.5l5 3"></path><circle cx="12" cy="4" r="2"></circle><circle cx="4" cy="8" r="2"></circle><circle cx="12" cy="12" r="2"></circle></svg>
+            <span class="ga-share-label">Share</span>
+          </button>
+          <button id="ga-sim" type="button" class="btn btn-primary btn-sm ga-tap" title="Simulate (⌘/Ctrl + Enter)" aria-keyshortcuts="Meta+Enter Control+Enter">
+            <svg class="ga-sim-icon h-4 w-4 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3l8 5-8 5z"></path></svg>
+            <span class="ga-sim-label">Simulate</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="grid gap-px bg-hairline lg:grid-cols-[1.4fr_1fr]">
+        <div class="flex min-w-0 flex-col bg-inverse">
+          <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
+            <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true"><span class="h-2.5 w-2.5 rounded-full bg-white/15"></span><span class="h-2.5 w-2.5 rounded-full bg-white/15"></span><span class="h-2.5 w-2.5 rounded-full bg-white/15"></span></span>
+            <span class="code-mono text-white/45">.github/workflows/ci.yml</span>
+          </div>
+          <div id="ga-wf-editor" class="ga-editor min-h-48" aria-label="Workflow YAML"></div>
+        </div>
+
+        {/* Event scenario builder */}
+        <div class="flex min-w-0 flex-col gap-3 bg-canvas px-4 py-4">
+          <span class="eyebrow">Event scenario</span>
+          <label class="ga-field">
+            <span class="ga-field-label">Event</span>
+            <div class="ga-select-wrap relative">
+              <select id="ga-ev-event" class="ga-select code-mono w-full">
+                <option value="push">push</option>
+                <option value="pull_request">pull_request</option>
+                <option value="pull_request_target">pull_request_target</option>
+                <option value="tag">push (tag)</option>
+              </select>
+              <svg class="ga-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"></path></svg>
+            </div>
+          </label>
+          <label class="ga-field" id="ga-field-branch">
+            <span class="ga-field-label">Branch</span>
+            <input id="ga-ev-branch" type="text" class="ga-input code-mono" value="main" autocomplete="off" spellcheck="false" />
+          </label>
+          <label class="ga-field hidden" id="ga-field-tag">
+            <span class="ga-field-label">Tag</span>
+            <input id="ga-ev-tag" type="text" class="ga-input code-mono" value="v1.0.0" autocomplete="off" spellcheck="false" />
+          </label>
+          <label class="ga-field">
+            <span class="ga-field-label">Changed files <span class="text-mute">(one per line)</span></span>
+            <textarea id="ga-ev-files" class="ga-input ga-textarea code-mono" rows="4" spellcheck="false" placeholder="src/app.ts&#10;docs/readme.md"></textarea>
+          </label>
+        </div>
+      </div>
+      <p class="caption px-4 py-2 text-mute">
+        Press <kbd class="ga-kbd">Esc</kbd> to release the editor. Nothing is uploaded.
+      </p>
+
+      <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
+        <div class="mb-3 flex items-center justify-between gap-3">
+          <span class="eyebrow">Decision</span>
+          <span id="ga-trig-summary" class="ga-summary code-mono text-mute" role="status" aria-live="polite"></span>
+        </div>
+        <div id="ga-trig-results" class="ga-results" aria-live="polite">
+          <p class="ga-empty body-sm text-mute">Load an example or paste a workflow, set an event, then Simulate to see which jobs run or are skipped — and why.</p>
+        </div>
+      </div>
+    </div>
+
+    {/* Footer: semantics version */}
+    <div class="flex items-center justify-between gap-3 border-t border-hairline px-4 py-2.5 sm:px-5">
+      <span class="caption text-mute">100% in your browser · no signup</span>
+      <span id="ga-version" class="caption text-mute code-mono"></span>
+    </div>
+  </div>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  .ga-tap { touch-action: manipulation; }
+  .ga-kbd { border: 1px solid currentColor; border-radius: 3px; padding: 0 4px; font-size: 0.85em; }
+
+  /* Tabs */
+  .ga-tab {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 9px 14px; border-radius: var(--radius-sm);
+    font-size: 14px; font-weight: 500; color: var(--color-mute);
+    background: transparent; cursor: pointer; touch-action: manipulation;
+    transition: color .15s ease, background-color .15s ease;
+    min-height: 44px;
+  }
+  .ga-tab:hover { color: var(--color-ink); background: var(--color-canvas-soft-2); }
+  .ga-tab.is-active { color: var(--color-ink); background: var(--color-canvas-soft-2); box-shadow: var(--shadow-hairline); }
+  .ga-tab:focus-visible { outline: 2px solid var(--color-link); outline-offset: 2px; }
+  .ga-tab-glyph { font-size: 12px; opacity: .8; }
+
+  /* Panels — class-driven so CodeMirror can re-measure on activate. */
+  .ga-panel { display: none; }
+  .ga-panel.is-active { display: block; }
+
+  /* Select + inputs */
+  .ga-select {
+    appearance: none; -webkit-appearance: none; height: 32px; min-width: 0; max-width: 320px;
+    padding: 0 32px 0 12px; border-radius: var(--radius-sm);
+    background: var(--color-canvas); color: var(--color-ink); box-shadow: var(--shadow-hairline);
+    font-size: 13px; line-height: 20px; cursor: pointer; text-overflow: ellipsis; touch-action: manipulation;
+  }
+  .ga-select:hover { box-shadow: inset 0 0 0 1px var(--color-hairline-strong); }
+  .ga-field { display: flex; flex-direction: column; gap: 6px; }
+  .ga-field-label { font-size: 12px; font-weight: 500; color: var(--color-body); }
+  .ga-input {
+    width: 100%; padding: 7px 10px; border-radius: var(--radius-sm);
+    background: var(--color-canvas); color: var(--color-ink); box-shadow: var(--shadow-hairline);
+    font-size: 13px; line-height: 20px;
+  }
+  .ga-input:focus-visible { outline: 2px solid var(--color-link); outline-offset: -1px; }
+  .ga-textarea { resize: vertical; min-height: 80px; }
+
+  /* Context preset chips on the dark bar */
+  .ga-preset {
+    padding: 2px 10px; border-radius: var(--radius-pill); font-size: 12px;
+    font-family: var(--font-mono); color: rgba(255,255,255,.72);
+    background: rgba(255,255,255,.08); cursor: pointer; touch-action: manipulation;
+    transition: background-color .15s ease, color .15s ease;
+  }
+  .ga-preset:hover { background: rgba(255,255,255,.16); color: #fff; }
+  .ga-preset:focus-visible { outline: 2px solid var(--color-link); outline-offset: 1px; }
+
+  /* CodeMirror dark host (mirrors PromqlExplainerPlayground) */
+  .ga-editor { overflow: hidden; }
+  .ga-editor :global(.cm-editor) { height: 100%; background: transparent; font-family: var(--font-mono); font-size: 13px; line-height: 20px; }
+  .ga-editor :global(.cm-editor.cm-focused) { outline: 2px solid var(--color-link); outline-offset: -2px; }
+  .ga-editor :global(.cm-scroller) { overflow: auto; max-height: 360px; font-family: var(--font-mono); scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.18) transparent; }
+  .ga-editor :global(.cm-scroller)::-webkit-scrollbar { width: 10px; height: 10px; }
+  .ga-editor :global(.cm-scroller)::-webkit-scrollbar-thumb { background: rgba(255,255,255,.16); border-radius: var(--radius-pill); border: 3px solid transparent; background-clip: content-box; }
+  .ga-editor :global(.cm-gutters) { background: transparent; border-right: 1px solid rgba(255,255,255,.08); }
+  .ga-editor :global(.cm-lineNumbers .cm-gutterElement) { color: rgba(255,255,255,.32); }
+  .ga-editor :global(.cm-content) { padding: 12px 0 14px; }
+  .ga-editor :global(.cm-line) { padding-inline: 4px; }
+
+  .ga-summary { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .ga-results { min-height: 44px; }
+
+  /* Result building blocks (runtime-injected → :global with explicit sizing) */
+  :global(.ga-verdict) {
+    display: flex; align-items: center; gap: 12px; padding: 14px 16px;
+    border-radius: var(--radius-md); background: var(--color-canvas); box-shadow: var(--shadow-hairline);
+    animation: ga-rise .18s ease both;
+  }
+  :global(.ga-verdict__badge) {
+    flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+    min-width: 64px; padding: 4px 12px; border-radius: var(--radius-pill);
+    font-weight: 600; font-size: 13px; letter-spacing: .02em;
+  }
+  :global(.ga-verdict__badge.is-true) { background: var(--color-success-soft); color: var(--color-success-deep); box-shadow: inset 0 0 0 1px var(--color-success); }
+  :global(.ga-verdict__badge.is-false) { background: var(--color-canvas-soft-2); color: var(--color-body); box-shadow: inset 0 0 0 1px var(--color-hairline-strong); }
+  :global(.ga-verdict__text) { min-width: 0; font-size: 14px; line-height: 21px; color: var(--color-ink); text-wrap: pretty; }
+  :global(.ga-rendered) { font-family: var(--font-mono); color: var(--color-ink); }
+
+  :global(.ga-warn) {
+    display: flex; gap: 10px; margin-top: 12px; padding: 12px 14px; border-radius: var(--radius-md);
+    background: var(--color-warning-soft, #fef3c7); box-shadow: inset 0 0 0 1px var(--color-warning, #f59e0b);
+    color: var(--color-warning-deep, #92400e); animation: ga-rise .18s ease both;
+  }
+  :global(.ga-warn.is-info) { background: var(--color-canvas); color: var(--color-body); box-shadow: inset 0 0 0 1px var(--color-hairline-strong); }
+  :global(.ga-warn__icon) { flex: 0 0 auto; width: 18px; height: 18px; margin-top: 1px; }
+  :global(.ga-warn__title) { font-size: 13px; font-weight: 600; line-height: 19px; }
+  :global(.ga-warn__body) { min-width: 0; font-size: 13px; line-height: 19px; }
+
+  :global(.ga-explanation) { margin-top: 12px; padding: 12px 14px; border-radius: var(--radius-md); background: var(--color-canvas); box-shadow: var(--shadow-hairline); font-size: 14px; line-height: 22px; color: var(--color-ink); text-wrap: pretty; }
+
+  :global(.ga-breakdown) { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; list-style: none; padding: 0; }
+  :global(.ga-part) { display: flex; gap: 12px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--color-canvas); box-shadow: var(--shadow-hairline); }
+  :global(.ga-part__token) { flex: 0 0 auto; max-width: 46%; align-self: flex-start; padding: 2px 8px; border-radius: var(--radius-sm); background: var(--color-canvas-soft-2); box-shadow: var(--shadow-hairline); font-family: var(--font-mono); font-size: 12.5px; line-height: 20px; color: var(--color-ink); white-space: pre-wrap; word-break: break-word; }
+  :global(.ga-part__meaning) { min-width: 0; flex: 1 1 auto; font-size: 13.5px; line-height: 21px; color: var(--color-body); text-wrap: pretty; }
+
+  /* Trigger results table */
+  :global(.ga-wf-banner) { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: var(--radius-md); font-size: 14px; line-height: 21px; animation: ga-rise .18s ease both; }
+  :global(.ga-wf-banner.is-yes) { background: var(--color-success-soft); color: var(--color-success-deep); box-shadow: inset 0 0 0 1px var(--color-success); }
+  :global(.ga-wf-banner.is-no) { background: var(--color-canvas-soft-2); color: var(--color-body); box-shadow: inset 0 0 0 1px var(--color-hairline-strong); }
+  :global(.ga-jobs) { margin-top: 12px; width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  :global(.ga-jobs th) { text-align: left; padding: 8px 10px; color: var(--color-mute); font-weight: 500; font-size: 12px; border-bottom: 1px solid var(--color-hairline); }
+  :global(.ga-jobs td) { padding: 10px; border-bottom: 1px solid var(--color-hairline); vertical-align: top; color: var(--color-body); text-wrap: pretty; }
+  :global(.ga-jobs td:first-child) { font-family: var(--font-mono); color: var(--color-ink); white-space: nowrap; }
+  :global(.ga-chip) { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: var(--radius-pill); font-weight: 600; font-size: 12px; white-space: nowrap; }
+  :global(.ga-chip.runs) { background: var(--color-success-soft); color: var(--color-success-deep); box-shadow: inset 0 0 0 1px var(--color-success); }
+  :global(.ga-chip.skipped) { background: var(--color-canvas-soft-2); color: var(--color-body); box-shadow: inset 0 0 0 1px var(--color-hairline-strong); }
+  :global(.ga-chip.not-evaluated) { background: var(--color-canvas-soft-2); color: var(--color-mute); }
+  :global(.ga-jobs-wrap) { overflow-x: auto; }
+
+  :global(.ga-error) { display: flex; gap: 10px; padding: 12px 14px; border-radius: var(--radius-md); background: var(--color-error-soft); box-shadow: inset 0 0 0 1px var(--color-error); color: var(--color-error-deep); }
+  :global(.ga-error__detail) { margin-top: 2px; font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+  :global(.ga-empty) { display: flex; align-items: center; justify-content: center; min-height: 64px; padding: 20px 16px; text-align: center; text-wrap: pretty; border-radius: var(--radius-md); background: var(--color-canvas); box-shadow: var(--shadow-hairline); }
+
+  @keyframes ga-rise { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.ga-verdict), :global(.ga-warn), :global(.ga-explanation), :global(.ga-wf-banner) { animation: none; }
+  }
+  .is-busy { opacity: .65; pointer-events: none; cursor: progress; }
+</style>
+
+<script>
+  import { EditorState } from '@codemirror/state';
+  import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
+  import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+  import { yaml as yamlLang } from '@codemirror/lang-yaml';
+  import { oneDark } from '@codemirror/theme-one-dark';
+  import { escapeHtml } from '../lib/escape-html';
+
+  type EngineModule = typeof import('../lib/github-actions-expression-tester/engine');
+  type ExamplesModule = typeof import('../lib/github-actions-expression-tester/examples');
+
+  const ROOT_SEL = '.ga-pg';
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.gaWired === 'true') return;
+      root.dataset.gaWired = 'true';
+      void init(root);
+    });
+  }
+
+  function el<T extends HTMLElement>(root: ParentNode, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  const escAndBlur = { key: 'Escape', run: (v: EditorView) => { v.contentDOM.blur(); return true; } };
+  const baseTheme = EditorView.theme({
+    '&': { color: '#e6e6e6' },
+    '.cm-content': { caretColor: '#e6e6e6' },
+    '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
+    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: 'rgba(0,112,243,.32)' },
+    '.cm-activeLine': { backgroundColor: 'rgba(255,255,255,.035)' },
+    '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+  });
+
+  function makeEditor(host: HTMLElement, doc: string, opts: { yaml?: boolean } = {}): EditorView {
+    const ext = [
+      lineNumbers(), history(), highlightActiveLine(), EditorView.lineWrapping,
+      keymap.of([escAndBlur, ...defaultKeymap, ...historyKeymap, indentWithTab]),
+      oneDark, baseTheme,
+    ];
+    if (opts.yaml) ext.push(yamlLang());
+    return new EditorView({ state: EditorState.create({ doc, extensions: ext }), parent: host });
+  }
+  const setDoc = (v: EditorView, doc: string) => v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: doc } });
+
+  /* ── share-link codec ──────────────────────────────────────────────────── */
+  function encodeState(obj: unknown): string {
+    try { return btoa(encodeURIComponent(JSON.stringify(obj))); } catch { return ''; }
+  }
+  function decodeState(s: string): Record<string, unknown> | null {
+    try { return JSON.parse(decodeURIComponent(atob(s))) as Record<string, unknown>; } catch { return null; }
+  }
+
+  const WARN_SVG = '<svg class="ga-warn__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+
+  async function init(root: HTMLElement): Promise<void> {
+    let engine: EngineModule;
+    let examples: ExamplesModule;
+    try {
+      [engine, examples] = await Promise.all([
+        import('../lib/github-actions-expression-tester/engine'),
+        import('../lib/github-actions-expression-tester/examples'),
+      ]);
+    } catch (err) {
+      console.error('[GHA playground] engine failed to load', err);
+      return;
+    }
+
+    // Version label.
+    const ver = el<HTMLElement>(root, '#ga-version');
+    if (ver) ver.textContent = 'semantics: ' + engine.GHA_SEMANTICS_VERSION;
+
+    // ── Editors ──
+    const exprHost = el<HTMLElement>(root, '#ga-expr-editor');
+    const ctxHost = el<HTMLElement>(root, '#ga-ctx-editor');
+    const wfHost = el<HTMLElement>(root, '#ga-wf-editor');
+    if (!exprHost || !ctxHost || !wfHost) return;
+
+    const exprView = makeEditor(exprHost, examples.expressionExamples[0]?.expression ?? '');
+    const ctxView = makeEditor(ctxHost, JSON.stringify(engine.defaultContext(), null, 2));
+    const wfView = makeEditor(wfHost, examples.triggerExamples[0]?.workflow ?? '', { yaml: true });
+
+    // ── Tabs ──
+    const tabExpr = el<HTMLButtonElement>(root, '#ga-tab-expr');
+    const tabTrig = el<HTMLButtonElement>(root, '#ga-tab-trig');
+    const panelExpr = el<HTMLElement>(root, '#ga-panel-expr');
+    const panelTrig = el<HTMLElement>(root, '#ga-panel-trig');
+
+    function activate(which: 'expr' | 'trig'): void {
+      const isExpr = which === 'expr';
+      tabExpr?.classList.toggle('is-active', isExpr);
+      tabTrig?.classList.toggle('is-active', !isExpr);
+      tabExpr?.setAttribute('aria-selected', String(isExpr));
+      tabTrig?.setAttribute('aria-selected', String(!isExpr));
+      tabExpr && (tabExpr.tabIndex = isExpr ? 0 : -1);
+      tabTrig && (tabTrig.tabIndex = isExpr ? -1 : 0);
+      // Visibility is driven solely by the is-active class (NOT the hidden
+      // attribute) — Tailwind v4's `[hidden]{display:none!important}` would
+      // otherwise win over the class and leave CodeMirror measuring at 0 height.
+      panelExpr?.classList.toggle('is-active', isExpr);
+      panelTrig?.classList.toggle('is-active', !isExpr);
+      // CodeMirror must re-measure once its panel is visible.
+      requestAnimationFrame(() => {
+        (isExpr ? [exprView, ctxView] : [wfView]).forEach((v) => v.requestMeasure());
+      });
+    }
+    tabExpr?.addEventListener('click', () => activate('expr'));
+    tabTrig?.addEventListener('click', () => activate('trig'));
+    root.addEventListener('keydown', (e) => {
+      if (e.target !== tabExpr && e.target !== tabTrig) return;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const goTrig = e.target === tabExpr;
+        activate(goTrig ? 'trig' : 'expr');
+        (goTrig ? tabTrig : tabExpr)?.focus();
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        activate('expr');
+        tabExpr?.focus();
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        activate('trig');
+        tabTrig?.focus();
+      }
+    });
+
+    // ── Examples ──
+    const exprSelect = el<HTMLSelectElement>(root, '#ga-expr-example');
+    if (exprSelect) {
+      exprSelect.innerHTML = '';
+      examples.expressionExamples.forEach((ex, i) => {
+        const o = document.createElement('option'); o.value = String(i); o.textContent = ex.label; exprSelect.appendChild(o);
+      });
+      exprSelect.value = '0';
+      exprSelect.addEventListener('change', () => {
+        const ex = examples.expressionExamples[Number(exprSelect.value)];
+        if (ex) { setDoc(exprView, ex.expression); }
+      });
+    }
+    const trigSelect = el<HTMLSelectElement>(root, '#ga-trig-example');
+    if (trigSelect) {
+      trigSelect.innerHTML = '';
+      examples.triggerExamples.forEach((ex, i) => {
+        const o = document.createElement('option'); o.value = String(i); o.textContent = ex.label; trigSelect.appendChild(o);
+      });
+      trigSelect.value = '0';
+      trigSelect.addEventListener('change', () => {
+        const ex = examples.triggerExamples[Number(trigSelect.value)];
+        if (ex) { setDoc(wfView, ex.workflow); applyEventToForm(ex.event); }
+      });
+    }
+
+    // ── Context presets ──
+    root.querySelectorAll<HTMLButtonElement>('.ga-preset').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const ctx = engine.defaultContext();
+        const preset = btn.dataset.preset;
+        const gh = (ctx.github ?? {}) as Record<string, unknown>;
+        if (preset === 'pull_request') {
+          gh.event_name = 'pull_request'; gh.ref = 'refs/pull/42/merge'; gh.ref_name = '42/merge'; gh.base_ref = 'main'; gh.head_ref = 'feature/x';
+        } else if (preset === 'tag') {
+          gh.event_name = 'push'; gh.ref = 'refs/tags/v1.2.3'; gh.ref_name = 'v1.2.3'; gh.ref_type = 'tag';
+        } else {
+          gh.event_name = 'push'; gh.ref = 'refs/heads/main'; gh.ref_name = 'main'; gh.ref_type = 'branch';
+        }
+        ctx.github = gh as never;
+        setDoc(ctxView, JSON.stringify(ctx, null, 2));
+      });
+    });
+
+    // ── Event form ──
+    const evEvent = el<HTMLSelectElement>(root, '#ga-ev-event');
+    const evBranch = el<HTMLInputElement>(root, '#ga-ev-branch');
+    const evTag = el<HTMLInputElement>(root, '#ga-ev-tag');
+    const evFiles = el<HTMLTextAreaElement>(root, '#ga-ev-files');
+    const fieldBranch = el<HTMLElement>(root, '#ga-field-branch');
+    const fieldTag = el<HTMLElement>(root, '#ga-field-tag');
+    function syncEventFields(): void {
+      const isTag = evEvent?.value === 'tag';
+      fieldTag?.classList.toggle('hidden', !isTag);
+      fieldBranch?.classList.toggle('hidden', isTag);
+    }
+    evEvent?.addEventListener('change', syncEventFields);
+    syncEventFields();
+    function applyEventToForm(ev: { event: string; branch?: string; tag?: string; changedFiles?: string[] }): void {
+      if (evEvent) evEvent.value = ev.tag ? 'tag' : ev.event;
+      if (evBranch && ev.branch) evBranch.value = ev.branch;
+      if (evTag && ev.tag) evTag.value = ev.tag;
+      if (evFiles) evFiles.value = (ev.changedFiles ?? []).join('\n');
+      syncEventFields();
+    }
+    function readEvent(): { event: string; branch?: string; tag?: string; changedFiles?: string[] } {
+      const isTag = evEvent?.value === 'tag';
+      const files = (evFiles?.value ?? '').split('\n').map((s) => s.trim()).filter(Boolean);
+      return {
+        event: isTag ? 'push' : (evEvent?.value ?? 'push'),
+        branch: isTag ? undefined : (evBranch?.value || 'main'),
+        tag: isTag ? (evTag?.value || 'v1.0.0') : undefined,
+        changedFiles: files.length ? files : undefined,
+      };
+    }
+
+    // ── Result rendering ──
+    const exprResults = el<HTMLElement>(root, '#ga-expr-results')!;
+    const exprSummary = el<HTMLElement>(root, '#ga-expr-summary')!;
+    const trigResults = el<HTMLElement>(root, '#ga-trig-results')!;
+    const trigSummary = el<HTMLElement>(root, '#ga-trig-summary')!;
+
+    function warnHtml(w: { id: string; severity: string; message: string }): string {
+      const isInfo = w.severity === 'info';
+      const title = w.id === 'literal-if-always-true' ? 'Always-true footgun (runner#1173)' : (isInfo ? 'Note' : 'Warning');
+      return `<div class="ga-warn ${isInfo ? 'is-info' : ''}" role="${isInfo ? 'note' : 'alert'}">${WARN_SVG}<div class="ga-warn__body"><p class="ga-warn__title">${escapeHtml(title)}</p><p>${escapeHtml(w.message)}</p></div></div>`;
+    }
+
+    function runExpr(): void {
+      const raw = exprView.state.doc.toString();
+      const parsed = engine.parseContext(ctxView.state.doc.toString());
+      let result;
+      try { result = engine.evaluateIfCondition(raw, parsed.ctx); }
+      catch (err) { exprResults.innerHTML = `<div class="ga-error" role="alert">${WARN_SVG}<div><p class="ga-warn__title">Could not evaluate</p><p class="ga-error__detail">${escapeHtml(String(err))}</p></div></div>`; return; }
+
+      exprSummary.textContent = result.truthy ? 'true' : 'false';
+      const badge = `<span class="ga-verdict__badge ${result.truthy ? 'is-true' : 'is-false'}">${result.truthy ? 'TRUE' : 'FALSE'}</span>`;
+      const renderedTxt = result.value === null ? 'null (an empty string)' : result.rendered;
+      const verdict = `<div class="ga-verdict">${badge}<div class="ga-verdict__text">An <code class="code-mono">if:</code> using this would <strong>${result.truthy ? 'RUN' : 'SKIP'}</strong> the step. Returned value: <span class="ga-rendered">${escapeHtml(renderedTxt)}</span>.</div></div>`;
+      const ctxErr = parsed.error ? warnHtml({ id: 'ctx', severity: 'info', message: parsed.error + ' Using the default context.' }) : '';
+      const warns = result.warnings.map(warnHtml).join('');
+      const explanation = `<p class="ga-explanation">${escapeHtml(result.explanation)}</p>`;
+      const breakdown = result.breakdown.length
+        ? `<ul class="ga-breakdown">${result.breakdown.map((p) => `<li class="ga-part"><code class="ga-part__token">${escapeHtml(p.token)}</code><span class="ga-part__meaning">${escapeHtml(p.meaning)}</span></li>`).join('')}</ul>`
+        : '';
+      exprResults.innerHTML = verdict + ctxErr + warns + explanation + breakdown;
+    }
+
+    function runSim(): void {
+      const wf = wfView.state.doc.toString();
+      const ev = readEvent();
+      let result;
+      try { result = engine.simulateTriggers(wf, ev as never); }
+      catch (err) { trigResults.innerHTML = `<div class="ga-error" role="alert">${WARN_SVG}<div><p class="ga-warn__title">Could not simulate</p><p class="ga-error__detail">${escapeHtml(String(err))}</p></div></div>`; return; }
+
+      if (result.error) {
+        trigSummary.textContent = 'error';
+        trigResults.innerHTML = `<div class="ga-error" role="alert">${WARN_SVG}<div><p class="ga-warn__title">Workflow could not be parsed</p><p class="ga-error__detail">${escapeHtml(result.error)}</p></div></div>`;
+        return;
+      }
+      const runs = result.jobs.filter((j) => j.decision === 'runs').length;
+      trigSummary.textContent = `${runs}/${result.jobs.length} run`;
+      const banner = `<div class="ga-wf-banner ${result.workflowTriggered ? 'is-yes' : 'is-no'}">${result.workflowTriggered ? '✓' : '✕'} ${escapeHtml(result.workflowReason)}</div>`;
+      const warns = result.warnings.map(warnHtml).join('');
+      const rows = result.jobs.map((j) => {
+        const decClass = j.decision === 'runs' || j.decision === 'skipped' || j.decision === 'not-evaluated' ? j.decision : 'not-evaluated';
+        const decLabel = j.decision === 'runs' ? 'RUNS' : j.decision === 'skipped' ? 'SKIPPED' : 'NOT RUN';
+        return `<tr><td>${escapeHtml(j.jobId)}</td><td><span class="ga-chip ${decClass}">${decLabel}</span></td><td>${escapeHtml(j.reason)}</td></tr>`;
+      }).join('');
+      const table = result.jobs.length
+        ? `<div class="ga-jobs-wrap"><table class="ga-jobs"><thead><tr><th>Job</th><th>Decision</th><th>Reason</th></tr></thead><tbody>${rows}</tbody></table></div>`
+        : '<p class="ga-empty body-sm text-mute">No jobs found in this workflow.</p>';
+      trigResults.innerHTML = banner + warns + table;
+    }
+
+    // ── Wire actions ──
+    el<HTMLButtonElement>(root, '#ga-eval')?.addEventListener('click', runExpr);
+    el<HTMLButtonElement>(root, '#ga-sim')?.addEventListener('click', runSim);
+    root.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        if (panelExpr?.classList.contains('is-active')) runExpr(); else runSim();
+      }
+    });
+
+    // ── Share ──
+    function wireShare(id: string, build: () => Record<string, unknown>): void {
+      const btn = el<HTMLButtonElement>(root, id);
+      btn?.addEventListener('click', async () => {
+        const hash = encodeState(build());
+        const url = `${location.origin}${location.pathname}#s=${hash}`;
+        try { await navigator.clipboard.writeText(url); } catch { /* ignore */ }
+        const label = btn.querySelector('.ga-share-label');
+        if (label) { const prev = label.textContent; label.textContent = 'Copied!'; setTimeout(() => { label.textContent = prev; }, 1400); }
+        // NB: window.history — `history` (unprefixed) is the CodeMirror extension import.
+        window.history.replaceState(null, '', `#s=${hash}`);
+      });
+    }
+    wireShare('#ga-share-expr', () => ({ t: 'expr', e: exprView.state.doc.toString(), c: ctxView.state.doc.toString() }));
+    wireShare('#ga-share-trig', () => ({ t: 'trig', w: wfView.state.doc.toString(), v: readEvent() }));
+
+    // ── Restore from hash ──
+    if (location.hash.startsWith('#s=')) {
+      const st = decodeState(location.hash.slice(3));
+      if (st && st.t === 'expr') {
+        if (typeof st.e === 'string') setDoc(exprView, st.e);
+        if (typeof st.c === 'string') setDoc(ctxView, st.c);
+        activate('expr'); runExpr();
+      } else if (st && st.t === 'trig') {
+        if (typeof st.w === 'string') setDoc(wfView, st.w);
+        if (st.v) applyEventToForm(st.v as never);
+        activate('trig'); runSim();
+      }
+    }
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

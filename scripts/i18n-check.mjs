@@ -22,7 +22,13 @@ const targets = only ? [only] : LOCALES;
 /** Top-level English tool/page files that should be mirrored per locale. */
 function englishPages() {
   return readdirSync(PAGES)
-    .filter((f) => f.endsWith('.astro') && f !== '404.astro' && f !== 'alertlint-wasm-demo.astro')
+    .filter(
+      (f) =>
+        f.endsWith('.astro') &&
+        f !== '404.astro' &&
+        f !== '500.astro' && // noindex/noAlternates error page — like 404, not localized
+        f !== 'alertlint-wasm-demo.astro',
+    )
     .filter((f) => !f.startsWith('[')); // skip dynamic routes
 }
 

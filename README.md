@@ -27,7 +27,7 @@ your data to go.
 | :--- | :--- |
 | **Observability** | AlertLint (Loki alert-rule tester), PromQL Explainer, LogQL ↔ PromQL Helper |
 | **Security** | JWT Decoder, Hash Generator, CVE-Ignore Converter |
-| **CI/CD** | GitHub Actions Validator, `.env.example` Checker |
+| **CI/CD** | GitHub Actions Validator, GitHub Actions Expression & Trigger Tester, `.env.example` Checker |
 | **Scheduling** | Cron Expression Tester, Cron → systemd Converter |
 | **Networking** | Subnet Calculator, CIDR / Subnet Checker, IP Address Converter, Subnet Splitter, MAC Formatter, Reverse DNS / PTR Helper |
 | **Encoding** | Base64 Encoder / Decoder, Timestamp Converter |
