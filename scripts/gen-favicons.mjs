@@ -11,8 +11,9 @@ const svg = await readFile(join(pub, 'favicon.svg'));
 const png = (size) =>
   sharp(svg, { density: 384 }).resize(size, size, { fit: 'contain' }).png().toBuffer();
 
-// Standalone PNGs (Apple touch + PWA manifest icons).
+// Standalone PNGs (favicon, Apple touch + PWA manifest icons).
 for (const [name, size] of [
+  ['favicon-96x96.png', 96],
   ['apple-touch-icon.png', 180],
   ['icon-192.png', 192],
   ['icon-512.png', 512],
