@@ -1,0 +1,861 @@
+---
+/**
+ * DockerRunToComposePlayground — the interactive Docker Run ↔ Compose island.
+ *
+ * A no-framework, server-rendered shell hydrated by a single module <script>
+ * that lazily boots ONE CodeMirror 6 editor (YAML highlighting) plus a mode
+ * toggle (run → compose | compose → run), an example picker, a Convert action,
+ * a read-only output pane, and Copy buttons. It runs entirely client-side and
+ * is fully usable offline once loaded.
+ *
+ * Runtime contract (imported lazily in the script):
+ *   ../lib/docker-run-to-compose/engine →
+ *     runToCompose(cmd: string)  => { ok, yaml?, warnings, error? }
+ *     composeToRun(yaml: string) => { ok, command?, warnings, error? }
+ *   ../lib/docker-run-to-compose/examples →
+ *     examples: Array<{ id; label; run; compose }>
+ *
+ * The dark editor + output surfaces follow the code-editor-mockup treatment;
+ * warnings use the semantic warning token, errors the error token. All
+ * runtime-injected markup is styled via :global(...) because Astro scoped
+ * styles do not reach innerHTML-injected nodes.
+ */
+---
+
+<section class="drc" aria-label="Docker Run to Compose converter playground">
+  <div class="card shadow-float rounded-lg overflow-hidden">
+    {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+    <div
+      class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5"
+    >
+      <div class="flex min-w-0 flex-wrap items-center gap-3">
+        {/* Mode toggle — mutually-exclusive direction switch (radio group). */}
+        <div
+          class="drc-modes inline-flex shrink-0 rounded-md p-0.5"
+          role="radiogroup"
+          aria-label="Conversion direction"
+        >
+          <button
+            id="drc-mode-run"
+            type="button"
+            role="radio"
+            aria-checked="true"
+            tabindex="0"
+            class="drc-mode code-mono"
+          >
+            run → compose
+          </button>
+          <button
+            id="drc-mode-compose"
+            type="button"
+            role="radio"
+            aria-checked="false"
+            tabindex="-1"
+            class="drc-mode code-mono"
+          >
+            compose → run
+          </button>
+        </div>
+
+        <div class="flex min-w-0 items-center gap-2">
+          <label class="eyebrow shrink-0" for="drc-example">Example</label>
+          <div class="drc-select-wrap relative min-w-0">
+            <select id="drc-example" class="drc-select code-mono" autocomplete="off">
+              <option value="">Loading examples…</option>
+            </select>
+            <svg
+              class="drc-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M4 6l4 4 4-4"></path>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex shrink-0 flex-wrap items-center gap-2">
+        <span class="caption text-mute hidden items-center sm:inline-flex">⌘/Ctrl + Enter</span>
+        <button id="drc-run" type="button" class="btn btn-primary btn-sm drc-tap" title="Convert (⌘/Ctrl + Enter)" aria-keyshortcuts="Meta+Enter Control+Enter">
+          <svg
+            class="drc-run-icon h-4 w-4 shrink-0"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M2.5 4.5l4 3.5-4 3.5M8 12.5h5.5"></path>
+          </svg>
+          <span class="drc-run-label">Convert</span>
+        </button>
+      </div>
+    </div>
+
+    {/* ── Input editor (dark mockup surface) ───────────────────────────── */}
+    <div class="drc-pane flex min-w-0 flex-col bg-inverse">
+      <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
+        <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+          <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+          <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+          <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+        </span>
+        <span id="drc-input-name" class="code-mono text-white/45">docker run</span>
+        <span class="code-mono text-white/30 ml-auto">input</span>
+      </div>
+      <p class="body-sm text-mute px-4 pt-2">Runs entirely in your browser — nothing is uploaded.</p>
+      <div id="drc-editor" class="drc-editor min-h-56" aria-label="Converter input"></div>
+      <p class="text-xs text-mute px-4 pb-2 pt-1">
+        Tip: press <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd>
+        to release keyboard focus from the editor.
+      </p>
+    </div>
+
+    {/* ── Output pane ──────────────────────────────────────────────────── */}
+    <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <span class="eyebrow" id="drc-output-label">Output</span>
+        <div class="flex items-center gap-3">
+          <span id="drc-status" class="drc-status code-mono text-mute" role="status" aria-live="polite"></span>
+          <button
+            id="drc-copy"
+            type="button"
+            class="btn btn-secondary btn-sm drc-tap"
+            data-default-label="Copy"
+          >
+            <svg
+              class="h-4 w-4 shrink-0"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="5.5" y="5.5" width="8" height="8" rx="1.5"></rect>
+              <path d="M3.5 10.5h-.5a1.5 1.5 0 0 1-1.5-1.5v-6A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5"></path>
+            </svg>
+            <span class="drc-copy-label">Copy</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="drc-output" class="drc-output" aria-live="polite" aria-atomic="false">
+        <p class="drc-empty body-sm text-mute">
+          Pick a mode, load an example or paste your own, then convert to see the result here.
+        </p>
+      </div>
+
+      <div id="drc-warnings" class="drc-warnings" role="status" aria-live="polite" aria-atomic="false"></div>
+    </div>
+  </div>
+
+  <span id="drc-announce" class="sr-only" role="status" aria-live="polite"></span>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  .drc-tap {
+    touch-action: manipulation;
+  }
+
+  /* Mode toggle — segmented control on a soft track. */
+  .drc-modes {
+    background: var(--color-canvas-soft-2);
+    box-shadow: var(--shadow-hairline);
+  }
+  .drc-mode {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--color-mute);
+    font-size: 12px;
+    line-height: 16px;
+    padding: 5px 10px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    touch-action: manipulation;
+    transition:
+      background 0.15s ease,
+      color 0.15s ease;
+  }
+  .drc-mode:hover {
+    color: var(--color-body);
+  }
+  .drc-mode[aria-checked='true'] {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+  }
+
+  /* The example picker — matches the in-app form-control scale. */
+  .drc-select {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    height: 32px;
+    min-width: 0;
+    max-width: 280px;
+    padding: 0 32px 0 12px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 13px;
+    line-height: 20px;
+    cursor: pointer;
+    text-overflow: ellipsis;
+    touch-action: manipulation;
+    transition: box-shadow 0.15s ease;
+  }
+  @media (min-width: 640px) {
+    .drc-select {
+      width: auto;
+      min-width: 200px;
+    }
+  }
+  .drc-select:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .drc-select:disabled {
+    cursor: not-allowed;
+    color: var(--color-mute);
+    opacity: 0.7;
+  }
+  .drc-select-caret {
+    transition: color 0.15s ease;
+  }
+  .drc-select-wrap:hover .drc-select-caret {
+    color: var(--color-body);
+  }
+
+  /* CodeMirror host — fills the dark pane, scrolls internally. */
+  .drc-editor {
+    overflow: hidden;
+    padding-inline: 4px;
+  }
+  .drc-editor :global(.cm-editor) {
+    height: 100%;
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .drc-editor :global(.cm-editor.cm-focused) {
+    outline: 2px solid var(--color-link);
+    outline-offset: -2px;
+  }
+  .drc-editor :global(.cm-scroller) {
+    overflow: auto;
+    max-height: 420px;
+    font-family: var(--font-mono);
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  }
+  .drc-editor :global(.cm-scroller)::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .drc-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.16);
+    border-radius: var(--radius-pill);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  .drc-editor :global(.cm-scroller)::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.28);
+    background-clip: content-box;
+  }
+  .drc-editor :global(.cm-gutters) {
+    background: transparent;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .drc-editor :global(.cm-lineNumbers .cm-gutterElement) {
+    color: rgba(255, 255, 255, 0.32);
+  }
+  .drc-editor :global(.cm-content) {
+    padding: 14px 0 16px;
+  }
+  .drc-editor :global(.cm-line) {
+    padding-inline: 4px;
+  }
+
+  .drc-status {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .drc-output {
+    min-height: 44px;
+  }
+
+  /* The result code block — a dark mockup surface mirroring the input pane. */
+  :global(.drc-result) {
+    border-radius: var(--radius-md);
+    background: var(--color-inverse);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+    animation: drc-rise 0.18s ease both;
+  }
+  :global(.drc-result__bar) {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  :global(.drc-result__dot) {
+    width: 9px;
+    height: 9px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.15);
+  }
+  :global(.drc-result__name) {
+    margin-left: 4px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.45);
+  }
+  :global(.drc-result__pre) {
+    margin: 0;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+    color: #e6e6e6;
+    white-space: pre;
+    tab-size: 2;
+  }
+
+  /* Error banner. */
+  :global(.drc-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+    animation: drc-rise 0.18s ease both;
+  }
+  :global(.drc-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.drc-error__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.drc-error__detail) {
+    margin-top: 2px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 18px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* Warnings list (non-fatal notes). */
+  .drc-warnings:empty {
+    display: none;
+  }
+  .drc-warnings {
+    margin-top: 12px;
+  }
+  :global(.drc-warn) {
+    display: flex;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    background: var(--color-warning-soft);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-warning-deep);
+    animation: drc-rise 0.18s ease both;
+  }
+  :global(.drc-warn + .drc-warn) {
+    margin-top: 8px;
+  }
+  :global(.drc-warn__icon) {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    margin-top: 1px;
+  }
+  :global(.drc-warn__text) {
+    font-size: 13px;
+    line-height: 18px;
+    word-break: break-word;
+    text-wrap: pretty;
+  }
+  :global(.drc-warn code) {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: var(--color-canvas-soft-2);
+    padding: 1px 5px;
+    border-radius: var(--radius-xs);
+    color: var(--color-ink);
+  }
+
+  :global(.drc-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+
+  @keyframes drc-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.drc-result),
+    :global(.drc-error),
+    :global(.drc-warn) {
+      animation: none;
+    }
+  }
+
+  .is-busy {
+    opacity: 0.65;
+    pointer-events: none;
+    cursor: progress;
+  }
+</style>
+
+<script>
+  import { EditorState } from '@codemirror/state';
+  import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
+  import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+  import { yaml } from '@codemirror/lang-yaml';
+  import { oneDark } from '@codemirror/theme-one-dark';
+  import { escapeHtml } from '../lib/escape-html';
+
+  /* ---- Types mirrored from the engine contract (structural, not imported). -- */
+  type RunResult = { ok: boolean; yaml?: string; warnings?: string[]; error?: string };
+  type ComposeResult = { ok: boolean; command?: string; warnings?: string[]; error?: string };
+
+  type EngineModule = {
+    runToCompose: (cmd: string) => RunResult;
+    composeToRun: (yamlText: string) => ComposeResult;
+  };
+  type ExampleRaw = Record<string, unknown>;
+  type Example = { id: string; label: string; run: string; compose: string };
+  type Mode = 'run' | 'compose';
+
+  const ROOT_SEL = '.drc';
+  const COPIED_RESET_MS = 1800;
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.drcWired === 'true') return;
+      root.dataset.drcWired = 'true';
+      void init(root);
+    });
+  }
+
+  /* ---- Small helpers -------------------------------------------------------- */
+
+  function pick(obj: ExampleRaw, keys: string[]): string {
+    for (const k of keys) {
+      const v = obj[k];
+      if (typeof v === 'string' && v.length > 0) return v;
+    }
+    return '';
+  }
+
+  function normaliseExamples(raw: unknown): Example[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((item, i) => {
+      const o = (item ?? {}) as ExampleRaw;
+      return {
+        id: pick(o, ['id', 'slug', 'key']) || `example-${i + 1}`,
+        label: pick(o, ['label', 'name', 'title']) || `Example ${i + 1}`,
+        run: pick(o, ['run', 'command', 'cmd']),
+        compose: pick(o, ['compose', 'yaml', 'service']),
+      };
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  /** Render warning text, escaping HTML but rendering `code` spans inline. */
+  function warnHtml(text: string): string {
+    return escapeHtml(text).replace(/`([^`]+)`/g, (_m, code: string) => `<code>${code}</code>`);
+  }
+
+  /* ---- Icons (decorative) --------------------------------------------------- */
+
+  const ICON_ALERT =
+    '<svg class="drc-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const ICON_WARN =
+    '<svg class="drc-warn__icon" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+
+  /* ---- Editor factory ------------------------------------------------------- */
+
+  function makeEditor(host: HTMLElement, doc: string): EditorView {
+    const state = EditorState.create({
+      doc,
+      extensions: [
+        lineNumbers(),
+        history(),
+        highlightActiveLine(),
+        yaml(),
+        oneDark,
+        EditorView.lineWrapping,
+        keymap.of([
+          ...defaultKeymap,
+          ...historyKeymap,
+          indentWithTab,
+          { key: 'Escape', run: (view) => { view.contentDOM.blur(); return true; } },
+        ]),
+        EditorView.theme({
+          '&': { color: '#e6e6e6' },
+          '.cm-content': { caretColor: '#e6e6e6' },
+          '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
+          '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection':
+            { backgroundColor: 'rgba(0, 112, 243, 0.32)' },
+          '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
+          '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+        }),
+      ],
+    });
+    return new EditorView({ state, parent: host });
+  }
+
+  function setEditorDoc(view: EditorView, doc: string): void {
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
+    view.requestMeasure();
+  }
+
+  /* ---- Result rendering ----------------------------------------------------- */
+
+  function renderEmpty(output: HTMLElement, warnings: HTMLElement, status: HTMLElement): void {
+    status.textContent = '';
+    status.classList.remove('text-error');
+    status.classList.add('text-mute');
+    output.innerHTML =
+      '<p class="drc-empty body-sm text-mute">Pick a mode, load an example or paste your own, then convert to see the result here.</p>';
+    warnings.innerHTML = '';
+  }
+
+  function renderError(
+    output: HTMLElement,
+    warnings: HTMLElement,
+    status: HTMLElement,
+    message: string,
+  ): void {
+    status.textContent = 'Error';
+    status.classList.add('text-error');
+    status.classList.remove('text-mute');
+    output.innerHTML =
+      '<div class="drc-error" role="alert">' +
+      ICON_ALERT +
+      '<div><p class="drc-error__title">Could not convert</p>' +
+      `<p class="drc-error__detail">${escapeHtml(message)}</p></div></div>`;
+    warnings.innerHTML = '';
+  }
+
+  function renderResult(
+    output: HTMLElement,
+    warningsBox: HTMLElement,
+    status: HTMLElement,
+    name: string,
+    code: string,
+    warnings: string[],
+  ): void {
+    const dots = '<span class="drc-result__dot"></span>'.repeat(3);
+    output.innerHTML =
+      '<div class="drc-result">' +
+      `<div class="drc-result__bar">${dots}<span class="drc-result__name">${escapeHtml(name)}</span></div>` +
+      `<pre class="drc-result__pre"><code>${escapeHtml(code)}</code></pre>` +
+      '</div>';
+
+    if (warnings.length > 0) {
+      status.textContent = `${warnings.length} ${warnings.length === 1 ? 'note' : 'notes'}`;
+      status.classList.remove('text-error');
+      status.classList.add('text-mute');
+      warningsBox.innerHTML = warnings
+        .map(
+          (w) =>
+            '<div class="drc-warn">' + ICON_WARN + `<p class="drc-warn__text">${warnHtml(w)}</p></div>`,
+        )
+        .join('');
+    } else {
+      status.textContent = 'Converted';
+      status.classList.remove('text-error');
+      status.classList.add('text-mute');
+      warningsBox.innerHTML = '';
+    }
+  }
+
+  /* ---- Clipboard ------------------------------------------------------------ */
+
+  async function copyText(text: string): Promise<boolean> {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      /* fall through */
+    }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'absolute';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /* ---- Instance init -------------------------------------------------------- */
+
+  async function init(root: HTMLElement): Promise<void> {
+    const editorHost = el<HTMLElement>(root, '#drc-editor');
+    const select = el<HTMLSelectElement>(root, '#drc-example');
+    const runBtn = el<HTMLButtonElement>(root, '#drc-run');
+    const copyBtn = el<HTMLButtonElement>(root, '#drc-copy');
+    const outputBox = el<HTMLElement>(root, '#drc-output');
+    const warningsBox = el<HTMLElement>(root, '#drc-warnings');
+    const statusEl = el<HTMLElement>(root, '#drc-status');
+    const announce = el<HTMLElement>(root, '#drc-announce');
+    const modeRunBtn = el<HTMLButtonElement>(root, '#drc-mode-run');
+    const modeComposeBtn = el<HTMLButtonElement>(root, '#drc-mode-compose');
+    const inputName = el<HTMLElement>(root, '#drc-input-name');
+    const outputLabel = el<HTMLElement>(root, '#drc-output-label');
+
+    if (
+      !editorHost || !select || !runBtn || !copyBtn || !outputBox || !warningsBox ||
+      !statusEl || !modeRunBtn || !modeComposeBtn || !inputName || !outputLabel
+    ) {
+      return;
+    }
+
+    let engine: EngineModule;
+    let examples: Example[] = [];
+    try {
+      const [engineMod, examplesMod] = await Promise.all([
+        import('../lib/docker-run-to-compose/engine'),
+        import('../lib/docker-run-to-compose/examples'),
+      ]);
+      engine = engineMod as unknown as EngineModule;
+      examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+    } catch (err) {
+      renderError(outputBox, warningsBox, statusEl, 'The converter engine failed to load. Reload the page to try again.');
+      // eslint-disable-next-line no-console
+      console.error('[DockerRunToCompose] engine/examples import failed:', err);
+      return;
+    }
+
+    let mode: Mode = 'run';
+    let lastOutput = '';
+
+    const seedExample = examples[0] ?? { id: 'example', label: 'Example', run: '', compose: '' };
+    const view = makeEditor(editorHost, seedExample.run);
+
+    // Populate the example picker.
+    select.innerHTML = '';
+    if (examples.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'No examples available';
+      select.appendChild(opt);
+      select.disabled = true;
+    } else {
+      examples.forEach((ex, i) => {
+        const opt = document.createElement('option');
+        opt.value = String(i);
+        opt.textContent = ex.label;
+        select.appendChild(opt);
+      });
+      select.value = '0';
+    }
+
+    /** Seed the editor for the current mode from the selected example. */
+    function seedFromExample(): void {
+      const idx = Number(select!.value);
+      const ex = Number.isInteger(idx) && idx >= 0 && idx < examples.length ? examples[idx] : seedExample;
+      setEditorDoc(view, mode === 'run' ? ex.run : ex.compose);
+    }
+
+    /** Update labels + checked styling + roving tabindex for the current mode. */
+    function applyModeChrome(): void {
+      const isRun = mode === 'run';
+      modeRunBtn!.setAttribute('aria-checked', String(isRun));
+      modeComposeBtn!.setAttribute('aria-checked', String(!isRun));
+      // Roving tabindex: only the checked radio is in the tab order.
+      modeRunBtn!.tabIndex = isRun ? 0 : -1;
+      modeComposeBtn!.tabIndex = isRun ? -1 : 0;
+      inputName!.textContent = isRun ? 'docker run' : 'docker-compose.yml';
+      outputLabel!.textContent = isRun ? 'Compose YAML' : 'docker run command';
+    }
+
+    function setMode(next: Mode, focus = false): void {
+      if (mode === next) {
+        if (focus) (next === 'run' ? modeRunBtn! : modeComposeBtn!).focus();
+        return;
+      }
+      mode = next;
+      applyModeChrome();
+      if (focus) (next === 'run' ? modeRunBtn! : modeComposeBtn!).focus();
+      seedFromExample();
+      renderEmpty(outputBox!, warningsBox!, statusEl!);
+      void run();
+    }
+
+    modeRunBtn.addEventListener('click', () => setMode('run'));
+    modeComposeBtn.addEventListener('click', () => setMode('compose'));
+
+    // Radiogroup keyboard support: ArrowLeft/Up ↔ ArrowRight/Down move + select
+    // the radio (per the WAI-ARIA radio group pattern); Home/End jump to ends.
+    const onModeKeydown = (e: KeyboardEvent): void => {
+      switch (e.key) {
+        case 'ArrowRight':
+        case 'ArrowDown':
+          e.preventDefault();
+          setMode(mode === 'run' ? 'compose' : 'run', true);
+          break;
+        case 'ArrowLeft':
+        case 'ArrowUp':
+          e.preventDefault();
+          setMode(mode === 'run' ? 'compose' : 'run', true);
+          break;
+        case 'Home':
+          e.preventDefault();
+          setMode('run', true);
+          break;
+        case 'End':
+          e.preventDefault();
+          setMode('compose', true);
+          break;
+      }
+    };
+    modeRunBtn.addEventListener('keydown', onModeKeydown);
+    modeComposeBtn.addEventListener('keydown', onModeKeydown);
+
+    select.addEventListener('change', () => {
+      seedFromExample();
+      renderEmpty(outputBox!, warningsBox!, statusEl!);
+      void run();
+    });
+
+    // Convert — non-blocking; yield a frame before (cheap) work.
+    let running = false;
+    const runLabel = runBtn.querySelector<HTMLElement>('.drc-run-label');
+    async function run(): Promise<void> {
+      if (running) return;
+      running = true;
+      runBtn!.classList.add('is-busy');
+      runBtn!.setAttribute('aria-busy', 'true');
+      if (runLabel) runLabel.textContent = 'Converting…';
+
+      await new Promise<void>((resolve) => {
+        if ('requestAnimationFrame' in window) requestAnimationFrame(() => resolve());
+        else setTimeout(resolve, 0);
+      });
+
+      try {
+        const input = view.state.doc.toString();
+        if (mode === 'run') {
+          const res = engine.runToCompose(input);
+          if (!res.ok || res.error) {
+            renderError(outputBox!, warningsBox!, statusEl!, res.error ?? 'Could not convert the command.');
+            lastOutput = '';
+          } else {
+            lastOutput = res.yaml ?? '';
+            renderResult(outputBox!, warningsBox!, statusEl!, 'docker-compose.yml', lastOutput, res.warnings ?? []);
+          }
+        } else {
+          const res = engine.composeToRun(input);
+          if (!res.ok || res.error) {
+            renderError(outputBox!, warningsBox!, statusEl!, res.error ?? 'Could not convert the service.');
+            lastOutput = '';
+          } else {
+            lastOutput = res.command ?? '';
+            renderResult(outputBox!, warningsBox!, statusEl!, 'docker run', lastOutput, res.warnings ?? []);
+          }
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unexpected error while converting.';
+        renderError(outputBox!, warningsBox!, statusEl!, msg);
+        lastOutput = '';
+      } finally {
+        running = false;
+        runBtn!.classList.remove('is-busy');
+        runBtn!.removeAttribute('aria-busy');
+        if (runLabel) runLabel.textContent = 'Convert';
+      }
+    }
+
+    runBtn.addEventListener('click', () => void run());
+
+    root.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        void run();
+      }
+    });
+
+    // Copy — copies the converted OUTPUT (not the input).
+    const copyLabel = copyBtn.querySelector<HTMLElement>('.drc-copy-label');
+    let copyTimer: number | undefined;
+    copyBtn.addEventListener('click', async () => {
+      const text = lastOutput || view.state.doc.toString();
+      const ok = await copyText(text);
+      if (copyLabel) copyLabel.textContent = ok ? 'Copied' : 'Copy Failed';
+      if (announce) {
+        announce.textContent = ok
+          ? 'Converted output copied to your clipboard.'
+          : 'Could not copy. Select the output text and copy it manually.';
+      }
+      window.clearTimeout(copyTimer);
+      copyTimer = window.setTimeout(() => {
+        if (copyLabel) copyLabel.textContent = copyBtn.dataset.defaultLabel ?? 'Copy';
+      }, COPIED_RESET_MS);
+    });
+
+    // Initial chrome + auto-convert the seeded example.
+    applyModeChrome();
+    renderEmpty(outputBox, warningsBox, statusEl);
+    void run();
+    // Settle CM layout once the dark pane is laid out.
+    requestAnimationFrame(() => view.requestMeasure());
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

@@ -1,0 +1,1156 @@
+---
+/**
+ * PrometheusRelabelTesterPlayground — the interactive Prometheus Relabel Tester.
+ *
+ * A no-framework, server-rendered shell hydrated by a single module <script>
+ * that lazily boots TWO CodeMirror 6 editors (relabel_configs YAML | sample
+ * label sets), wires an example picker, a "Run" action, plus Copy + Share. It
+ * runs entirely client-side and is fully usable offline once loaded.
+ *
+ * Runtime contract (imported lazily in the script):
+ *   ../lib/prometheus-relabel-tester/engine →
+ *     applyRelabel(configsYaml: string, labelSetsInput: string) => RelabelResult
+ *       RelabelResult = {
+ *         ok: boolean
+ *         error?: string
+ *         results?: Array<{
+ *           index: number
+ *           input: Array<{ name: string; value: string }>
+ *           dropped: boolean
+ *           droppedByRule?: number
+ *           droppedByAction?: string
+ *           output: Array<{ name: string; value: string }>
+ *           changes: Array<{ name: string; kind: 'added'|'changed'|'removed';
+ *                            before?: string; after?: string }>
+ *         }>
+ *         warnings: string[]
+ *       }
+ *   ../lib/prometheus-relabel-tester/examples →
+ *     examples: Array<{ id: string; label: string; configs: string; labels: string }>
+ *
+ * Dark editor surfaces follow DESIGN.md `code-editor-mockup`; results use the
+ * semantic success / warning / error tokens. All runtime-injected result markup
+ * is styled via :global(...) because Astro scoped styles do not reach
+ * innerHTML-injected nodes.
+ */
+---
+
+<section class="prt" aria-label="Prometheus Relabel Tester playground">
+  <div class="card shadow-float rounded-lg overflow-hidden">
+    {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+    <div
+      class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5"
+    >
+      <div class="flex min-w-0 items-center gap-3">
+        <label class="eyebrow shrink-0" for="prt-example">Example</label>
+        <div class="prt-select-wrap relative min-w-0">
+          <select id="prt-example" class="prt-select code-mono" autocomplete="off">
+            <option value="">Loading examples…</option>
+          </select>
+          <svg
+            class="prt-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M4 6l4 4 4-4"></path>
+          </svg>
+        </div>
+      </div>
+
+      <div class="flex shrink-0 flex-wrap items-center gap-2">
+        <span class="caption text-mute hidden items-center sm:inline-flex">⌘/Ctrl + Enter</span>
+        <button
+          id="prt-copy"
+          type="button"
+          class="btn btn-secondary btn-sm prt-tap"
+          data-default-label="Copy"
+        >
+          <svg
+            class="h-4 w-4 shrink-0"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <rect x="5.5" y="5.5" width="8" height="8" rx="1.5"></rect>
+            <path d="M3.5 10.5h-.5a1.5 1.5 0 0 1-1.5-1.5v-6A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5"></path>
+          </svg>
+          <span class="prt-copy-label">Copy</span>
+        </button>
+        <button
+          id="prt-share"
+          type="button"
+          class="btn btn-secondary btn-sm prt-tap"
+          data-default-label="Share Link"
+          title="This link encodes your rules and label sets — review before sharing"
+        >
+          <svg
+            class="h-4 w-4 shrink-0"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M6 8.5l4-1.5M6 8.5l4 1.5"></path>
+            <circle cx="4" cy="8" r="1.6"></circle>
+            <circle cx="11.5" cy="5" r="1.6"></circle>
+            <circle cx="11.5" cy="11" r="1.6"></circle>
+          </svg>
+          <span class="prt-share-label">Share Link</span>
+        </button>
+        <button
+          id="prt-run"
+          type="button"
+          class="btn btn-primary btn-sm prt-tap"
+          title="Run relabeling (⌘/Ctrl + Enter)"
+          aria-keyshortcuts="Meta+Enter Control+Enter"
+        >
+          <svg
+            class="prt-run-icon h-4 w-4 shrink-0"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M4 2.5l9 5.5-9 5.5z"></path>
+          </svg>
+          <span class="prt-run-label">Run</span>
+        </button>
+      </div>
+    </div>
+
+    {/* ── Editors (two dark mockup surfaces, side-by-side on wide screens) ── */}
+    <div class="grid gap-px bg-hairline md:grid-cols-2">
+      <div class="prt-pane flex min-w-0 flex-col bg-inverse">
+        <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
+          <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+          </span>
+          <span class="code-mono text-white/45">relabel_configs</span>
+        </div>
+        <div
+          id="prt-configs"
+          class="prt-editor min-h-72"
+          aria-label="relabel_configs (YAML)"
+        >
+        </div>
+      </div>
+
+      <div class="prt-pane flex min-w-0 flex-col bg-inverse">
+        <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
+          <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+          </span>
+          <span class="code-mono text-white/45">label sets</span>
+        </div>
+        <div
+          id="prt-labels"
+          class="prt-editor min-h-72"
+          aria-label="Sample label sets"
+        >
+        </div>
+      </div>
+    </div>
+
+    <div class="border-t border-hairline bg-inverse/95 px-4 py-2">
+      <p class="text-xs text-mute">
+        Runs entirely in your browser — nothing is uploaded. One label set per
+        block; separate sets with a blank line. Press
+        <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd>
+        to release focus from an editor.
+      </p>
+    </div>
+
+    {/* ── Results panel ────────────────────────────────────────────────── */}
+    <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <span class="eyebrow">Results</span>
+        <span
+          id="prt-summary"
+          class="prt-summary code-mono text-mute"
+          role="status"
+          aria-live="polite"
+        ></span>
+      </div>
+
+      <div id="prt-results" class="prt-results" aria-live="polite" aria-atomic="false">
+        <p class="prt-empty body-sm text-mute">
+          Load an example or paste relabel rules and label sets, then run to see
+          which labels survive, change, or get dropped.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  {/* Polite announcer for clipboard + transient toasts. */}
+  <span id="prt-announce" class="sr-only" role="status" aria-live="polite"></span>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  .prt-tap {
+    touch-action: manipulation;
+  }
+
+  /* The example picker — a 6px-radius in-app form control. */
+  .prt-select {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    height: 32px;
+    min-width: 0;
+    max-width: 280px;
+    padding: 0 32px 0 12px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 13px;
+    line-height: 20px;
+    cursor: pointer;
+    text-overflow: ellipsis;
+    touch-action: manipulation;
+    transition: box-shadow 0.15s ease;
+  }
+  @media (min-width: 640px) {
+    .prt-select {
+      width: auto;
+      min-width: 240px;
+    }
+  }
+  .prt-select:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .prt-select:disabled {
+    cursor: not-allowed;
+    color: var(--color-mute);
+    opacity: 0.7;
+  }
+  .prt-select-caret {
+    transition: color 0.15s ease;
+  }
+  .prt-select-wrap:hover .prt-select-caret {
+    color: var(--color-body);
+  }
+
+  /* CodeMirror hosts — fill the dark panes, scroll internally. */
+  .prt-editor {
+    overflow: hidden;
+  }
+  .prt-editor :global(.cm-editor) {
+    height: 100%;
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .prt-editor :global(.cm-editor.cm-focused) {
+    outline: 2px solid var(--color-link);
+    outline-offset: -2px;
+  }
+  .prt-editor :global(.cm-scroller) {
+    overflow: auto;
+    max-height: 460px;
+    font-family: var(--font-mono);
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  }
+  .prt-editor :global(.cm-scroller)::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .prt-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.16);
+    border-radius: var(--radius-pill);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  .prt-editor :global(.cm-scroller)::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.28);
+    background-clip: content-box;
+  }
+  .prt-editor :global(.cm-gutters) {
+    background: transparent;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .prt-editor :global(.cm-lineNumbers .cm-gutterElement) {
+    color: rgba(255, 255, 255, 0.32);
+  }
+  .prt-editor :global(.cm-content) {
+    padding: 14px 0 16px;
+  }
+  .prt-editor :global(.cm-line) {
+    padding-inline: 4px;
+  }
+
+  .prt-summary {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+    white-space: nowrap;
+  }
+
+  /* ── Results container (runtime-injected → :global) ─────────────────── */
+  .prt-results {
+    min-height: 44px;
+  }
+  :global(.prt-card + .prt-card) {
+    margin-top: 14px;
+  }
+  :global(.prt-card) {
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+    animation: prt-rise 0.18s ease both;
+  }
+  :global(.prt-card--dropped) {
+    box-shadow: inset 0 0 0 1px var(--color-warning-soft);
+  }
+  @keyframes prt-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.prt-card),
+    :global(.prt-banner) {
+      animation: none;
+    }
+  }
+
+  :global(.prt-card__head) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+    background: var(--color-canvas-soft);
+  }
+  :global(.prt-card__title) {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+
+  /* Status pill. */
+  :global(.prt-pill) {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    padding: 1px 8px;
+    border-radius: var(--radius-pill);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    box-shadow: var(--shadow-hairline);
+  }
+  :global(.prt-pill--kept) {
+    /* Green wash derived from the success token (no --color-success-soft token
+       exists in the design system, so mix one from --color-success). */
+    background: color-mix(in srgb, var(--color-success) 14%, var(--color-canvas));
+    color: var(--color-success);
+  }
+  :global(.prt-pill--dropped) {
+    background: var(--color-warning-soft);
+    color: var(--color-warning-deep);
+  }
+
+  :global(.prt-card__body) {
+    padding: 12px 14px;
+  }
+
+  /* Label list rows. */
+  :global(.prt-labels) {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  :global(.prt-label) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 18px;
+    word-break: break-word;
+  }
+  :global(.prt-label__name) {
+    color: var(--color-ink);
+  }
+  :global(.prt-label__eq) {
+    color: var(--color-mute);
+  }
+  :global(.prt-label__value) {
+    color: var(--color-body);
+  }
+  :global(.prt-tag) {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 4px;
+    padding: 0 6px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  :global(.prt-tag--added) {
+    background: color-mix(in srgb, var(--color-success) 14%, var(--color-canvas));
+    color: var(--color-success);
+  }
+  :global(.prt-tag--changed) {
+    background: var(--color-canvas-soft-2);
+    color: var(--color-body);
+  }
+
+  :global(.prt-section-label) {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+    margin-bottom: 6px;
+  }
+  :global(.prt-section + .prt-section) {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--color-hairline);
+  }
+  :global(.prt-drop-note) {
+    font-size: 13px;
+    line-height: 19px;
+    color: var(--color-body);
+  }
+  :global(.prt-removed) {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 18px;
+    color: var(--color-warning-deep);
+    text-decoration: line-through;
+    text-decoration-color: var(--color-warning-soft);
+  }
+  :global(.prt-empty-labels) {
+    font-size: 13px;
+    color: var(--color-mute);
+    font-style: italic;
+  }
+
+  /* Warnings list. */
+  :global(.prt-warnings) {
+    margin-top: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  :global(.prt-warning) {
+    display: flex;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: inset 0 0 0 1px var(--color-warning-soft);
+    font-size: 12.5px;
+    line-height: 18px;
+    color: var(--color-body);
+  }
+  :global(.prt-warning__icon) {
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    margin-top: 2px;
+    color: var(--color-warning-deep);
+  }
+
+  /* Parse-error banner. */
+  :global(.prt-banner) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+    animation: prt-rise 0.18s ease both;
+  }
+  :global(.prt-banner__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.prt-banner__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.prt-banner__detail) {
+    margin-top: 2px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 18px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* Empty state. */
+  :global(.prt-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+
+  /* Loading dots. */
+  :global(.prt-loading) {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--color-body);
+  }
+  :global(.prt-loading__dot) {
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background: var(--color-mute);
+    animation: prt-pulse 1.1s ease-in-out infinite;
+  }
+  :global(.prt-loading__dot:nth-child(2)) {
+    animation-delay: 0.18s;
+  }
+  :global(.prt-loading__dot:nth-child(3)) {
+    animation-delay: 0.36s;
+  }
+  @keyframes prt-pulse {
+    0%,
+    100% {
+      opacity: 0.3;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.prt-loading__dot) {
+      animation: none;
+      opacity: 0.6;
+    }
+  }
+
+  .is-busy {
+    opacity: 0.65;
+    pointer-events: none;
+    cursor: progress;
+  }
+  .is-busy .prt-run-icon {
+    display: none;
+  }
+</style>
+
+<script>
+  import { EditorState } from '@codemirror/state';
+  import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
+  import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+  import { yaml } from '@codemirror/lang-yaml';
+  import { oneDark } from '@codemirror/theme-one-dark';
+  import { escapeHtml } from '../lib/escape-html';
+
+  /* ---- Types mirrored from the engine contract (structural, not imported). -- */
+  type ChangeKind = 'added' | 'changed' | 'removed';
+  type LabelPair = { name: string; value: string };
+  type LabelChange = { name: string; kind: ChangeKind; before?: string; after?: string };
+  type TargetResult = {
+    index: number;
+    input: LabelPair[];
+    dropped: boolean;
+    droppedByRule?: number;
+    droppedByAction?: string;
+    output: LabelPair[];
+    changes: LabelChange[];
+  };
+  type RelabelResult = {
+    ok: boolean;
+    error?: string;
+    results?: TargetResult[];
+    warnings?: string[];
+  };
+
+  type EngineModule = {
+    applyRelabel: (
+      configsYaml: string,
+      labelSetsInput: string
+    ) => RelabelResult | Promise<RelabelResult>;
+  };
+  type ExampleRaw = Record<string, unknown>;
+  type Example = { id: string; label: string; configs: string; labels: string };
+
+  const ROOT_SEL = '.prt';
+  const COPIED_RESET_MS = 1800;
+  const SHARE_KEY = 'prt';
+
+  /** Boot every (so far un-hydrated) playground instance on the page. */
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.prtWired === 'true') return;
+      root.dataset.prtWired = 'true';
+      void init(root);
+    });
+  }
+
+  /* ---- Small helpers -------------------------------------------------------- */
+
+  function pick(obj: ExampleRaw, keys: string[]): string {
+    for (const k of keys) {
+      const v = obj[k];
+      if (typeof v === 'string' && v.length > 0) return v;
+    }
+    return '';
+  }
+
+  function normaliseExamples(raw: unknown): Example[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((item, i) => {
+      const o = (item ?? {}) as ExampleRaw;
+      return {
+        id: pick(o, ['id', 'slug', 'key']) || `example-${i + 1}`,
+        label: pick(o, ['label', 'name', 'title']) || `Example ${i + 1}`,
+        configs: pick(o, ['configs', 'config', 'rules', 'yaml']),
+        labels: pick(o, ['labels', 'labelSets', 'sets', 'input']),
+      };
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  /* ---- Editor factory (cloned from GhaValidatorPlayground) ------------------ */
+
+  function makeEditor(host: HTMLElement, doc: string): EditorView {
+    const state = EditorState.create({
+      doc,
+      extensions: [
+        lineNumbers(),
+        history(),
+        highlightActiveLine(),
+        yaml(),
+        oneDark,
+        EditorView.lineWrapping,
+        keymap.of([
+          ...defaultKeymap,
+          ...historyKeymap,
+          indentWithTab,
+          { key: 'Escape', run: (view) => { view.contentDOM.blur(); return true; } },
+        ]),
+        EditorView.theme({
+          '&': { color: '#e6e6e6' },
+          '.cm-content': { caretColor: '#e6e6e6' },
+          '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
+          '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection':
+            { backgroundColor: 'rgba(0, 112, 243, 0.32)' },
+          '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
+          '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+        }),
+      ],
+    });
+    return new EditorView({ state, parent: host });
+  }
+
+  function setEditorDoc(view: EditorView, doc: string): void {
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
+  }
+
+  /* ---- Icons ---------------------------------------------------------------- */
+
+  const ICON_ALERT =
+    '<svg class="prt-banner__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const ICON_WARN =
+    '<svg class="prt-warning__icon" width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+
+  /* ---- Result rendering ----------------------------------------------------- */
+
+  function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
+    summary.textContent = '';
+    summary.classList.remove('text-error');
+    summary.classList.add('text-mute');
+    container.innerHTML =
+      '<p class="prt-empty body-sm text-mute">Load an example or paste relabel rules and label sets, then run to see which labels survive, change, or get dropped.</p>';
+  }
+
+  function renderLoading(container: HTMLElement, summary: HTMLElement): void {
+    summary.textContent = '';
+    container.innerHTML =
+      '<div class="prt-loading"><span class="prt-loading__dot"></span>' +
+      '<span class="prt-loading__dot"></span><span class="prt-loading__dot"></span>' +
+      '<span>Applying rules…</span></div>';
+  }
+
+  function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
+    summary.textContent = 'Error';
+    summary.classList.add('text-error');
+    summary.classList.remove('text-mute');
+    container.innerHTML =
+      '<div class="prt-banner" role="alert">' +
+      ICON_ALERT +
+      '<div><p class="prt-banner__title">Could not apply relabel rules</p>' +
+      `<p class="prt-banner__detail">${escapeHtml(message)}</p></div></div>`;
+  }
+
+  function labelRowHtml(p: LabelPair, tag: '' | 'added' | 'changed'): string {
+    const tagHtml =
+      tag === ''
+        ? ''
+        : `<span class="prt-tag prt-tag--${tag}">${tag}</span>`;
+    return (
+      '<div class="prt-label">' +
+      `<span class="prt-label__name">${escapeHtml(p.name)}</span>` +
+      '<span class="prt-label__eq">=</span>' +
+      `<span class="prt-label__value">"${escapeHtml(p.value)}"</span>${tagHtml}</div>`
+    );
+  }
+
+  /** Build a name → change-kind map (added / changed) for output labels. */
+  function changeIndex(changes: LabelChange[]): Map<string, ChangeKind> {
+    const m = new Map<string, ChangeKind>();
+    for (const c of changes) m.set(c.name, c.kind);
+    return m;
+  }
+
+  function resultCardHtml(r: TargetResult): string {
+    const statusPill = r.dropped
+      ? '<span class="prt-pill prt-pill--dropped">Dropped</span>'
+      : '<span class="prt-pill prt-pill--kept">Kept</span>';
+
+    const head =
+      '<div class="prt-card__head">' +
+      `<span class="prt-card__title">Set ${r.index}</span>${statusPill}</div>`;
+
+    // INPUT section.
+    const inputRows = r.input.length
+      ? r.input.map((p) => labelRowHtml(p, '')).join('')
+      : '<p class="prt-empty-labels">(no labels)</p>';
+    const inputSection =
+      '<div class="prt-section"><p class="prt-section-label">Input</p>' +
+      `<div class="prt-labels">${inputRows}</div></div>`;
+
+    let resultSection: string;
+    if (r.dropped) {
+      const by =
+        r.droppedByAction && r.droppedByRule
+          ? ` by rule ${r.droppedByRule} (<code>${escapeHtml(r.droppedByAction)}</code>)`
+          : '';
+      resultSection =
+        '<div class="prt-section"><p class="prt-section-label">Result</p>' +
+        `<p class="prt-drop-note">Target dropped${by} — this series would not be scraped or stored.</p></div>`;
+    } else {
+      const ci = changeIndex(r.changes);
+      const outRows = r.output.length
+        ? r.output
+            .map((p) => {
+              const kind = ci.get(p.name);
+              const tag = kind === 'added' ? 'added' : kind === 'changed' ? 'changed' : '';
+              return labelRowHtml(p, tag);
+            })
+            .join('')
+        : '<p class="prt-empty-labels">(no labels remain)</p>';
+
+      const removed = r.changes.filter((c) => c.kind === 'removed');
+      const removedHtml = removed.length
+        ? '<div class="prt-section"><p class="prt-section-label">Removed</p><div class="prt-labels">' +
+          removed
+            .map(
+              (c) =>
+                `<div class="prt-removed">${escapeHtml(c.name)}="${escapeHtml(c.before ?? '')}"</div>`
+            )
+            .join('') +
+          '</div></div>'
+        : '';
+
+      resultSection =
+        '<div class="prt-section"><p class="prt-section-label">Output</p>' +
+        `<div class="prt-labels">${outRows}</div></div>${removedHtml}`;
+    }
+
+    const dropClass = r.dropped ? ' prt-card--dropped' : '';
+    return (
+      `<div class="prt-card${dropClass}">${head}` +
+      `<div class="prt-card__body">${inputSection}${resultSection}</div></div>`
+    );
+  }
+
+  function warningsHtml(warnings: string[]): string {
+    if (!warnings.length) return '';
+    return (
+      '<div class="prt-warnings">' +
+      warnings
+        .map((w) => `<div class="prt-warning">${ICON_WARN}<span>${escapeHtml(w)}</span></div>`)
+        .join('') +
+      '</div>'
+    );
+  }
+
+  function summaryText(results: TargetResult[]): string {
+    const total = results.length;
+    const dropped = results.filter((r) => r.dropped).length;
+    const kept = total - dropped;
+    const parts: string[] = [];
+    parts.push(`${kept} kept`);
+    if (dropped > 0) parts.push(`${dropped} dropped`);
+    parts.push(`${total} ${total === 1 ? 'set' : 'sets'}`);
+    return parts.join(' · ');
+  }
+
+  function renderResults(
+    container: HTMLElement,
+    summary: HTMLElement,
+    result: RelabelResult
+  ): void {
+    if (!result || result.ok === false || result.error) {
+      renderError(
+        container,
+        summary,
+        result?.error ?? 'Unknown error while applying relabel rules.'
+      );
+      return;
+    }
+
+    const results = Array.isArray(result.results) ? result.results : [];
+    if (results.length === 0) {
+      renderError(container, summary, 'No label sets were produced from the input.');
+      return;
+    }
+
+    const dropped = results.filter((r) => r.dropped).length;
+    summary.textContent = summaryText(results);
+    summary.classList.toggle('text-error', dropped > 0 && dropped === results.length);
+    summary.classList.toggle('text-mute', !(dropped > 0 && dropped === results.length));
+
+    const cards = results.map(resultCardHtml).join('');
+    const warns = warningsHtml(Array.isArray(result.warnings) ? result.warnings : []);
+    container.innerHTML = cards + warns;
+  }
+
+  /* ---- Clipboard ------------------------------------------------------------ */
+
+  async function copyText(text: string): Promise<boolean> {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      /* fall through */
+    }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'absolute';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /* ---- Share-state codec (encodes BOTH editors) ----------------------------- */
+
+  function b64encode(text: string): string {
+    const bytes = new TextEncoder().encode(text);
+    let bin = '';
+    for (const b of bytes) bin += String.fromCharCode(b);
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  function b64decode(b64raw: string): string | null {
+    try {
+      let b64 = b64raw.replace(/-/g, '+').replace(/_/g, '/');
+      while (b64.length % 4) b64 += '=';
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return new TextDecoder().decode(bytes);
+    } catch {
+      return null;
+    }
+  }
+
+  function encodeShare(configs: string, labels: string): string {
+    // Two payloads share one hash key, joined by "~" (not in base64url alphabet).
+    return `#${SHARE_KEY}=${b64encode(configs)}~${b64encode(labels)}`;
+  }
+
+  function decodeShare(): { configs: string; labels: string } | null {
+    const hash = window.location.hash.replace(/^#/, '');
+    if (!hash) return null;
+    const param = hash
+      .split('&')
+      .map((p) => p.split('='))
+      .find(([k]) => k === SHARE_KEY);
+    if (!param || !param[1]) return null;
+    const [cfg, lbl] = param[1].split('~');
+    const configs = b64decode(cfg ?? '');
+    const labels = b64decode(lbl ?? '');
+    if (configs === null || labels === null) return null;
+    return { configs, labels };
+  }
+
+  /* ---- Instance init -------------------------------------------------------- */
+
+  async function init(root: HTMLElement): Promise<void> {
+    const configsHost = el<HTMLElement>(root, '#prt-configs');
+    const labelsHost = el<HTMLElement>(root, '#prt-labels');
+    const select = el<HTMLSelectElement>(root, '#prt-example');
+    const runBtn = el<HTMLButtonElement>(root, '#prt-run');
+    const copyBtn = el<HTMLButtonElement>(root, '#prt-copy');
+    const shareBtn = el<HTMLButtonElement>(root, '#prt-share');
+    const resultsBox = el<HTMLElement>(root, '#prt-results');
+    const summaryEl = el<HTMLElement>(root, '#prt-summary');
+    const announce = el<HTMLElement>(root, '#prt-announce');
+
+    if (
+      !configsHost || !labelsHost || !select || !runBtn ||
+      !copyBtn || !shareBtn || !resultsBox || !summaryEl
+    ) {
+      return;
+    }
+
+    // Lazily load the sibling engine + examples (kept out of the initial path).
+    let engine: EngineModule;
+    let examples: Example[] = [];
+    try {
+      const [engineMod, examplesMod] = await Promise.all([
+        import('../lib/prometheus-relabel-tester/engine'),
+        import('../lib/prometheus-relabel-tester/examples'),
+      ]);
+      engine = engineMod as unknown as EngineModule;
+      examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+    } catch (err) {
+      renderError(
+        resultsBox,
+        summaryEl,
+        'The relabel engine failed to load. Reload the page to try again.'
+      );
+      // eslint-disable-next-line no-console
+      console.error('[PrometheusRelabelTester] engine/examples import failed:', err);
+      return;
+    }
+
+    // Seed content: prefer a shared-state URL, else the first example.
+    const seed = examples[0] ?? { id: 'example', label: 'Example', configs: '', labels: '' };
+    let seedConfigs = seed.configs;
+    let seedLabels = seed.labels;
+    let fromShare = false;
+    const shared = decodeShare();
+    if (shared) {
+      seedConfigs = shared.configs;
+      seedLabels = shared.labels;
+      fromShare = true;
+    }
+
+    const configsView = makeEditor(configsHost, seedConfigs);
+    const labelsView = makeEditor(labelsHost, seedLabels);
+
+    // Populate the example picker.
+    select.innerHTML = '';
+    if (examples.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'No examples available';
+      select.appendChild(opt);
+      select.disabled = true;
+    } else {
+      if (fromShare) {
+        const opt = document.createElement('option');
+        opt.value = '-1';
+        opt.textContent = 'Shared input';
+        select.appendChild(opt);
+      }
+      examples.forEach((ex, i) => {
+        const opt = document.createElement('option');
+        opt.value = String(i);
+        opt.textContent = ex.label;
+        select.appendChild(opt);
+      });
+      select.value = fromShare ? '-1' : '0';
+    }
+
+    // Swap both editors when a different example is chosen.
+    select.addEventListener('change', () => {
+      const idx = Number(select.value);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+      setEditorDoc(configsView, examples[idx].configs);
+      setEditorDoc(labelsView, examples[idx].labels);
+      void run();
+    });
+
+    // Run — non-blocking; show loading, yield a frame, then render.
+    let running = false;
+    const runLabel = runBtn.querySelector<HTMLElement>('.prt-run-label');
+    let spinner: HTMLElement | null = null;
+    async function run(): Promise<void> {
+      if (running) return;
+      running = true;
+      runBtn.classList.add('is-busy');
+      runBtn.setAttribute('aria-disabled', 'true');
+      runBtn.setAttribute('aria-busy', 'true');
+      if (!spinner) {
+        spinner = document.createElement('span');
+        spinner.setAttribute('aria-hidden', 'true');
+        spinner.style.cssText =
+          'display:inline-block;width:14px;height:14px;flex:0 0 auto;border-radius:9999px;' +
+          'border:2px solid currentColor;border-top-color:transparent;';
+        if (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          spinner.animate(
+            [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }],
+            { duration: 700, iterations: Infinity }
+          );
+        }
+        runBtn.insertBefore(spinner, runBtn.firstChild);
+      }
+      if (runLabel) runLabel.textContent = 'Running…';
+      renderLoading(resultsBox!, summaryEl!);
+
+      await new Promise<void>((resolve) => {
+        if ('requestAnimationFrame' in window) {
+          requestAnimationFrame(() => resolve());
+        } else {
+          setTimeout(resolve, 0);
+        }
+      });
+
+      try {
+        const configs = configsView.state.doc.toString();
+        const labels = labelsView.state.doc.toString();
+        const result = await Promise.resolve(engine.applyRelabel(configs, labels));
+        renderResults(resultsBox!, summaryEl!, result);
+        try {
+          history.replaceState(null, '', encodeShare(configs, labels));
+        } catch {
+          /* non-fatal */
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unexpected error while applying rules.';
+        renderError(resultsBox!, summaryEl!, msg);
+      } finally {
+        running = false;
+        runBtn.classList.remove('is-busy');
+        runBtn.removeAttribute('aria-disabled');
+        runBtn.removeAttribute('aria-busy');
+        if (spinner) {
+          spinner.remove();
+          spinner = null;
+        }
+        if (runLabel) runLabel.textContent = 'Run';
+      }
+    }
+
+    runBtn.addEventListener('click', () => void run());
+
+    // Cmd/Ctrl+Enter from inside either editor triggers a run.
+    root.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        void run();
+      }
+    });
+
+    // Copy — copy the rules + label sets as a single shareable text block.
+    const copyLabel = copyBtn.querySelector<HTMLElement>('.prt-copy-label');
+    let copyTimer: number | undefined;
+    copyBtn.addEventListener('click', async () => {
+      const text =
+        `# relabel_configs\n${configsView.state.doc.toString()}\n\n# label sets\n${labelsView.state.doc.toString()}`;
+      const ok = await copyText(text);
+      if (copyLabel) copyLabel.textContent = ok ? 'Copied' : 'Copy Failed';
+      if (announce) {
+        announce.textContent = ok
+          ? 'Rules and label sets copied to your clipboard.'
+          : 'Could not copy. Select the text in the editors and copy it manually.';
+      }
+      window.clearTimeout(copyTimer);
+      copyTimer = window.setTimeout(() => {
+        if (copyLabel) copyLabel.textContent = copyBtn.dataset.defaultLabel ?? 'Copy';
+      }, COPIED_RESET_MS);
+    });
+
+    // Share — copy a shareable URL encoding both editors in the hash.
+    const shareLabel = shareBtn.querySelector<HTMLElement>('.prt-share-label');
+    let shareTimer: number | undefined;
+    shareBtn.addEventListener('click', async () => {
+      const frag = encodeShare(configsView.state.doc.toString(), labelsView.state.doc.toString());
+      const base = window.location.href.split('#')[0];
+      const shareUrl = `${base}${frag}`;
+      try {
+        history.replaceState(null, '', frag);
+      } catch {
+        /* fall back */
+      }
+      const ok = await copyText(shareUrl);
+      if (shareLabel) shareLabel.textContent = ok ? 'Link Copied' : 'Copy Failed';
+      if (announce) {
+        announce.textContent = ok
+          ? 'Share link copied to your clipboard.'
+          : 'Could not copy the link. Copy the URL from your address bar instead.';
+      }
+      window.clearTimeout(shareTimer);
+      shareTimer = window.setTimeout(() => {
+        if (shareLabel) shareLabel.textContent = shareBtn.dataset.defaultLabel ?? 'Share Link';
+      }, COPIED_RESET_MS);
+    });
+
+    // Re-measure the editors after they mount inside the dark md:grid-cols-2
+    // panes, so CodeMirror does not cache a stale (zero/clipped) viewport.
+    configsView.requestMeasure();
+    labelsView.requestMeasure();
+
+    // Initial results state — then auto-run the loaded content immediately.
+    renderEmpty(resultsBox, summaryEl);
+    void run();
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

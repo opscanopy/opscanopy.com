@@ -1,0 +1,403 @@
+---
+/**
+ * Docker Run to Compose — the primary SEO surface for the bidirectional
+ * converter. Paste a `docker run …` command and get the equivalent
+ * docker-compose service YAML, or paste a Compose service and rebuild the
+ * `docker run` line. 100% client-side — no server, no upload, no signup.
+ *
+ * Mirrors the canonical tool-page structure (ToolHero → playground → why →
+ * pipeline → reference → dark next-step band → FAQ + JSON-LD → cross-links).
+ * The interactive island (DockerRunToComposePlayground) self-mounts; JSON-LD
+ * (SoftwareApplication + FAQPage) is assembled here and handed to Shell.
+ */
+import Shell from '../../components/Shell.astro';
+import DockerRunToComposePlayground from '../../components/DockerRunToComposePlayground.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import Button from '../../components/Button.astro';
+import ToolHero from '../../components/ToolHero.astro';
+import ToolGapVisual from '../../components/ToolGapVisual.astro';
+import ToolPipeline from '../../components/ToolPipeline.astro';
+import FaqList from '../../components/FaqList.astro';
+import ToolCrossLinks from '../../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../../data/site';
+import { getTool } from '../../data/tools';
+import { softwareAppLd, faqPageLd } from '../../lib/jsonld';
+
+const tool = getTool('docker-run-to-compose');
+
+const pagePath = '/docker-run-to-compose';
+const pageUrl = `${site.url}${pagePath}`;
+
+// ── External references (canonical Docker docs) ──────────────────────────────
+const dockerRunRef = 'https://docs.docker.com/reference/cli/docker/container/run/';
+const composeFileRef = 'https://docs.docker.com/reference/compose-file/services/';
+const composeUpRef = 'https://docs.docker.com/reference/cli/docker/compose/up/';
+
+// ── FAQ content — single source for both the rendered section and FAQPage LD ─
+const faqs = [
+  {
+    q: '¿Cómo convierto un comando docker run a un docker-compose.yml?',
+    a: 'Pega el comando docker run completo en el convertidor con el modo puesto en run → compose y pulsa Convertir. Quita el docker run inicial, clasifica cada flag sobre un objeto de servicio, trata el primer token que no es flag como la imagen y el resto como el comando, e imprime un bloque services: listo para soltar en tu proyecto — sin instalar nada, sin demonio de Docker, y sin enviar nada a ningún sitio. Es la forma más rápida de pasar de docker run a docker-compose.yml.',
+  },
+  {
+    q: '¿Puedo convertir un docker compose de vuelta a un comando docker run?',
+    a: 'Sí. Cambia el selector de modo a compose → run, pega una definición de servicio (o un fichero de Compose completo — se usa el primer servicio), y reconstruye un comando docker run equivalente, incluyendo puertos, volúmenes, entorno, redes, capacidades, límites de recursos y un healthcheck. Ir de docker compose a docker run es útil para depurar o lanzar un único contenedor sin escribir un fichero. Las claves que no tienen equivalente en docker run —depends_on, build, deploy, profiles— se reportan como advertencias en lugar de traducirse.',
+  },
+  {
+    q: '¿Cómo se mapean los flags de docker run a los campos de docker-compose?',
+    a: 'Los habituales: -p/--publish → ports, -v/--volume y --mount → volumes, -e/--env → environment, --env-file → env_file, --name → container_name, --restart → restart, --network/--net → networks (o network_mode para host/none), -w/--workdir → working_dir, -u/--user → user, --entrypoint → entrypoint, --hostname → hostname, --add-host → extra_hosts, --cap-add/--cap-drop → cap_add/cap_drop, --privileged → privileged, -m/--memory → mem_limit, --cpus → cpus, -l/--label → labels, y los flags --health-* → un bloque healthcheck. -i y -t se mapean a stdin_open y tty.',
+  },
+  {
+    q: '¿Cómo se mapea docker run -p a ports en docker compose?',
+    a: 'Cada flag -p/--publish se convierte en una entrada de la lista ports, entrecomillada para que YAML no la malinterprete como un número de tipo sexagesimal: -p 8080:80 pasa a "8080:80". Las formas con IP de host y protocolo, como -p 127.0.0.1:8080:80/tcp, se conservan literalmente, y varios flags -p se acumulan en la misma lista ports en el orden en que aparecen.',
+  },
+  {
+    q: '¿Cómo convierto los volúmenes de docker run -v a un fichero de compose?',
+    a: 'Cada -v/--volume y cada --mount se añade a la lista volumes del servicio. La forma corta source:target[:ro] se conserva tal cual —por ejemplo /data:/usr/share/nginx/html:ro o un volumen con nombre como dbdata:/var/lib/postgresql/data— así que los montajes de bind y los volúmenes con nombre cruzan al fichero de Compose sin que tengas que reescribirlos a mano.',
+  },
+  {
+    q: '¿Cómo se escriben las variables de entorno de docker run -e en docker-compose?',
+    a: 'Cada -e/--env se convierte en una entrada KEY=value de la lista environment, y cada --env-file pasa a la clave env_file. Los valores se conservan exactamente como los pegaste, así que las variables con secretos o nombres de host internos quedan intactas — y como todo ocurre en tu navegador, esos valores nunca salen de la pestaña.',
+  },
+  {
+    q: '¿En qué se convierte --restart en un servicio de docker-compose?',
+    a: 'El flag --restart se mapea directamente a la clave restart del servicio, conservando el valor: no, always, unless-stopped o on-failure. Es uno de los pocos flags de docker run que tiene un equivalente uno a uno en Compose, así que la política de reinicio se traduce sin cambios.',
+  },
+  {
+    q: '¿Es gratis este convertidor de docker run a compose y funciona sin conexión?',
+    a: 'Sí. Es un convertidor de docker run a compose online y gratis, sin cuenta ni registro, y se ejecuta 100% del lado del cliente: una vez cargada la página puedes convertir incluso sin conexión, porque el comando o el YAML que pegas se tokeniza y se convierte por completo dentro de la pestaña de tu navegador, sin subir nada a ningún servidor.',
+  },
+];
+
+// ── JSON-LD: SoftwareApplication + FAQPage (shared builders) ─────────────────
+const softwareApp = softwareAppLd({
+  name: 'Docker Run to Compose Converter',
+  description:
+    'Conversor bidireccional Docker Run ↔ Compose gratuito. Pega un comando docker run para obtener el YAML de servicio de docker-compose equivalente, o convierte un servicio de Compose de vuelta a un comando docker run. 100% en el navegador, sin instalación, sin registro.',
+  url: pageUrl,
+  subCategory: 'Docker Tooling',
+  featureList: [
+    'Convierte un comando docker run en un servicio de docker-compose',
+    'Convierte un servicio de docker-compose de vuelta a un comando docker run',
+    'Mapea puertos, volúmenes, entorno, redes, capacidades y healthchecks',
+    'El tokenizador maneja comillas, formas =valor, flags cortos agrupados y continuaciones de línea',
+    'Advierte sobre flags y claves sin equivalente (--rm, -d, depends_on, build, deploy)',
+    '100% del lado del cliente, sin subida, sin registro',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+
+const faqPage = faqPageLd(faqs);
+
+// ── HOW IT WORKS pipeline ────────────────────────────────────────────────────
+const pipeline = [
+  {
+    title: 'Tokeniza el comando.',
+    body: 'Un tokenizador consciente de POSIX divide la línea, respetando las comillas simples y dobles y las continuaciones de barra invertida más salto de línea, de modo que los valores entrecomillados y los pegados multilínea quedan intactos.',
+  },
+  {
+    title: 'Quita el prefijo.',
+    body: 'Se elimina un docker run o docker container run inicial, y los flags cortos agrupados como -it o -itp se expanden en sus flags individuales.',
+  },
+  {
+    title: 'Clasifica cada flag.',
+    body: 'Cada flag se mapea sobre un objeto de servicio —ports, volumes, environment, networks, capacidades, límites, labels y healthcheck— y el primer posicional pasa a ser la imagen, el resto el comando.',
+  },
+  {
+    title: 'Emite YAML determinista.',
+    body: 'Un pequeño escritor hecho a mano imprime un bloque services: estable y amigable con los diffs, indexado por el nombre del contenedor (o app), entrecomillando solo los escalares que YAML exige.',
+  },
+  {
+    title: 'O hazlo a la inversa.',
+    body: 'En modo compose → run el mismo modelo se reconstruye a partir del YAML de Compose analizado en un comando docker run, con las claves exclusivas de Compose expuestas como advertencias.',
+  },
+];
+
+// ── MAPPING REFERENCE — flag ↔ Compose key, with a worked example ─────────────
+const mappings = [
+  { flag: '-p / --publish', key: 'ports', note: 'Entrecomillado, p. ej. "8080:80".' },
+  { flag: '-v / --volume, --mount', key: 'volumes', note: 'Forma corta source:target[:ro].' },
+  { flag: '-e / --env', key: 'environment', note: 'Una lista KEY=value.' },
+  { flag: '--env-file', key: 'env_file', note: 'Uno o más ficheros.' },
+  { flag: '--name', key: 'container_name', note: 'También la clave del servicio.' },
+  { flag: '--restart', key: 'restart', note: 'no / always / unless-stopped …' },
+  { flag: '--network / --net', key: 'networks', note: 'host / none → network_mode.' },
+  { flag: '-w / --workdir', key: 'working_dir', note: '' },
+  { flag: '-u / --user', key: 'user', note: '' },
+  { flag: '--entrypoint', key: 'entrypoint', note: '' },
+  { flag: '--hostname', key: 'hostname', note: '' },
+  { flag: '--add-host', key: 'extra_hosts', note: '' },
+  { flag: '--cap-add / --cap-drop', key: 'cap_add / cap_drop', note: '' },
+  { flag: '--privileged', key: 'privileged', note: '' },
+  { flag: '-m / --memory', key: 'mem_limit', note: '' },
+  { flag: '--cpus', key: 'cpus', note: '' },
+  { flag: '-l / --label', key: 'labels', note: '' },
+  { flag: '--health-*', key: 'healthcheck', note: 'cmd / interval / timeout / retries.' },
+  { flag: '-i / -t', key: 'stdin_open / tty', note: '' },
+  { flag: '--rm, -d / --detach', key: '— (advertencia)', note: 'Sin equivalente en Compose.' },
+];
+
+const beforeCmd =
+  'docker run -d -p 8080:80 --name web \\\n  -v /data:/usr/share/nginx/html:ro \\\n  --restart unless-stopped nginx:alpine';
+const afterYaml = `services:
+  web:
+    image: nginx:alpine
+    container_name: web
+    ports:
+      - "8080:80"
+    volumes:
+      - /data:/usr/share/nginx/html:ro
+    restart: unless-stopped`;
+
+import type { Locale as __Locale } from '../../i18n/config';
+import { localizeKey as __l } from '../../i18n/utils';
+const __lang = (Astro.currentLocale ?? 'en') as __Locale;
+---
+
+<Shell
+  title="Convertir docker run a docker compose online | OpsCanopy"
+  description="Convierte un comando docker run a un servicio docker-compose.yml y al revés. Gratis, en el navegador, sin instalar nada y sin registro."
+  canonical="/docker-run-to-compose"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <!-- ════════════════════════════════════════════════════════════════════
+       1) HERO
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolHero
+    slug="docker-run-to-compose"
+    eyebrow="Docker Run a Compose · Docker"
+    badges={[
+      { label: 'Se ejecuta en tu navegador', variant: 'live' },
+      { label: 'Sin registro', variant: 'neutral' },
+      { label: 'Bidireccional', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">
+      Convertir <span class="code-mono text-ink" translate="no">docker run</span> a <span class="code-mono text-ink" translate="no">docker compose</span> — y de vuelta.
+    </Fragment>
+    <Fragment slot="lead">
+      Para convertir docker run a docker compose, pega un comando <span class="code-mono text-ink" translate="no">docker run</span> y obtén
+      al instante el servicio de <span class="code-mono text-ink" translate="no">docker-compose.yml</span> equivalente, o
+      pega un servicio de Compose para reconstruir la línea de comandos. En tu navegador, sin instalar nada y sin registro.
+    </Fragment>
+  </ToolHero>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       2) THE PLAYGROUND
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pb-20 pt-8 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">Playground del conversor de Docker Run a Compose</h2>
+      <DockerRunToComposePlayground />
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       3) WHY IT EXISTS — the gap
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">La brecha</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            Un contenedor, dos formas.
+          </h2>
+          <ToolGapVisual />
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            Un comando <span class="code-mono text-ink" translate="no">docker run</span> es estupendo para
+            arrancar rápido, pero en el momento en que lo quieres reproducible —en control de versiones, revisado en una PR,
+            iniciado con un solo comando— necesitas un
+            <span class="code-mono text-ink" translate="no">docker-compose.yml</span>. Traducir un
+            muro de flags <span class="code-mono text-ink" translate="no">-p</span>,
+            <span class="code-mono text-ink" translate="no">-v</span> y
+            <span class="code-mono text-ink" translate="no">-e</span> a mano es tedioso y
+            propenso a errores: es fácil dejarse un flag, anidar mal una lista o entrecomillar un puerto incorrectamente.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Este convertidor hace la parte mecánica por ti, <strong class="font-medium text-ink"
+              >en ambos sentidos</strong
+            >. Al pasar de docker run a docker compose, tokeniza el comando exactamente como lo haría un shell —respetando las comillas, los flags
+            cortos agrupados y las continuaciones de línea— mapea cada flag sobre la clave de Compose correspondiente, y emite
+            YAML determinista. En el otro sentido, de docker compose a docker run, reconstruye un comando ejecutable a partir de un
+            servicio y te informa de las claves (<span class="code-mono text-ink" translate="no"
+              >depends_on</span
+            >, <span class="code-mono text-ink" translate="no">build</span>,
+            <span class="code-mono text-ink" translate="no">deploy</span>) que sencillamente no tienen
+            equivalente en el comando.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Todo se ejecuta en tu navegador, así que puedes convertir comandos que nombren registros privados
+            o variables de entorno con secretos sin que nada salga de la pestaña. Consulta la
+            <a class="link-inline" href={dockerRunRef} target="_blank" rel="noopener noreferrer"
+              >referencia de <span translate="no">docker run</span></a
+            > y la
+            <a class="link-inline" href={composeFileRef} target="_blank" rel="noopener noreferrer"
+              >referencia de servicios de Compose</a
+            >.
+          </p>
+          <p class="body-sm text-mute">
+            Consulta el <a class="link-inline" href="#reference">mapeo completo de flag a clave</a>, o prueba el
+            <a class="link-inline" href="#playground">playground en vivo</a> de arriba.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       4) HOW IT WORKS — numbered pipeline
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="El pipeline"
+    heading="Cómo funciona."
+    lead="Cinco pasos deterministas se ejecutan de principio a fin en cada conversión — todos dentro de la pestaña de tu navegador, cada vez."
+    steps={pipeline}
+  />
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       5) REFERENCE — flag ↔ key mapping + a worked example
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="reference" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Referencia</p>
+        <h2 class="display-lg mt-3 text-ink">Cada flag, mapeado.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          Los flags de <span class="code-mono text-ink" translate="no">docker run</span> que el conversor
+          reconoce y las claves de <span class="code-mono text-ink" translate="no">docker-compose</span>
+          a las que se mapean. Cualquier cosa no reconocida se reporta como una nota en lugar de descartarse de forma silenciosa.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 grid max-w-5xl items-start gap-8 lg:grid-cols-2">
+        <div class="card-soft overflow-hidden">
+          <table class="drc-table w-full text-left">
+            <thead>
+              <tr>
+                <th class="eyebrow px-4 py-3">flag de <span translate="no">docker run</span></th>
+                <th class="eyebrow px-4 py-3">Clave de Compose</th>
+              </tr>
+            </thead>
+            <tbody>
+              {
+                mappings.map((m) => (
+                  <tr class="border-t border-hairline align-top">
+                    <td class="code-mono px-4 py-2.5 text-ink" translate="no">{m.flag}</td>
+                    <td class="px-4 py-2.5">
+                      <span class="code-mono text-brand-strong" translate="no">{m.key}</span>
+                      {m.note && <span class="caption mt-0.5 block text-mute">{m.note}</span>}
+                    </td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="space-y-5">
+          <div>
+            <p class="eyebrow mb-2">Entrada</p>
+            <CodeBlock lang="bash" filename="docker run" code={beforeCmd} />
+          </div>
+          <div>
+            <p class="eyebrow mb-2 !text-success">Salida</p>
+            <CodeBlock lang="yaml" filename="docker-compose.yml" code={afterYaml} />
+          </div>
+        </div>
+      </div>
+
+      <p class="caption mx-auto mt-10 max-w-3xl text-center text-pretty text-mute">
+        Tras convertir, inicia el servicio con
+        <a class="link-inline" href={composeUpRef} target="_blank" rel="noopener noreferrer"
+          ><span class="code-mono" translate="no">docker compose up -d</span></a
+        > — el equivalente en Compose del flag <span class="code-mono" translate="no">-d</span> original.
+      </p>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       6) NEXT STEP — dark band, CTAs to related tools
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="next" class="scroll-mt-24 bg-inverse text-inverse-fg">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+        <div class="min-w-0">
+          <p class="eyebrow !text-cyan">Siguiente paso</p>
+          <h2 class="display-lg mt-3 text-balance text-inverse-fg">
+            ¿Ya tienes el servicio? Valida el pipeline y dimensiona los pods.
+          </h2>
+          <p class="body-md mt-4 text-pretty text-white/70">
+            Un servicio de Compose rara vez viaja solo. Revisa el
+            <span translate="no">CI</span> que compila y publica la imagen con el
+            <span translate="no">GitLab CI Validator</span>, y cuando lleves el contenedor a
+            Kubernetes, convierte sus límites de memoria y CPU en
+            <span translate="no">requests/limits</span> seguros con la
+            <span translate="no">Kubernetes Resource Calculator</span> — ambos por completo en tu navegador.
+          </p>
+          <div class="mt-7 flex flex-wrap items-center gap-3">
+            <Button href={__l('/gitlab-ci-validator', __lang)} variant="secondary">Abrir el GitLab CI Validator</Button>
+            <Button href={__l('/kubernetes-resource-calculator', __lang)} variant="secondary"
+              >Abrir la Resource Calculator</Button
+            >
+          </div>
+        </div>
+        <CodeBlock
+          lang="bash"
+          filename="next.sh"
+          code={`# build, push, deploy
+docker build -t app .
+docker compose up -d        # ← from this converter
+kubectl apply -f deploy.yml # ← size it first`}
+        />
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       7) FAQ
+       ════════════════════════════════════════════════════════════════════ -->
+  <FaqList faqs={faqs} />
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       Cross-links + footer disclaimer
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolCrossLinks slug="docker-run-to-compose">
+    <Fragment slot="lead">
+      El conversor de <span translate="no">Docker</span> Run a Compose es una herramienta dentro de
+      <span translate="no">{site.name}</span> — una creciente cubierta de validadores, conversores y
+      probadores basados en navegador que nunca tocan un servidor.
+    </Fragment>
+    <Fragment slot="links">
+      Herramientas relacionadas: el
+      <a class="link-inline" href={__l('/gitlab-ci-validator', __lang)}>validador de <span translate="no">GitLab CI</span></a
+      > y la
+      <a class="link-inline" href={__l('/kubernetes-resource-calculator', __lang)}
+        >calculadora de recursos de <span translate="no">Kubernetes</span></a
+      >. Explora el
+      <a class="link-inline" href={__l(navLinks[0].href, __lang)}>directorio completo de herramientas</a>.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      No está afiliado, respaldado ni patrocinado por <span translate="no">Docker, Inc.</span>
+      <span translate="no">Docker</span>, <span translate="no">docker run</span> y
+      <span translate="no">Docker Compose</span> son marcas comerciales de
+      <span translate="no">Docker, Inc.</span>, usadas aquí solo de forma descriptiva para identificar el comando
+      y los formatos de fichero entre los que convierte esta herramienta.
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>
+
+<style>
+  @reference "../../styles/global.css";
+
+  .drc-table th {
+    font-weight: inherit;
+  }
+  .drc-table td {
+    font-size: 13px;
+    line-height: 18px;
+  }
+</style>

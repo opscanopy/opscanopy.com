@@ -1,0 +1,487 @@
+---
+/**
+ * GitLab CI Validator — la principale surface SEO pour l’outil GitLab CI/CD.
+ * Collez un `.gitlab-ci.yml` et obtenez les erreurs YAML PLUS les erreurs
+ * structurelles et de mauvaise configuration de pipeline que GitLab lui-même
+ * rejetterait : un job sans script, un `stage` absent de `stages:`,
+ * des `needs`/`extends` pointant vers des jobs qui n’existent pas, un `when:`
+ * invalide, l’ancien `only/except`, et des formes `image`/`services`
+ * incorrectes. 100 % côté client — aucun serveur, aucune inscription.
+ *
+ * Reprend la structure de la page GitHub Actions Validator (hero avec
+ * MeshGradient atténué, îlot interactif, docs why/checks, bandeau sombre
+ * d’étape suivante, FAQ + JSON-LD, liens croisés, note de pied de page). L’îlot
+ * interactif (GitlabCiValidatorPlayground) s’auto-monte ; le JSON-LD
+ * (SoftwareApplication + FAQPage) est assemblé ici et transmis à Shell.
+ */
+import Shell from '../../components/Shell.astro';
+import GitlabCiValidatorPlayground from '../../components/GitlabCiValidatorPlayground.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import Badge from '../../components/Badge.astro';
+import Button from '../../components/Button.astro';
+import ToolHero from '../../components/ToolHero.astro';
+import ToolGapVisual from '../../components/ToolGapVisual.astro';
+import ToolPipeline from '../../components/ToolPipeline.astro';
+import FaqList from '../../components/FaqList.astro';
+import ToolCrossLinks from '../../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../../data/site';
+import { getTool } from '../../data/tools';
+import { softwareAppLd, faqPageLd } from '../../lib/jsonld';
+
+const tool = getTool('gitlab-ci-validator');
+
+const pagePath = '/gitlab-ci-validator';
+const pageUrl = `${site.url}${pagePath}`;
+
+// ── External references (the "why it exists" gap + canonical docs) ───────────
+const glDocsKeywords =
+  'https://docs.gitlab.com/ci/yaml/';
+const glDocsStages =
+  'https://docs.gitlab.com/ci/yaml/#stages';
+const glDocsRules =
+  'https://docs.gitlab.com/ci/yaml/#rules';
+const glDocsLint =
+  'https://docs.gitlab.com/ci/pipeline_editor/';
+
+// ── FAQ content — single source for both the rendered section and FAQPage LD ─
+const faqs = [
+  {
+    q: 'Comment valider un fichier .gitlab-ci.yml ?',
+    a: 'Collez votre .gitlab-ci.yml dans ce validateur GitLab CI YAML et il l’analyse instantanément. Il fait deux choses à la fois. D’abord, il signale les erreurs de syntaxe YAML, les mauvaises indentations et les erreurs structurelles, avec la ligne qui a échoué. Ensuite, il exécute des contrôles de mauvaise configuration de pipeline qui correspondent à la façon dont GitLab lui-même valide une configuration : un job sans script / run / trigger / extends, un job dont le stage n’est pas dans votre liste stages, des références needs et extends pointant vers des jobs qui n’existent pas, une valeur when invalide, un bloc rules qui n’est pas une liste, l’ancien only/except, et des formes image/services incorrectes. Vous obtenez les erreurs YAML et les erreurs de pipeline en une seule passe.',
+  },
+  {
+    q: 'Peut-on vérifier un pipeline GitLab sans projet ?',
+    a: 'Oui. Vous pouvez vérifier un pipeline GitLab sans projet, sans connexion et sans runner : ce linter GitLab CI s’exécute à 100 % côté client. Votre .gitlab-ci.yml est analysé à l’intérieur de votre onglet de navigateur — rien n’est envoyé à un serveur, et il n’y a ni compte ni inscription. Vous pouvez coller en toute sécurité des pipelines internes ou propriétaires, y compris ceux contenant des étiquettes de runner privées, des noms d’image internes et des références à des variables secrètes.',
+  },
+  {
+    q: 'Pourquoi GitLab affiche-t-il « this GitLab CI configuration is invalid » ?',
+    a: 'Ce message signifie que GitLab a refusé votre configuration, soit pour une erreur de syntaxe YAML, soit pour une mauvaise configuration structurelle du pipeline. Les causes les plus fréquentes : un job dont le stage n’est pas déclaré dans stages:, un job sans script / run / trigger / extends, une référence needs ou extends vers un job qui n’existe pas, une valeur when invalide, ou un bloc rules: qui n’est pas écrit comme une liste. Ce validateur reproduit ces mêmes contrôles pour vous aider à vérifier les erreurs de .gitlab-ci.yml et à trouver la ligne fautive avant de pousser.',
+  },
+  {
+    q: 'Comment vérifier les erreurs de mon .gitlab-ci.yml avant de pousser ?',
+    a: 'Collez le YAML du pipeline dans ce validateur basé sur le navigateur pour vérifier les erreurs de .gitlab-ci.yml avant de valider — aucune installation ni aucun push nécessaires. L’outil exécute l’ensemble complet des contrôles (structure YAML plus mauvaises configurations de pipeline) entièrement dans votre navigateur, vous obtenez donc un retour instantané sur les erreurs de syntaxe, les stages non déclarés, les jobs sans script, les needs/extends cassés et les valeurs when invalides avant que la configuration n’atteigne un runner GitLab.',
+  },
+  {
+    q: 'Existe-t-il un validateur GitLab CI gratuit en ligne sans connexion ?',
+    a: 'Oui — c’est exactement ce que propose cet outil. C’est un validateur GitLab CI YAML gratuit qui fonctionne en ligne, dans le navigateur, sans compte, sans inscription et sans connexion. L’éditeur de pipeline et CI Lint de GitLab sont excellents et font autorité — ils résolvent les includes, les variables de projet et le schéma en direct, et vous devriez les utiliser avant de fusionner — mais ils nécessitent un projet GitLab, une connexion et un aller-retour avec le serveur. Ici, vous obtenez un retour instantané et hors ligne sur les erreurs structurelles à fort signal pendant que vous êtes encore en train d’éditer. Considérez un résultat propre ici comme une forte confiance avant le push, puis confirmez avec CI Lint.',
+  },
+  {
+    q: 'Que vérifie réellement le validateur GitLab CI ?',
+    a: 'Au-delà de la validité du YAML, le validateur exécute une série de contrôles structurels. Un job visible doit faire quelque chose : exécuter des commandes avec script: (ou le plus récent run:), démarrer un pipeline en aval avec trigger:, ou hériter de l’un de ceux-ci via extends:. Il résout ensuite vos stages — la liste stages: déclarée, ou les cinq valeurs par défaut .pre, build, test, deploy et .post — et vérifie le stage de chaque job par rapport à cet ensemble. Il contrôle aussi que les références needs, dependencies et extends pointent vers des jobs réels, que when: vaut on_success, on_failure, always, manual, delayed ou never, que rules: est bien une liste, et il signale l’ancien only/except à titre informatif.',
+  },
+  {
+    q: 'Comment corriger l’erreur « did not find expected key » dans GitLab CI ?',
+    a: 'Cette erreur YAML signale presque toujours un problème d’indentation ou un deux-points mal placé : une clé enfant alignée au même niveau que sa clé parente, un onglet de tabulation au lieu d’espaces, ou un tiret de liste manquant. Le lecteur YAML s’attendait à trouver une clé là où il a rencontré autre chose. Le validateur vous donne la ligne exacte qui a échoué afin que vous puissiez réaligner l’indentation. Réindentez avec deux espaces de manière cohérente, n’utilisez jamais de tabulations, et collez à nouveau pour confirmer que l’erreur a disparu.',
+  },
+  {
+    q: 'Pourquoi mon job GitLab CI échoue-t-il avec « job has no script » ?',
+    a: 'GitLab rejette un job visible qui ne définit aucune action exécutable. Un job ordinaire exécute des commandes avec script: (ou run:), un job de type bridge démarre un pipeline en aval avec trigger:, et un job peut hériter de l’un de ceux-ci depuis un autre job ou un template masqué via extends:. Un job visible qui n’en définit aucun est rejeté avec une erreur du type « job config should implement a script: or a trigger: keyword ». Le validateur signale tout job visible auquel manquent ces quatre éléments. Les templates masqués (clés commençant par un point) sont autorisés à être des fragments partiels ; ils ne sont donc pas tenus d’avoir un script.',
+  },
+];
+
+// ── JSON-LD: SoftwareApplication + FAQPage (shared builders) ─────────────────
+const softwareApp = softwareAppLd({
+  name: 'GitLab CI Validator',
+  description:
+    'Validateur YAML GitLab CI gratuit. Collez un .gitlab-ci.yml pour trouver instantanément les erreurs YAML et les mauvaises configurations de pipeline. 100 % dans le navigateur, sans installation, sans inscription.',
+  url: pageUrl,
+  subCategory: 'CI/CD',
+  featureList: [
+    'Valider le YAML d’un .gitlab-ci.yml pour les erreurs de syntaxe et de structure',
+    'Détecter les jobs sans script / run / trigger / extends',
+    'Détecter un stage de job non déclaré dans stages:',
+    'Signaler les références needs / extends vers des jobs qui n’existent pas',
+    'Signaler les valeurs when: invalides et les blocs rules: qui ne sont pas des listes',
+    'Recommander rules: plutôt que l’ancien only/except',
+    '100 % côté client, sans envoi, sans inscription',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+
+const faqPage = faqPageLd(faqs);
+
+// ── HOW IT WORKS pipeline ────────────────────────────────────────────────────
+const pipeline = [
+  {
+    title: 'Analyser le YAML.',
+    body: 'Votre .gitlab-ci.yml est analysé avec un lecteur YAML — les erreurs de syntaxe, les mauvaises indentations et les problèmes structurels sont signalés avec la ligne qui a échoué.',
+  },
+  {
+    title: 'Découper la configuration.',
+    body: 'Le niveau supérieur est découpé en mots-clés globaux (stages, default, variables…), jobs visibles et .templates masqués, afin que l’analyseur sache ce qui est un job et ce qui est de la configuration.',
+  },
+  {
+    title: 'Résoudre les stages.',
+    body: 'La liste stages: déclarée (ou les cinq valeurs par défaut : .pre, build, test, deploy, .post) devient l’ensemble par rapport auquel le stage de chaque job est vérifié.',
+  },
+  {
+    title: 'Vérifier chaque job.',
+    body: 'Chaque job est validé pour une surface exécutable, un stage connu, des cibles needs / extends / dependencies réelles, un when valide, un rules en forme de liste, et des formes image / services cohérentes.',
+  },
+  {
+    title: 'Classer par gravité.',
+    body: 'Les résultats sont notés en erreur, avertissement ou info — les erreurs qui cassent le pipeline remontent en tête, devant les notes consultatives comme l’ancien only/except, chacune assortie d’une correction concrète.',
+  },
+];
+
+// ── PIPELINE CHECKS — each with a broken pattern + the fix ────────────────────
+const checks = [
+  {
+    id: 'undefined-stage',
+    name: 'Stage non déclaré dans stages:',
+    severity: 'High',
+    blurb:
+      'Un job dont le stage: n’est pas dans votre liste stages: (ou l’un des stages par défaut .pre, build, test, deploy, .post) est une erreur de configuration — GitLab ne sait pas quand l’exécuter et refuse le pipeline.',
+    badLabel: '.gitlab-ci.yml',
+    bad: `# BROKEN — "release" is not a declared stage
+stages:
+  - build
+  - test
+
+release-job:
+  stage: release       # not in stages:
+  script:
+    - make release`,
+    goodLabel: '.gitlab-ci.yml',
+    good: `# FIXED — every stage used is declared
+stages:
+  - build
+  - test
+  - release
+
+release-job:
+  stage: release
+  script:
+    - make release`,
+  },
+  {
+    id: 'no-script',
+    name: 'Job sans script / trigger / extends',
+    severity: 'High',
+    blurb:
+      'Un job visible doit faire quelque chose : exécuter des commandes (script:/run:), démarrer un pipeline en aval (trigger:), ou en hériter d’un autre job (extends:). Un job qui n’a aucun de ces éléments est rejeté par GitLab.',
+    badLabel: 'job',
+    bad: `# BROKEN — this job does nothing
+build-job:
+  stage: build
+  # no script, run, trigger, or extends`,
+    goodLabel: 'job',
+    good: `# FIXED — give the job a script
+build-job:
+  stage: build
+  script:
+    - make build`,
+  },
+  {
+    id: 'bad-needs',
+    name: 'needs / extends pointant vers un job manquant',
+    severity: 'Medium',
+    blurb:
+      'Chaque entrée de needs:, dependencies: ou extends: doit référencer un job ou un .template masqué qui existe réellement dans le fichier. Une référence vers un job manquant casse le graphe du pipeline.',
+    badLabel: '.gitlab-ci.yml',
+    bad: `# BROKEN — "compile" and ".base" never exist
+test:
+  stage: test
+  needs:
+    - compile          # no such job
+  extends: .base       # no such template
+  script:
+    - make test`,
+    goodLabel: '.gitlab-ci.yml',
+    good: `# FIXED — references resolve to real definitions
+.base:
+  image: golang:1.22
+
+compile:
+  stage: build
+  extends: .base
+  script: make
+
+test:
+  stage: test
+  needs:
+    - compile
+  extends: .base
+  script: make test`,
+  },
+  {
+    id: 'invalid-when',
+    name: 'when: invalide / rules: hors liste',
+    severity: 'Medium',
+    blurb:
+      'when: n’accepte que on_success, on_failure, always, manual, delayed ou never. rules: doit être une liste YAML d’objets de règle — un mapping ou une faute de frappe ici modifie (ou casse) le moment où un job s’exécute.',
+    badLabel: 'job',
+    bad: `# BROKEN — bad when value, rules is a mapping
+deploy:
+  stage: deploy
+  when: sometimes      # not allowed
+  rules:
+    if: '$CI_COMMIT_TAG'   # rules must be a list
+  script: ./deploy.sh`,
+    goodLabel: 'job',
+    good: `# FIXED — valid when, rules as a list
+deploy:
+  stage: deploy
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      when: manual
+  script: ./deploy.sh`,
+  },
+];
+
+const checkCount = checks.length;
+import type { Locale as __Locale } from '../../i18n/config';
+import { localizeKey as __l } from '../../i18n/utils';
+const __lang = (Astro.currentLocale ?? 'en') as __Locale;
+---
+
+<Shell
+  title="Valider gitlab-ci.yml en ligne — Linter GitLab CI"
+  description="Validez votre fichier .gitlab-ci.yml en ligne : détectez les erreurs YAML et les pipelines mal configurés dans le navigateur. Sans installation ni connexion."
+  canonical="/gitlab-ci-validator"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <!-- ════════════════════════════════════════════════════════════════════
+       1) HERO — compact, mesh gradient behind (fixed scrim treatment)
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolHero
+    slug="gitlab-ci-validator"
+    eyebrow="Validateur GitLab CI · CI/CD"
+    badges={[
+      { label: 'S’exécute dans votre navigateur', variant: 'live' },
+      { label: 'Sans inscription', variant: 'neutral' },
+      { label: 'Axé structure', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">
+      Valider gitlab-ci.yml en ligne, avant le runner.
+    </Fragment>
+    <Fragment slot="lead">
+      Ce linter GitLab CI vous permet de valider <span class="code-mono text-ink" translate="no">.gitlab-ci.yml</span> en
+      ligne : collez votre pipeline et obtenez ses erreurs YAML ainsi que les mauvaises configurations
+      structurelles que GitLab rejetterait — stages non déclarés, jobs sans script, <span
+        class="code-mono text-ink"
+        translate="no">needs</span
+      >/<span class="code-mono text-ink" translate="no">extends</span> cassés. Instantanément, dans votre
+      navigateur. Sans installation, sans inscription.
+    </Fragment>
+  </ToolHero>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       2) THE PLAYGROUND
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pb-20 pt-8 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">Valider gitlab-ci.yml en ligne — espace d’essai du linter GitLab CI</h2>
+      <GitlabCiValidatorPlayground />
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       3) WHY IT EXISTS — the gap
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">La faille</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            Un YAML valide ne fait que la moitié du travail.
+          </h2>
+          <ToolGapVisual />
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            Un <span class="code-mono text-ink" translate="no">.gitlab-ci.yml</span> peut s’analyser comme un
+            YAML parfaitement valide tout en restant un pipeline cassé. Les erreurs qui font réellement échouer
+            une exécution sont <strong class="font-medium text-ink">structurelles</strong> : un job pointant
+            vers un <span class="code-mono text-ink" translate="no">stage</span> que vous n’avez jamais
+            déclaré, un job sans <span class="code-mono text-ink" translate="no">script</span>, une entrée
+            <span class="code-mono text-ink" translate="no">needs</span> nommant un job qui n’existe pas, ou un
+            <span class="code-mono text-ink" translate="no">extends</span> sur un template que vous avez
+            renommé.
+          </p>
+          <p class="body-md text-pretty text-body">
+            L’<a
+              class="link-inline"
+              href={glDocsLint}
+              target="_blank"
+              rel="noopener noreferrer">éditeur de pipeline et CI Lint</a
+            > de GitLab détectent ces erreurs — mais seulement après que vous avez poussé vers un projet et que
+            vous vous êtes connecté. Ce validateur exécute les mêmes contrôles structurels à fort signal
+            <em>avant</em> que vous ne validiez, entièrement dans votre navigateur, par rapport à la
+            <a
+              class="link-inline"
+              href={glDocsKeywords}
+              target="_blank"
+              rel="noopener noreferrer">référence des mots-clés <span translate="no">.gitlab-ci.yml</span></a
+            > de GitLab.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Il vérifie les deux — le YAML <em>et</em> la structure du pipeline — afin que vous puissiez valider
+            un pipeline GitLab avant de le pousser, sans rien à installer et sans rien à envoyer.
+          </p>
+          <p class="body-sm text-mute">
+            Voir la liste complète dans <a class="link-inline" href="#reference">les contrôles de pipeline</a>, ou
+            essayez l’<a class="link-inline" href="#playground">espace d’essai en direct</a> ci-dessus.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       4) HOW IT WORKS — numbered pipeline
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="Le pipeline"
+    heading="Comment ça marche."
+    lead="Cinq étapes déterministes s’exécutent de bout en bout à chaque validation — entièrement dans votre onglet de navigateur, à chaque fois."
+    steps={pipeline}
+  />
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       5) PIPELINE CHECKS — each with broken pattern + fix
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="reference" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Contrôles de pipeline</p>
+        <h2 class="display-lg mt-3 text-ink">Les {checkCount} contrôles qui comptent.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          Au-delà de la validité du YAML, l’analyseur recherche les mauvaises configurations qui font échouer
+          un pipeline avant qu’un seul job ne s’exécute. Chacune ci-dessous montre le motif cassé et la
+          correction.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 grid max-w-5xl gap-6">
+        {
+          checks.map((check) => (
+            <article class="card-soft p-6 sm:p-7">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <h3 class="display-sm text-balance text-ink">{check.name}</h3>
+                <Badge variant={check.severity === 'High' ? 'high' : 'medium'}>
+                  Gravité {check.severity === 'High' ? 'élevée' : 'moyenne'}
+                </Badge>
+              </div>
+              <p class="body-md mt-3 max-w-3xl text-pretty text-body">{check.blurb}</p>
+              <div class="mt-5 grid gap-5 lg:grid-cols-2">
+                <div class="min-w-0">
+                  <p class="eyebrow !text-error mb-2">Cassé</p>
+                  <CodeBlock lang="yaml" filename={check.badLabel} code={check.bad} />
+                </div>
+                <div class="min-w-0">
+                  <p class="eyebrow !text-success mb-2">Corrigé</p>
+                  <CodeBlock lang="yaml" filename={check.goodLabel} code={check.good} />
+                </div>
+              </div>
+            </article>
+          ))
+        }
+      </div>
+
+      <p class="caption mx-auto mt-10 max-w-3xl text-center text-pretty text-mute">
+        Les stages, les rules et les dépendances entre jobs sont tous documentés dans la
+        <a
+          class="link-inline"
+          href={glDocsStages}
+          target="_blank"
+          rel="noopener noreferrer">référence des stages</a
+        > et la
+        <a
+          class="link-inline"
+          href={glDocsRules}
+          target="_blank"
+          rel="noopener noreferrer">référence des rules</a
+        > de <span translate="no">GitLab</span>. Les contrôles de l’ancien <span class="code-mono text-ink" translate="no">only</span>/<span
+          class="code-mono text-ink"
+          translate="no">except</span
+        > et des formes <span class="code-mono text-ink" translate="no">image</span>/<span
+          class="code-mono text-ink"
+          translate="no">services</span
+        > fonctionnent aussi dès aujourd’hui.
+      </p>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       6) NEXT STEP — dark band with CTAs to related tools
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="next" class="scroll-mt-24 bg-inverse text-inverse-fg">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+        <div class="min-w-0">
+          <p class="eyebrow !text-cyan">Étape suivante</p>
+          <h2 class="display-lg mt-3 text-balance text-inverse-fg">
+            Vous utilisez aussi GitHub Actions ? Validez ces workflows.
+          </h2>
+          <p class="body-md mt-4 text-pretty text-white/70">
+            De nombreuses équipes exécutent des pipelines sur les deux plateformes. Une fois votre
+            <span class="code-mono" translate="no">.gitlab-ci.yml</span> propre, le
+            <span translate="no">GitHub Actions Validator</span> trouve les erreurs YAML et les failles de
+            sécurité dans vos workflows, et le
+            <span translate="no">GitHub Actions Expression Tester</span> évalue les expressions
+            <span class="code-mono" translate="no">${'{{ … }}'}</span> avant de pousser —
+            le tout entièrement dans votre navigateur.
+          </p>
+          <div class="mt-7 flex flex-wrap items-center gap-3">
+            <Button href={__l('/github-actions-validator', __lang)} variant="secondary"
+              >Ouvrir le validateur Actions</Button
+            >
+            <Button href={__l('/github-actions-expression-tester', __lang)} variant="secondary"
+              >Ouvrir le testeur d’expressions</Button
+            >
+          </div>
+        </div>
+        <CodeBlock
+          lang="yaml"
+          filename=".gitlab-ci.yml"
+          code={`stages: [build, test]
+
+build:
+  stage: build
+  script: make
+
+test:
+  stage: test
+  needs: [build]   # ✓ resolves
+  script: make test`}
+        />
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       7) FAQ
+       ════════════════════════════════════════════════════════════════════ -->
+  <FaqList faqs={faqs} />
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       Cross-links + footer disclaimer
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolCrossLinks slug="gitlab-ci-validator">
+    <Fragment slot="lead">
+      Le validateur CI <span translate="no">GitLab</span> est l’un des outils de
+      <span translate="no">{site.name}</span> — une canopée grandissante de validateurs, de convertisseurs et
+      de testeurs basés sur le navigateur qui ne touchent jamais à un serveur.
+    </Fragment>
+    <Fragment slot="links">
+      Outils connexes : le
+      <a class="link-inline" href={__l('/github-actions-validator', __lang)}><span translate="no">GitHub</span>
+        Actions Validator</a
+      > et le
+      <a class="link-inline" href={__l('/github-actions-expression-tester', __lang)}><span translate="no">GitHub</span>
+        Actions Expression Tester</a
+      >. Parcourez le
+      <a class="link-inline" href={__l(navLinks[0].href, __lang)}>répertoire complet des outils</a>.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      Non affilié à <span translate="no">GitLab B.V.</span>, ni approuvé ou sponsorisé par celle-ci.
+      <span translate="no">GitLab</span> est une marque de <span translate="no">GitLab B.V.</span>,
+      utilisée ici uniquement à titre descriptif pour identifier le format de pipeline
+      <span translate="no">.gitlab-ci.yml</span> que cet outil vérifie.
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>

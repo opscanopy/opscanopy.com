@@ -1,0 +1,420 @@
+---
+/**
+ * Alertmanager Route Tester — the primary SEO surface for the routing tool.
+ * Paste an Alertmanager route tree (or a full config) and a sample alert's
+ * labels, and see exactly which receiver(s) the alert reaches, the matched
+ * route-path breadcrumb, continue behaviour, and the effective grouping
+ * inherited down the tree. 100% client-side — no server, no signup.
+ *
+ * Mirrors the GitHub Actions Validator page structure (hero with scrimmed
+ * MeshGradient, playground island, why/how docs, FAQ + JSON-LD, cross-links).
+ * The interactive island (AlertmanagerRouteTesterPlayground) self-mounts;
+ * JSON-LD (SoftwareApplication + FAQPage) is assembled here and handed to Shell.
+ */
+import Shell from '../../components/Shell.astro';
+import AlertmanagerRouteTesterPlayground from '../../components/AlertmanagerRouteTesterPlayground.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import Button from '../../components/Button.astro';
+import ToolHero from '../../components/ToolHero.astro';
+import ToolGapVisual from '../../components/ToolGapVisual.astro';
+import ToolPipeline from '../../components/ToolPipeline.astro';
+import FaqList from '../../components/FaqList.astro';
+import ToolCrossLinks from '../../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../../data/site';
+import { getTool } from '../../data/tools';
+import { softwareAppLd, faqPageLd } from '../../lib/jsonld';
+
+const tool = getTool('alertmanager-route-tester');
+
+const pagePath = '/alertmanager-route-tester';
+const pageUrl = `${site.url}${pagePath}`;
+
+// ── External references (the canonical docs the semantics follow) ────────────
+const amRouteDocs =
+  'https://prometheus.io/docs/alerting/latest/configuration/#route';
+const amRoutingDocs = 'https://prometheus.io/docs/alerting/latest/configuration/#matcher';
+const amRoutingTree =
+  'https://prometheus.io/docs/alerting/latest/configuration/#example';
+
+// ── FAQ content — single source for both the rendered section and FAQPage LD ─
+const faqs = [
+  {
+    q: 'Como testar qual receiver um alerta corresponde no Alertmanager?',
+    a: 'Cole a sua árvore de rotas (ou um alertmanager.yml completo — apenas o bloco route dele é lido) e as labels de um alerta de exemplo neste testador de rotas do Alertmanager online. Ele reproduz o percurso de roteamento do Alertmanager dentro do navegador e mostra qual receiver, ou quais receivers, o alerta alcançaria, o caminho exato da rota desde a raiz até o nó correspondente, se um continue: true fez disparar mais de um receiver, e o group_by efetivo após a herança. É uma simulação do despacho, sem enviar uma única notificação, então você descobre qual receiver corresponde ao alerta no Alertmanager antes de ele acionar alguém.',
+  },
+  {
+    q: 'O que o amtool config routes test faz?',
+    a: 'O amtool config routes test resolve a árvore de rotas do seu alertmanager.yml contra um conjunto de matchers de label e imprime os receivers que um alerta atingiria, espelhando como o Alertmanager em execução despacha. Esta página é um amtool routes test online no navegador: faz o mesmo percurso na árvore de rotas no lado do cliente, então você consegue testar o roteamento do Alertmanager sem instalar o amtool nem apontá-lo para uma config ao vivo. Cole a árvore, cole as labels e leia os receivers correspondentes e o caminho.',
+  },
+  {
+    q: 'Por que meu alerta do Alertmanager está indo para o receiver errado?',
+    a: 'Quase sempre é ordem de rotas, uma regex não ancorada ou um continue faltando. Dentro de uma rota correspondente, as irmãs são avaliadas de cima para baixo e só a primeira correspondência é tomada — então uma regra ampla colocada acima de uma específica a esconde silenciosamente. Os padrões match_re e =~ são totalmente ancorados, então env=~"staging" nunca combina com staging-eu. Use este recurso para depurar rotas do Alertmanager: percorra a árvore contra as labels exatas e veja qual nó de fato combinou, o que deixa óbvia a resposta para "por que meu alerta está indo para o receiver errado".',
+  },
+  {
+    q: 'Como funciona a flag continue no roteamento do Alertmanager?',
+    a: 'Por padrão, assim que um alerta combina com uma rota em uma lista de irmãs, o Alertmanager para de varrer o restante daquela lista. Definir continue: true em uma rota correspondente diz ao Alertmanager para continuar avaliando também as irmãs seguintes, para que o alerta possa cair em mais de um receiver — a forma usual de as equipes espelharem todo alerta crítico para um receiver de auditoria ou de paging enquanto ainda o roteiam para a equipe dona. Ao testar o roteamento do Alertmanager aqui, a ferramenta marca cada receiver que um continue: true produz, para que você veja exatamente quais correspondências vieram do encadeamento.',
+  },
+  {
+    q: 'Um alerta pode corresponder a mais de um receiver do Alertmanager?',
+    a: 'Sim — mas só quando continue: true está definido em uma rota correspondente. Sem ele, a primeira irmã correspondente vence e a varredura para, então um alerta alcança exatamente um receiver por lista de rotas. Com continue: true, o alerta continua descendo pelas irmãs seguintes e pode se ramificar para vários receivers. Este testador mostra cada receiver na ordem em que dispara, para que você confirme que o fan-out é o que pretendia e veja claramente qual receiver corresponde ao alerta no Alertmanager.',
+  },
+  {
+    q: 'Como testar o roteamento do Alertmanager sem uma instância em execução?',
+    a: 'Você não precisa de um Alertmanager em execução, e não precisa do amtool. Este é um testador de rotas do Alertmanager online, grátis e sem instalação: tudo roda 100% no lado do cliente, dentro da aba do seu navegador. Cole a sua árvore de rotas e as labels do alerta para testar a sua config de roteamento e simular o roteamento de alertas do Alertmanager no navegador. Nada é enviado e não há cadastro, então você pode colar com segurança nomes de receivers internos e labels de equipes privadas.',
+  },
+  {
+    q: 'Por que o editor da árvore de rotas do Prometheus mostra a rota errada?',
+    a: 'O editor da árvore de rotas do Prometheus visualiza a árvore, mas ainda deixa você raciocinar de cabeça sobre match vs. match_re vs. matchers, a ordenação de first-match e a herança — então ele pode parecer certo enquanto um alerta roteia para outro lugar. Se o editor da árvore de rotas não está combinando com as rotas que você espera, use isto como alternativa: testar os matchers do Alertmanager contra labels online. O testador percorre a semântica real e destaca o caminho correspondente, em vez de apenas desenhar a árvore de rotas do Alertmanager online.',
+  },
+  {
+    q: 'Como o Alertmanager decide qual rota combina primeiro?',
+    a: 'Todo alerta entra pela rota raiz, que é o catch-all. Dentro de uma rota correspondente, as rotas filhas são avaliadas de cima para baixo, e o alerta desce para a primeira filha cujos matchers sejam todos satisfeitos — por exemplo, o primeiro nó que exige uma label severity="critical". Ele continua descendo por aquela subárvore; se uma rota correspondente não tiver nenhuma filha que combine, essa rota é o match terminal e o receiver dela dispara. A regra que as pessoas erram é ordem somada a first-match: apenas a primeira irmã correspondente é tomada, a menos que continue: true esteja definido.',
+  },
+];
+
+// ── JSON-LD: SoftwareApplication + FAQPage (shared builders) ─────────────────
+const softwareApp = softwareAppLd({
+  name: 'Alertmanager Route Tester',
+  description:
+    'Testador de rotas do Alertmanager gratuito. Cole uma árvore de rotas e as labels de um alerta para ver quais receivers combinam, o caminho da rota correspondente, o comportamento do continue e o agrupamento efetivo. 100% no navegador, sem instalação, sem cadastro.',
+  url: pageUrl,
+  subCategory: 'Observability / Alerting',
+  featureList: [
+    'Percorre uma árvore de rotas do Alertmanager contra as labels de um alerta de exemplo',
+    'Mostra o(s) receiver(s) correspondente(s) e o caminho completo da rota',
+    'Reproduz exatamente a semântica de first-match e de continue: true',
+    'Avalia os operadores match, match_re (ancorado) e matchers',
+    'Resolve group_by / group_wait / repeat_interval herdados',
+    '100% no lado do cliente, sem upload, sem cadastro',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+
+const faqPage = faqPageLd(faqs);
+
+// ── HOW IT WORKS pipeline ────────────────────────────────────────────────────
+const pipeline = [
+  {
+    title: 'Analisa a configuração.',
+    body: 'Seu YAML é analisado e a árvore de rotas é resolvida — um alertmanager.yml completo usa o bloco route: dele, um objeto de rota puro é tomado como a raiz. Os erros de análise são reportados, não lançados.',
+  },
+  {
+    title: 'Lê as labels.',
+    body: 'As linhas key=value do alerta viram um conjunto de labels. Uma label ausente é tratada como string vazia, exatamente como o Alertmanager a compara.',
+  },
+  {
+    title: 'Percorre a árvore.',
+    body: 'Partindo da raiz que sempre combina, as rotas filhas são avaliadas em ordem. O alerta desce para a primeira filha correspondente; um continue: true mantém as irmãs seguintes em jogo.',
+  },
+  {
+    title: 'Resolve a herança.',
+    body: 'Em cada match terminal, o receiver e os campos de agrupamento/timer são resolvidos a partir do ancestral mais próximo que os definiu — os valores que o Alertmanager de fato usaria.',
+  },
+  {
+    title: 'Mostra os receivers.',
+    body: 'Cada receiver que o alerta alcança é listado com o caminho da sua rota, uma marcação de continue quando relevante, e o group_by efetivo.',
+  },
+];
+
+// ── ROUTING RULES — each with the syntax + what it means ──────────────────────
+const rules = [
+  {
+    id: 'first-match',
+    name: 'A primeira correspondência vence (a menos que haja continue)',
+    badge: 'ordem',
+    blurb:
+      'Dentro de uma rota correspondente, as filhas são avaliadas de cima para baixo. O alerta toma a PRIMEIRA irmã correspondente e para — as irmãs seguintes são puladas, a menos que continue: true esteja definido.',
+    badLabel: 'route',
+    bad: `# Order matters — the broad rule above shadows the specific one
+routes:
+  - receiver: catch-all          # matches everything below
+    matchers: ['severity=~".*"']
+  - receiver: db-pager           # NEVER reached
+    match: { service: database }`,
+    goodLabel: 'route',
+    good: `# Specific first, broad last — or use continue
+routes:
+  - receiver: db-pager
+    match: { service: database }
+  - receiver: catch-all
+    matchers: ['severity=~".*"']`,
+  },
+  {
+    id: 'continue',
+    name: 'continue: true → múltiplos receivers',
+    badge: 'fan-out',
+    blurb:
+      'Uma rota correspondente com continue: true não interrompe a varredura das irmãs, então o alerta também pode cair em uma rota posterior. Use isso para espelhar alertas críticos para um receiver de auditoria ou de paging.',
+    badLabel: 'route',
+    bad: `# Without continue, only the audit receiver fires —
+# the owning team is never paged
+routes:
+  - receiver: all-critical-audit
+    matchers: ['severity="critical"']
+  - receiver: team-backend
+    match: { team: backend }`,
+    goodLabel: 'route',
+    good: `# continue: true lets BOTH fire
+routes:
+  - receiver: all-critical-audit
+    matchers: ['severity="critical"']
+    continue: true
+  - receiver: team-backend
+    match: { team: backend }`,
+  },
+  {
+    id: 'anchored-regex',
+    name: 'As regexes são totalmente ancoradas',
+    badge: 'matchers',
+    blurb:
+      'O Alertmanager envolve todo padrão match_re e =~/!~ como ^(?:…)$. Um padrão parcial nunca combina com o valor inteiro — uma causa frequente de "minha rota não está combinando".',
+    badLabel: 'matchers',
+    bad: `# 'staging' only matches the value EXACTLY "staging"
+matchers:
+  - env=~"staging"      # env=staging-eu does NOT match`,
+    goodLabel: 'matchers',
+    good: `# Cover the rest of the value explicitly
+matchers:
+  - env=~"staging-.*"   # env=staging-eu matches`,
+  },
+  {
+    id: 'inheritance',
+    name: 'O agrupamento é herdado árvore abaixo',
+    badge: 'agrupamento',
+    blurb:
+      'group_by, group_wait, group_interval e repeat_interval fluem de um pai para qualquer filha que não defina o seu próprio. A folha que você vê pode não ser o agrupamento que se aplica.',
+    badLabel: 'route',
+    bad: `# This leaf has no group_by of its own…
+route:
+  group_by: ['alertname', 'cluster']
+  routes:
+    - receiver: db-pager
+      match: { service: database }
+      # …so it INHERITS [alertname, cluster]`,
+    goodLabel: 'route',
+    good: `# Override only where the subtree needs it
+route:
+  group_by: ['alertname', 'cluster']
+  routes:
+    - receiver: db-pager
+      match: { service: database }
+      group_by: ['alertname', 'cluster', 'database']`,
+  },
+];
+
+const ruleCount = rules.length;
+import type { Locale as __Locale } from '../../i18n/config';
+import { localizeKey as __l } from '../../i18n/utils';
+const __lang = (Astro.currentLocale ?? 'en') as __Locale;
+
+---
+
+<Shell
+  title="Testador de rotas do Alertmanager online"
+  description="Teste o roteamento do Alertmanager online: cole a árvore de rotas e os labels do alerta para ver qual receiver corresponde. Sem instalar nada, direto no navegador."
+  canonical="/alertmanager-route-tester"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <!-- ════════════════════════════════════════════════════════════════════
+       1) HERO
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolHero
+    eyebrow="Alertmanager Route Tester · Observabilidade"
+    badges={[
+      { label: 'Roda no seu navegador', variant: 'live' },
+      { label: 'Sem cadastro', variant: 'neutral' },
+      { label: 'Fiel ao roteamento', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">
+      Testador de rotas do <span class="code-mono" translate="no">Alertmanager</span> — veja qual receiver corresponde antes de o alerta acionar alguém.
+    </Fragment>
+    <Fragment slot="lead">
+      Este testador de rotas do <span class="code-mono text-ink" translate="no">Alertmanager</span> online deixa você
+      colar uma árvore de rotas e as labels de um alerta de exemplo, e então percorre a árvore do jeito que o Alertmanager faz:
+      receiver(s) correspondente(s), o caminho da rota, o comportamento do
+      <span class="code-mono text-ink" translate="no">continue</span> e o agrupamento efetivo. Descubra na hora qual
+      receiver corresponde ao alerta, direto no seu navegador.
+    </Fragment>
+  </ToolHero>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       2) THE PLAYGROUND
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pb-20 pt-8 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">Playground do Alertmanager Route Tester</h2>
+      <AlertmanagerRouteTesterPlayground />
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       3) WHY IT EXISTS — the gap
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">A lacuna</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            Uma árvore de roteamento é código que você não consegue percorrer passo a passo.
+          </h2>
+          <ToolGapVisual />
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            Uma rota do <span class="code-mono text-ink" translate="no">Alertmanager</span> é uma
+            árvore de decisão e, como qualquer árvore, é fácil de errar de forma sutil: uma regra ampla colocada
+            acima de uma específica a esconde silenciosamente, um
+            <span class="code-mono text-ink" translate="no">continue</span> faltando impede que a equipe de plantão
+            seja acionada algum dia, e uma regex não ancorada quietamente não combina com nada.
+          </p>
+          <p class="body-md text-pretty text-body">
+            A forma usual de descobrir é <strong class="font-medium text-ink"
+              >disparar um alerta de verdade</strong
+            > e observar onde ele cai — lento, ruidoso e arriscado em um ambiente ao vivo. O próprio
+            visualizador da árvore de roteamento do Alertmanager ajuda, mas você ainda tem que raciocinar de cabeça sobre
+            <span class="code-mono text-ink" translate="no">match</span> vs.
+            <span class="code-mono text-ink" translate="no">match_re</span> vs.
+            <span class="code-mono text-ink" translate="no">matchers</span>, a ordenação de first-match
+            e a herança. Veja a
+            <a class="link-inline" href={amRouteDocs} target="_blank" rel="noopener noreferrer"
+              >referência de route</a
+            > e a
+            <a class="link-inline" href={amRoutingDocs} target="_blank" rel="noopener noreferrer"
+              >sintaxe de matcher</a
+            > oficiais.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Este testador faz o percurso por você: cole a árvore e um conjunto de labels para depurar rotas do
+            <span class="code-mono text-ink" translate="no">Alertmanager</span> e testar os matchers contra labels reais.
+            Ele reporta o(s) receiver(s) que um alerta alcança com o caminho completo e o agrupamento efetivo &mdash; nada
+            instalado, nada enviado, nada subido para servidor.
+          </p>
+          <p class="body-sm text-mute">
+            Veja as <a class="link-inline" href="#rules">regras de roteamento</a> que ele modela, ou experimente o
+            <a class="link-inline" href="#playground">playground ao vivo</a> acima.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       4) HOW IT WORKS — numbered pipeline
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="O pipeline"
+    heading="Como funciona."
+    lead="Cinco passos determinísticos rodam de ponta a ponta em cada avaliação — todos dentro da aba do seu navegador, toda vez."
+    steps={pipeline}
+  />
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       5) ROUTING RULES — the semantics it models
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="rules" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Regras de roteamento</p>
+        <h2 class="display-lg mt-3 text-ink">As {ruleCount} regras que decidem o roteamento.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          O testador reproduz exatamente essa semântica do <span translate="no">Alertmanager</span>.
+          Cada uma abaixo mostra a armadilha e a solução.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 grid max-w-5xl gap-6">
+        {
+          rules.map((rule) => (
+            <article class="card-soft p-6 sm:p-7">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <h3 class="display-sm text-balance text-ink">{rule.name}</h3>
+                <span class="badge whitespace-nowrap align-middle text-body">
+                  <span
+                    class="inline-block size-1.5 shrink-0 rounded-full bg-mute"
+                    aria-hidden="true"
+                  />
+                  {rule.badge}
+                </span>
+              </div>
+              <p class="body-md mt-3 max-w-3xl text-pretty text-body">{rule.blurb}</p>
+              <div class="mt-5 grid gap-5 lg:grid-cols-2">
+                <div class="min-w-0">
+                  <p class="eyebrow !text-error mb-2">Armadilha</p>
+                  <CodeBlock lang="yaml" filename={rule.badLabel} code={rule.bad} />
+                </div>
+                <div class="min-w-0">
+                  <p class="eyebrow !text-success mb-2">Solução</p>
+                  <CodeBlock lang="yaml" filename={rule.goodLabel} code={rule.good} />
+                </div>
+              </div>
+            </article>
+          ))
+        }
+      </div>
+
+      <p class="caption mx-auto mt-10 max-w-3xl text-center text-pretty text-mute">
+        O exemplo completo de roteamento na documentação do <span translate="no">Alertmanager</span> &mdash;
+        <a class="link-inline" href={amRoutingTree} target="_blank" rel="noopener noreferrer"
+          >um receiver raiz com filhas team-X / team-Y / database</a
+        > &mdash; carrega como o primeiro exemplo no playground.
+      </p>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       6) NEXT STEP — dark band linking related tools
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="next" class="bg-inverse text-inverse-fg">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-3xl text-center">
+        <p class="eyebrow">Continue</p>
+        <h2 class="display-md mt-3 text-balance">Teste o resto do seu pipeline de alerting.</h2>
+        <p class="body-md mx-auto mt-4 max-w-xl text-pretty opacity-80">
+          O roteamento é o último salto. Acerte as labels na origem &mdash; faça o relabel delas conforme são
+          coletadas, e prove que as suas regras de alerta disparam &mdash; e a árvore de rotas acima terá as
+          labels certas para trabalhar.
+        </p>
+        <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+          <Button href={__l('/prometheus-relabel-tester', __lang)}>Prometheus Relabel Tester</Button>
+          <Button href={__l('/loki-alert-rule-tester', __lang)} variant="secondary">Loki Alert Rule Tester</Button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       7) FAQ
+       ════════════════════════════════════════════════════════════════════ -->
+  <FaqList faqs={faqs} />
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       Cross-links + footer disclaimer
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolCrossLinks>
+    <Fragment slot="lead">
+      O <span translate="no">Alertmanager</span> Route Tester é uma ferramenta dentro do
+      <span translate="no">{site.name}</span> &mdash; uma copa crescente de validadores, conversores e
+      testadores baseados em navegador que nunca tocam um servidor.
+    </Fragment>
+    <Fragment slot="links">
+      Ferramentas relacionadas: o
+      <a class="link-inline" href={__l('/prometheus-relabel-tester', __lang)}
+        >testador de relabel do <span translate="no">Prometheus</span></a
+      > e o
+      <a class="link-inline" href={__l('/loki-alert-rule-tester', __lang)}
+        >testador de regras de alerta do <span translate="no">Loki</span></a
+      >. Explore o
+      <a class="link-inline" href={__l(navLinks[0].href, __lang)}>diretório completo de ferramentas</a>.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      Não é afiliado, endossado nem patrocinado pelo projeto
+      <span translate="no">Prometheus</span> nem pela
+      <span translate="no">Cloud Native Computing Foundation</span>.
+      <span translate="no">Prometheus</span> e <span translate="no">Alertmanager</span> são usados
+      aqui apenas de forma descritiva, para identificar o formato de configuração que esta ferramenta verifica.
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>

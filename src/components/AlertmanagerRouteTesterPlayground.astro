@@ -1,0 +1,1090 @@
+---
+/**
+ * AlertmanagerRouteTesterPlayground — the interactive Alertmanager Route Tester
+ * island.
+ *
+ * A no-framework, server-rendered shell hydrated by a single module <script>
+ * that lazily boots TWO CodeMirror 6 editors (the route config YAML and the
+ * alert labels), wires an example picker, a "Run" action, plus Copy + Share. It
+ * runs entirely client-side and is fully usable offline once loaded.
+ *
+ * Runtime contract (imported lazily in the script):
+ *   ../lib/alertmanager-route-tester/engine →
+ *     matchRoute(configYaml: string, alertLabelsInput: string) => MatchRouteResult
+ *       MatchRouteResult = {
+ *         ok: boolean
+ *         error?: string
+ *         matches?: Array<{
+ *           receiver: string
+ *           path: string[]
+ *           grouping: { group_by?: string[]; group_wait?: string; … }
+ *           viaContinue: boolean
+ *           matchers: Array<{ name: string; op: string; value: string }>
+ *         }>
+ *         warnings: string[]
+ *       }
+ *   ../lib/alertmanager-route-tester/examples →
+ *     examples: Array<{ id: string; label: string; config: string; labels: string }>
+ *
+ * The dark editor surfaces follow DESIGN.md `code-editor-mockup`; results use
+ * the semantic success/warning tokens. All runtime-injected markup is styled
+ * via :global(...) because Astro scoped styles do not reach innerHTML nodes,
+ * and every user string is escaped with escapeHtml before injection.
+ */
+---
+
+<section class="amr" aria-label="Alertmanager Route Tester playground">
+  <div class="card shadow-float rounded-lg overflow-hidden">
+    {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+    <div
+      class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5"
+    >
+      <div class="flex min-w-0 items-center gap-3">
+        <label class="eyebrow shrink-0" for="amr-example">Example</label>
+        <div class="amr-select-wrap relative min-w-0">
+          <select id="amr-example" class="amr-select code-mono" autocomplete="off">
+            <option value="">Loading examples…</option>
+          </select>
+          <svg
+            class="amr-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M4 6l4 4 4-4"></path>
+          </svg>
+        </div>
+      </div>
+
+      <div class="flex shrink-0 flex-wrap items-center gap-2">
+        <span class="caption text-mute hidden items-center sm:inline-flex">⌘/Ctrl + Enter</span>
+        <button
+          id="amr-copy"
+          type="button"
+          class="btn btn-secondary btn-sm amr-tap"
+          data-default-label="Copy"
+        >
+          <svg
+            class="h-4 w-4 shrink-0"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <rect x="5.5" y="5.5" width="8" height="8" rx="1.5"></rect>
+            <path d="M3.5 10.5h-.5a1.5 1.5 0 0 1-1.5-1.5v-6A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5"></path>
+          </svg>
+          <span class="amr-copy-label">Copy</span>
+        </button>
+        <button
+          id="amr-share"
+          type="button"
+          class="btn btn-secondary btn-sm amr-tap"
+          data-default-label="Share Link"
+          title="This link encodes your route config and labels — review before sharing"
+        >
+          <svg
+            class="h-4 w-4 shrink-0"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M6 8.5l4-1.5M6 8.5l4 1.5"></path>
+            <circle cx="4" cy="8" r="1.6"></circle>
+            <circle cx="11.5" cy="5" r="1.6"></circle>
+            <circle cx="11.5" cy="11" r="1.6"></circle>
+          </svg>
+          <span class="amr-share-label">Share Link</span>
+        </button>
+        <button
+          id="amr-run"
+          type="button"
+          class="btn btn-primary btn-sm amr-tap"
+          title="Run (⌘/Ctrl + Enter)"
+          aria-keyshortcuts="Meta+Enter Control+Enter"
+        >
+          <svg
+            class="amr-run-icon h-4 w-4 shrink-0"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M4 3l9 5-9 5z"></path>
+          </svg>
+          <span class="amr-run-label">Run</span>
+        </button>
+      </div>
+    </div>
+
+    {/* ── Editors: route config (wide) + alert labels (narrow) ─────────── */}
+    <div class="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr]">
+      {/* Route config pane */}
+      <div class="amr-pane flex min-w-0 flex-col bg-inverse lg:border-r lg:border-white/10">
+        <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
+          <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+          </span>
+          <span class="code-mono text-white/45">alertmanager.yml · route</span>
+        </div>
+        <p class="body-sm text-mute px-4 pt-2">Paste a route tree or full config — runs entirely in your browser.</p>
+        <div
+          id="amr-config"
+          class="amr-editor min-h-72"
+          aria-label="Alertmanager route configuration (YAML)"
+        >
+        </div>
+      </div>
+
+      {/* Alert labels pane */}
+      <div class="amr-pane flex min-w-0 flex-col bg-inverse border-t border-white/10 lg:border-t-0">
+        <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
+          <span class="code-mono text-white/45">alert labels · key=value</span>
+        </div>
+        <p class="body-sm text-mute px-4 pt-2">One label per line, e.g. <span class="code-mono">severity=critical</span>.</p>
+        <div
+          id="amr-labels"
+          class="amr-editor min-h-72"
+          aria-label="Alert labels (key=value per line)"
+        >
+        </div>
+      </div>
+    </div>
+    <p class="text-xs text-mute bg-inverse px-4 pb-2">Tip: press <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd> to release keyboard focus from an editor.</p>
+
+    {/* ── Results panel ────────────────────────────────────────────────── */}
+    <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <span class="eyebrow">Matched receivers</span>
+        <span
+          id="amr-summary"
+          class="amr-summary code-mono text-mute"
+          role="status"
+          aria-live="polite"
+        ></span>
+      </div>
+
+      <div id="amr-results" class="amr-results" aria-live="polite" aria-atomic="false">
+        <p class="amr-empty body-sm text-mute">
+          Load an example or paste a route tree and an alert’s labels, then run to see which
+          receiver(s) the alert reaches.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  {/* Polite announcer for clipboard + transient toasts. */}
+  <span id="amr-announce" class="sr-only" role="status" aria-live="polite"></span>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  .amr-tap {
+    touch-action: manipulation;
+  }
+
+  /* The example picker: a 6px-radius in-app form control. */
+  .amr-select {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    height: 32px;
+    min-width: 0;
+    max-width: 280px;
+    padding: 0 32px 0 12px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 13px;
+    line-height: 20px;
+    cursor: pointer;
+    text-overflow: ellipsis;
+    touch-action: manipulation;
+    transition: box-shadow 0.15s ease;
+  }
+  @media (min-width: 640px) {
+    .amr-select {
+      width: auto;
+      min-width: 220px;
+    }
+  }
+  .amr-select:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .amr-select:disabled {
+    cursor: not-allowed;
+    color: var(--color-mute);
+    opacity: 0.7;
+  }
+  .amr-select-caret {
+    transition: color 0.15s ease;
+  }
+  .amr-select-wrap:hover .amr-select-caret {
+    color: var(--color-body);
+  }
+
+  /* CodeMirror hosts — fill the dark panes, scroll internally. */
+  .amr-editor {
+    overflow: hidden;
+  }
+  .amr-editor :global(.cm-editor) {
+    height: 100%;
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .amr-editor :global(.cm-editor.cm-focused) {
+    outline: 2px solid var(--color-link);
+    outline-offset: -2px;
+  }
+  .amr-editor :global(.cm-scroller) {
+    overflow: auto;
+    max-height: 460px;
+    font-family: var(--font-mono);
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  }
+  .amr-editor :global(.cm-scroller)::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .amr-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.16);
+    border-radius: var(--radius-pill);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  .amr-editor :global(.cm-scroller)::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.28);
+    background-clip: content-box;
+  }
+  .amr-editor :global(.cm-gutters) {
+    background: transparent;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .amr-editor :global(.cm-lineNumbers .cm-gutterElement) {
+    color: rgba(255, 255, 255, 0.32);
+  }
+  .amr-editor :global(.cm-content) {
+    padding: 12px 0 16px;
+  }
+  .amr-editor :global(.cm-line) {
+    padding-inline: 4px;
+  }
+
+  .amr-summary {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+    white-space: nowrap;
+  }
+
+  /* ── Results (runtime-injected → :global) ───────────────────────────── */
+  .amr-results {
+    min-height: 44px;
+  }
+
+  :global(.amr-match + .amr-match) {
+    margin-top: 10px;
+  }
+  :global(.amr-match) {
+    padding: 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: inset 0 0 0 1px var(--color-brand-soft), var(--shadow-hairline);
+    animation: amr-rise 0.18s ease both;
+  }
+  :global(.amr-match:hover) {
+    box-shadow: inset 0 0 0 1px var(--color-brand-soft), var(--shadow-subtle);
+  }
+  @keyframes amr-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.amr-match),
+    :global(.amr-error),
+    :global(.amr-warn) {
+      animation: none;
+    }
+  }
+
+  :global(.amr-match__head) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  :global(.amr-match__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    color: var(--color-success);
+  }
+  :global(.amr-match__rx) {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 20px;
+    color: var(--color-ink);
+    word-break: break-word;
+  }
+  :global(.amr-pill) {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    padding: 1px 8px;
+    border-radius: var(--radius-pill);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    box-shadow: var(--shadow-hairline);
+    background: var(--color-canvas-soft-2);
+    color: var(--color-body);
+  }
+  :global(.amr-pill--continue) {
+    background: var(--color-warning-soft);
+    color: var(--color-warning-deep);
+  }
+
+  /* Breadcrumb of the matched path. */
+  :global(.amr-path) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin-top: 10px;
+  }
+  :global(.amr-crumb) {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas-soft-2);
+    color: var(--color-body);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 18px;
+    word-break: break-word;
+  }
+  :global(.amr-crumb--last) {
+    background: var(--color-brand-soft);
+    color: var(--color-brand-strong);
+  }
+  :global(.amr-sep) {
+    color: var(--color-mute);
+    font-size: 12px;
+  }
+
+  /* Effective grouping line. */
+  :global(.amr-group) {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+  }
+  :global(.amr-group__item) {
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-body);
+  }
+  :global(.amr-group__k) {
+    font-family: var(--font-mono);
+    color: var(--color-mute);
+  }
+  :global(.amr-group__v) {
+    font-family: var(--font-mono);
+    color: var(--color-ink);
+  }
+
+  /* Warnings list. */
+  :global(.amr-warns) {
+    margin-top: 14px;
+  }
+  :global(.amr-warn) {
+    display: flex;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    background: var(--color-warning-soft);
+    color: var(--color-warning-deep);
+    font-size: 12.5px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  :global(.amr-warn + .amr-warn) {
+    margin-top: 6px;
+  }
+  :global(.amr-warn__icon) {
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    margin-top: 2px;
+  }
+
+  /* Parse-error banner. */
+  :global(.amr-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+    animation: amr-rise 0.18s ease both;
+  }
+  :global(.amr-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.amr-error__body) {
+    min-width: 0;
+  }
+  :global(.amr-error__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.amr-error__detail) {
+    margin-top: 2px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 18px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  :global(.amr-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+
+  :global(.amr-loading) {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--color-body);
+  }
+  :global(.amr-loading__dot) {
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background: var(--color-mute);
+    animation: amr-pulse 1.1s ease-in-out infinite;
+  }
+  :global(.amr-loading__dot:nth-child(2)) {
+    animation-delay: 0.18s;
+  }
+  :global(.amr-loading__dot:nth-child(3)) {
+    animation-delay: 0.36s;
+  }
+  @keyframes amr-pulse {
+    0%,
+    100% {
+      opacity: 0.3;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.amr-loading__dot) {
+      animation: none;
+      opacity: 0.6;
+    }
+  }
+
+  .is-busy {
+    opacity: 0.65;
+    pointer-events: none;
+    cursor: progress;
+  }
+  .is-busy .amr-run-icon {
+    display: none;
+  }
+</style>
+
+<script>
+  import { EditorState } from '@codemirror/state';
+  import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
+  import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+  import { yaml } from '@codemirror/lang-yaml';
+  import { oneDark } from '@codemirror/theme-one-dark';
+  import { escapeHtml } from '../lib/escape-html';
+
+  /* ---- Types mirrored from the engine contract (structural, not imported). -- */
+  type Matcher = { name: string; op: string; value: string };
+  type Grouping = {
+    group_by?: string[];
+    group_wait?: string;
+    group_interval?: string;
+    repeat_interval?: string;
+  };
+  type RouteMatch = {
+    receiver: string;
+    path: string[];
+    grouping: Grouping;
+    viaContinue: boolean;
+    matchers: Matcher[];
+  };
+  type MatchRouteResult = {
+    ok: boolean;
+    error?: string;
+    matches?: RouteMatch[];
+    warnings?: string[];
+  };
+
+  type EngineModule = {
+    matchRoute: (
+      configYaml: string,
+      alertLabelsInput: string,
+    ) => MatchRouteResult | Promise<MatchRouteResult>;
+  };
+  type ExampleRaw = Record<string, unknown>;
+  type Example = { id: string; label: string; config: string; labels: string };
+
+  const ROOT_SEL = '.amr';
+  const COPIED_RESET_MS = 1800;
+  const SHARE_KEY_CFG = 'amrc';
+  const SHARE_KEY_LBL = 'amrl';
+
+  /** Boot every (so far un-hydrated) playground instance on the page. */
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.amrWired === 'true') return;
+      root.dataset.amrWired = 'true';
+      void init(root);
+    });
+  }
+
+  /* ---- Small helpers -------------------------------------------------------- */
+
+  function pick(obj: ExampleRaw, keys: string[]): string {
+    for (const k of keys) {
+      const v = obj[k];
+      if (typeof v === 'string' && v.length > 0) return v;
+    }
+    return '';
+  }
+
+  function normaliseExamples(raw: unknown): Example[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((item, i) => {
+      const o = (item ?? {}) as ExampleRaw;
+      return {
+        id: pick(o, ['id', 'slug', 'key']) || `example-${i + 1}`,
+        label: pick(o, ['label', 'name', 'title']) || `Example ${i + 1}`,
+        config: pick(o, ['config', 'route', 'yaml', 'tree', 'content']),
+        labels: pick(o, ['labels', 'alert', 'alertLabels']),
+      };
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  /* ---- Icons ---------------------------------------------------------------- */
+
+  const ICON_CHECK =
+    '<svg class="amr-match__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"></circle><path d="M6.5 10.2l2.4 2.4 4.6-5"></path></svg>';
+  const ICON_WARN =
+    '<svg class="amr-warn__icon" width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const ICON_ALERT =
+    '<svg class="amr-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+
+  /* ---- Editor factory ------------------------------------------------------- */
+
+  function makeEditor(host: HTMLElement, doc: string): EditorView {
+    const state = EditorState.create({
+      doc,
+      extensions: [
+        lineNumbers(),
+        history(),
+        highlightActiveLine(),
+        yaml(),
+        oneDark,
+        EditorView.lineWrapping,
+        keymap.of([
+          ...defaultKeymap,
+          ...historyKeymap,
+          indentWithTab,
+          { key: 'Escape', run: function (view) { view.contentDOM.blur(); return true; } },
+        ]),
+        EditorView.theme({
+          '&': { color: '#e6e6e6' },
+          '.cm-content': { caretColor: '#e6e6e6' },
+          '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
+          '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection':
+            { backgroundColor: 'rgba(0, 112, 243, 0.32)' },
+          '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
+          '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+        }),
+      ],
+    });
+    return new EditorView({ state, parent: host });
+  }
+
+  function setEditorDoc(view: EditorView, doc: string): void {
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: doc },
+    });
+  }
+
+  /* ---- Result rendering ----------------------------------------------------- */
+
+  function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
+    summary.textContent = '';
+    summary.classList.remove('text-error');
+    summary.classList.add('text-mute');
+    container.innerHTML =
+      '<p class="amr-empty body-sm text-mute">Load an example or paste a route tree and an alert’s labels, then run to see which receiver(s) the alert reaches.</p>';
+  }
+
+  function renderLoading(container: HTMLElement, summary: HTMLElement): void {
+    summary.textContent = '';
+    container.innerHTML =
+      '<div class="amr-loading"><span class="amr-loading__dot"></span>' +
+      '<span class="amr-loading__dot"></span><span class="amr-loading__dot"></span>' +
+      '<span>Walking the route tree…</span></div>';
+  }
+
+  function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
+    summary.textContent = 'Error';
+    summary.classList.add('text-error');
+    summary.classList.remove('text-mute');
+    container.innerHTML =
+      '<div class="amr-error" role="alert">' +
+      ICON_ALERT +
+      '<div class="amr-error__body"><p class="amr-error__title">Could not evaluate the route</p>' +
+      `<p class="amr-error__detail">${escapeHtml(message)}</p></div></div>`;
+  }
+
+  function warningsHtml(warnings: string[]): string {
+    if (!warnings.length) return '';
+    const items = warnings
+      .map((w) => `<div class="amr-warn">${ICON_WARN}<span>${escapeHtml(w)}</span></div>`)
+      .join('');
+    return `<div class="amr-warns">${items}</div>`;
+  }
+
+  function pathHtml(path: string[]): string {
+    if (!path.length) return '';
+    const crumbs = path
+      .map((seg, i) => {
+        const last = i === path.length - 1;
+        const cls = last ? 'amr-crumb amr-crumb--last' : 'amr-crumb';
+        const sep = i > 0 ? '<span class="amr-sep" aria-hidden="true">→</span>' : '';
+        return `${sep}<span class="${cls}">${escapeHtml(seg)}</span>`;
+      })
+      .join('');
+    return `<div class="amr-path">${crumbs}</div>`;
+  }
+
+  function groupingHtml(g: Grouping): string {
+    const items: string[] = [];
+    const add = (k: string, v: string | undefined) => {
+      if (v !== undefined && v !== '') {
+        items.push(
+          `<span class="amr-group__item"><span class="amr-group__k">${escapeHtml(k)}</span> <span class="amr-group__v">${escapeHtml(v)}</span></span>`,
+        );
+      }
+    };
+    const gb = Array.isArray(g.group_by) ? g.group_by.join(', ') : undefined;
+    add('group_by', gb !== undefined ? `[${gb}]` : undefined);
+    add('group_wait', g.group_wait);
+    add('group_interval', g.group_interval);
+    add('repeat_interval', g.repeat_interval);
+    if (!items.length) return '';
+    return `<div class="amr-group">${items.join('')}</div>`;
+  }
+
+  function matchHtml(m: RouteMatch, index: number, total: number): string {
+    const rx = m.receiver.trim() === '' ? '(no receiver)' : m.receiver;
+    const ordinal =
+      total > 1 ? `<span class="amr-pill">#${index + 1}</span>` : '';
+    const cont = m.viaContinue
+      ? '<span class="amr-pill amr-pill--continue">via continue</span>'
+      : '';
+    return (
+      '<div class="amr-match">' +
+      `<div class="amr-match__head">${ICON_CHECK}` +
+      `<span class="amr-match__rx">${escapeHtml(rx)}</span>${ordinal}${cont}</div>` +
+      pathHtml(m.path) +
+      groupingHtml(m.grouping) +
+      '</div>'
+    );
+  }
+
+  function summaryText(matches: RouteMatch[]): string {
+    const names = matches.map((m) => (m.receiver.trim() === '' ? '(none)' : m.receiver));
+    const n = matches.length;
+    return `${n} receiver${n === 1 ? '' : 's'} · ${names.join(', ')}`;
+  }
+
+  function renderResults(
+    container: HTMLElement,
+    summary: HTMLElement,
+    result: MatchRouteResult,
+  ): void {
+    if (!result || result.ok === false || result.error) {
+      renderError(
+        container,
+        summary,
+        result?.error ?? 'Unknown error while evaluating the route.',
+      );
+      return;
+    }
+
+    const matches = Array.isArray(result.matches) ? result.matches : [];
+    const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+
+    if (matches.length === 0) {
+      // Structurally this should not happen (the root always matches), but be safe.
+      summary.textContent = 'No match';
+      summary.classList.remove('text-error');
+      summary.classList.add('text-mute');
+      container.innerHTML =
+        '<p class="amr-empty body-sm text-mute">The route tree produced no terminal match. Check that the root route is well-formed.</p>' +
+        warningsHtml(warnings);
+      return;
+    }
+
+    summary.textContent = summaryText(matches);
+    summary.classList.remove('text-error');
+    summary.classList.add('text-mute');
+
+    const rows = matches.map((m, i) => matchHtml(m, i, matches.length)).join('');
+    container.innerHTML = rows + warningsHtml(warnings);
+  }
+
+  /* ---- Clipboard ------------------------------------------------------------ */
+
+  async function copyText(text: string): Promise<boolean> {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      /* fall through to legacy path */
+    }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'absolute';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /* ---- Share-state codec (self-contained; no engine dependency) ------------- */
+
+  function b64encode(text: string): string {
+    const bytes = new TextEncoder().encode(text);
+    let bin = '';
+    for (const b of bytes) bin += String.fromCharCode(b);
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  function b64decode(b64In: string): string | null {
+    try {
+      let b64 = b64In.replace(/-/g, '+').replace(/_/g, '/');
+      while (b64.length % 4) b64 += '=';
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return new TextDecoder().decode(bytes);
+    } catch {
+      return null;
+    }
+  }
+
+  function encodeShare(config: string, labels: string): string {
+    return `#${SHARE_KEY_CFG}=${b64encode(config)}&${SHARE_KEY_LBL}=${b64encode(labels)}`;
+  }
+
+  function decodeShare(): { config: string; labels: string } | null {
+    const hash = window.location.hash.replace(/^#/, '');
+    if (!hash) return null;
+    const params = new Map<string, string>();
+    for (const part of hash.split('&')) {
+      const [k, v] = part.split('=');
+      if (k && v) params.set(k, v);
+    }
+    const cfgRaw = params.get(SHARE_KEY_CFG);
+    if (!cfgRaw) return null;
+    const config = b64decode(cfgRaw);
+    if (config === null) return null;
+    const lblRaw = params.get(SHARE_KEY_LBL);
+    const labels = lblRaw ? b64decode(lblRaw) ?? '' : '';
+    return { config, labels };
+  }
+
+  /* ---- Instance init -------------------------------------------------------- */
+
+  async function init(root: HTMLElement): Promise<void> {
+    const configHost = el<HTMLElement>(root, '#amr-config');
+    const labelsHost = el<HTMLElement>(root, '#amr-labels');
+    const select = el<HTMLSelectElement>(root, '#amr-example');
+    const runBtn = el<HTMLButtonElement>(root, '#amr-run');
+    const copyBtn = el<HTMLButtonElement>(root, '#amr-copy');
+    const shareBtn = el<HTMLButtonElement>(root, '#amr-share');
+    const resultsBox = el<HTMLElement>(root, '#amr-results');
+    const summaryEl = el<HTMLElement>(root, '#amr-summary');
+    const announce = el<HTMLElement>(root, '#amr-announce');
+
+    if (
+      !configHost ||
+      !labelsHost ||
+      !select ||
+      !runBtn ||
+      !copyBtn ||
+      !shareBtn ||
+      !resultsBox ||
+      !summaryEl
+    ) {
+      return;
+    }
+
+    // Lazily load the sibling engine + examples (kept out of the initial path).
+    let engine: EngineModule;
+    let examples: Example[] = [];
+    try {
+      const [engineMod, examplesMod] = await Promise.all([
+        import('../lib/alertmanager-route-tester/engine'),
+        import('../lib/alertmanager-route-tester/examples'),
+      ]);
+      engine = engineMod as unknown as EngineModule;
+      examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+    } catch (err) {
+      renderError(
+        resultsBox,
+        summaryEl,
+        'The route-tester engine failed to load. Reload the page to try again.',
+      );
+      // eslint-disable-next-line no-console
+      console.error('[AlertmanagerRouteTester] engine/examples import failed:', err);
+      return;
+    }
+
+    // Seed content: prefer a shared-state URL, else the first example.
+    const seedExample =
+      examples[0] ?? { id: 'example', label: 'Example', config: '', labels: '' };
+    let seedConfig = seedExample.config;
+    let seedLabels = seedExample.labels;
+    let fromShare = false;
+    const shared = decodeShare();
+    if (shared) {
+      seedConfig = shared.config;
+      seedLabels = shared.labels;
+      fromShare = true;
+    }
+
+    const configView = makeEditor(configHost, seedConfig);
+    const labelsView = makeEditor(labelsHost, seedLabels);
+
+    // Populate the example picker.
+    select.innerHTML = '';
+    if (examples.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'No examples available';
+      select.appendChild(opt);
+      select.disabled = true;
+    } else {
+      if (fromShare) {
+        const opt = document.createElement('option');
+        opt.value = '-1';
+        opt.textContent = 'Shared scenario';
+        select.appendChild(opt);
+      }
+      examples.forEach((ex, i) => {
+        const opt = document.createElement('option');
+        opt.value = String(i);
+        opt.textContent = ex.label;
+        select.appendChild(opt);
+      });
+      select.value = fromShare ? '-1' : '0';
+    }
+
+    // Swap both editors when a different example is chosen, then auto-run.
+    select.addEventListener('change', () => {
+      const idx = Number(select.value);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+      setEditorDoc(configView, examples[idx].config);
+      setEditorDoc(labelsView, examples[idx].labels);
+      void run();
+    });
+
+    // Run — non-blocking; show loading, yield a frame, then render.
+    let running = false;
+    const runLabel = runBtn.querySelector<HTMLElement>('.amr-run-label');
+    let spinner: HTMLElement | null = null;
+    async function run(): Promise<void> {
+      if (running) return;
+      running = true;
+      runBtn.classList.add('is-busy');
+      runBtn.setAttribute('aria-disabled', 'true');
+      runBtn.setAttribute('aria-busy', 'true');
+      if (!spinner) {
+        spinner = document.createElement('span');
+        spinner.setAttribute('aria-hidden', 'true');
+        spinner.style.cssText =
+          'display:inline-block;width:14px;height:14px;flex:0 0 auto;border-radius:9999px;' +
+          'border:2px solid currentColor;border-top-color:transparent;';
+        if (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          spinner.animate(
+            [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }],
+            { duration: 700, iterations: Infinity },
+          );
+        }
+        runBtn.insertBefore(spinner, runBtn.firstChild);
+      }
+      if (runLabel) runLabel.textContent = 'Running…';
+      renderLoading(resultsBox!, summaryEl!);
+
+      await new Promise<void>((resolve) => {
+        if ('requestAnimationFrame' in window) {
+          requestAnimationFrame(() => resolve());
+        } else {
+          setTimeout(resolve, 0);
+        }
+      });
+
+      try {
+        const cfg = configView.state.doc.toString();
+        const lbl = labelsView.state.doc.toString();
+        const result = await Promise.resolve(engine.matchRoute(cfg, lbl));
+        renderResults(resultsBox!, summaryEl!, result);
+        try {
+          history.replaceState(null, '', encodeShare(cfg, lbl));
+        } catch {
+          /* non-fatal: sharing just won't update */
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unexpected error while evaluating.';
+        renderError(resultsBox!, summaryEl!, msg);
+      } finally {
+        running = false;
+        runBtn.classList.remove('is-busy');
+        runBtn.removeAttribute('aria-disabled');
+        runBtn.removeAttribute('aria-busy');
+        if (spinner) {
+          spinner.remove();
+          spinner = null;
+        }
+        if (runLabel) runLabel.textContent = 'Run';
+      }
+    }
+
+    runBtn.addEventListener('click', () => void run());
+
+    // Cmd/Ctrl+Enter from inside either editor triggers a run.
+    root.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        void run();
+      }
+    });
+
+    // Copy — copy the route config YAML to the clipboard.
+    const copyLabel = copyBtn.querySelector<HTMLElement>('.amr-copy-label');
+    let copyTimer: number | undefined;
+    copyBtn.addEventListener('click', async () => {
+      const ok = await copyText(configView.state.doc.toString());
+      if (copyLabel) copyLabel.textContent = ok ? 'Copied' : 'Copy Failed';
+      if (announce) {
+        announce.textContent = ok
+          ? 'Route configuration copied to your clipboard.'
+          : 'Could not copy. Select the text in the editor and copy it manually.';
+      }
+      window.clearTimeout(copyTimer);
+      copyTimer = window.setTimeout(() => {
+        if (copyLabel) copyLabel.textContent = copyBtn.dataset.defaultLabel ?? 'Copy';
+      }, COPIED_RESET_MS);
+    });
+
+    // Share — copy a shareable URL (config + labels encoded in the hash).
+    const shareLabel = shareBtn.querySelector<HTMLElement>('.amr-share-label');
+    let shareTimer: number | undefined;
+    shareBtn.addEventListener('click', async () => {
+      const frag = encodeShare(configView.state.doc.toString(), labelsView.state.doc.toString());
+      const base = window.location.href.split('#')[0];
+      const shareUrl = `${base}${frag}`;
+      try {
+        history.replaceState(null, '', frag);
+      } catch {
+        /* fall back to the current URL */
+      }
+      const ok = await copyText(shareUrl);
+      if (shareLabel) shareLabel.textContent = ok ? 'Link Copied' : 'Copy Failed';
+      if (announce) {
+        announce.textContent = ok
+          ? 'Share link copied to your clipboard.'
+          : 'Could not copy the link. Copy the URL from your address bar instead.';
+      }
+      window.clearTimeout(shareTimer);
+      shareTimer = window.setTimeout(() => {
+        if (shareLabel) shareLabel.textContent = shareBtn.dataset.defaultLabel ?? 'Share Link';
+      }, COPIED_RESET_MS);
+    });
+
+    // Re-measure the editors after they mount inside the dark panes.
+    configView.requestMeasure();
+    labelsView.requestMeasure();
+
+    // Initial state — then auto-run the loaded scenario immediately.
+    renderEmpty(resultsBox, summaryEl);
+    void run();
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

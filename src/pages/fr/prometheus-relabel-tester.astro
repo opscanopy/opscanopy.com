@@ -1,0 +1,391 @@
+---
+/**
+ * Prometheus Relabel Tester — the primary SEO surface for the relabel tool.
+ * Paste a YAML list of `relabel_configs` and sample label sets, and see exactly
+ * which labels survive, get rewritten, or cause a target to be dropped — with
+ * full fidelity to the official Prometheus relabeling semantics (anchored regex,
+ * $1/${1} expansion, MD5 hashmod, labelmap/labeldrop/labelkeep, keepequal).
+ * 100% client-side — no server, no signup.
+ *
+ * Mirrors the GitHub Actions Validator page structure (hero with scrimmed
+ * MeshGradient, playground island, why/how/reference docs, dark next-step band,
+ * FAQ + JSON-LD, cross-links). The interactive island self-mounts; JSON-LD
+ * (SoftwareApplication + FAQPage) is assembled here and handed to Shell.
+ */
+import Shell from '../../components/Shell.astro';
+import PrometheusRelabelTesterPlayground from '../../components/PrometheusRelabelTesterPlayground.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import Button from '../../components/Button.astro';
+import ToolHero from '../../components/ToolHero.astro';
+import ToolGapVisual from '../../components/ToolGapVisual.astro';
+import ToolPipeline from '../../components/ToolPipeline.astro';
+import FaqList from '../../components/FaqList.astro';
+import ToolCrossLinks from '../../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../../data/site';
+import { getTool } from '../../data/tools';
+import { softwareAppLd, faqPageLd } from '../../lib/jsonld';
+
+const tool = getTool('prometheus-relabel-tester');
+
+const pagePath = '/prometheus-relabel-tester';
+const pageUrl = `${site.url}${pagePath}`;
+
+// ── External references (canonical docs) ─────────────────────────────────────
+const promRelabelDocs =
+  'https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config';
+const promRelabelGuide =
+  'https://prometheus.io/docs/guides/multi-target-exporter/#relabeling';
+const robustPerceptionRelabel =
+  'https://www.robustperception.io/life-of-a-label/';
+
+// ── FAQ content — single source for both the rendered section and FAQPage LD ─
+const faqs = [
+  {
+    q: 'Quelle est la différence entre relabel_configs et metric_relabel_configs ?',
+    a: 'Les deux appliquent des sémantiques de relabeling identiques ; seule l’étape du pipeline diffère. relabel_configs s’exécute avant le scraping : il agit sur les étiquettes de découverte de la cible et décide notamment si celle-ci est scrappée. metric_relabel_configs s’exécute après le scraping, sur chaque échantillon ramené, pour renommer, élaguer ou abandonner des séries individuelles. Comme le moteur est le même, vous pouvez simuler des règles relabel Prometheus pour l’un ou l’autre dans ce testeur sans rien changer.',
+  },
+  {
+    q: 'Comment tester les relabel_configs Prometheus avant de les déployer ?',
+    a: 'Collez votre liste YAML de relabel_configs dans un volet et un ou plusieurs ensembles d’étiquettes d’exemple dans l’autre, puis appuyez sur Exécuter. Le testeur applique les règles exactement comme Prometheus et affiche, pour chaque cible, les étiquettes finales, celles qui ont été ajoutées ou réécrites, celles supprimées, et si la cible entière a été abandonnée. C’est le moyen le plus rapide de tester les relabel_configs Prometheus en ligne et de confirmer leur comportement avant de les livrer dans une configuration de scraping — sans itérer sur un Prometheus en production.',
+  },
+  {
+    q: 'Pourquoi ma cible Prometheus est-elle supprimée par une règle keep ?',
+    a: 'Une règle keep abandonne la cible sauf si la valeur source jointe correspond à la regex ancrée. Si votre cible disparaît, c’est presque toujours que la regex ne correspond pas à l’intégralité de la valeur : Prometheus encadre chaque motif sous la forme ^(?:votre-regex)$, donc une regex de api ne correspond PAS à api-server. Le testeur marque chaque cible abandonnée avec la règle et l’action responsables, ce qui répond directement à la question « pourquoi ma cible Prometheus est supprimée par le relabel » — utilisez (.*) autour du fragment recherché pour faire correspondre une sous-chaîne.',
+  },
+  {
+    q: 'Quelle est la différence entre l’action keep et l’action drop dans le relabeling ?',
+    a: 'keep et drop sont symétriques. keep conserve la cible uniquement quand la source jointe correspond à la regex et l’abandonne sinon ; drop fait l’inverse : il abandonne la cible quand elle correspond. Un exemple de relabel keep/drop : keep avec regex: production ne garde que les cibles dont l’étiquette correspond à « production », tandis que drop avec la même regex supprimerait exactement ces cibles. Les deux décident si la série est scrappée ou stockée — collez les deux variantes dans le testeur pour voir le résultat opposé côte à côte.',
+  },
+  {
+    q: 'Quel est le séparateur par défaut lorsqu’on combine plusieurs source_labels ?',
+    a: 'Le séparateur par défaut est le point-virgule « ; ». Quand une règle liste plusieurs source_labels, Prometheus concatène leurs valeurs avec ce séparateur avant d’appliquer la regex. Par exemple, source_labels: [job, instance] sur job="api", instance="10.0.0.1:9090" produit la chaîne jointe api;10.0.0.1:9090. Vous pouvez le redéfinir avec le champ separator. Le testeur utilise la même valeur par défaut, vous voyez donc exactement la valeur jointe contre laquelle la regex est mise en correspondance.',
+  },
+  {
+    q: 'Comment fonctionne hashmod dans le relabeling Prometheus ?',
+    a: 'hashmod joint les étiquettes source, calcule le MD5 du résultat (le même md5.Sum que celui utilisé par Prometheus), lit les 8 derniers octets de ce condensé comme un entier 64 bits big-endian, et stocke hash % modulus dans target_label. Ce testeur reproduit exactement cette recette, donc les valeurs de shard qu’il produit correspondent à Prometheus octet pour octet. Cela permet de vérifier un sharding horizontal — hashmod vers une étiquette temporaire, puis keep sur le shard que vous possédez — avant de le déployer.',
+  },
+  {
+    q: 'Que fait l’action labelmap dans les relabel_configs ?',
+    a: 'labelmap agit sur les NOMS d’étiquettes, pas sur leurs valeurs. Pour chaque étiquette dont le nom correspond à la regex, elle crée une nouvelle étiquette nommée par le remplacement développé, avec la valeur de l’étiquette d’origine — c’est le classique passage de __meta_kubernetes_pod_label_(.+) vers une étiquette simple. À l’inverse, labeldrop supprime chaque étiquette dont le nom correspond, et labelkeep supprime celles dont le nom ne correspond PAS. Le testeur exécute les trois sur les noms d’étiquettes réels de votre ensemble.',
+  },
+  {
+    q: 'Ce testeur de relabel Prometheus envoie-t-il mes étiquettes à un serveur ?',
+    a: 'Non. Ce testeur de relabeling Prometheus en ligne s’exécute à 100 % côté client. Vos règles de relabel et vos ensembles d’étiquettes sont analysés et évalués à l’intérieur de votre onglet de navigateur — rien n’est envoyé à un serveur, et il n’y a ni compte ni inscription. Vous pouvez donc coller en toute sécurité des configurations de scraping internes, y compris des métadonnées de cible privées et des noms d’étiquettes.',
+  },
+];
+
+// ── JSON-LD: SoftwareApplication + FAQPage (shared builders) ─────────────────
+const softwareApp = softwareAppLd({
+  name: 'Prometheus Relabel Tester',
+  description:
+    'Testeur de relabel_configs Prometheus gratuit. Appliquez des règles de relabel à des ensembles d’étiquettes d’exemple et voyez quelles étiquettes survivent, changent ou font abandonner une cible. 100 % dans le navigateur, sans installation, sans inscription.',
+  url: pageUrl,
+  subCategory: 'Observability',
+  featureList: [
+    'Appliquer les règles relabel_configs à des ensembles d’étiquettes d’exemple dans le navigateur',
+    'Regex entièrement ancrée (^(?:regex)$) correspondant exactement à Prometheus',
+    'Prend en charge replace, keep, drop, keepequal, dropequal, labelmap, labeldrop, labelkeep, lowercase, uppercase',
+    'hashmod MD5 correspondant à Prometheus octet pour octet',
+    'Affiche les étiquettes ajoutées, modifiées et supprimées ainsi que les cibles abandonnées',
+    '100 % côté client, sans envoi, sans inscription',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+
+const faqPage = faqPageLd(faqs);
+
+// ── HOW IT WORKS pipeline ────────────────────────────────────────────────────
+const pipeline = [
+  {
+    title: 'Analyser les règles.',
+    body: 'Votre YAML relabel_configs est analysé en une liste de règles, chaque champ étant doté de sa valeur par défaut exactement comme dans Prometheus — separator ";", regex "(.*)", replacement "$1", action "replace".',
+  },
+  {
+    title: 'Lire les étiquettes.',
+    body: 'Chaque bloc de lignes clé=valeur devient un ensemble d’étiquettes. Les valeurs entre guillemets conservent leurs virgules et leurs espaces ; les lignes vides séparent les cibles.',
+  },
+  {
+    title: 'Joindre et ancrer.',
+    body: 'Pour chaque règle, les valeurs de source_labels sont jointes avec le séparateur, et la regex est ancrée sous la forme ^(?:regex)$ avant la mise en correspondance — exactement comme le fait le vrai moteur.',
+  },
+  {
+    title: 'Appliquer dans l’ordre.',
+    body: 'Les règles s’exécutent de haut en bas ; chacune voit la sortie de la précédente. replace développe $1/${1}, hashmod utilise MD5, et keep/drop peuvent supprimer la cible entière.',
+  },
+  {
+    title: 'Montrer le diff.',
+    body: 'Pour chaque ensemble, vous obtenez les étiquettes finales avec des marqueurs ajoutées/modifiées, une liste des étiquettes supprimées, et un indicateur clair lorsqu’une cible a été abandonnée — et par quelle règle.',
+  },
+];
+
+// ── ACTIONS REFERENCE — each action with a short behaviour note ───────────────
+const actions = [
+  {
+    name: 'replace',
+    blurb:
+      'Joint source_labels avec le séparateur ; si la regex ancrée correspond, développe $1/${1} dans replacement et définit target_label. Une expansion vide SUPPRIME l’étiquette.',
+  },
+  {
+    name: 'keep / drop',
+    blurb:
+      'keep supprime la cible entière sauf si la source jointe correspond à la regex ; drop la supprime lorsqu’elle correspond. Les deux décident si la série est scrappée ou stockée.',
+  },
+  {
+    name: 'keepequal / dropequal',
+    blurb:
+      'Sans regex. Compare la valeur source jointe à la valeur actuelle de target_label ; keepequal conserve uniquement en cas d’égalité, dropequal abandonne en cas d’égalité.',
+  },
+  {
+    name: 'hashmod',
+    blurb:
+      'Définit target_label à md5(source jointe) % modulus — les 8 derniers octets MD5 lus comme un uint64 big-endian. Utilise la même recette MD5 que Prometheus, pour un sharding horizontal stable.',
+  },
+  {
+    name: 'labelmap',
+    blurb:
+      'Pour chaque étiquette dont le NOM correspond à la regex, définit une nouvelle étiquette nommée par le remplacement développé avec la valeur de cette étiquette — p. ex. __meta_kubernetes_pod_label_(.+) → $1.',
+  },
+  {
+    name: 'labeldrop / labelkeep',
+    blurb:
+      'labeldrop supprime chaque étiquette dont le NOM correspond à la regex ; labelkeep supprime chaque étiquette dont le NOM ne correspond PAS. Utilisé pour élaguer les métadonnées de découverte.',
+  },
+  {
+    name: 'lowercase / uppercase',
+    blurb:
+      'Définit target_label à la valeur source jointe en minuscules ou en majuscules. Pratique pour normaliser les étiquettes de découverte à la casse incohérente.',
+  },
+];
+
+const exampleRule = `# Promote a Kubernetes pod label, then drop a noisy metric.
+- action: labelmap
+  regex: __meta_kubernetes_pod_label_(.+)
+
+- source_labels: [__name__]
+  action: drop
+  regex: go_gc_.*`;
+
+import type { Locale as __Locale } from '../../i18n/config';
+import { localizeKey as __l } from '../../i18n/utils';
+const __lang = (Astro.currentLocale ?? 'en') as __Locale;
+---
+
+<Shell
+  title="Tester les relabel_configs Prometheus en ligne"
+  description="Testez les relabel_configs Prometheus en ligne : collez vos règles et des labels d’exemple, voyez ce qui est conservé, réécrit ou supprimé. Gratuit, sans serveur."
+  canonical="/prometheus-relabel-tester"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <!-- ════════════════════════════════════════════════════════════════════
+       1) HERO
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolHero
+    slug="prometheus-relabel-tester"
+    eyebrow="Testeur de relabel Prometheus · Observabilité"
+    badges={[
+      { label: 'S’exécute dans votre navigateur', variant: 'live' },
+      { label: 'Sans inscription', variant: 'neutral' },
+      { label: 'Conforme aux sémantiques Prometheus', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">
+      Tester les <span class="code-mono" translate="no">relabel_configs</span> Prometheus — avant qu’ils n’abandonnent vos métriques.
+    </Fragment>
+    <Fragment slot="lead">
+      Tester les <span class="code-mono text-ink" translate="no">relabel_configs</span> Prometheus en ligne : collez vos
+      règles et quelques étiquettes d’exemple, et observez en direct ce qui est conservé, réécrit ou supprimé, et pourquoi
+      une cible est abandonnée — avec les mêmes sémantiques de regex ancrée, d’expansion
+      <span class="code-mono text-ink" translate="no">$1</span> et de <span class="code-mono text-ink" translate="no">hashmod</span>
+      MD5 qu’utilise Prometheus. Ce testeur de relabeling Prometheus en ligne est instantané, dans votre navigateur, sans installation ni inscription.
+    </Fragment>
+  </ToolHero>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       2) THE PLAYGROUND
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pb-20 pt-8 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">Testeur de relabeling Prometheus en ligne — simulez vos règles relabel</h2>
+      <PrometheusRelabelTesterPlayground />
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       3) WHY IT EXISTS — the gap
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">La faille</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            Le relabeling échoue en silence.
+          </h2>
+          <ToolGapVisual />
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            Un <span class="code-mono text-ink" translate="no">relabel_config</span> erroné ne
+            renvoie pas d’erreur — il abandonne simplement et discrètement les métriques que vous
+            attendiez, ou conserve celles que vous vouliez taire. Les règles semblent simples, mais les
+            sémantiques regorgent d’arêtes vives : la regex est
+            <strong class="font-medium text-ink">entièrement ancrée</strong>, un
+            <span class="code-mono text-ink" translate="no">replace</span> avec une valeur vide
+            <em>supprime</em> l’étiquette, et <span class="code-mono text-ink" translate="no">hashmod</span>
+            dépend d’un hachage exact basé sur MD5.
+          </p>
+          <p class="body-md text-pretty text-body">
+            La seule façon d’en être sûr est d’exécuter les règles — mais itérer sur un Prometheus en
+            production est lent, et lire la
+            <a
+              class="link-inline"
+              href={promRelabelDocs}
+              target="_blank"
+              rel="noopener noreferrer">référence de configuration</a
+            > vous dit rarement ce que <em>vos</em> étiquettes deviendront. Ce testeur applique les règles à
+            vos étiquettes d’exemple ici même, afin que vous puissiez confirmer le résultat en quelques secondes — voir
+            <a
+              class="link-inline"
+              href={robustPerceptionRelabel}
+              target="_blank"
+              rel="noopener noreferrer">la vie d’une étiquette</a
+            > pour le pourquoi.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Il vous permet de simuler des règles relabel Prometheus pour chaque action —
+            <span class="code-mono text-ink" translate="no">replace</span>,
+            <span class="code-mono text-ink" translate="no">keep</span>,
+            <span class="code-mono text-ink" translate="no">drop</span>,
+            <span class="code-mono text-ink" translate="no">labelmap</span>,
+            <span class="code-mono text-ink" translate="no">hashmod</span> et plus encore — sans rien à
+            installer et sans rien envoyer.
+          </p>
+          <p class="body-sm text-mute">
+            Voir chaque action dans <a class="link-inline" href="#reference">la référence des actions</a>, ou
+            essayez l’<a class="link-inline" href="#playground">espace d’essai en direct</a> ci-dessus.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       4) HOW IT WORKS — numbered pipeline
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="Le pipeline"
+    heading="Comment ça marche."
+    lead="Cinq étapes déterministes s’exécutent de bout en bout sur chaque ensemble d’étiquettes — entièrement dans votre onglet de navigateur, à chaque fois."
+    steps={pipeline}
+  />
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       5) ACTIONS REFERENCE
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="reference" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Référence des actions</p>
+        <h2 class="display-lg mt-3 text-ink">Chaque action de relabel, modélisée.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          Le testeur implémente l’ensemble complet des actions <span class="code-mono text-ink" translate="no"
+            >relabel_config</span
+          > avec un comportement exactement conforme à Prometheus. Voici ce que fait chacune.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 grid max-w-5xl gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:items-start">
+        <ul class="grid gap-4">
+          {
+            actions.map((a) => (
+              <li class="card-soft p-5">
+                <h3 class="code-mono text-ink">{a.name}</h3>
+                <p class="body-sm mt-2 text-pretty text-body">{a.blurb}</p>
+              </li>
+            ))
+          }
+        </ul>
+
+        <div class="lg:sticky lg:top-24">
+          <p class="eyebrow mb-2">Règles d’exemple</p>
+          <CodeBlock lang="yaml" filename="relabel_configs" code={exampleRule} />
+          <p class="caption mt-4 text-pretty text-mute">
+            Les valeurs par défaut correspondent à Prometheus : <span class="code-mono" translate="no">source_labels: []</span>,
+            <span class="code-mono" translate="no">separator: ";"</span>,
+            <span class="code-mono" translate="no">regex: "(.*)"</span>,
+            <span class="code-mono" translate="no">replacement: "$1"</span>,
+            <span class="code-mono" translate="no">action: replace</span>. Voir le
+            <a
+              class="link-inline"
+              href={promRelabelGuide}
+              target="_blank"
+              rel="noopener noreferrer">guide du relabeling</a
+            > pour le contexte.
+          </p>
+        </div>
+      </div>
+
+      <p class="caption mx-auto mt-10 max-w-3xl text-center text-pretty text-mute">
+        Le même moteur alimente à la fois <span class="code-mono" translate="no">relabel_configs</span> et
+        <span class="code-mono" translate="no">metric_relabel_configs</span> — Prometheus applique
+        des sémantiques de relabeling identiques à chacun.
+      </p>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       6) NEXT STEP — dark band with CTAs to related tools
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="next" class="bg-inverse text-inverse-fg">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-3xl text-center">
+        <p class="eyebrow">Continuez</p>
+        <h2 class="display-lg mt-3 text-balance">
+          Les étiquettes sont bonnes ? Vérifiez maintenant les requêtes et le routage.
+        </h2>
+        <p class="body-md mx-auto mt-4 max-w-2xl text-pretty text-inverse-fg/80">
+          Le relabeling façonne les séries ; ce que vous faites ensuite, c’est les interroger et les alerter.
+          Décomposez une requête avec l’explorateur PromQL, ou confirmez qu’une alerte arrive au bon endroit avec le
+          testeur de route Alertmanager — les deux s’exécutent entièrement dans votre navigateur, tout comme celui-ci.
+        </p>
+        <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+          <Button href={__l('/promql-explainer', __lang)}>Expliquer une requête PromQL</Button>
+          <Button href={__l('/alertmanager-route-tester', __lang)} variant="secondary">
+            Tester une route Alertmanager
+          </Button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       7) FAQ
+       ════════════════════════════════════════════════════════════════════ -->
+  <FaqList faqs={faqs} />
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       Cross-links + footer disclaimer
+       ════════════════════════════════════════════════════════════════════ -->
+  <ToolCrossLinks slug="prometheus-relabel-tester">
+    <Fragment slot="lead">
+      Le testeur de relabel <span translate="no">Prometheus</span> est l’un des outils de
+      <span translate="no">{site.name}</span> — une canopée grandissante de validateurs, de
+      convertisseurs et de testeurs basés sur le navigateur qui ne touchent jamais à un serveur.
+    </Fragment>
+    <Fragment slot="links">
+      Outils connexes : l’<a class="link-inline" href={__l('/promql-explainer', __lang)}>explorateur <span translate="no">PromQL</span></a>
+      et le
+      <a class="link-inline" href={__l('/alertmanager-route-tester', __lang)}
+        >testeur de route <span translate="no">Alertmanager</span></a
+      >. Parcourez le
+      <a class="link-inline" href={__l(navLinks[0].href, __lang)}>répertoire complet des outils</a>.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      Non affilié au projet <span translate="no">Prometheus</span> ou à la
+      <span translate="no">Cloud Native Computing Foundation</span>, ni approuvé ou sponsorisé par eux.
+      <span translate="no">Prometheus</span> n’est utilisé ici qu’à titre descriptif pour identifier le
+      format <span class="code-mono" translate="no">relabel_configs</span> que cet outil modélise.
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>

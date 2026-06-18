@@ -9,5 +9,10 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.ts'],
     environment: 'node',
+    // Node 24 + Vitest 4 crash the worker-thread pool on Windows when running
+    // many files in parallel (every file errors at collection with "reading
+    // 'config'"), even though each file passes in isolation. Run files in one
+    // process — the engine suites are tiny (≈2s total), so we lose nothing.
+    fileParallelism: false,
   },
 });
