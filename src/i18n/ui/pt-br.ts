@@ -75,6 +75,16 @@ const ptBr: Partial<UiDict> = {
   'blog.copiedCode': 'Copiado',
   'blog.copyCodeAriaLabel': 'Copiar código para a área de transferência',
 
+  // Post detail: table of contents, share, back-to-top
+  'blog.tocTitle': 'Nesta página',
+  'blog.shareTitle': 'Compartilhar',
+  'blog.shareX': 'Compartilhar no X',
+  'blog.shareLinkedIn': 'Compartilhar no LinkedIn',
+  'blog.copyLink': 'Copiar link',
+  'blog.linkCopied': 'Link copiado',
+  'blog.backToTop': 'Voltar ao topo',
+  'blog.headingAnchorLabel': 'Link para esta seção',
+
   // Tag pages
   'blog.tagEyebrow': 'Tag',
   'blog.tagTitle': 'Posts com a tag “{tag}”',

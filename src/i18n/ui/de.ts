@@ -76,6 +76,16 @@ const de: Partial<UiDict> = {
   'blog.copiedCode': 'Kopiert',
   'blog.copyCodeAriaLabel': 'Code in die Zwischenablage kopieren',
 
+  // Post detail: table of contents, share, back-to-top
+  'blog.tocTitle': 'Auf dieser Seite',
+  'blog.shareTitle': 'Teilen',
+  'blog.shareX': 'Auf X teilen',
+  'blog.shareLinkedIn': 'Auf LinkedIn teilen',
+  'blog.copyLink': 'Link kopieren',
+  'blog.linkCopied': 'Link kopiert',
+  'blog.backToTop': 'Nach oben',
+  'blog.headingAnchorLabel': 'Link zu diesem Abschnitt',
+
   // Tag pages
   'blog.tagEyebrow': 'Schlagwort',
   'blog.tagTitle': 'Beiträge mit dem Schlagwort „{tag}“',

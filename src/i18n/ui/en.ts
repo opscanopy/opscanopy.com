@@ -83,6 +83,16 @@ const en = {
   'blog.copiedCode': 'Copied',
   'blog.copyCodeAriaLabel': 'Copy code to clipboard',
 
+  // Post detail: table of contents, share, back-to-top
+  'blog.tocTitle': 'On this page',
+  'blog.shareTitle': 'Share',
+  'blog.shareX': 'Share on X',
+  'blog.shareLinkedIn': 'Share on LinkedIn',
+  'blog.copyLink': 'Copy link',
+  'blog.linkCopied': 'Link copied',
+  'blog.backToTop': 'Back to top',
+  'blog.headingAnchorLabel': 'Link to this section',
+
   // Tag pages
   'blog.tagEyebrow': 'Tag',
   'blog.tagTitle': 'Posts tagged “{tag}”',
