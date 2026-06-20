@@ -7,6 +7,8 @@ lang: pt-br
 translationOf: "regex-for-log-lines"
 ---
 
+![Expressões regulares robustas para fazer o parsing de linhas de log com grupos de captura nomeados](/blog/regex-for-log-lines-hero.svg)
+
 Uma expressão regular que faz o parsing de uma linha de log no seu editor e uma expressão regular que sobrevive a uma semana de tráfego real raramente são a mesma expressão. Os logs são mais barulhentos do que as três linhas de exemplo contra as quais você testou: timestamps mudam de formato, campos ficam ausentes, um caminho sem escape introduz um metacaractere no seu padrão, e um `.*` que parecia inofensivo silenciosamente devora metade da linha. Este post percorre as técnicas que tornam uma regex de linha de log robusta — e os modos de falha que pegam as pessoas de surpresa.
 
 ## Comece pela estrutura, não pelo exemplo
@@ -24,6 +26,8 @@ A maioria das linhas de log é mais estruturada do que parece. Antes de recorrer
 ```
 
 Aqui o `\S+` para o timestamp é deliberado: ele corresponde ao token inteiro sem que você precise codificar cada variante de timestamp. O `\bstatus=(?<status>\d{3})\b` fixa o campo a um limite de palavra para que ele não possa acidentalmente corresponder a `http_status=` ou a um status embutido em outro token.
+
+![Uma linha de log com uma expressão regular, mostrando grupos de captura nomeados correspondendo aos segmentos de timestamp, nível e mensagem](/blog/regex-for-log-lines-diagram.svg)
 
 ## Ancore sempre que puder
 

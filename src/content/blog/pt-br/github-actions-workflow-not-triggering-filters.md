@@ -10,6 +10,8 @@ lang: pt-br
 translationOf: "github-actions-workflow-not-triggering-filters"
 ---
 
+![Workflow do GitHub Actions não foi acionado: regras dos filtros branches, tags e paths explicadas](/blog/github-actions-workflow-not-triggering-filters-hero.svg)
+
 Você enviou um commit, abriu a aba Actions e não há nada lá. Nenhum X vermelho, nenhum ponto amarelo — o workflow simplesmente não rodou. Não há erro para ler, nenhum log para inspecionar, porque um workflow que não é acionado não produz nenhuma execução. A decisão aconteceu antes de qualquer runner ser atribuído, dentro da lógica de filtragem de eventos do GitHub, e essa lógica é mais surpreendente do que a documentação faz parecer.
 
 Quase todo relato de "por que meu workflow do GitHub Actions não foi acionado" se resume a uma de poucas causas: o arquivo do workflow não está na branch para a qual você enviou, seu filtro `branches` não corresponde à ref, ou — a grande questão — você combinou `branches` e `paths` sem perceber que eles são unidos por AND. Aqui está cada causa com a regra decisiva e a correção.
@@ -28,6 +30,8 @@ on:
 Esse é o falso alarme mais comum. A correção é mecânica: faça merge ou rebase da `main` na branch para que o arquivo do workflow esteja presente, e então envie novamente. A mesma regra explica por que edições nos gatilhos de `on:` só "entram em vigor" depois que a mudança chega à branch em que você está testando.
 
 Por que isso importa: não há mensagem de erro para "nenhum arquivo de workflow aqui". É a primeira coisa a descartar antes de suspeitar dos seus filtros.
+
+![Um fluxo de decisão mostrando como os filtros branches, tags e paths determinam se um workflow do GitHub Actions é acionado em um push](/blog/github-actions-workflow-not-triggering-filters-diagram.svg)
 
 ## 2. O filtro de branch não corresponde à ref
 

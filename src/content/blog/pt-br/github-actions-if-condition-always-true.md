@@ -9,6 +9,7 @@ relatedTool:
 lang: pt-br
 translationOf: "github-actions-if-condition-always-true"
 ---
+![Condição if do GitHub Actions que sempre roda como verdadeira porque o texto literal fora das chaves da expressão é convertido em uma string truthy](/blog/github-actions-if-condition-always-true-hero.svg)
 
 Você adicionou um `if:` a um passo para que ele rodasse apenas na `main`, ou apenas em uma tag, ou apenas quando um passo anterior definisse uma saída. Então você fez o push — e o passo rodou mesmo assim. Toda vez. Em toda branch. A condição é apenas decoração.
 
@@ -55,6 +56,8 @@ Envolver a expressão em aspas faz com que o valor do YAML seja uma string simpl
 Regra prática: **em um `if:`, não há `${{ }}` e não há aspas ao redor.** Apenas a expressão. As chaves servem para interpolar valores em `run:`, `name:` e `with:` — não para condições.
 
 Você pode colar qualquer uma dessas no [Testador de Expressões e Gatilhos do GitHub Actions](/github-actions-expression-tester) e vê-lo sinalizar o vazamento de texto literal antes de você fazer o push — ele avisa exatamente sobre esse padrão (está registrado como [actions/runner#1173](https://github.com/actions/runner/issues/1173), o bug com mais reações no repositório do runner).
+
+![Uma condição if do GitHub Actions que é sempre verdadeira porque retorna uma string truthy, ao lado da expressão booleana corrigida](/blog/github-actions-if-condition-always-true-diagram.svg)
 
 ## O `success()` implícito que desaparece quando você adiciona um `if:`
 

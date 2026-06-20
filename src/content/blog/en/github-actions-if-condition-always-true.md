@@ -7,6 +7,7 @@ relatedTool:
   name: "GitHub Actions Expression & Trigger Tester"
   href: "/github-actions-expression-tester"
 ---
+![GitHub Actions if condition that always runs true because literal text outside the expression braces coerces to a truthy string](/blog/github-actions-if-condition-always-true-hero.svg)
 
 You added an `if:` to a step so it would only run on `main`, or only on a tag, or only when a previous step set an output. Then you pushed — and the step ran anyway. Every time. On every branch. The condition is just decoration.
 
@@ -53,6 +54,8 @@ Wrapping the expression in quotes makes the YAML value a plain string. GitHub fi
 Rule of thumb: **in an `if:`, there are no `${{ }}` and no surrounding quotes.** Just the expression. The braces are for interpolating values into `run:`, `name:`, and `with:` — not for conditions.
 
 You can paste either of these into the [GitHub Actions Expression & Trigger Tester](/github-actions-expression-tester) and watch it flag the literal-text leak before you push — it warns on exactly this pattern (it's tracked as [actions/runner#1173](https://github.com/actions/runner/issues/1173), the most-reacted bug in the runner repo).
+
+![A GitHub Actions if condition that is always true because it returns a truthy string, next to the corrected boolean expression](/blog/github-actions-if-condition-always-true-diagram.svg)
 
 ## The implicit `success()` that vanishes when you add an `if:`
 

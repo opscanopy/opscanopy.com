@@ -10,6 +10,8 @@ lang: fr
 translationOf: "github-actions-workflow-not-triggering-filters"
 ---
 
+![Workflow GitHub Actions qui ne s'est pas déclenché : les règles des filtres branches, tags et paths expliquées](/blog/github-actions-workflow-not-triggering-filters-hero.svg)
+
 Vous avez poussé un commit, ouvert l'onglet Actions, et il n'y a rien. Pas de croix rouge, pas de point jaune — le workflow ne s'est tout simplement pas exécuté. Il n'y a aucune erreur à lire, aucun log à parcourir, parce qu'un workflow qui ne se déclenche pas ne produit aucune exécution. La décision a été prise avant qu'un runner ne soit assigné, à l'intérieur de la logique de filtrage d'événements de GitHub, et cette logique est plus surprenante que ce que la documentation laisse paraître.
 
 Presque chaque rapport du type « pourquoi mon workflow GitHub Actions ne s'est-il pas déclenché » se résume à l'une d'une poignée de causes : le fichier de workflow n'est pas sur la branche vers laquelle vous avez poussé, votre filtre `branches` ne correspond pas à la ref, ou — la grosse — vous avez combiné `branches` et `paths` sans réaliser qu'ils sont reliés par un ET. Voici chaque cause avec la règle déterminante et le correctif.
@@ -28,6 +30,8 @@ on:
 C'est la fausse alerte la plus courante. Le correctif est mécanique : fusionnez ou rebasez `main` dans la branche pour que le fichier de workflow soit présent, puis poussez de nouveau. La même règle explique pourquoi les modifications des déclencheurs `on:` ne « prennent effet » qu'une fois le changement parvenu sur la branche sur laquelle vous testez.
 
 Pourquoi c'est important : il n'y a aucun message d'erreur pour « aucun fichier de workflow ici ». C'est la première chose à écarter avant de suspecter vos filtres.
+
+![Un schéma de décision montrant comment les filtres branches, tags et paths déterminent si un workflow GitHub Actions se déclenche lors d'un push](/blog/github-actions-workflow-not-triggering-filters-diagram.svg)
 
 ## 2. Le filtre de branche ne correspond pas à la ref
 

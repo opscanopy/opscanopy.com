@@ -10,6 +10,8 @@ lang: de
 translationOf: "github-actions-workflow-not-triggering-filters"
 ---
 
+![GitHub-Actions-Workflow nicht ausgelöst: branches-, tags- und paths-Filterregeln erklärt](/blog/github-actions-workflow-not-triggering-filters-hero.svg)
+
 Sie haben einen Commit gepusht, den Actions-Tab geöffnet — und dort ist nichts. Kein rotes X, kein gelber Punkt: Der Workflow ist schlicht nicht gelaufen. Es gibt keinen Fehler zu lesen, kein Log zum Durchsuchen, denn ein Workflow, der nicht ausgelöst wird, erzeugt überhaupt keinen Lauf. Die Entscheidung fiel, bevor ein Runner zugewiesen wurde — innerhalb der Event-Filterlogik von GitHub, und diese Logik ist überraschender, als es die Dokumentation vermuten lässt.
 
 Fast jeder „Warum wurde mein GitHub-Actions-Workflow nicht ausgelöst?"-Bericht lässt sich auf eine Handvoll Ursachen zurückführen: Die Workflow-Datei liegt nicht auf dem Branch, auf den Sie gepusht haben, Ihr `branches`-Filter passt nicht zur Ref oder — der Klassiker — Sie haben `branches` und `paths` kombiniert, ohne zu bemerken, dass sie mit UND verknüpft sind. Hier ist jede Ursache mit der entscheidenden Regel und der Lösung.
@@ -28,6 +30,8 @@ on:
 Das ist der häufigste Fehlalarm. Die Lösung ist mechanisch: Mergen oder rebasen Sie `main` in den Branch, sodass die Workflow-Datei vorhanden ist, und pushen Sie erneut. Dieselbe Regel erklärt, warum Änderungen an `on:`-Triggern erst „wirksam werden", sobald die Änderung den Branch erreicht, auf dem Sie testen.
 
 Warum das wichtig ist: Es gibt keine Fehlermeldung für „hier liegt keine Workflow-Datei". Das ist das Erste, was Sie ausschließen sollten, bevor Sie Ihre Filter in Verdacht ziehen.
+
+![Ein Entscheidungsfluss, der zeigt, wie branches-, tags- und paths-Filter entscheiden, ob ein GitHub-Actions-Workflow bei einem Push ausgelöst wird](/blog/github-actions-workflow-not-triggering-filters-diagram.svg)
 
 ## 2. Der Branch-Filter passt nicht zur Ref
 

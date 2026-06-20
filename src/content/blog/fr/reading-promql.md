@@ -7,6 +7,8 @@ lang: fr
 translationOf: "reading-promql"
 ---
 
+![Comment lire une requête PromQL : décoder les sélecteurs, plages, fonctions et agrégations de Prometheus de l'intérieur vers l'extérieur](/blog/reading-promql-hero.svg)
+
 PromQL paraît dense la première fois qu'on le rencontre. Une ligne comme `histogram_quantile(0.99, sum by (le, route) (rate(http_request_duration_seconds_bucket[5m])))` se lit comme un seul long mot, et l'instinct est de la parcourir de gauche à droite comme une phrase. C'est la mauvaise direction. PromQL est un langage fonctionnel, si bien que le sens part de l'expression la plus **interne** vers l'extérieur — exactement comme vous évalueriez une formule imbriquée en mathématiques. Une fois que vous le lisez de l'intérieur vers l'extérieur, presque chaque requête se décompose selon les quatre mêmes couches.
 
 ## Les quatre couches
@@ -19,6 +21,8 @@ La quasi-totalité des expressions PromQL non triviales se construisent à parti
 4. **Une agrégation** — la manière dont vous condensez de nombreuses séries en un plus petit nombre.
 
 Lisez-les dans cet ordre et la requête s'explique d'elle-même.
+
+![Une requête PromQL décomposée en nom de métrique, correspondance de label, sélecteur de plage, fonction rate et agrégation](/blog/reading-promql-diagram.svg)
 
 ## Couche 1 : le sélecteur
 

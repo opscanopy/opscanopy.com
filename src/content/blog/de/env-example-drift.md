@@ -7,6 +7,8 @@ lang: de
 translationOf: "env-example-drift"
 ---
 
+![Schluss mit dem Ausliefern einer veralteten .env.example: Env-Konfigurationsdrift zwischen Ihrer .env und .env.example erkennen](/blog/env-example-drift-hero.svg)
+
 Eine `.env.example` ist die eine Datei in Ihrem Repository, die niemand ausführt, niemand testet und der jeder vertraut. Sie ist der Vertrag, den eine neue Kollegin oder ein neuer Kollege am ersten Tag liest, um die einzige Frage zu beantworten, die zählt: Welche Umgebungsvariablen muss ich setzen, bevor das Ding hochfährt? Wenn diese Datei stimmt, ist das Onboarding ein fünfminütiges Kopieren und Ausfüllen. Wenn sie falsch ist, bekommen Sie die demoralisierendste Art von Fehler — die Anwendung stürzt beim Start mit `undefined is not a function` ab, oder schlimmer noch, sie läuft fröhlich weiter, während ein Feature stillschweigend deaktiviert ist, weil ein Flag standardmäßig auf „aus" stand.
 
 Das Problem ist, dass `.env.example` Dokumentation ist, und Dokumentation driftet. Code, der `process.env.STRIPE_WEBHOOK_SECRET` liest, wird in einem Feature-Branch ausgeliefert. Die Beispieldatei bekommt den neuen Schlüssel nicht, weil das Hinzufügen kein Teil von „das Feature zum Laufen bringen" ist — es ist Teil von „nett zur nächsten Person sein", und dieser Schritt ist unsichtbar, bis jemand darüber stolpert. Multiplizieren Sie das über ein Jahr voller Merges, und die Beispieldatei wird zu einem Museum von Variablen, die Sie früher gebraucht haben, während die Hälfte derer fehlt, die Sie tatsächlich brauchen.
@@ -21,6 +23,8 @@ Drift ist nie ein einzelnes dramatisches Ereignis. Es ist die Anhäufung kleiner
 - Ein Schlüssel wird nur in einem selten angefassten Worker gelesen, sodass er beim beiläufigen Testen nie auftaucht — bis dieser Worker in eine frische Umgebung deployt wird, in der kein Wert gesetzt ist.
 
 Keines davon bringt Ihren Linter, Ihren Typprüfer oder Ihre Tests zum Stolpern. Die Beispieldatei ist nicht Teil des Build-Graphen, also sagt Ihnen nichts, dass sie nicht mehr synchron ist. Die einzige Rückkopplungsschleife ist ein Mensch, der sich die Finger verbrennt.
+
+![Eine .env-Datei und eine .env.example nebeneinander verglichen, wobei ein im Beispiel fehlender Schlüssel und ein veralteter, übrig gebliebener Schlüssel hervorgehoben werden](/blog/env-example-drift-diagram.svg)
 
 ## Die zwei Fehlermodi
 

@@ -7,6 +7,8 @@ lang: de
 translationOf: "unit-testing-loki-alert-rules"
 ---
 
+![Unit-Tests für Loki-Alert-Regeln: eine Testschleife im promtool-Stil für LogQL-Alerting-Regeln](/blog/unit-testing-loki-alert-rules-hero.svg)
+
 Wenn Sie Prometheus betreiben, verfügen Sie bereits über ein Sicherheitsnetz für Ihre Alerting-Logik: `promtool test rules`. Sie geben ihm eine Reihe synthetischer Samples vor, deklarieren, was wann auslösen soll, und CI sagt Ihnen in dem Moment Bescheid, in dem ein Refactoring einen Alert kaputt macht. Das ist der Unterschied zwischen dem Aufspüren einer fehlerhaften Paging-Regel im Code-Review und ihrer Entdeckung während eines Incidents.
 
 Grafana Loki hat kein Gegenstück dazu. Sie können LogQL-Alerting- und Recording-Regeln schreiben, die ihren Prometheus-Verwandten fast identisch sehen, sie in den Ruler laden und ausliefern – aber es gibt keine erstklassige Möglichkeit, zu verifizieren, dass ein bestimmter Log-Stream den erwarteten Alert erzeugt. Die Lücke ist real, sie besteht seit Langem, und sie ist genau die Art von Sache, die Sie um 3&nbsp;Uhr morgens einholt.
@@ -18,6 +20,8 @@ Der instinktive Reflex besteht darin, zu `promtool` zu greifen und es auf Ihre L
 `promtool test rules` wertet PromQL gegen eine synthetische **Zeitreihen**-Datenbank aus. Sie beschreiben Metriken mit der `series`/`values`-Syntax, und das Tool spielt sie durch die Regel-Engine ab. Eine Loki-Alert-Regel beginnt aber nicht mit Metriken – sie beginnt mit **Log-Zeilen**. Eine Regel wie `count_over_time({app="api"} |= "panic" [5m]) > 0` muss eine LogQL-Pipeline (Stream-Selektor, Line-Filter, Label-Extraktion, dann eine Metrik-Aggregation) über rohe Log-Einträge ausführen, bevor es überhaupt eine Zeitreihe zum Auswerten gibt. promtool hat kein Konzept eines Log-Streams, keinen LogQL-Parser und keine Möglichkeit, die Zwischenmetriken so zu materialisieren, wie es die Query-Engine von Loki tut. Es mit Loki-Regeln zu füttern, führt entweder zu einem Fehler oder testet stillschweigend das Falsche.
 
 Die Testfläche, auf die es bei Loki ankommt – „erzeugt diese LogQL-Regel angesichts dieser Log-Zeilen den Alert?" – ist also genau die Fläche, die promtool nicht erreichen kann.
+
+![Eine Unit-Test-Schleife für eine Loki-Alert-Regel: synthetische Log-Streams, die zu einem gewählten Zeitpunkt ausgewertet und gegen die erwarteten Alerts verifiziert werden](/blog/unit-testing-loki-alert-rules-diagram.svg)
 
 ## Warum das wichtig ist
 

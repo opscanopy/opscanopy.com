@@ -10,6 +10,8 @@ lang: es
 translationOf: "github-actions-workflow-not-triggering-filters"
 ---
 
+![El workflow de GitHub Actions no se disparó: las reglas de los filtros branches, tags y paths explicadas](/blog/github-actions-workflow-not-triggering-filters-hero.svg)
+
 Hiciste push de un commit, abriste la pestaña Actions, y no hay nada ahí. Ni una X roja, ni un punto amarillo: el workflow simplemente no se ejecutó. No hay error que leer, ni log que filtrar, porque un workflow que no se dispara no produce ninguna ejecución en absoluto. La decisión ocurrió antes de que se asignara ningún runner, dentro de la lógica de filtrado de eventos de GitHub, y esa lógica es más sorprendente de lo que los docs dan a entender.
 
 Casi todos los reportes de "por qué no se disparó mi workflow de GitHub Actions" se reducen a una de un puñado de causas: el archivo del workflow no está en la rama a la que hiciste push, tu filtro `branches` no coincide con la ref, o —la más grande— combinaste `branches` y `paths` sin darte cuenta de que se aplican con un AND entre ambos. Aquí tienes cada causa con la regla decisiva y la corrección.
@@ -28,6 +30,8 @@ on:
 Esta es la falsa alarma más común. La corrección es mecánica: haz merge o rebase de `main` sobre la rama para que el archivo del workflow esté presente, y luego vuelve a hacer push. La misma regla explica por qué las ediciones a los disparadores `on:` solo "surten efecto" una vez que el cambio llega a la rama en la que estás probando.
 
 Por qué importa: no hay mensaje de error para "aquí no hay ningún archivo de workflow". Es lo primero que debes descartar antes de sospechar de tus filtros.
+
+![Un flujo de decisión que muestra cómo los filtros branches, tags y paths deciden si un workflow de GitHub Actions se dispara en un push](/blog/github-actions-workflow-not-triggering-filters-diagram.svg)
 
 ## 2. El filtro de rama no coincide con la ref
 

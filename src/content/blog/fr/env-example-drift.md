@@ -7,6 +7,8 @@ lang: fr
 translationOf: "env-example-drift"
 ---
 
+![Arrêtez de livrer un .env.example périmé : détecter le drift de configuration entre votre .env et votre .env.example](/blog/env-example-drift-hero.svg)
+
 Un fichier `.env.example` est le seul fichier de votre dépôt que personne n'exécute, que personne ne teste, et auquel tout le monde fait confiance. C'est le contrat qu'un nouveau coéquipier lit dès le premier jour pour répondre à la seule question qui compte : quelles variables d'environnement dois-je définir avant que ce truc démarre ? Quand ce fichier est juste, l'onboarding se résume à un copier-remplir de cinq minutes. Quand il est faux, vous récoltez le genre de bug le plus démoralisant : l'application plante au démarrage avec `undefined is not a function`, ou pire, tourne tranquillement avec une fonctionnalité désactivée en silence parce qu'un flag a pris la valeur par défaut « off ».
 
 Le problème, c'est que `.env.example` est une documentation, et la documentation dérive. Du code qui lit `process.env.STRIPE_WEBHOOK_SECRET` part dans une branche de fonctionnalité. Le fichier d'exemple n'obtient pas la nouvelle clé parce que l'ajouter ne fait pas partie de « faire fonctionner la fonctionnalité » : cela fait partie de « être prévenant envers la personne suivante », et cette étape reste invisible jusqu'à ce que quelqu'un la heurte. Multipliez cela sur une année de merges et le fichier d'exemple devient un musée des variables dont vous aviez besoin autrefois, sans la moitié de celles dont vous avez réellement besoin.
@@ -21,6 +23,8 @@ Le drift n'est jamais un événement spectaculaire unique. C'est l'accumulation 
 - Une clé n'est lue que dans un seul worker rarement touché, si bien qu'elle n'apparaît jamais lors de tests occasionnels — jusqu'à ce que ce worker soit déployé dans un environnement neuf sans aucune valeur définie.
 
 Aucun de ces cas ne fait broncher votre linter, votre vérificateur de types ou vos tests. Le fichier d'exemple ne fait pas partie du graphe de build, donc rien ne vous signale qu'il est désynchronisé. La seule boucle de rétroaction, c'est un humain qui se brûle.
+
+![Un fichier .env et un .env.example comparés côte à côte, mettant en évidence une clé manquante dans l'exemple et une clé résiduelle obsolète](/blog/env-example-drift-diagram.svg)
 
 ## Les deux modes de défaillance
 

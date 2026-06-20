@@ -8,6 +8,8 @@ relatedTool:
   href: "/loki-alert-rule-tester"
 ---
 
+![Unit testing Loki alert rules: a promtool-style test loop for LogQL alerting rules](/blog/unit-testing-loki-alert-rules-hero.svg)
+
 If you run Prometheus, you already have a safety net for your alerting logic: `promtool test rules`. You feed it a series of synthetic samples, declare what should fire and when, and CI tells you the moment a refactor breaks an alert. It’s the difference between catching a broken page rule in code review and discovering it during an incident.
 
 Grafana Loki has no equivalent. You can write LogQL alerting and recording rules that look almost identical to their Prometheus cousins, load them into the ruler, and ship them — but there’s no first-class way to assert that a given stream of logs produces the alert you expect. The gap is real, it’s long-standing, and it’s exactly the kind of thing that bites you at 3&nbsp;a.m.
@@ -19,6 +21,8 @@ The instinctive move is to reach for `promtool` and point it at your Loki rules.
 `promtool test rules` evaluates PromQL against a synthetic **time series** database. You describe metrics with the `series`/`values` syntax and the tool replays them through the rule engine. But a Loki alert rule doesn’t start from metrics — it starts from **log lines**. A rule like `count_over_time({app="api"} |= "panic" [5m]) > 0` has to run a LogQL pipeline (stream selector, line filter, label extraction, then a metric aggregation) over raw log entries before there’s any series to evaluate. promtool has no concept of a log stream, no LogQL parser, and no way to materialise the intermediate metrics the way Loki’s query engine does. Feeding it Loki rules either errors out or silently tests the wrong thing.
 
 So the test surface that matters for Loki — “given these log lines, does this LogQL rule fire?” — is precisely the surface promtool can’t reach.
+
+![A Loki alert rule unit test loop: synthetic log streams evaluated at a chosen time and asserted against the expected alerts](/blog/unit-testing-loki-alert-rules-diagram.svg)
 
 ## Why this matters
 

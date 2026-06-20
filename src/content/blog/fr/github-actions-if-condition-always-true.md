@@ -9,6 +9,7 @@ relatedTool:
 lang: fr
 translationOf: "github-actions-if-condition-always-true"
 ---
+![Condition if GitHub Actions qui s'exécute toujours parce que le texte littéral en dehors des accolades de l'expression est converti en chaîne truthy](/blog/github-actions-if-condition-always-true-hero.svg)
 
 Vous avez ajouté un `if:` à une étape pour qu'elle ne s'exécute que sur `main`, ou uniquement sur un tag, ou seulement lorsqu'une étape précédente a défini une sortie. Puis vous avez poussé — et l'étape s'est exécutée quand même. À chaque fois. Sur chaque branche. La condition n'est que décorative.
 
@@ -55,6 +56,8 @@ Envelopper l'expression entre guillemets transforme la valeur YAML en une simple
 Règle empirique : **dans un `if:`, il n'y a ni `${{ }}` ni guillemets autour.** Juste l'expression. Les accolades servent à interpoler des valeurs dans `run:`, `name:` et `with:` — pas dans les conditions.
 
 Vous pouvez coller n'importe lequel de ces exemples dans le [Testeur d'expressions et de déclencheurs GitHub Actions](/github-actions-expression-tester) et le voir signaler la fuite de texte littéral avant que vous ne poussiez — il avertit précisément sur ce schéma (il est répertorié sous [actions/runner#1173](https://github.com/actions/runner/issues/1173), le bug le plus réagi du dépôt du runner).
+
+![Une condition if GitHub Actions qui est toujours vraie parce qu'elle renvoie une chaîne truthy, à côté de l'expression booléenne corrigée](/blog/github-actions-if-condition-always-true-diagram.svg)
 
 ## Le `success()` implicite qui disparaît quand vous ajoutez un `if:`
 

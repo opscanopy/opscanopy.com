@@ -7,6 +7,8 @@ lang: fr
 translationOf: "unit-testing-loki-alert-rules"
 ---
 
+![Tester unitairement les règles d'alerte Loki : une boucle de test de style promtool pour les règles d'alerte LogQL](/blog/unit-testing-loki-alert-rules-hero.svg)
+
 Si vous utilisez Prometheus, vous disposez déjà d'un filet de sécurité pour votre logique d'alerte : `promtool test rules`. Vous lui fournissez une série d'échantillons synthétiques, vous déclarez ce qui doit se déclencher et quand, et la CI vous prévient dès qu'un remaniement casse une alerte. C'est la différence entre détecter une règle de page défectueuse lors de la revue de code et la découvrir pendant un incident.
 
 Grafana Loki n'a pas d'équivalent. Vous pouvez écrire des règles d'alerte et d'enregistrement LogQL qui ressemblent presque à l'identique à leurs cousines Prometheus, les charger dans le ruler et les expédier — mais il n'existe aucun moyen de premier ordre d'affirmer qu'un flux de logs donné produit l'alerte attendue. La lacune est réelle, elle perdure depuis longtemps, et c'est exactement le genre de chose qui vous mord à 3&nbsp;h du matin.
@@ -18,6 +20,8 @@ Le réflexe instinctif est de se tourner vers `promtool` et de le pointer vers v
 `promtool test rules` évalue PromQL sur une base de données de **séries temporelles** synthétiques. Vous décrivez des métriques avec la syntaxe `series`/`values` et l'outil les rejoue dans le moteur de règles. Mais une règle d'alerte Loki ne part pas de métriques — elle part de **lignes de logs**. Une règle comme `count_over_time({app="api"} |= "panic" [5m]) > 0` doit exécuter un pipeline LogQL (sélecteur de flux, filtre de ligne, extraction de labels, puis une agrégation de métrique) sur des entrées de logs brutes avant qu'il n'y ait la moindre série à évaluer. promtool n'a aucune notion de flux de logs, aucun parseur LogQL, et aucun moyen de matérialiser les métriques intermédiaires comme le fait le moteur de requête de Loki. Lui fournir des règles Loki produit soit une erreur, soit teste silencieusement la mauvaise chose.
 
 Ainsi, la surface de test qui compte pour Loki — « étant donné ces lignes de logs, cette règle LogQL se déclenche-t-elle ? » — est précisément la surface que promtool ne peut pas atteindre.
+
+![Une boucle de test unitaire de règle d'alerte Loki : des flux de logs synthétiques évalués à un instant choisi et confrontés aux alertes attendues](/blog/unit-testing-loki-alert-rules-diagram.svg)
 
 ## Pourquoi c'est important
 

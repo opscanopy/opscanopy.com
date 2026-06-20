@@ -8,6 +8,8 @@ relatedTool:
   href: "/github-actions-validator"
 ---
 
+![Shield with a keyhole over the dark hero title 'Security mistakes linters miss' — high-impact GitHub Actions security misconfigurations](/blog/github-actions-security-misconfigurations-hero.svg)
+
 A YAML linter will tell you when your workflow won’t parse. It won’t tell you when your workflow hands a fork’s pull request a write token, or runs an attacker-controlled branch name as shell code. Those bugs are syntactically perfect — they pass every schema check, run green on the first try, and quietly widen your attack surface until someone notices.
 
 GitHub Actions is unusually exposed because workflows are code that runs on every push, often with secrets in scope and a token that can write to the repo. The mistakes below are the ones that turn a routine CI pipeline into a supply-chain incident. None of them are caught by `actionlint`’s syntax pass alone, and all five are common enough that they show up in real public repos every week.
@@ -43,6 +45,8 @@ jobs:
 ```
 
 Why it matters: this is the single most-exploited Actions pattern. Treating fork PRs as untrusted input is the whole game.
+
+![A GitHub Actions workflow annotated with security mistakes: pull_request_target, an unpinned action, overly broad permissions and script injection](/blog/github-actions-security-misconfigurations-diagram.svg)
 
 ## 2. Script injection through `${{ github.event.* }}`
 

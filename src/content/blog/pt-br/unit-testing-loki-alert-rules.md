@@ -7,6 +7,8 @@ lang: pt-br
 translationOf: "unit-testing-loki-alert-rules"
 ---
 
+![Testes unitários de regras de alerta do Loki: um loop de teste no estilo do promtool para regras de alerta em LogQL](/blog/unit-testing-loki-alert-rules-hero.svg)
+
 Se você roda o Prometheus, já tem uma rede de segurança para a sua lógica de alertas: `promtool test rules`. Você alimenta a ferramenta com uma série de amostras sintéticas, declara o que deve disparar e quando, e a CI avisa no instante em que uma refatoração quebra um alerta. É a diferença entre pegar uma regra de paginação quebrada na revisão de código e descobri-la durante um incidente.
 
 O Grafana Loki não tem equivalente. Você pode escrever regras de alerta e de gravação em LogQL que parecem quase idênticas às suas primas do Prometheus, carregá-las no ruler e colocá-las em produção — mas não há uma forma de primeira classe para afirmar que um determinado fluxo de logs produz o alerta que você espera. A lacuna é real, é antiga e é exatamente o tipo de coisa que te morde às 3&nbsp;da manhã.
@@ -18,6 +20,8 @@ O movimento instintivo é recorrer ao `promtool` e apontá-lo para as suas regra
 O `promtool test rules` avalia PromQL contra um banco de dados sintético de **séries temporais**. Você descreve métricas com a sintaxe `series`/`values` e a ferramenta as reproduz através do mecanismo de regras. Mas uma regra de alerta do Loki não parte de métricas — ela parte de **linhas de log**. Uma regra como `count_over_time({app="api"} |= "panic" [5m]) > 0` precisa executar um pipeline LogQL (seletor de stream, filtro de linha, extração de labels e, então, uma agregação de métrica) sobre entradas de log brutas antes que exista qualquer série a ser avaliada. O promtool não tem conceito de um stream de logs, não tem parser de LogQL e não tem como materializar as métricas intermediárias da forma que o mecanismo de consultas do Loki faz. Alimentá-lo com regras do Loki ou gera erro ou, silenciosamente, testa a coisa errada.
 
 Portanto, a superfície de teste que importa para o Loki — "dadas estas linhas de log, esta regra LogQL dispara?" — é precisamente a superfície que o promtool não consegue alcançar.
+
+![Um loop de teste unitário de regra de alerta do Loki: streams de log sintéticos avaliados em um momento escolhido e verificados contra os alertas esperados](/blog/unit-testing-loki-alert-rules-diagram.svg)
 
 ## Por que isso importa
 

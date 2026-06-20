@@ -7,6 +7,8 @@ lang: pt-br
 translationOf: "env-example-drift"
 ---
 
+![Pare de publicar um .env.example desatualizado: detectando drift de configuração de env entre o seu .env e o seu .env.example](/blog/env-example-drift-hero.svg)
+
 Um `.env.example` é o único arquivo no seu repositório que ninguém executa, ninguém testa e todo mundo confia. É o contrato que um novo colega de equipe lê no primeiro dia para responder à única pergunta que importa: quais variáveis de ambiente eu preciso definir antes que isso suba? Quando esse arquivo está certo, o onboarding é um copiar-e-preencher de cinco minutos. Quando está errado, você ganha o tipo mais desmoralizante de bug — o app quebra na inicialização com `undefined is not a function`, ou pior, roda alegremente com um recurso silenciosamente desativado porque uma flag teve como padrão "desligado".
 
 O problema é que `.env.example` é documentação, e documentação sofre drift. Código que lê `process.env.STRIPE_WEBHOOK_SECRET` é publicado em uma feature branch. O arquivo de exemplo não recebe a nova chave porque adicioná-la não faz parte de "fazer o recurso funcionar" — faz parte de "ser gentil com a próxima pessoa", e esse passo é invisível até alguém esbarrar nele. Multiplique isso ao longo de um ano de merges e o arquivo de exemplo vira um museu de variáveis que você costumava precisar, sem metade das que você realmente precisa.
@@ -21,6 +23,8 @@ O drift nunca é um único evento dramático. É o acúmulo de pequenas omissõe
 - Uma chave é lida apenas em um worker raramente mexido, então ela nunca aparece em testes casuais — até que esse worker seja implantado em um ambiente novo sem nenhum valor definido.
 
 Nenhum desses casos dispara seu linter, seu verificador de tipos ou seus testes. O arquivo de exemplo não faz parte do grafo de build, então nada avisa que ele está fora de sincronia. O único ciclo de feedback é um humano se queimando.
+
+![Um arquivo .env e um .env.example comparados lado a lado, destacando uma chave ausente no exemplo e uma chave obsoleta deixada para trás](/blog/env-example-drift-diagram.svg)
 
 ## Os dois modos de falha
 

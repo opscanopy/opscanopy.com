@@ -7,6 +7,8 @@ lang: de
 translationOf: "logql-vs-promql"
 ---
 
+![LogQL vs. PromQL: dieselbe Abfrage in beiden Sprachen, nebeneinander](/blog/logql-vs-promql-hero.svg)
+
 Wenn Sie schon Prometheus-Abfragen geschrieben haben, wirkt das LogQL von Grafana Loki beruhigend vertraut — `rate(...)`, `sum by (...)`, `[5m]`-Range-Vektoren, dieselben Vergleichsoperatoren. Diese Vertrautheit ist beabsichtigt, und sie ist wirklich nützlich: Ein großer Teil des PromQL-Muskelgedächtnisses lässt sich direkt übertragen. Doch die beiden Sprachen gehen von unterschiedlichem Rohmaterial aus, und sobald Sie das vergessen, bricht Ihre Übersetzung auf eine Weise, die schwer zu erkennen ist. PromQL fragt eine **Metrik**-Datenbank ab. LogQL fragt **Log-Zeilen** ab und verwandelt sie im laufenden Betrieb in Metriken. Alles, was sich sauber abbilden lässt, und alles, was sich nicht abbilden lässt, folgt aus diesem einen Unterschied.
 
 ## Die zwei Hälften von LogQL
@@ -24,6 +26,8 @@ sum by (app) (count_over_time({app="api", env="prod"} |= "panic" | logfmt | leve
 ```
 
 Nur die äußere Hälfte dieses Ausdrucks ähnelt PromQL. Der innere Teil `{...} |= ... | logfmt | ...` ist reines Loki, und genau dort steckt der meiste Übersetzungsaufwand.
+
+![Dieselbe Abfrage in PromQL und LogQL nebeneinander geschrieben, wobei einander entsprechende Teile durch Pfeile verbunden sind](/blog/logql-vs-promql-diagram.svg)
 
 ## Wo LogQL und PromQL zueinander passen
 

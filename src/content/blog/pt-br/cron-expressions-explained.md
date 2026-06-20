@@ -7,6 +7,8 @@ lang: pt-br
 translationOf: "cron-expressions-explained"
 ---
 
+![Lendo expressões cron campo a campo: um guia de agendamento para os cinco campos de tempo do cron, intervalos e passos](/blog/cron-expressions-explained-hero.svg)
+
 Quase todo mundo que mantém um backend já encarou uma linha como `*/15 9-17 * * 1-5` e lembrou só pela metade o que ela faz. A sintaxe do cron é compacta, o que é sua grande virtude e sua grande armadilha: cinco campos minúsculos codificam um agendamento recorrente, e um único caractere fora do lugar pode transformar “toda tarde de dia útil” em “a cada minuto, para sempre.” Este guia lê uma expressão cron do jeito que o daemon lê — campo a campo — para que, da próxima vez que você se deparar com uma, consiga decodificá-la de bate-pronto.
 
 ## Os cinco campos
@@ -33,6 +35,8 @@ A tarefa roda a cada minuto em que **todos** os campos de tempo correspondem ao 
 ```
 
 Note que segundos **não** fazem parte do cron Unix padrão. Algumas implementações (Quartz, muitas bibliotecas de Go e Node; Kubernetes é a exceção notável que permanece com cinco) acrescentam um sexto campo de segundos no início. Se uma expressão de seis campos se comportar de forma estranha no `crontab` puro, normalmente é por causa desse campo extra.
+
+![Os cinco campos de uma expressão cron rotulados como minuto, hora, dia do mês, mês e dia da semana, com anotações de passo e intervalo](/blog/cron-expressions-explained-diagram.svg)
 
 ## Intervalos, passos e listas
 

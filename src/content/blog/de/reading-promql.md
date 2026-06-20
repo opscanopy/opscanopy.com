@@ -7,6 +7,8 @@ lang: de
 translationOf: "reading-promql"
 ---
 
+![Wie man eine PromQL-Abfrage liest: Prometheus-Selektoren, Bereiche, Funktionen und Aggregationen von innen nach außen entschlüsseln](/blog/reading-promql-hero.svg)
+
 PromQL wirkt beim ersten Kontakt dicht. Eine Zeile wie `histogram_quantile(0.99, sum by (le, route) (rate(http_request_duration_seconds_bucket[5m])))` liest sich wie ein einziges langes Wort, und der Instinkt sagt einem, sie wie einen Satz von links nach rechts zu überfliegen. Das ist die falsche Richtung. PromQL ist eine funktionale Sprache, daher fließt die Bedeutung vom **innersten** Ausdruck nach außen – genauso, wie Sie eine verschachtelte Formel in der Mathematik auswerten würden. Sobald Sie sie von innen nach außen lesen, zerlegt sich nahezu jede Abfrage in dieselben vier Schichten.
 
 ## Die vier Schichten
@@ -19,6 +21,8 @@ Nahezu jeder nicht-triviale PromQL-Ausdruck ist aus diesen aufgebaut, von innen 
 4. **Eine Aggregation** – wie Sie viele Series zu weniger zusammenfassen.
 
 Lesen Sie sie in dieser Reihenfolge, und die Abfrage erklärt sich von selbst.
+
+![Eine PromQL-Abfrage, zerlegt in Metrikname, Label-Matcher, Bereichsselektor, rate-Funktion und Aggregation](/blog/reading-promql-diagram.svg)
 
 ## Schicht 1: der Selektor
 

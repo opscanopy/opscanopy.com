@@ -9,6 +9,7 @@ relatedTool:
 lang: es
 translationOf: "github-actions-if-condition-always-true"
 ---
+![Condición if de GitHub Actions que siempre se ejecuta como verdadera porque el texto literal fuera de las llaves de la expresión se convierte en una cadena truthy](/blog/github-actions-if-condition-always-true-hero.svg)
 
 Añadiste un `if:` a un paso para que solo se ejecutara en `main`, o solo en un tag, o solo cuando un paso anterior estableciera una salida. Luego hiciste push — y el paso se ejecutó de todos modos. Cada vez. En cada rama. La condición es pura decoración.
 
@@ -55,6 +56,8 @@ Envolver la expresión entre comillas convierte el valor de YAML en una cadena s
 Regla práctica: **en un `if:` no hay `${{ }}` ni comillas envolventes.** Solo la expresión. Las llaves sirven para interpolar valores en `run:`, `name:` y `with:` — no para las condiciones.
 
 Puedes pegar cualquiera de estos en el [Probador de Expresiones y Disparadores de GitHub Actions](/github-actions-expression-tester) y verlo marcar la fuga de texto literal antes de hacer push — avisa exactamente sobre este patrón (está registrado como [actions/runner#1173](https://github.com/actions/runner/issues/1173), el bug con más reacciones del repositorio del runner).
+
+![Una condición if de GitHub Actions que siempre es verdadera porque devuelve una cadena truthy, junto a la expresión booleana corregida](/blog/github-actions-if-condition-always-true-diagram.svg)
 
 ## El `success()` implícito que desaparece cuando añades un `if:`
 

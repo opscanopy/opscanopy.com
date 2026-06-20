@@ -7,6 +7,8 @@ lang: es
 translationOf: "env-example-drift"
 ---
 
+![Deja de publicar un .env.example desactualizado: detectando la deriva de configuración de entorno entre tu .env y tu .env.example](/blog/env-example-drift-hero.svg)
+
 Un `.env.example` es el único archivo de tu repositorio que nadie ejecuta, nadie prueba y todo el mundo confía en él. Es el contrato que un nuevo compañero de equipo lee en su primer día para responder la única pregunta que importa: ¿qué variables de entorno necesito configurar antes de que esto arranque? Cuando ese archivo es correcto, el onboarding es un copiar-y-rellenar de cinco minutos. Cuando está mal, te encuentras con el tipo de error más desmoralizante: la aplicación se cae al arrancar con `undefined is not a function`, o peor, funciona tan tranquila con una funcionalidad desactivada en silencio porque un flag tenía su valor predeterminado en off.
 
 El problema es que `.env.example` es documentación, y la documentación deriva. Código que lee `process.env.STRIPE_WEBHOOK_SECRET` se publica en una rama de funcionalidad. El archivo de ejemplo no recibe la nueva clave porque añadirla no forma parte de "hacer que la funcionalidad funcione", sino de "ser amable con la siguiente persona", y ese paso es invisible hasta que alguien tropieza con él. Multiplica eso a lo largo de un año de merges y el archivo de ejemplo se convierte en un museo de variables que solías necesitar, al que le faltan la mitad de las que realmente usas.
@@ -21,6 +23,8 @@ La deriva nunca es un único evento dramático. Es la acumulación de pequeñas 
 - Una clave se lee solo en un worker que rara vez se toca, así que nunca aparece en las pruebas informales, hasta que ese worker se despliega en un entorno nuevo sin ningún valor configurado.
 
 Ninguno de estos casos hace saltar tu linter, tu verificador de tipos ni tus pruebas. El archivo de ejemplo no forma parte del grafo de compilación, así que nada te avisa de que está desincronizado. El único ciclo de retroalimentación es el de un humano que sale escaldado.
+
+![Un archivo .env y un .env.example comparados lado a lado, resaltando una clave que falta en el ejemplo y una clave sobrante y obsoleta](/blog/env-example-drift-diagram.svg)
 
 ## Los dos modos de fallo
 

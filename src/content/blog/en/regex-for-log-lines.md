@@ -8,6 +8,8 @@ relatedTool:
   href: "/regex-log-tester"
 ---
 
+![Robust regular expressions for parsing log lines with named capture groups](/blog/regex-for-log-lines-hero.svg)
+
 A regular expression that parses a log line in your editor and a regular expression that survives a week of real traffic are rarely the same expression. Logs are noisier than the three sample lines you tested against: timestamps drift formats, fields go missing, an unescaped path sneaks a metacharacter into your pattern, and a `.*` that looked harmless quietly eats half the line. This post walks through the techniques that make a log-line regex robust — and the failure modes that catch people out.
 
 ## Start from the structure, not the example
@@ -25,6 +27,8 @@ Most log lines are more structured than they look. Before reaching for `.*`, nam
 ```
 
 Here `\S+` for the timestamp is deliberate: it matches the whole token without you having to encode every timestamp variant. `\bstatus=(?<status>\d{3})\b` pins the field to a word boundary so it can’t accidentally match `http_status=` or a status embedded in another token.
+
+![A log line with a regular expression, showing named capture groups matching the timestamp, level and message segments](/blog/regex-for-log-lines-diagram.svg)
 
 ## Anchor whenever you can
 

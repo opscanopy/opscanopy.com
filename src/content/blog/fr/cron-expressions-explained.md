@@ -7,6 +7,8 @@ lang: fr
 translationOf: "cron-expressions-explained"
 ---
 
+![Lire les expressions cron champ par champ : un guide de planification des cinq champs temporels de cron, des plages et des pas](/blog/cron-expressions-explained-hero.svg)
+
 Presque tous ceux qui exploitent un backend ont déjà fixé une ligne comme `*/15 9-17 * * 1-5` en se rappelant à moitié ce qu'elle fait. La syntaxe de cron est compacte, ce qui constitue à la fois sa grande vertu et son grand piège : cinq tout petits champs encodent une planification récurrente, et un seul caractère mal placé peut transformer « tous les après-midi en semaine » en « toutes les minutes, pour toujours ». Ce guide lit une expression cron comme le fait le démon — champ par champ — afin que la prochaine fois que vous en rencontrerez une, vous puissiez la décoder à vue.
 
 ## Les cinq champs
@@ -33,6 +35,8 @@ La tâche s'exécute à chaque minute où **tous** les champs temporels correspo
 ```
 
 Notez que les secondes ne font **pas** partie du cron Unix standard. Certaines implémentations (Quartz, de nombreuses bibliothèques Go et Node, Kubernetes étant l'exception notable qui s'en tient à cinq) ajoutent un sixième champ pour les secondes. Si une expression à six champs se comporte étrangement dans un `crontab` ordinaire, ce champ supplémentaire en est généralement la raison.
+
+![Les cinq champs d'une expression cron étiquetés minute, heure, jour du mois, mois et jour de la semaine, avec des annotations de pas et de plage](/blog/cron-expressions-explained-diagram.svg)
 
 ## Plages, pas et listes
 

@@ -7,6 +7,8 @@ lang: pt-br
 translationOf: "reading-promql"
 ---
 
+![Como ler uma consulta PromQL: decodificando seletores, intervalos, funções e agregações do Prometheus de dentro para fora](/blog/reading-promql-hero.svg)
+
 O PromQL parece denso na primeira vez que você o encontra. Uma linha como `histogram_quantile(0.99, sum by (le, route) (rate(http_request_duration_seconds_bucket[5m])))` parece uma única palavra comprida, e o instinto é varrê-la da esquerda para a direita como uma frase. Essa é a direção errada. O PromQL é uma linguagem funcional, então o significado flui da expressão **mais interna** para fora — do mesmo jeito que você avaliaria uma fórmula aninhada na matemática. Depois que você passa a lê-la de dentro para fora, quase toda consulta se decompõe nas mesmas quatro camadas.
 
 ## As quatro camadas
@@ -19,6 +21,8 @@ Quase toda expressão PromQL não trivial é construída a partir destas, empilh
 4. **Uma agregação** — como você condensa muitas séries em menos.
 
 Leia-as nessa ordem e a consulta se explica sozinha.
+
+![Uma consulta PromQL decomposta em nome de métrica, comparador de rótulo, seletor de intervalo, função rate e agregação](/blog/reading-promql-diagram.svg)
 
 ## Camada 1: o seletor
 

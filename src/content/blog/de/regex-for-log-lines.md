@@ -7,6 +7,8 @@ lang: de
 translationOf: "regex-for-log-lines"
 ---
 
+![Robuste reguläre Ausdrücke zum Parsen von Log-Zeilen mit benannten Capture-Gruppen](/blog/regex-for-log-lines-hero.svg)
+
 Ein regulärer Ausdruck, der eine Log-Zeile in Ihrem Editor parst, und ein regulärer Ausdruck, der eine Woche echten Datenverkehr übersteht, sind selten derselbe Ausdruck. Logs sind verrauschter als die drei Beispielzeilen, gegen die Sie getestet haben: Zeitstempel verschieben ihre Formate, Felder fehlen, ein nicht maskierter Pfad schmuggelt ein Metazeichen in Ihr Muster, und ein `.*`, das harmlos aussah, frisst klammheimlich die halbe Zeile auf. Dieser Beitrag führt durch die Techniken, die eine Regex für Log-Zeilen robust machen — und durch die Fehlermodi, die Leute auf dem falschen Fuß erwischen.
 
 ## Beginnen Sie mit der Struktur, nicht mit dem Beispiel
@@ -24,6 +26,8 @@ Die meisten Log-Zeilen sind stärker strukturiert, als sie aussehen. Bevor Sie z
 ```
 
 Hier ist `\S+` für den Zeitstempel bewusst gewählt: Es trifft das gesamte Token, ohne dass Sie jede Zeitstempel-Variante kodieren müssen. `\bstatus=(?<status>\d{3})\b` heftet das Feld an eine Wortgrenze, sodass es nicht versehentlich `http_status=` treffen kann oder einen Status, der in ein anderes Token eingebettet ist.
+
+![Eine Log-Zeile mit einem regulären Ausdruck, der benannte Capture-Gruppen zeigt, die die Segmente für Zeitstempel, Level und Nachricht treffen](/blog/regex-for-log-lines-diagram.svg)
 
 ## Verankern Sie, wo immer Sie können
 

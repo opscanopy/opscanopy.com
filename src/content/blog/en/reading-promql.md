@@ -8,6 +8,8 @@ relatedTool:
   href: "/promql-explainer"
 ---
 
+![How to read a PromQL query: decoding Prometheus selectors, ranges, functions and aggregations inside-out](/blog/reading-promql-hero.svg)
+
 PromQL looks dense the first time you meet it. A line like `histogram_quantile(0.99, sum by (le, route) (rate(http_request_duration_seconds_bucket[5m])))` reads like one long word, and the instinct is to scan it left to right like a sentence. That’s the wrong direction. PromQL is a functional language, so the meaning flows from the **innermost** expression outward — the same way you’d evaluate a nested formula in maths. Once you read it inside-out, almost every query decomposes into the same four layers.
 
 ## The four layers
@@ -20,6 +22,8 @@ Nearly every non-trivial PromQL expression is built from these, stacked from the
 4. **An aggregation** — how you collapse many series into fewer.
 
 Read them in that order and the query explains itself.
+
+![A PromQL query decomposed into metric name, label matcher, range selector, rate function and aggregation](/blog/reading-promql-diagram.svg)
 
 ## Layer 1: the selector
 

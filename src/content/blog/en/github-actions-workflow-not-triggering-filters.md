@@ -8,6 +8,8 @@ relatedTool:
   href: "/github-actions-expression-tester"
 ---
 
+![GitHub Actions workflow didn't trigger: branches, tags and paths filter rules explained](/blog/github-actions-workflow-not-triggering-filters-hero.svg)
+
 You pushed a commit, opened the Actions tab, and there's nothing there. No red X, no yellow dot — the workflow simply didn't run. There's no error to read, no log to grep, because a workflow that doesn't trigger produces no run at all. The decision happened before any runner was assigned, inside GitHub's event-filtering logic, and that logic is more surprising than the docs make it look.
 
 Almost every "why did my GitHub Actions workflow not trigger" report comes down to one of a handful of causes: the workflow file isn't on the branch you pushed to, your `branches` filter doesn't match the ref, or — the big one — you combined `branches` and `paths` without realizing they're ANDed together. Here's each cause with the deciding rule and the fix.
@@ -26,6 +28,8 @@ on:
 This is the most common false alarm. The fix is mechanical: merge or rebase `main` into the branch so the workflow file is present, then push again. The same rule explains why edits to `on:` triggers only "take effect" once the change reaches the branch you're testing on.
 
 Why it matters: there is no error message for "no workflow file here." It's the first thing to rule out before you suspect your filters.
+
+![A decision flow showing how branches, tags and paths filters decide whether a GitHub Actions workflow triggers on a push](/blog/github-actions-workflow-not-triggering-filters-diagram.svg)
 
 ## 2. The branch filter doesn't match the ref
 

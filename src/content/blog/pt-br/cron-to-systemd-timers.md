@@ -7,6 +7,8 @@ lang: pt-br
 translationOf: "cron-to-systemd-timers"
 ---
 
+![Migrando do cron para os timers do systemd: convertendo entradas de crontab em units .timer e .service](/blog/cron-to-systemd-timers-hero.svg)
+
 O cron tem comandado os jobs agendados do mundo há quarenta anos e, na maioria dos servidores, ainda funciona bem. Mas no momento em que um job precisa de logging estruturado, um ambiente controlado, ordenação de dependências ou uma forma de se recuperar depois que a máquina ficou desligada, o modelo do cron começa a ranger. É aí que entram os timers do systemd — e se a sua distribuição já roda systemd (Debian, Ubuntu, RHEL, Fedora, Arch e SUSE todas rodam), você tem um agendador mais capaz parado sem uso.
 
 Este post percorre o que realmente muda quando você migra, com units reais que você pode adaptar.
@@ -21,6 +23,8 @@ O cron é uma única linha. Essa brevidade é o seu atrativo e o seu limite:
 - **Sobreposição e recursos.** O systemd não inicia uma segunda cópia de um job enquanto a primeira ainda está rodando, e você pode anexar `CPUQuota=`, `MemoryMax=` e outros controles de recursos a uma unit.
 
 Você não precisa migrar tudo. Mas para jobs em que uma falha silenciosa lhe custa caro, os timers valem os dois arquivos que exigem.
+
+![Uma linha de crontab mapeada para uma unit .timer do systemd com OnCalendar e uma unit .service com ExecStart](/blog/cron-to-systemd-timers-diagram.svg)
 
 ## O modelo de dois arquivos
 

@@ -9,6 +9,7 @@ relatedTool:
 lang: de
 translationOf: "github-actions-if-condition-always-true"
 ---
+![GitHub-Actions-if-Bedingung, die immer true ist, weil Literaltext außerhalb der Ausdrucks-Klammern zu einer truthy Zeichenkette gecastet wird](/blog/github-actions-if-condition-always-true-hero.svg)
 
 Sie haben einem Schritt ein `if:` hinzugefügt, damit er nur auf `main` läuft, oder nur auf einem Tag, oder nur, wenn ein vorheriger Schritt ein Output gesetzt hat. Dann haben Sie gepusht — und der Schritt lief trotzdem. Jedes Mal. Auf jedem Branch. Die Bedingung ist bloß Dekoration.
 
@@ -55,6 +56,8 @@ Den Ausdruck in Anführungszeichen zu setzen, macht den YAML-Wert zu einer reine
 Faustregel: **In einem `if:` gibt es keine `${{ }}` und keine umschließenden Anführungszeichen.** Nur den Ausdruck. Die Klammern dienen dazu, Werte in `run:`, `name:` und `with:` zu interpolieren — nicht für Bedingungen.
 
 Sie können jedes dieser Beispiele in den [GitHub Actions Ausdrucks- & Trigger-Tester](/github-actions-expression-tester) einfügen und zusehen, wie er das Austreten von Literaltext markiert, bevor Sie pushen — er warnt vor genau diesem Muster (es wird als [actions/runner#1173](https://github.com/actions/runner/issues/1173) geführt, der Bug mit den meisten Reaktionen im Runner-Repository).
+
+![Eine GitHub-Actions-if-Bedingung, die immer true ist, weil sie eine truthy Zeichenkette zurückgibt, neben dem korrigierten booleschen Ausdruck](/blog/github-actions-if-condition-always-true-diagram.svg)
 
 ## Das implizite `success()`, das verschwindet, sobald Sie ein `if:` hinzufügen
 

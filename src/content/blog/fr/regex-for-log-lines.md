@@ -7,6 +7,8 @@ lang: fr
 translationOf: "regex-for-log-lines"
 ---
 
+![Expressions régulières robustes pour analyser les lignes de log avec des groupes de capture nommés](/blog/regex-for-log-lines-hero.svg)
+
 Une expression régulière qui analyse une ligne de log dans votre éditeur et une expression régulière qui survit à une semaine de trafic réel sont rarement la même expression. Les logs sont plus bruyants que les trois lignes d'exemple sur lesquelles vous avez fait vos tests : les formats des horodatages dérivent, des champs disparaissent, un chemin non échappé glisse un métacaractère dans votre motif, et un `.*` qui semblait inoffensif dévore discrètement la moitié de la ligne. Cet article passe en revue les techniques qui rendent une regex de ligne de log robuste — ainsi que les modes de défaillance qui prennent les gens au dépourvu.
 
 ## Partez de la structure, pas de l'exemple
@@ -24,6 +26,8 @@ La plupart des lignes de log sont plus structurées qu'elles n'en ont l'air. Ava
 ```
 
 Ici, `\S+` pour l'horodatage est délibéré : il fait correspondre le jeton entier sans que vous ayez à encoder chaque variante d'horodatage. `\bstatus=(?<status>\d{3})\b` épingle le champ à une limite de mot pour qu'il ne puisse pas faire correspondre accidentellement `http_status=` ou un statut intégré dans un autre jeton.
+
+![Une ligne de log avec une expression régulière, montrant des groupes de capture nommés correspondant aux segments de l'horodatage, du niveau et du message](/blog/regex-for-log-lines-diagram.svg)
 
 ## Ancrez chaque fois que vous le pouvez
 

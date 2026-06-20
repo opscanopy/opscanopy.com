@@ -8,6 +8,8 @@ relatedTool:
   href: "/cron-to-systemd"
 ---
 
+![Migrating from cron to systemd timers: converting crontab entries to .timer and .service units](/blog/cron-to-systemd-timers-hero.svg)
+
 Cron has run the world’s scheduled jobs for forty years, and on most servers it still works fine. But the moment a job needs structured logging, a controlled environment, dependency ordering, or a way to catch up after the machine was off, the cron model starts to creak. That’s where systemd timers come in — and if your distribution already runs systemd (Debian, Ubuntu, RHEL, Fedora, Arch, SUSE all do), you have a more capable scheduler sitting unused.
 
 This post walks through what actually changes when you migrate, with real units you can adapt.
@@ -22,6 +24,8 @@ Cron is a single line. That brevity is its appeal and its ceiling:
 - **Overlap and resources.** systemd won’t start a second copy of a job while the first is still running, and you can attach `CPUQuota=`, `MemoryMax=`, and other resource controls to a unit.
 
 You don’t need to migrate everything. But for jobs where a silent failure costs you, timers are worth the two files they require.
+
+![A crontab line mapped to a systemd .timer unit with OnCalendar and a .service unit with ExecStart](/blog/cron-to-systemd-timers-diagram.svg)
 
 ## The two-file model
 

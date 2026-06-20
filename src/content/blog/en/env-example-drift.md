@@ -8,6 +8,8 @@ relatedTool:
   href: "/env-example-checker"
 ---
 
+![Stop shipping a stale .env.example: detecting env config drift between your .env and .env.example](/blog/env-example-drift-hero.svg)
+
 A `.env.example` is the one file in your repo that nobody runs, nobody tests, and everybody trusts. It’s the contract a new teammate reads on day one to answer the only question that matters: which environment variables do I need to set before this thing boots? When that file is right, onboarding is a five-minute copy-and-fill. When it’s wrong, you get the most demoralising kind of bug — the app crashes on startup with `undefined is not a function`, or worse, runs happily with a feature silently disabled because a flag defaulted to off.
 
 The problem is that `.env.example` is documentation, and documentation drifts. Code that reads `process.env.STRIPE_WEBHOOK_SECRET` ships in a feature branch. The example file doesn’t get the new key because adding it isn’t part of “make the feature work” — it’s part of “be kind to the next person,” and that step is invisible until someone hits it. Multiply that across a year of merges and the example file becomes a museum of variables you used to need, missing half the ones you actually do.
@@ -22,6 +24,8 @@ Drift is never a single dramatic event. It’s the accumulation of small, reason
 - A key is read in only one rarely-touched worker, so it never surfaces in casual testing — until that worker is deployed to a fresh environment with no value set.
 
 None of these trip your linter, your type checker, or your tests. The example file isn’t part of the build graph, so nothing tells you it’s out of sync. The only feedback loop is a human getting burned.
+
+![A .env file and .env.example compared side by side, highlighting a key missing from the example and a stale leftover key](/blog/env-example-drift-diagram.svg)
 
 ## The two failure modes
 

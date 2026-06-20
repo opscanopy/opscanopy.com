@@ -7,6 +7,8 @@ lang: de
 translationOf: "github-actions-security-misconfigurations"
 ---
 
+![Schild mit einem Schlüsselloch über dem dunklen Hero-Titel „Sicherheitsfehler, die Linter übersehen" — folgenschwere GitHub-Actions-Sicherheitsfehlkonfigurationen](/blog/github-actions-security-misconfigurations-hero.svg)
+
 Ein YAML-Linter sagt Ihnen, wenn Ihr Workflow nicht geparst werden kann. Er sagt Ihnen nicht, wenn Ihr Workflow dem Pull Request eines Forks ein Schreibtoken aushändigt oder einen von einem Angreifer kontrollierten Branch-Namen als Shell-Code ausführt. Diese Fehler sind syntaktisch perfekt — sie bestehen jede Schemaprüfung, laufen beim ersten Versuch grün durch und vergrößern still und leise Ihre Angriffsfläche, bis es jemandem auffällt.
 
 GitHub Actions ist ungewöhnlich exponiert, weil Workflows Code sind, der bei jedem Push ausgeführt wird — oft mit Secrets im Scope und einem Token, das in das Repository schreiben kann. Die folgenden Fehler sind diejenigen, die aus einer routinemäßigen CI-Pipeline einen Supply-Chain-Vorfall machen. Keiner von ihnen wird durch den reinen Syntax-Durchlauf von `actionlint` erkannt, und alle fünf sind so verbreitet, dass sie jede Woche in echten öffentlichen Repositories auftauchen.
@@ -42,6 +44,8 @@ jobs:
 ```
 
 Warum das wichtig ist: Dies ist das mit Abstand am häufigsten ausgenutzte Actions-Muster. Fork-PRs als nicht vertrauenswürdige Eingabe zu behandeln, ist der entscheidende Punkt.
+
+![Ein GitHub-Actions-Workflow mit annotierten Sicherheitsfehlern: pull_request_target, eine ungepinnte Action, zu weit gefasste Berechtigungen und Script Injection](/blog/github-actions-security-misconfigurations-diagram.svg)
 
 ## 2. Script Injection über `${{ github.event.* }}`
 

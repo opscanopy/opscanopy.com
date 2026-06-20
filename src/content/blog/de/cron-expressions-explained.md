@@ -7,6 +7,8 @@ lang: de
 translationOf: "cron-expressions-explained"
 ---
 
+![Cron-Ausdrücke Feld für Feld lesen: eine Anleitung zur Zeitplanung mit den fünf Cron-Zeitfeldern, Bereichen und Schritten](/blog/cron-expressions-explained-hero.svg)
+
 Fast jeder, der ein Backend betreibt, hat schon einmal auf eine Zeile wie `*/15 9-17 * * 1-5` gestarrt und sich nur halb daran erinnert, was sie tut. Die Syntax von cron ist kompakt, und das ist zugleich ihre große Stärke und ihre große Falle: Fünf winzige Felder kodieren einen wiederkehrenden Zeitplan, und ein einziges falsch platziertes Zeichen kann aus „jeden Werktag-Nachmittag“ ein „jede Minute, für immer“ machen. Diese Anleitung liest einen Cron-Ausdruck so, wie es der Daemon tut — Feld für Feld —, damit Sie ihn beim nächsten Mal auf den ersten Blick entschlüsseln können.
 
 ## Die fünf Felder
@@ -33,6 +35,8 @@ Der Job läuft in jeder Minute, in der **alle** Zeitfelder mit dem aktuellen Zei
 ```
 
 Beachten Sie, dass Sekunden **kein** Bestandteil von Standard-Unix-cron sind. Manche Implementierungen (Quartz, viele Go- und Node-Bibliotheken, wobei Kubernetes die bemerkenswerte Ausnahme ist, die bei fünf bleibt) stellen ein sechstes Sekundenfeld voran. Wenn sich ein Ausdruck mit sechs Feldern in einfachem `crontab` merkwürdig verhält, ist meist dieses zusätzliche Feld der Grund.
+
+![Die fünf Felder eines Cron-Ausdrucks, beschriftet mit Minute, Stunde, Tag des Monats, Monat und Tag der Woche, mit Anmerkungen zu Schritten und Bereichen](/blog/cron-expressions-explained-diagram.svg)
 
 ## Bereiche, Schritte und Listen
 

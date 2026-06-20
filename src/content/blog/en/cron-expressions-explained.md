@@ -8,6 +8,8 @@ relatedTool:
   href: "/cron-expression-tester"
 ---
 
+![Reading cron expressions field by field: a scheduling guide to the five cron time fields, ranges and steps](/blog/cron-expressions-explained-hero.svg)
+
 Almost everyone who runs a backend has stared at a line like `*/15 9-17 * * 1-5` and half-remembered what it does. Cron’s syntax is compact, which is its great virtue and its great trap: five tiny fields encode a recurring schedule, and a single misplaced character can turn “every weekday afternoon” into “every minute, forever.” This guide reads a cron expression the way the daemon does — field by field — so the next time you meet one you can decode it on sight.
 
 ## The five fields
@@ -34,6 +36,8 @@ The job runs at every minute where **all** the time fields match the current mom
 ```
 
 Note that seconds are **not** part of standard Unix cron. Some implementations (Quartz, many Go and Node libraries, Kubernetes is the notable exception that stays at five) prepend a sixth seconds field. If a six-field expression behaves oddly in plain `crontab`, that extra field is usually why.
+
+![The five fields of a cron expression labelled minute, hour, day of month, month and day of week, with step and range annotations](/blog/cron-expressions-explained-diagram.svg)
 
 ## Ranges, steps and lists
 
