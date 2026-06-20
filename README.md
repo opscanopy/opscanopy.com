@@ -71,6 +71,28 @@ is no upload, no account, and no logging of tool input. See
 
 Built and maintained by **Pushkar Kumar** and **Asif Khan**.
 
+## IndexNow
+
+OpsCanopy pings [IndexNow](https://www.indexnow.org) so Bing, Yandex and other
+participating engines re-crawl changed pages quickly. Ownership is verified by the
+key file at [`/a3f8c1d24b9e6705e2c8f4a17d093b6e.txt`](https://opscanopy.com/a3f8c1d24b9e6705e2c8f4a17d093b6e.txt)
+(committed in `public/`).
+
+After deploying a new build, submit the live URLs:
+
+```bash
+npm run build      # generates dist/sitemap-0.xml
+npm run deploy     # publish to Cloudflare first — the URLs must be live
+npm run indexnow   # POST every sitemap <loc> URL to IndexNow
+```
+
+The script reads `dist/sitemap-0.xml`, submits up to 10,000 URLs in one batch,
+and exits non-zero if IndexNow does not return `200`/`202`.
+
+**Zero-maintenance alternative:** Cloudflare's native **Crawler Hints** feature
+(Cache → Configuration → Crawler Hints) auto-submits your content to IndexNow
+whenever it changes, so you can skip `npm run indexnow` entirely if it's enabled.
+
 ## License
 
 [MIT](./LICENSE) © 2026 Pushkar Kumar and Asif Khan
