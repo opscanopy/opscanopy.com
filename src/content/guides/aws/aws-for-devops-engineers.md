@@ -24,7 +24,7 @@ faqs:
     a: "Security groups are stateful, instance-level allow rules; network ACLs are stateless, subnet-level allow/deny rules. Use security groups for most cases and NACLs for coarse subnet controls."
 ---
 
-A focused, interview-ready guide built for a developer moving into DevOps. Depth on the services that actually show up in DevOps work and interviews — not all 200+ AWS offerings. This guide covers Regions and AZs, IAM, EC2, Lambda, containers, VPC networking, S3/EBS/EFS storage, RDS and DynamoDB, the AWS CLI, and cost and security guardrails.
+A focused, interview-ready guide built for a developer moving into DevOps. Depth on the services that actually show up in DevOps work and interviews — not all 200+ AWS offerings. This guide covers Regions and AZs, IAM, EC2, Lambda, containers, VPC networking, S3/EBS/EFS storage, RDS and DynamoDB, the AWS CLI, and cost and security guardrails. See the [AWS roadmap](/learn/roadmaps/aws) for a structured learning path through certifications and deeper specialisations.
 
 ## AWS Fundamentals
 
@@ -115,6 +115,40 @@ AWS pricing is fundamentally **pay-as-you-go**: no upfront cost (unless you choo
 ## IAM — Identity and Access Management
 
 IAM is the **front gate and key system** of your entire AWS account: who can log in, and what they're allowed to do. It's the #1 DevOps interview area because almost every security incident traces back to bad IAM. IAM is **global** (not regional) and, importantly, **free**.
+
+<figure class="dgm" role="img" aria-label="IAM relationships: user and EC2 role both attach to a policy which grants access to an AWS resource">
+<svg viewBox="0 0 660 220" width="660" height="220" xmlns="http://www.w3.org/2000/svg">
+  <!-- IAM User box -->
+  <rect x="20" y="30" width="130" height="48" rx="7" fill="none" class="dgm-stroke" stroke-width="1.5"/>
+  <text x="85" y="50" text-anchor="middle" font-size="11" class="dgm-ink">IAM User</text>
+  <text x="85" y="67" text-anchor="middle" font-size="10" class="dgm-muted">(person / service acct)</text>
+  <!-- IAM Role + EC2 box -->
+  <rect x="20" y="140" width="130" height="52" rx="7" fill="none" class="dgm-stroke" stroke-width="1.5"/>
+  <text x="85" y="160" text-anchor="middle" font-size="11" class="dgm-ink">IAM Role</text>
+  <text x="85" y="175" text-anchor="middle" font-size="10" class="dgm-muted">assumed by EC2</text>
+  <text x="85" y="188" text-anchor="middle" font-size="10" class="dgm-muted">(instance profile)</text>
+  <!-- Arrows from User and Role to Policy -->
+  <line x1="150" y1="54" x2="248" y2="90" stroke-width="1.5" fill="none" class="dgm-ink-stroke"/>
+  <polygon points="248,90 236,84 240,96" class="dgm-ink"/>
+  <line x1="150" y1="166" x2="248" y2="120" stroke-width="1.5" fill="none" class="dgm-ink-stroke"/>
+  <polygon points="248,120 236,126 240,114" class="dgm-ink"/>
+  <!-- Policy box (centre) -->
+  <rect x="250" y="78" width="140" height="54" rx="7" class="dgm-accent-soft" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="320" y="101" text-anchor="middle" font-size="12" class="dgm-ink">Policy</text>
+  <text x="320" y="118" text-anchor="middle" font-size="10" class="dgm-muted">(permissions JSON)</text>
+  <!-- Arrow from Policy to Resource -->
+  <line x1="390" y1="105" x2="488" y2="105" stroke-width="1.5" fill="none" class="dgm-ink-stroke"/>
+  <polygon points="488,105 476,99 476,111" class="dgm-ink"/>
+  <text x="439" y="98" text-anchor="middle" font-size="10" class="dgm-muted">grants access</text>
+  <!-- AWS Resource box -->
+  <rect x="490" y="78" width="148" height="54" rx="7" fill="none" class="dgm-stroke" stroke-width="1.5"/>
+  <text x="564" y="101" text-anchor="middle" font-size="12" class="dgm-ink">AWS Resource</text>
+  <text x="564" y="118" text-anchor="middle" font-size="10" class="dgm-muted">(S3, DynamoDB…)</text>
+  <!-- STS label on role arrow -->
+  <text x="55" y="135" text-anchor="middle" font-size="10" class="dgm-muted">STS temp creds</text>
+</svg>
+<figcaption>An IAM user or an EC2 instance role both attach to a policy, which defines which AWS resources and actions are permitted.</figcaption>
+</figure>
 
 ### Root User vs IAM User
 
@@ -289,6 +323,34 @@ aws iam add-role-to-instance-profile \
 
 Compute is "where your code actually runs." On AWS you pick how much control you want versus how much AWS manages for you. More control = more responsibility (EC2). Less control = AWS handles the boring stuff (Lambda, Fargate). As a DevOps engineer your job is choosing the right one for the workload.
 
+<figure class="dgm" role="img" aria-label="Compute choice: EC2 (long-running, full OS control) versus Lambda (event-driven, fully managed, scales to zero)">
+<svg viewBox="0 0 620 210" width="620" height="210" xmlns="http://www.w3.org/2000/svg">
+  <!-- EC2 box -->
+  <rect x="30" y="30" width="250" height="150" rx="8" fill="none" class="dgm-stroke" stroke-width="2"/>
+  <rect x="30" y="30" width="250" height="36" rx="8" class="dgm-accent-soft"/>
+  <rect x="30" y="54" width="250" height="12" rx="0" class="dgm-accent-soft"/>
+  <text x="155" y="55" text-anchor="middle" font-size="13" class="dgm-ink" font-weight="600">EC2</text>
+  <text x="155" y="88"  text-anchor="middle" font-size="11" class="dgm-ink">Long-running virtual server</text>
+  <text x="155" y="110" text-anchor="middle" font-size="10" class="dgm-muted">Full OS control (you patch it)</text>
+  <text x="155" y="128" text-anchor="middle" font-size="10" class="dgm-muted">Manual / Auto Scaling</text>
+  <text x="155" y="146" text-anchor="middle" font-size="10" class="dgm-muted">Billed per second (even idle)</text>
+  <text x="155" y="164" text-anchor="middle" font-size="10" class="dgm-muted">Best: steady traffic, legacy, DBs</text>
+  <!-- VS label -->
+  <text x="310" y="112" text-anchor="middle" font-size="13" class="dgm-ink" font-weight="600">vs</text>
+  <!-- Lambda box -->
+  <rect x="340" y="30" width="250" height="150" rx="8" fill="none" class="dgm-stroke" stroke-width="2"/>
+  <rect x="340" y="30" width="250" height="36" rx="8" class="dgm-surface-2"/>
+  <rect x="340" y="54" width="250" height="12" rx="0" class="dgm-surface-2"/>
+  <text x="465" y="55" text-anchor="middle" font-size="13" class="dgm-ink" font-weight="600">Lambda</text>
+  <text x="465" y="88"  text-anchor="middle" font-size="11" class="dgm-ink">Event-driven function</text>
+  <text x="465" y="110" text-anchor="middle" font-size="10" class="dgm-muted">Fully managed runtime</text>
+  <text x="465" y="128" text-anchor="middle" font-size="10" class="dgm-muted">Auto-scales per request</text>
+  <text x="465" y="146" text-anchor="middle" font-size="10" class="dgm-muted">Billed per ms; $0 when idle</text>
+  <text x="465" y="164" text-anchor="middle" font-size="10" class="dgm-muted">Best: spiky, event-driven, APIs</text>
+</svg>
+<figcaption>EC2 gives full OS control for long-running workloads; Lambda is event-driven and fully managed, scaling to zero between invocations.</figcaption>
+</figure>
+
 > **Note:** Think of renting a place. **EC2** is renting an empty flat — you bring furniture, fix the plumbing, control everything. **Lambda** is a hotel room you only pay for the minutes you're inside. **Fargate** is a serviced apartment — your stuff, but housekeeping (servers) is handled. Same "shelter," very different effort.
 
 ### EC2 — Elastic Compute Cloud
@@ -412,7 +474,56 @@ First, separate two things: the **orchestrator** (decides where containers run, 
 
 ## Networking — VPC and Friends
 
-Networking is where a lot of DevOps engineers get stuck — and where interviewers love to probe. The good news: you already know networking basics (IPs, CIDR, routing). AWS just gives you software-defined versions of the same physical concepts.
+Networking is where a lot of DevOps engineers get stuck — and where interviewers love to probe. The good news: you already know networking basics (IPs, CIDR, routing). AWS just gives you software-defined versions of the same physical concepts. For a deeper treatment of subnets, CIDR design, and routing, see [Networking for DevOps](/learn/guides/networking-for-devops).
+
+<figure class="dgm" role="img" aria-label="VPC layout: public subnet containing an Internet Gateway and NAT Gateway, private subnet containing an EC2 instance, with traffic-flow arrows">
+<svg viewBox="0 0 680 310" width="680" height="310" xmlns="http://www.w3.org/2000/svg">
+  <!-- Outer VPC box -->
+  <rect x="10" y="10" width="660" height="290" rx="8" fill="none" class="dgm-stroke" stroke-width="2"/>
+  <text x="340" y="30" text-anchor="middle" font-size="12" class="dgm-muted">VPC  10.0.0.0/16</text>
+  <!-- Public subnet -->
+  <rect x="30" y="40" width="290" height="240" rx="7" class="dgm-surface-2" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="175" y="62" text-anchor="middle" font-size="11" class="dgm-ink" font-weight="600">Public Subnet  10.0.1.0/24</text>
+  <!-- Internet Gateway box -->
+  <rect x="50" y="78" width="120" height="44" rx="6" fill="none" class="dgm-accent-stroke" stroke-width="1.5"/>
+  <text x="110" y="97" text-anchor="middle" font-size="11" class="dgm-ink">Internet</text>
+  <text x="110" y="112" text-anchor="middle" font-size="11" class="dgm-ink">Gateway (IGW)</text>
+  <!-- NAT Gateway box -->
+  <rect x="185" y="78" width="120" height="44" rx="6" fill="none" class="dgm-stroke" stroke-width="1.5"/>
+  <text x="245" y="97" text-anchor="middle" font-size="11" class="dgm-ink">NAT</text>
+  <text x="245" y="112" text-anchor="middle" font-size="11" class="dgm-ink">Gateway</text>
+  <!-- Arrow: Internet to IGW -->
+  <line x1="110" y1="40" x2="110" y2="78" stroke-width="1.5" fill="none" class="dgm-ink-stroke"/>
+  <polygon points="110,78 104,66 116,66" class="dgm-ink"/>
+  <text x="112" y="65" font-size="10" class="dgm-muted">internet</text>
+  <!-- Arrow: IGW to NAT (outbound path label) -->
+  <line x1="170" y1="100" x2="185" y2="100" stroke-width="1.5" fill="none" class="dgm-ink-stroke"/>
+  <polygon points="185,100 173,94 173,106" class="dgm-ink"/>
+  <!-- Route table note in public subnet -->
+  <rect x="50" y="148" width="250" height="32" rx="5" fill="none" class="dgm-muted-stroke" stroke-width="1"/>
+  <text x="175" y="163" text-anchor="middle" font-size="10" class="dgm-muted">Route table: 0.0.0.0/0 → IGW</text>
+  <text x="175" y="176" text-anchor="middle" font-size="10" class="dgm-muted">(makes this subnet public)</text>
+  <!-- Private subnet -->
+  <rect x="360" y="40" width="290" height="240" rx="7" fill="none" class="dgm-stroke" stroke-width="1.5"/>
+  <text x="505" y="62" text-anchor="middle" font-size="11" class="dgm-ink" font-weight="600">Private Subnet  10.0.2.0/24</text>
+  <!-- EC2 box -->
+  <rect x="405" y="78" width="200" height="52" rx="6" fill="none" class="dgm-accent-stroke" stroke-width="1.5"/>
+  <text x="505" y="100" text-anchor="middle" font-size="12" class="dgm-ink">EC2 Instance</text>
+  <text x="505" y="118" text-anchor="middle" font-size="10" class="dgm-muted">(no public IP)</text>
+  <!-- Route table note in private subnet -->
+  <rect x="380" y="148" width="250" height="32" rx="5" fill="none" class="dgm-muted-stroke" stroke-width="1"/>
+  <text x="505" y="163" text-anchor="middle" font-size="10" class="dgm-muted">Route table: 0.0.0.0/0 → NAT GW</text>
+  <text x="505" y="176" text-anchor="middle" font-size="10" class="dgm-muted">(outbound only — inbound blocked)</text>
+  <!-- Arrow: NAT GW to EC2 (outbound reply) -->
+  <line x1="320" y1="100" x2="405" y2="100" stroke-width="1.5" fill="none" class="dgm-ink-stroke" stroke-dasharray="5,3"/>
+  <polygon points="405,100 393,94 393,106" class="dgm-ink"/>
+  <text x="362" y="94" text-anchor="middle" font-size="10" class="dgm-muted">outbound</text>
+  <!-- SG guard icon (simple small rect) -->
+  <rect x="397" y="74" width="12" height="12" rx="2" class="dgm-accent-soft" stroke-width="1" class="dgm-accent-stroke"/>
+  <text x="403" y="84" text-anchor="middle" font-size="8" class="dgm-ink">SG</text>
+</svg>
+<figcaption>A VPC with a public subnet (IGW + NAT Gateway) and a private subnet (EC2); public traffic enters via the IGW while EC2 reaches the internet outbound through the NAT Gateway.</figcaption>
+</figure>
 
 > **Note:** A **VPC** is your own private gated society (housing colony) inside AWS's huge city. **Subnets** are blocks within the society. The **route table** is the society's road map (which road leads where). The **Internet Gateway** is the main gate to the outside world. **Security Groups** are guards at each house's door; **NACLs** are guards at the block's entrance.
 
@@ -519,6 +630,45 @@ aws ec2 authorize-security-group-ingress \
 ## Storage — S3, EBS, EFS
 
 AWS storage comes in three fundamental flavors, and knowing which to reach for is core DevOps knowledge: **object** storage (S3), **block** storage (EBS), and **file** storage (EFS).
+
+<figure class="dgm" role="img" aria-label="Storage comparison: S3 (object storage, HTTPS API), EBS (block volume attached to one EC2), EFS (shared file system mounted by many EC2s)">
+<svg viewBox="0 0 660 210" width="660" height="210" xmlns="http://www.w3.org/2000/svg">
+  <!-- S3 box -->
+  <rect x="20" y="20" width="190" height="170" rx="8" fill="none" class="dgm-stroke" stroke-width="2"/>
+  <rect x="20" y="20" width="190" height="38" rx="8" class="dgm-accent-soft"/>
+  <rect x="20" y="46" width="190" height="12" rx="0" class="dgm-accent-soft"/>
+  <text x="115" y="46" text-anchor="middle" font-size="13" class="dgm-ink" font-weight="600">S3</text>
+  <text x="115" y="76" text-anchor="middle" font-size="11" class="dgm-ink">Object Storage</text>
+  <text x="115" y="96" text-anchor="middle" font-size="10" class="dgm-muted">Access: HTTPS API</text>
+  <text x="115" y="114" text-anchor="middle" font-size="10" class="dgm-muted">Scales: infinite, automatic</text>
+  <text x="115" y="132" text-anchor="middle" font-size="10" class="dgm-muted">Use: assets, backups,</text>
+  <text x="115" y="148" text-anchor="middle" font-size="10" class="dgm-muted">logs, static sites</text>
+  <text x="115" y="170" text-anchor="middle" font-size="10" class="dgm-muted">Not mountable as a disk</text>
+  <!-- EBS box -->
+  <rect x="235" y="20" width="190" height="170" rx="8" fill="none" class="dgm-stroke" stroke-width="2"/>
+  <rect x="235" y="20" width="190" height="38" rx="8" class="dgm-surface-2"/>
+  <rect x="235" y="46" width="190" height="12" rx="0" class="dgm-surface-2"/>
+  <text x="330" y="46" text-anchor="middle" font-size="13" class="dgm-ink" font-weight="600">EBS</text>
+  <text x="330" y="76" text-anchor="middle" font-size="11" class="dgm-ink">Block Storage</text>
+  <text x="330" y="96" text-anchor="middle" font-size="10" class="dgm-muted">Attached to 1 EC2 instance</text>
+  <text x="330" y="114" text-anchor="middle" font-size="10" class="dgm-muted">AZ-bound (same AZ only)</text>
+  <text x="330" y="132" text-anchor="middle" font-size="10" class="dgm-muted">Use: OS root disk,</text>
+  <text x="330" y="148" text-anchor="middle" font-size="10" class="dgm-muted">databases, app data</text>
+  <text x="330" y="170" text-anchor="middle" font-size="10" class="dgm-muted">Behaves like a local SSD</text>
+  <!-- EFS box -->
+  <rect x="450" y="20" width="190" height="170" rx="8" fill="none" class="dgm-stroke" stroke-width="2"/>
+  <rect x="450" y="20" width="190" height="38" rx="8" class="dgm-surface-2"/>
+  <rect x="450" y="46" width="190" height="12" rx="0" class="dgm-surface-2"/>
+  <text x="545" y="46" text-anchor="middle" font-size="13" class="dgm-ink" font-weight="600">EFS</text>
+  <text x="545" y="76" text-anchor="middle" font-size="11" class="dgm-ink">Shared File Storage (NFS)</text>
+  <text x="545" y="96" text-anchor="middle" font-size="10" class="dgm-muted">Many EC2s mount at once</text>
+  <text x="545" y="114" text-anchor="middle" font-size="10" class="dgm-muted">Multi-AZ, elastic size</text>
+  <text x="545" y="132" text-anchor="middle" font-size="10" class="dgm-muted">Use: shared uploads,</text>
+  <text x="545" y="148" text-anchor="middle" font-size="10" class="dgm-muted">CMS files, web fleet assets</text>
+  <text x="545" y="170" text-anchor="middle" font-size="10" class="dgm-muted">Behaves like a network drive</text>
+</svg>
+<figcaption>S3 is object storage accessed over HTTPS; EBS is a block volume attached to a single EC2 instance; EFS is a shared NFS file system mountable by many instances simultaneously.</figcaption>
+</figure>
 
 > **Note:** **EBS (block)** = a hard drive plugged into one computer — fast, personal, one machine at a time. **EFS (file)** = a shared network drive in the office that everyone mounts at once. **S3 (object)** = a giant warehouse where you drop labelled boxes and fetch them by name via a web address — infinite shelves, but you can't "edit" a box, you replace it.
 

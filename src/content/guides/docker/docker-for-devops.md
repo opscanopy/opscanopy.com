@@ -24,7 +24,7 @@ faqs:
     a: "Use named volumes for persistent data managed by Docker (databases, app state) and bind mounts for mounting host source code during local development."
 ---
 
-Docker is the tool that finally made "it works on my machine" a non-excuse. By packaging an application together with its exact dependencies into a portable image, Docker lets the same artifact run identically on a laptop, a CI runner, and a production server. This guide is a deep, practical tour for DevOps engineers: how images and layers actually work, how to write efficient and secure Dockerfiles, how containers talk to each other over networks, how to persist data with volumes, how to compose multi-service stacks, and how to take all of it to production. Work through it top to bottom, or jump to the part you need.
+Docker is the tool that finally made "it works on my machine" a non-excuse. By packaging an application together with its exact dependencies into a portable image, Docker lets the same artifact run identically on a laptop, a CI runner, and a production server. This guide is a deep, practical tour for DevOps engineers: how images and layers actually work, how to write efficient and secure Dockerfiles, how containers talk to each other over networks, how to persist data with volumes, how to compose multi-service stacks, and how to take all of it to production. Work through it top to bottom, or jump to the part you need. For a structured learning path beyond this guide, see the [Docker roadmap](/learn/roadmaps/docker).
 
 ## The Problem Docker Solves
 
@@ -171,6 +171,69 @@ A **Container** shares the host OS kernel but runs in an isolated process namesp
 - **No hypervisor overhead** — near-native performance
 - **Lightweight** — MBs instead of GBs
 - **Boot time**: Milliseconds to seconds
+
+<figure class="dgm" role="img" aria-label="Side-by-side stack diagram comparing Virtual Machine architecture (Hardware, Hypervisor, Guest OS per app, App) against Container architecture (Hardware, Host OS, Docker Engine, Container per app), illustrating how containers skip the Guest OS layer">
+<svg viewBox="0 0 680 310" width="680" height="310" xmlns="http://www.w3.org/2000/svg">
+  <!-- VM stack -->
+  <text x="155" y="18" text-anchor="middle" font-size="13" font-weight="bold" class="dgm-ink">Virtual Machine</text>
+  <!-- Hardware -->
+  <rect x="20" y="26" width="270" height="36" rx="7" class="dgm-surface-2" stroke="none"/>
+  <rect x="20" y="26" width="270" height="36" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="155" y="50" text-anchor="middle" font-size="11" class="dgm-muted">Hardware</text>
+  <!-- Hypervisor -->
+  <rect x="20" y="68" width="270" height="36" rx="7" class="dgm-accent-soft" stroke="none"/>
+  <rect x="20" y="68" width="270" height="36" rx="7" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="155" y="92" text-anchor="middle" font-size="11" class="dgm-ink">Hypervisor (VMware / KVM)</text>
+  <!-- Guest OS 1 -->
+  <rect x="20" y="110" width="126" height="36" rx="7" class="dgm-surface-2" stroke="none"/>
+  <rect x="20" y="110" width="126" height="36" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="83" y="134" text-anchor="middle" font-size="10" class="dgm-muted">Guest OS</text>
+  <!-- Guest OS 2 -->
+  <rect x="164" y="110" width="126" height="36" rx="7" class="dgm-surface-2" stroke="none"/>
+  <rect x="164" y="110" width="126" height="36" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="227" y="134" text-anchor="middle" font-size="10" class="dgm-muted">Guest OS</text>
+  <!-- App 1 -->
+  <rect x="20" y="152" width="126" height="36" rx="7" class="dgm-accent-soft" stroke="none"/>
+  <rect x="20" y="152" width="126" height="36" rx="7" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="83" y="176" text-anchor="middle" font-size="11" class="dgm-ink">App A</text>
+  <!-- App 2 -->
+  <rect x="164" y="152" width="126" height="36" rx="7" class="dgm-accent-soft" stroke="none"/>
+  <rect x="164" y="152" width="126" height="36" rx="7" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="227" y="176" text-anchor="middle" font-size="11" class="dgm-ink">App B</text>
+  <!-- VM labels -->
+  <text x="83" y="210" text-anchor="middle" font-size="10" class="dgm-muted">VM 1</text>
+  <text x="227" y="210" text-anchor="middle" font-size="10" class="dgm-muted">VM 2</text>
+  <text x="155" y="232" text-anchor="middle" font-size="10" class="dgm-muted">Each VM includes a full OS (~2–4 GB overhead)</text>
+
+  <!-- Divider -->
+  <line x1="340" y1="10" x2="340" y2="290" stroke-width="1.5" class="dgm-ink-stroke" stroke-dasharray="6,4"/>
+
+  <!-- Container stack -->
+  <text x="520" y="18" text-anchor="middle" font-size="13" font-weight="bold" class="dgm-ink">Container</text>
+  <!-- Hardware -->
+  <rect x="385" y="26" width="270" height="36" rx="7" class="dgm-surface-2" stroke="none"/>
+  <rect x="385" y="26" width="270" height="36" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="520" y="50" text-anchor="middle" font-size="11" class="dgm-muted">Hardware</text>
+  <!-- Host OS -->
+  <rect x="385" y="68" width="270" height="36" rx="7" class="dgm-surface-2" stroke="none"/>
+  <rect x="385" y="68" width="270" height="36" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="520" y="92" text-anchor="middle" font-size="11" class="dgm-muted">Host OS (shared kernel)</text>
+  <!-- Docker Engine -->
+  <rect x="385" y="110" width="270" height="36" rx="7" class="dgm-accent-soft" stroke="none"/>
+  <rect x="385" y="110" width="270" height="36" rx="7" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="520" y="134" text-anchor="middle" font-size="11" class="dgm-ink">Docker Engine</text>
+  <!-- Container A -->
+  <rect x="385" y="152" width="126" height="36" rx="7" class="dgm-accent-soft" stroke="none"/>
+  <rect x="385" y="152" width="126" height="36" rx="7" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="448" y="176" text-anchor="middle" font-size="11" class="dgm-ink">Container A</text>
+  <!-- Container B -->
+  <rect x="529" y="152" width="126" height="36" rx="7" class="dgm-accent-soft" stroke="none"/>
+  <rect x="529" y="152" width="126" height="36" rx="7" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="592" y="176" text-anchor="middle" font-size="11" class="dgm-ink">Container B</text>
+  <text x="520" y="232" text-anchor="middle" font-size="10" class="dgm-muted">Containers share the Host OS kernel (no duplicate OS)</text>
+</svg>
+<figcaption>Containers skip the Guest OS layer that VMs require, cutting overhead from gigabytes per app to near zero.</figcaption>
+</figure>
 
 ### Detailed Comparison Table
 
@@ -477,6 +540,59 @@ $ docker inspect mycontainer | grep -A 10 GraphDriver
 ### The Big Picture
 
 Docker follows a client-server architecture. When you type `docker run nginx`, a lot is happening under the hood — think of it as an assembly line where each component performs a specific job.
+
+<figure class="dgm" role="img" aria-label="Docker architecture diagram showing the Docker CLI sending commands via REST API to the Docker Daemon (dockerd), which manages Images and Containers locally, with a Registry (Docker Hub or private) on the right connected to the daemon by pull and push arrows">
+<svg viewBox="0 0 680 230" width="680" height="230" xmlns="http://www.w3.org/2000/svg">
+  <!-- Docker CLI box -->
+  <rect x="20" y="80" width="130" height="70" rx="8" class="dgm-accent-soft" stroke="none"/>
+  <rect x="20" y="80" width="130" height="70" rx="8" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="85" y="109" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Docker CLI</text>
+  <text x="85" y="126" text-anchor="middle" font-size="10" class="dgm-muted">docker run/build</text>
+  <text x="85" y="141" text-anchor="middle" font-size="10" class="dgm-muted">docker push/pull</text>
+
+  <!-- Arrow CLI → Daemon -->
+  <line x1="151" y1="115" x2="219" y2="115" stroke-width="2" class="dgm-ink-stroke"/>
+  <polygon points="219,110 230,115 219,120" class="dgm-ink"/>
+  <text x="190" y="108" text-anchor="middle" font-size="9" class="dgm-muted">REST API</text>
+  <text x="190" y="129" text-anchor="middle" font-size="9" class="dgm-muted">/var/run/docker.sock</text>
+
+  <!-- Docker Daemon box -->
+  <rect x="230" y="50" width="200" height="130" rx="8" class="dgm-surface-2" stroke="none"/>
+  <rect x="230" y="50" width="200" height="130" rx="8" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="330" y="76" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Docker Daemon (dockerd)</text>
+  <!-- Images sub-box -->
+  <rect x="244" y="88" width="78" height="36" rx="6" class="dgm-accent-soft" stroke="none"/>
+  <rect x="244" y="88" width="78" height="36" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="283" y="111" text-anchor="middle" font-size="10" class="dgm-ink">Images</text>
+  <!-- Containers sub-box -->
+  <rect x="338" y="88" width="78" height="36" rx="6" class="dgm-accent-soft" stroke="none"/>
+  <rect x="338" y="88" width="78" height="36" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="377" y="111" text-anchor="middle" font-size="10" class="dgm-ink">Containers</text>
+  <!-- containerd label -->
+  <text x="330" y="148" text-anchor="middle" font-size="10" class="dgm-muted">containerd → runc</text>
+  <text x="330" y="165" text-anchor="middle" font-size="10" class="dgm-muted">namespaces + cgroups</text>
+
+  <!-- Arrow Daemon → Registry (pull) -->
+  <line x1="431" y1="100" x2="499" y2="100" stroke-width="2" class="dgm-ink-stroke"/>
+  <polygon points="499,95 510,100 499,105" class="dgm-ink"/>
+  <text x="470" y="93" text-anchor="middle" font-size="9" class="dgm-muted">push</text>
+
+  <!-- Arrow Registry → Daemon (push) -->
+  <line x1="510" y1="130" x2="432" y2="130" stroke-width="2" class="dgm-ink-stroke"/>
+  <polygon points="432,125 421,130 432,135" class="dgm-ink"/>
+  <text x="470" y="148" text-anchor="middle" font-size="9" class="dgm-muted">pull</text>
+
+  <!-- Registry box -->
+  <rect x="510" y="60" width="150" height="110" rx="8" class="dgm-surface-2" stroke="none"/>
+  <rect x="510" y="60" width="150" height="110" rx="8" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="585" y="87" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Registry</text>
+  <text x="585" y="107" text-anchor="middle" font-size="10" class="dgm-muted">Docker Hub</text>
+  <text x="585" y="122" text-anchor="middle" font-size="10" class="dgm-muted">AWS ECR / GCR</text>
+  <text x="585" y="137" text-anchor="middle" font-size="10" class="dgm-muted">GitHub GHCR</text>
+  <text x="585" y="152" text-anchor="middle" font-size="10" class="dgm-muted">Harbor (self-hosted)</text>
+</svg>
+<figcaption>The Docker CLI is a thin REST client; all heavy lifting happens inside the Docker daemon, which coordinates containerd and runc to run containers and communicates with registries for image storage.</figcaption>
+</figure>
 
 ### 1. Docker Client (CLI)
 
@@ -1300,6 +1416,61 @@ docker logout myregistry.company.com
 ---
 
 ## Image Layers Deep Dive — Caching & Optimization
+
+<figure class="dgm" role="img" aria-label="Stacked layer diagram showing a Docker image built from four layers bottom to top: Base OS (node:18-alpine), Dependencies (npm install), Application code (COPY src), and a writable Container layer on top, with cache-hit annotations on the lower stable layers and a cache-miss annotation on the top app-code layer">
+<svg viewBox="0 0 680 290" width="680" height="290" xmlns="http://www.w3.org/2000/svg">
+  <!-- Layer 1: Base -->
+  <rect x="60" y="220" width="400" height="44" rx="7" class="dgm-surface-2" stroke="none"/>
+  <rect x="60" y="220" width="400" height="44" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="260" y="240" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Layer 1 — FROM node:18-alpine</text>
+  <text x="260" y="256" text-anchor="middle" font-size="10" class="dgm-muted">Base OS + Node runtime · ~120 MB · shared across images</text>
+  <!-- Cache hit badge layer 1 -->
+  <rect x="478" y="228" width="82" height="22" rx="6" class="dgm-accent-soft" stroke="none"/>
+  <rect x="478" y="228" width="82" height="22" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="519" y="244" text-anchor="middle" font-size="10" font-weight="bold" class="dgm-ink">cache HIT ✓</text>
+
+  <!-- Layer 2: Deps -->
+  <rect x="60" y="168" width="400" height="44" rx="7" class="dgm-surface-2" stroke="none"/>
+  <rect x="60" y="168" width="400" height="44" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="260" y="188" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Layer 2 — RUN npm install</text>
+  <text x="260" y="204" text-anchor="middle" font-size="10" class="dgm-muted">node_modules · ~80 MB · cached when package.json unchanged</text>
+  <!-- Cache hit badge layer 2 -->
+  <rect x="478" y="176" width="82" height="22" rx="6" class="dgm-accent-soft" stroke="none"/>
+  <rect x="478" y="176" width="82" height="22" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="519" y="192" text-anchor="middle" font-size="10" font-weight="bold" class="dgm-ink">cache HIT ✓</text>
+
+  <!-- Layer 3: App code -->
+  <rect x="60" y="116" width="400" height="44" rx="7" class="dgm-surface-2" stroke="none"/>
+  <rect x="60" y="116" width="400" height="44" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="260" y="136" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Layer 3 — COPY . /app</text>
+  <text x="260" y="152" text-anchor="middle" font-size="10" class="dgm-muted">Application source code · changes frequently</text>
+  <!-- Cache miss badge layer 3 -->
+  <rect x="478" y="124" width="82" height="22" rx="6" class="dgm-surface-2" stroke="none"/>
+  <rect x="478" y="124" width="82" height="22" rx="6" fill="none" stroke-width="1.5" class="dgm-muted-stroke"/>
+  <text x="519" y="140" text-anchor="middle" font-size="10" font-weight="bold" class="dgm-muted">cache MISS ✗</text>
+
+  <!-- Container writable layer -->
+  <rect x="60" y="58" width="400" height="44" rx="7" class="dgm-accent-soft" stroke="none"/>
+  <rect x="60" y="58" width="400" height="44" rx="7" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="260" y="78" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Container Layer — WRITABLE (OverlayFS upperdir)</text>
+  <text x="260" y="94" text-anchor="middle" font-size="10" class="dgm-muted">Runtime writes · CoW · deleted when container is removed</text>
+
+  <!-- Up arrows between layers -->
+  <line x1="260" y1="216" x2="260" y2="214" stroke-width="2" class="dgm-ink-stroke"/>
+  <line x1="260" y1="216" x2="260" y2="164" stroke-width="1.5" class="dgm-ink-stroke"/>
+  <polygon points="255,165 260,154 265,165" class="dgm-ink"/>
+  <line x1="260" y1="164" x2="260" y2="112" stroke-width="1.5" class="dgm-ink-stroke"/>
+  <polygon points="255,113 260,102 265,113" class="dgm-ink"/>
+  <line x1="260" y1="112" x2="260" y2="104" stroke-width="1.5" class="dgm-ink-stroke"/>
+  <polygon points="255,105 260,94 265,105" class="dgm-ink"/>
+
+  <!-- Read-only label -->
+  <text x="22" y="200" text-anchor="middle" font-size="10" class="dgm-muted" transform="rotate(-90,22,200)">READ-ONLY</text>
+  <!-- Writable label -->
+  <text x="22" y="80" text-anchor="middle" font-size="10" class="dgm-accent" transform="rotate(-90,22,80)">WRITABLE</text>
+</svg>
+<figcaption>Place stable layers (base image, dependencies) below volatile ones (source code) so Docker's layer cache is reused on every incremental build.</figcaption>
+</figure>
 
 ### OverlayFS — Technical Deep Dive
 
@@ -2650,6 +2821,52 @@ trivy image myapp:latest
 
 ## Multi-Stage Builds
 
+<figure class="dgm" role="img" aria-label="Multi-stage build diagram: a large Builder Stage box on the left contains the full toolchain, source code, and devDependencies at around 1.2 GB; a COPY artifact arrow points right to a small Final Stage box containing only the production binary and slim runtime base at around 120 MB">
+<svg viewBox="0 0 680 220" width="680" height="220" xmlns="http://www.w3.org/2000/svg">
+  <!-- Builder stage -->
+  <rect x="20" y="30" width="270" height="160" rx="8" class="dgm-surface-2" stroke="none"/>
+  <rect x="20" y="30" width="270" height="160" rx="8" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="155" y="56" text-anchor="middle" font-size="13" font-weight="bold" class="dgm-ink">Stage 1 — Builder</text>
+  <text x="155" y="72" text-anchor="middle" font-size="10" class="dgm-muted">FROM node:18  AS builder</text>
+  <!-- Contents -->
+  <rect x="36" y="82" width="238" height="22" rx="5" class="dgm-surface-2" stroke="none"/>
+  <rect x="36" y="82" width="238" height="22" rx="5" fill="none" stroke-width="1" class="dgm-muted-stroke"/>
+  <text x="155" y="98" text-anchor="middle" font-size="10" class="dgm-muted">Full Node.js + npm + devDependencies</text>
+  <rect x="36" y="110" width="238" height="22" rx="5" class="dgm-surface-2" stroke="none"/>
+  <rect x="36" y="110" width="238" height="22" rx="5" fill="none" stroke-width="1" class="dgm-muted-stroke"/>
+  <text x="155" y="126" text-anchor="middle" font-size="10" class="dgm-muted">Source code + test runner + build tools</text>
+  <rect x="36" y="138" width="238" height="22" rx="5" class="dgm-surface-2" stroke="none"/>
+  <rect x="36" y="138" width="238" height="22" rx="5" fill="none" stroke-width="1" class="dgm-muted-stroke"/>
+  <text x="155" y="154" text-anchor="middle" font-size="10" class="dgm-muted">RUN npm ci &amp;&amp; npm run build  → /app/dist</text>
+  <!-- Size badge -->
+  <rect x="90" y="166" width="130" height="20" rx="5" class="dgm-surface-2" stroke="none"/>
+  <text x="155" y="181" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-muted">~1.2 GB  (discarded)</text>
+
+  <!-- COPY arrow -->
+  <line x1="292" y1="110" x2="356" y2="110" stroke-width="2" class="dgm-ink-stroke"/>
+  <polygon points="356,105 368,110 356,115" class="dgm-ink"/>
+  <text x="330" y="100" text-anchor="middle" font-size="10" class="dgm-ink">COPY</text>
+  <text x="330" y="128" text-anchor="middle" font-size="9" class="dgm-muted">--from=builder</text>
+  <text x="330" y="142" text-anchor="middle" font-size="9" class="dgm-muted">/app/dist only</text>
+
+  <!-- Final stage (slim) -->
+  <rect x="368" y="54" width="290" height="112" rx="8" class="dgm-accent-soft" stroke="none"/>
+  <rect x="368" y="54" width="290" height="112" rx="8" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="513" y="78" text-anchor="middle" font-size="13" font-weight="bold" class="dgm-ink">Stage 2 — Final Image</text>
+  <text x="513" y="94" text-anchor="middle" font-size="10" class="dgm-muted">FROM node:18-alpine  AS runner</text>
+  <rect x="384" y="102" width="258" height="22" rx="5" class="dgm-accent-soft" stroke="none"/>
+  <rect x="384" y="102" width="258" height="22" rx="5" fill="none" stroke-width="1" class="dgm-accent-stroke"/>
+  <text x="513" y="118" text-anchor="middle" font-size="10" class="dgm-ink">Slim runtime + compiled /app/dist only</text>
+  <rect x="384" y="130" width="258" height="22" rx="5" class="dgm-accent-soft" stroke="none"/>
+  <rect x="384" y="130" width="258" height="22" rx="5" fill="none" stroke-width="1" class="dgm-accent-stroke"/>
+  <text x="513" y="146" text-anchor="middle" font-size="10" class="dgm-ink">No build tools · no devDeps · no source code</text>
+  <!-- Size badge -->
+  <rect x="418" y="158" width="190" height="20" rx="5" class="dgm-accent-soft" stroke="none"/>
+  <text x="513" y="173" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">~120 MB  (shipped to production)</text>
+</svg>
+<figcaption>Multi-stage builds keep the build toolchain in a throw-away stage and ship only the compiled artifact in a minimal final image, cutting image size by 80–90%.</figcaption>
+</figure>
+
 ### Why Multi-Stage Builds?
 
 The problem: build tools are needed at build time (compiler, test runner, devDependencies) but should not be in the production image. Without multi-stage builds, everything ends up in the final image — size explodes.
@@ -3271,6 +3488,62 @@ Internet traffic arrives at the host → is forwarded to the `docker0` bridge �
 ---
 
 ## Network Types — Bridge, Host, None, Overlay, Macvlan
+
+<figure class="dgm" role="img" aria-label="Docker bridge networking diagram showing a Host machine containing a docker0 bridge network. Container A (172.17.0.2) and Container B (172.17.0.3) are connected to the bridge. A published port arrow shows host port 8080 mapping to Container A port 80. The Host network interface connects the bridge to the internet">
+<svg viewBox="0 0 680 280" width="680" height="280" xmlns="http://www.w3.org/2000/svg">
+  <!-- Host outline -->
+  <rect x="10" y="10" width="660" height="260" rx="8" class="dgm-surface-2" stroke="none"/>
+  <rect x="10" y="10" width="660" height="260" rx="8" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="340" y="32" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Host Machine  (eth0: 192.168.1.10)</text>
+
+  <!-- Bridge network outline -->
+  <rect x="160" y="50" width="360" height="130" rx="8" class="dgm-accent-soft" stroke="none"/>
+  <rect x="160" y="50" width="360" height="130" rx="8" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="340" y="70" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">docker0 bridge  (172.17.0.1/16)</text>
+
+  <!-- Container A -->
+  <rect x="175" y="82" width="150" height="80" rx="7" class="dgm-surface-2" stroke="none"/>
+  <rect x="175" y="82" width="150" height="80" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="250" y="102" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">Container A</text>
+  <text x="250" y="118" text-anchor="middle" font-size="10" class="dgm-muted">eth0: 172.17.0.2</text>
+  <text x="250" y="133" text-anchor="middle" font-size="10" class="dgm-muted">port 80 (nginx)</text>
+  <text x="250" y="148" text-anchor="middle" font-size="10" class="dgm-muted">veth0 ↔ bridge</text>
+
+  <!-- Container B -->
+  <rect x="355" y="82" width="150" height="80" rx="7" class="dgm-surface-2" stroke="none"/>
+  <rect x="355" y="82" width="150" height="80" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="430" y="102" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">Container B</text>
+  <text x="430" y="118" text-anchor="middle" font-size="10" class="dgm-muted">eth0: 172.17.0.3</text>
+  <text x="430" y="133" text-anchor="middle" font-size="10" class="dgm-muted">port 3000 (api)</text>
+  <text x="430" y="148" text-anchor="middle" font-size="10" class="dgm-muted">veth1 ↔ bridge</text>
+
+  <!-- Container-to-container arrow -->
+  <line x1="326" y1="122" x2="354" y2="122" stroke-width="1.5" class="dgm-ink-stroke" stroke-dasharray="4,3"/>
+  <polygon points="354,117 362,122 354,127" class="dgm-ink"/>
+
+  <!-- Published port arrow: external → host → container A -->
+  <text x="340" y="215" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">Published Port Mapping</text>
+  <!-- External request box -->
+  <rect x="20" y="200" width="120" height="44" rx="7" class="dgm-surface-2" stroke="none"/>
+  <rect x="20" y="200" width="120" height="44" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="80" y="221" text-anchor="middle" font-size="11" class="dgm-ink">External Client</text>
+  <text x="80" y="237" text-anchor="middle" font-size="10" class="dgm-muted">browser / curl</text>
+  <!-- Arrow to host port -->
+  <line x1="141" y1="222" x2="195" y2="222" stroke-width="2" class="dgm-ink-stroke"/>
+  <polygon points="195,217 206,222 195,227" class="dgm-ink"/>
+  <!-- Host port box -->
+  <rect x="206" y="208" width="130" height="28" rx="6" class="dgm-accent-soft" stroke="none"/>
+  <rect x="206" y="208" width="130" height="28" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="271" y="227" text-anchor="middle" font-size="10" class="dgm-ink">Host :8080 → Container :80</text>
+  <!-- Arrow up into Container A -->
+  <line x1="271" y1="208" x2="250" y2="165" stroke-width="1.5" class="dgm-ink-stroke"/>
+  <polygon points="245,166 250,155 255,166" class="dgm-ink"/>
+
+  <!-- Internet label outside -->
+  <text x="80" y="182" text-anchor="middle" font-size="10" class="dgm-muted">Internet</text>
+</svg>
+<figcaption>The docker0 bridge connects containers on the same host using private IPs; a published port (-p 8080:80) uses iptables NAT to forward external traffic from the host into a specific container.</figcaption>
+</figure>
 
 ### Bridge Network — The Most Common
 
@@ -4195,11 +4468,82 @@ docker run -d \
 > 4. **Backups:** Automated cron + pg_dump/mongodump stored on separate storage
 > 5. **Never:** Store critical data only in the container's writable layer
 
-Also make sure your `.env` files are correctly structured — you can validate them with the [.env Example Checker](/env-example-checker) before deploying.
+Also make sure your `.env` files are correctly structured — you can validate them with the [.env Example Checker](/env-example-checker) before deploying. Once your stack is wired up, put these skills to work with real scenarios in [Hands-on DevOps Projects](/learn/guides/devops-projects).
 
 ---
 
 ## Docker Compose Introduction
+
+<figure class="dgm" role="img" aria-label="Docker Compose diagram showing a single docker-compose.yml file on the left with a 'docker compose up' arrow pointing to three service boxes on the right (web, db, cache) all sitting inside a shared network rectangle, with named volume cylinders below db and cache">
+<svg viewBox="0 0 680 250" width="680" height="250" xmlns="http://www.w3.org/2000/svg">
+  <!-- Compose file box -->
+  <rect x="20" y="60" width="160" height="130" rx="8" class="dgm-surface-2" stroke="none"/>
+  <rect x="20" y="60" width="160" height="130" rx="8" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="100" y="84" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">docker-compose.yml</text>
+  <text x="100" y="104" text-anchor="middle" font-size="10" class="dgm-muted">services:</text>
+  <text x="100" y="120" text-anchor="middle" font-size="10" class="dgm-muted">  web: image: nginx</text>
+  <text x="100" y="136" text-anchor="middle" font-size="10" class="dgm-muted">  db: image: postgres</text>
+  <text x="100" y="152" text-anchor="middle" font-size="10" class="dgm-muted">  cache: image: redis</text>
+  <text x="100" y="172" text-anchor="middle" font-size="10" class="dgm-muted">networks: app-net</text>
+
+  <!-- Arrow + command label -->
+  <line x1="182" y1="125" x2="240" y2="125" stroke-width="2" class="dgm-ink-stroke"/>
+  <polygon points="240,120 252,125 240,130" class="dgm-ink"/>
+  <text x="216" y="115" text-anchor="middle" font-size="10" class="dgm-ink">docker</text>
+  <text x="216" y="143" text-anchor="middle" font-size="10" class="dgm-ink">compose up</text>
+
+  <!-- Shared network outline -->
+  <rect x="252" y="30" width="408" height="180" rx="8" class="dgm-accent-soft" stroke="none"/>
+  <rect x="252" y="30" width="408" height="180" rx="8" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="456" y="52" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">Shared Network: app-net</text>
+
+  <!-- Web service -->
+  <rect x="268" y="64" width="114" height="72" rx="7" class="dgm-surface-2" stroke="none"/>
+  <rect x="268" y="64" width="114" height="72" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="325" y="86" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">web</text>
+  <text x="325" y="103" text-anchor="middle" font-size="10" class="dgm-muted">nginx / React</text>
+  <text x="325" y="119" text-anchor="middle" font-size="10" class="dgm-muted">port 3000:80</text>
+
+  <!-- DB service -->
+  <rect x="399" y="64" width="114" height="72" rx="7" class="dgm-surface-2" stroke="none"/>
+  <rect x="399" y="64" width="114" height="72" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="456" y="86" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">db</text>
+  <text x="456" y="103" text-anchor="middle" font-size="10" class="dgm-muted">postgres:15</text>
+  <text x="456" y="119" text-anchor="middle" font-size="10" class="dgm-muted">volume: pg_data</text>
+
+  <!-- Cache service -->
+  <rect x="530" y="64" width="114" height="72" rx="7" class="dgm-surface-2" stroke="none"/>
+  <rect x="530" y="64" width="114" height="72" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="587" y="86" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">cache</text>
+  <text x="587" y="103" text-anchor="middle" font-size="10" class="dgm-muted">redis:alpine</text>
+  <text x="587" y="119" text-anchor="middle" font-size="10" class="dgm-muted">volume: redis_data</text>
+
+  <!-- Named volume cylinders -->
+  <!-- pg_data volume -->
+  <ellipse cx="456" cy="175" rx="38" ry="10" class="dgm-accent-soft" stroke="none"/>
+  <ellipse cx="456" cy="175" rx="38" ry="10" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <rect x="418" y="175" width="76" height="20" class="dgm-accent-soft" stroke="none"/>
+  <line x1="418" y1="175" x2="418" y2="195" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <line x1="494" y1="175" x2="494" y2="195" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <ellipse cx="456" cy="195" rx="38" ry="10" class="dgm-accent-soft" stroke="none"/>
+  <ellipse cx="456" cy="195" rx="38" ry="10" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="456" y="191" text-anchor="middle" font-size="9" class="dgm-ink">pg_data</text>
+  <!-- redis_data volume -->
+  <ellipse cx="587" cy="175" rx="38" ry="10" class="dgm-accent-soft" stroke="none"/>
+  <ellipse cx="587" cy="175" rx="38" ry="10" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <rect x="549" y="175" width="76" height="20" class="dgm-accent-soft" stroke="none"/>
+  <line x1="549" y1="175" x2="549" y2="195" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <line x1="625" y1="175" x2="625" y2="195" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <ellipse cx="587" cy="195" rx="38" ry="10" class="dgm-accent-soft" stroke="none"/>
+  <ellipse cx="587" cy="195" rx="38" ry="10" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="587" y="191" text-anchor="middle" font-size="9" class="dgm-ink">redis_data</text>
+
+  <!-- Connect volumes to services -->
+  <line x1="456" y1="136" x2="456" y2="164" stroke-width="1.5" class="dgm-ink-stroke" stroke-dasharray="4,3"/>
+  <line x1="587" y1="136" x2="587" y2="164" stroke-width="1.5" class="dgm-ink-stroke" stroke-dasharray="4,3"/>
+</svg>
+<figcaption>One Compose file declares the full application stack; <code>docker compose up</code> creates all services on a shared network with automatic DNS so containers resolve each other by service name.</figcaption>
+</figure>
 
 ### Why Docker Compose Exists
 
@@ -7747,7 +8091,7 @@ scrape_configs:
 
 ### Transition Path
 
-> **Tip:** Learning path: Docker basics → Docker Compose (multi-container) → Kubernetes (multi-host, production-grade). Each step builds on the previous one. Master Docker concepts and Kubernetes will feel natural.
+> **Tip:** Learning path: Docker basics → Docker Compose (multi-container) → Kubernetes (multi-host, production-grade). Each step builds on the previous one. Master Docker concepts and Kubernetes will feel natural. When you are ready to take the next step, the [Kubernetes for DevOps](/learn/guides/kubernetes-for-devops) guide picks up exactly where containers leave off.
 
 ```bash
 # Docker Swarm quick demo (educational only)

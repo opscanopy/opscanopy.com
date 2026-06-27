@@ -24,7 +24,7 @@ faqs:
     a: "Use key-based authentication instead of passwords, disable root login, change defaults in sshd_config, and use an SSH agent. ssh user@host connects; scp/rsync transfer files."
 ---
 
-Linux is the operating system under every Docker container, every Kubernetes node, and the majority of cloud VMs. Before you can deploy, debug, or automate anything in a modern infrastructure stack, you need to be comfortable at the shell. This guide takes you from the absolute fundamentals — how Linux thinks about files and processes — through the tools DevOps engineers reach for daily: permissions, grep/awk/sed, systemd, SSH, package managers, network commands, and production-grade bash scripting.
+Linux is the operating system under every Docker container, every Kubernetes node, and the majority of cloud VMs. Before you can deploy, debug, or automate anything in a modern infrastructure stack, you need to be comfortable at the shell. This guide takes you from the absolute fundamentals — how Linux thinks about files and processes — through the tools DevOps engineers reach for daily: permissions, grep/awk/sed, systemd, SSH, package managers, network commands, and production-grade bash scripting. Follow the [Linux roadmap](/learn/roadmaps/linux) to see how these topics connect into a full learning path.
 
 ## Introduction to Linux
 
@@ -199,6 +199,91 @@ When you press the power button on a Linux machine (or click "Start instance" on
 ## Linux Filesystem Hierarchy
 
 Linux organises everything into a single tree rooted at `/`. Unlike Windows with drive letters, there is no `C:\` — everything is a file or a directory beneath `/`. Understanding where things live stops you from wasting time searching for config files.
+
+<figure class="dgm" role="img" aria-label="Linux filesystem hierarchy tree showing root and its key subdirectories with one-line purposes">
+<svg viewBox="0 0 680 300" width="680" height="300" xmlns="http://www.w3.org/2000/svg">
+  <!-- Root node -->
+  <rect x="300" y="10" width="80" height="28" rx="7" class="dgm-surface" stroke-width="1.5" stroke="none" fill="currentColor"/>
+  <rect x="300" y="10" width="80" height="28" rx="7" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="340" y="29" text-anchor="middle" font-size="13" font-weight="bold" class="dgm-ink">/</text>
+  <!-- Trunk line down from root -->
+  <line x1="340" y1="38" x2="340" y2="60" stroke-width="1.5" class="dgm-muted-stroke"/>
+  <!-- Horizontal bus -->
+  <line x1="60" y1="60" x2="620" y2="60" stroke-width="1.5" class="dgm-muted-stroke"/>
+  <!-- Vertical drops to each child -->
+  <line x1="60" y1="60" x2="60" y2="80" stroke-width="1.5" class="dgm-muted-stroke"/>
+  <line x1="150" y1="60" x2="150" y2="80" stroke-width="1.5" class="dgm-muted-stroke"/>
+  <line x1="240" y1="60" x2="240" y2="80" stroke-width="1.5" class="dgm-muted-stroke"/>
+  <line x1="340" y1="60" x2="340" y2="80" stroke-width="1.5" class="dgm-muted-stroke"/>
+  <line x1="430" y1="60" x2="430" y2="80" stroke-width="1.5" class="dgm-muted-stroke"/>
+  <line x1="510" y1="60" x2="510" y2="80" stroke-width="1.5" class="dgm-muted-stroke"/>
+  <line x1="600" y1="60" x2="600" y2="80" stroke-width="1.5" class="dgm-muted-stroke"/>
+  <!-- /etc -->
+  <rect x="20" y="80" width="80" height="28" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <rect x="20" y="80" width="80" height="28" rx="6" class="dgm-surface" stroke="none" fill="currentColor"/>
+  <rect x="20" y="80" width="80" height="28" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="60" y="99" text-anchor="middle" font-size="12" class="dgm-ink">/etc</text>
+  <!-- /var -->
+  <rect x="110" y="80" width="80" height="28" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <rect x="110" y="80" width="80" height="28" rx="6" class="dgm-surface" stroke="none" fill="currentColor"/>
+  <rect x="110" y="80" width="80" height="28" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="150" y="99" text-anchor="middle" font-size="12" class="dgm-ink">/var</text>
+  <!-- /home -->
+  <rect x="200" y="80" width="80" height="28" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <rect x="200" y="80" width="80" height="28" rx="6" class="dgm-surface" stroke="none" fill="currentColor"/>
+  <rect x="200" y="80" width="80" height="28" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="240" y="99" text-anchor="middle" font-size="12" class="dgm-ink">/home</text>
+  <!-- /usr -->
+  <rect x="300" y="80" width="80" height="28" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <rect x="300" y="80" width="80" height="28" rx="6" class="dgm-surface" stroke="none" fill="currentColor"/>
+  <rect x="300" y="80" width="80" height="28" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="340" y="99" text-anchor="middle" font-size="12" class="dgm-ink">/usr</text>
+  <!-- /bin -->
+  <rect x="390" y="80" width="80" height="28" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <rect x="390" y="80" width="80" height="28" rx="6" class="dgm-surface" stroke="none" fill="currentColor"/>
+  <rect x="390" y="80" width="80" height="28" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="430" y="99" text-anchor="middle" font-size="12" class="dgm-ink">/bin</text>
+  <!-- /proc -->
+  <rect x="470" y="80" width="80" height="28" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <rect x="470" y="80" width="80" height="28" rx="6" class="dgm-surface" stroke="none" fill="currentColor"/>
+  <rect x="470" y="80" width="80" height="28" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="510" y="99" text-anchor="middle" font-size="12" class="dgm-ink">/proc</text>
+  <!-- /tmp -->
+  <rect x="560" y="80" width="80" height="28" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <rect x="560" y="80" width="80" height="28" rx="6" class="dgm-surface" stroke="none" fill="currentColor"/>
+  <rect x="560" y="80" width="80" height="28" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="600" y="99" text-anchor="middle" font-size="12" class="dgm-ink">/tmp</text>
+  <!-- Description rows -->
+  <text x="60" y="134" text-anchor="middle" font-size="10" class="dgm-muted">system configs</text>
+  <text x="150" y="134" text-anchor="middle" font-size="10" class="dgm-muted">logs, caches,</text>
+  <text x="150" y="147" text-anchor="middle" font-size="10" class="dgm-muted">variable data</text>
+  <text x="240" y="134" text-anchor="middle" font-size="10" class="dgm-muted">user homes</text>
+  <text x="240" y="147" text-anchor="middle" font-size="10" class="dgm-muted">/home/alice</text>
+  <text x="340" y="134" text-anchor="middle" font-size="10" class="dgm-muted">user programs</text>
+  <text x="340" y="147" text-anchor="middle" font-size="10" class="dgm-muted">&amp; libraries</text>
+  <text x="430" y="134" text-anchor="middle" font-size="10" class="dgm-muted">essential</text>
+  <text x="430" y="147" text-anchor="middle" font-size="10" class="dgm-muted">binaries</text>
+  <text x="510" y="134" text-anchor="middle" font-size="10" class="dgm-muted">virtual FS:</text>
+  <text x="510" y="147" text-anchor="middle" font-size="10" class="dgm-muted">kernel state</text>
+  <text x="600" y="134" text-anchor="middle" font-size="10" class="dgm-muted">ephemeral;</text>
+  <text x="600" y="147" text-anchor="middle" font-size="10" class="dgm-muted">cleared on reboot</text>
+  <!-- /var children example -->
+  <line x1="150" y1="108" x2="150" y2="168" stroke-width="1.5" class="dgm-muted-stroke" stroke-dasharray="4 3"/>
+  <line x1="150" y1="168" x2="210" y2="168" stroke-width="1.5" class="dgm-muted-stroke" stroke-dasharray="4 3"/>
+  <rect x="210" y="158" width="72" height="22" rx="6" class="dgm-accent-soft" stroke="none" fill="currentColor"/>
+  <rect x="210" y="158" width="72" height="22" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="246" y="173" text-anchor="middle" font-size="10" class="dgm-ink">/var/log</text>
+  <!-- /usr children example -->
+  <line x1="340" y1="108" x2="340" y2="168" stroke-width="1.5" class="dgm-muted-stroke" stroke-dasharray="4 3"/>
+  <line x1="340" y1="168" x2="400" y2="168" stroke-width="1.5" class="dgm-muted-stroke" stroke-dasharray="4 3"/>
+  <rect x="400" y="158" width="72" height="22" rx="6" class="dgm-accent-soft" stroke="none" fill="currentColor"/>
+  <rect x="400" y="158" width="72" height="22" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="436" y="173" text-anchor="middle" font-size="10" class="dgm-ink">/usr/bin</text>
+  <!-- Legend note -->
+  <text x="340" y="215" text-anchor="middle" font-size="10" class="dgm-muted">Dashed lines show example subdirectories. Every path starts at /.</text>
+</svg>
+<figcaption>The Linux filesystem is a single tree rooted at <code>/</code>; each top-level directory has a defined purpose per the FHS standard.</figcaption>
+</figure>
 
 ### Key Directories
 
@@ -528,6 +613,78 @@ Linux permissions control who can read, write, or execute every file. Getting th
 
 See also: [SSH Secure Shell Critical](#ssh-secure-shell-critical) for how permissions protect SSH keys.
 
+<figure class="dgm" role="img" aria-label="File permission bits diagram showing rwx triplets for owner, group, and others with octal values and a chmod 755 example">
+<svg viewBox="0 0 660 240" width="660" height="240" xmlns="http://www.w3.org/2000/svg">
+  <!-- Title row: three permission class labels -->
+  <rect x="30" y="10" width="180" height="30" rx="7" class="dgm-accent-soft" stroke="none" fill="currentColor"/>
+  <rect x="30" y="10" width="180" height="30" rx="7" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="120" y="30" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Owner (u)</text>
+  <rect x="240" y="10" width="180" height="30" rx="7" class="dgm-surface" stroke="none" fill="currentColor"/>
+  <rect x="240" y="10" width="180" height="30" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="330" y="30" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Group (g)</text>
+  <rect x="450" y="10" width="180" height="30" rx="7" class="dgm-surface-2" stroke="none" fill="currentColor"/>
+  <rect x="450" y="10" width="180" height="30" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="540" y="30" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Others (o)</text>
+
+  <!-- Bit boxes — Owner -->
+  <rect x="30" y="55" width="52" height="42" rx="6" class="dgm-accent-soft" stroke="none" fill="currentColor"/>
+  <rect x="30" y="55" width="52" height="42" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="56" y="73" text-anchor="middle" font-size="14" font-weight="bold" class="dgm-ink">r</text>
+  <text x="56" y="89" text-anchor="middle" font-size="10" class="dgm-muted">4</text>
+  <rect x="94" y="55" width="52" height="42" rx="6" class="dgm-accent-soft" stroke="none" fill="currentColor"/>
+  <rect x="94" y="55" width="52" height="42" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="120" y="73" text-anchor="middle" font-size="14" font-weight="bold" class="dgm-ink">w</text>
+  <text x="120" y="89" text-anchor="middle" font-size="10" class="dgm-muted">2</text>
+  <rect x="158" y="55" width="52" height="42" rx="6" class="dgm-accent-soft" stroke="none" fill="currentColor"/>
+  <rect x="158" y="55" width="52" height="42" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="184" y="73" text-anchor="middle" font-size="14" font-weight="bold" class="dgm-ink">x</text>
+  <text x="184" y="89" text-anchor="middle" font-size="10" class="dgm-muted">1</text>
+
+  <!-- Bit boxes — Group -->
+  <rect x="240" y="55" width="52" height="42" rx="6" class="dgm-surface" stroke="none" fill="currentColor"/>
+  <rect x="240" y="55" width="52" height="42" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="266" y="73" text-anchor="middle" font-size="14" font-weight="bold" class="dgm-ink">r</text>
+  <text x="266" y="89" text-anchor="middle" font-size="10" class="dgm-muted">4</text>
+  <rect x="304" y="55" width="52" height="42" rx="6" class="dgm-surface" stroke="none" fill="currentColor"/>
+  <rect x="304" y="55" width="52" height="42" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="330" y="73" text-anchor="middle" font-size="14" font-weight="bold" class="dgm-muted">-</text>
+  <text x="330" y="89" text-anchor="middle" font-size="10" class="dgm-muted">0</text>
+  <rect x="368" y="55" width="52" height="42" rx="6" class="dgm-surface" stroke="none" fill="currentColor"/>
+  <rect x="368" y="55" width="52" height="42" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="394" y="73" text-anchor="middle" font-size="14" font-weight="bold" class="dgm-ink">x</text>
+  <text x="394" y="89" text-anchor="middle" font-size="10" class="dgm-muted">1</text>
+
+  <!-- Bit boxes — Others -->
+  <rect x="450" y="55" width="52" height="42" rx="6" class="dgm-surface-2" stroke="none" fill="currentColor"/>
+  <rect x="450" y="55" width="52" height="42" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="476" y="73" text-anchor="middle" font-size="14" font-weight="bold" class="dgm-ink">r</text>
+  <text x="476" y="89" text-anchor="middle" font-size="10" class="dgm-muted">4</text>
+  <rect x="514" y="55" width="52" height="42" rx="6" class="dgm-surface-2" stroke="none" fill="currentColor"/>
+  <rect x="514" y="55" width="52" height="42" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="540" y="73" text-anchor="middle" font-size="14" font-weight="bold" class="dgm-muted">-</text>
+  <text x="540" y="89" text-anchor="middle" font-size="10" class="dgm-muted">0</text>
+  <rect x="578" y="55" width="52" height="42" rx="6" class="dgm-surface-2" stroke="none" fill="currentColor"/>
+  <rect x="578" y="55" width="52" height="42" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="604" y="73" text-anchor="middle" font-size="14" font-weight="bold" class="dgm-muted">x</text>
+  <text x="604" y="89" text-anchor="middle" font-size="10" class="dgm-muted">1</text>
+
+  <!-- Octal sums -->
+  <text x="120" y="118" text-anchor="middle" font-size="12" class="dgm-ink">4+2+1 = <tspan font-weight="bold">7</tspan> (rwx)</text>
+  <text x="330" y="118" text-anchor="middle" font-size="12" class="dgm-ink">4+0+1 = <tspan font-weight="bold">5</tspan> (r-x)</text>
+  <text x="540" y="118" text-anchor="middle" font-size="12" class="dgm-ink">4+0+1 = <tspan font-weight="bold">5</tspan> (r-x)</text>
+
+  <!-- chmod 755 example -->
+  <rect x="170" y="140" width="320" height="40" rx="8" class="dgm-surface" stroke="none" fill="currentColor"/>
+  <rect x="170" y="140" width="320" height="40" rx="8" fill="none" stroke-width="1.5" class="dgm-ink-stroke"/>
+  <text x="330" y="157" text-anchor="middle" font-size="11" class="dgm-muted">Example:</text>
+  <text x="330" y="173" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">chmod 755 script.sh  →  rwxr-xr-x</text>
+
+  <!-- Legend -->
+  <text x="330" y="220" text-anchor="middle" font-size="10" class="dgm-muted">Active bits shown in accent; dash (−) means permission is absent. 4=read, 2=write, 1=execute.</text>
+</svg>
+<figcaption>Each file has nine permission bits split into three triplets — owner, group, others — each summed to an octal digit for use with <code>chmod</code>.</figcaption>
+</figure>
+
 ### The Permission Bits
 
 Every file has three permission triplets: **owner (u)**, **group (g)**, **others (o)**. Each triplet has three bits: **r** (read=4), **w** (write=2), **x** (execute=1).
@@ -800,6 +957,62 @@ $ sed -E 's/(password=)[^&]+/\1******/g' app.log    # mask passwords
 
 The Unix philosophy: small tools that do one thing well, composed via pipes. Mastering redirection turns individual commands into data pipelines.
 
+<figure class="dgm" role="img" aria-label="Pipes and redirection data-flow diagram showing command pipe command redirect to file with stdin and stderr also shown">
+<svg viewBox="0 0 660 200" width="660" height="200" xmlns="http://www.w3.org/2000/svg">
+  <!-- stdin source -->
+  <rect x="10" y="76" width="80" height="36" rx="7" class="dgm-surface-2" stroke="none" fill="currentColor"/>
+  <rect x="10" y="76" width="80" height="36" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="50" y="97" text-anchor="middle" font-size="11" class="dgm-muted">stdin</text>
+  <text x="50" y="109" text-anchor="middle" font-size="10" class="dgm-muted">file / kbd</text>
+  <!-- Arrow stdin → cmd1 -->
+  <line x1="90" y1="94" x2="138" y2="94" stroke-width="2" class="dgm-muted-stroke"/>
+  <path d="M 134 89 L 142 94 L 134 99 Z" class="dgm-muted" fill="currentColor"/>
+
+  <!-- cmd1 box -->
+  <rect x="140" y="70" width="120" height="48" rx="7" class="dgm-surface" stroke="none" fill="currentColor"/>
+  <rect x="140" y="70" width="120" height="48" rx="7" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="200" y="91" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">command 1</text>
+  <text x="200" y="107" text-anchor="middle" font-size="10" class="dgm-muted">e.g. grep ERROR</text>
+
+  <!-- Pipe arrow cmd1 → cmd2 -->
+  <line x1="260" y1="94" x2="308" y2="94" stroke-width="2" class="dgm-ink-stroke"/>
+  <path d="M 304 89 L 312 94 L 304 99 Z" class="dgm-ink" fill="currentColor"/>
+  <text x="284" y="88" text-anchor="middle" font-size="10" font-weight="bold" class="dgm-accent">|</text>
+
+  <!-- cmd2 box -->
+  <rect x="310" y="70" width="120" height="48" rx="7" class="dgm-surface" stroke="none" fill="currentColor"/>
+  <rect x="310" y="70" width="120" height="48" rx="7" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="370" y="91" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">command 2</text>
+  <text x="370" y="107" text-anchor="middle" font-size="10" class="dgm-muted">e.g. sort -rn</text>
+
+  <!-- Redirect arrow cmd2 → file -->
+  <line x1="430" y1="94" x2="478" y2="94" stroke-width="2" class="dgm-ink-stroke"/>
+  <path d="M 474 89 L 482 94 L 474 99 Z" class="dgm-ink" fill="currentColor"/>
+  <text x="454" y="88" text-anchor="middle" font-size="10" font-weight="bold" class="dgm-accent">&gt;</text>
+
+  <!-- file box -->
+  <rect x="480" y="70" width="100" height="48" rx="7" class="dgm-surface-2" stroke="none" fill="currentColor"/>
+  <rect x="480" y="70" width="100" height="48" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="530" y="91" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">file.txt</text>
+  <text x="530" y="107" text-anchor="middle" font-size="10" class="dgm-muted">stdout</text>
+
+  <!-- stderr drop from cmd1 -->
+  <line x1="200" y1="118" x2="200" y2="155" stroke-width="1.5" class="dgm-muted-stroke" stroke-dasharray="5 3"/>
+  <path d="M 195 151 L 200 158 L 205 151 Z" class="dgm-muted" fill="currentColor"/>
+  <rect x="148" y="158" width="104" height="28" rx="6" class="dgm-surface-2" stroke="none" fill="currentColor"/>
+  <rect x="148" y="158" width="104" height="28" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="200" y="176" text-anchor="middle" font-size="10" class="dgm-muted">stderr (fd 2)</text>
+
+  <!-- 2>&1 label -->
+  <text x="200" y="148" text-anchor="middle" font-size="10" class="dgm-muted">2&gt;&amp;1 merges</text>
+
+  <!-- legend at bottom -->
+  <text x="330" y="18" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">command | command &gt; file</text>
+  <text x="330" y="35" text-anchor="middle" font-size="10" class="dgm-muted">Bold arrow = pipe (stdout flows right).  &gt; = redirect stdout to file.  2&gt;&amp;1 = merge stderr into stdout.</text>
+</svg>
+<figcaption>Data flows left-to-right through pipes; <code>&gt;</code> redirects final stdout to a file, while <code>2&gt;&amp;1</code> merges stderr into the same stream.</figcaption>
+</figure>
+
 ### Redirection Operators
 
 ```bash
@@ -1033,6 +1246,73 @@ fuser -k 80/tcp               # kill it
 ## systemd Services
 
 systemd is the init system on every modern Linux distro. It manages services, mounts, timers, sockets, and devices as a dependency graph. Everything that was once a shell script in `/etc/init.d` is now a unit file.
+
+<figure class="dgm" role="img" aria-label="systemd service state diagram showing transitions between inactive, activating, active/running, deactivating, and failed states via systemctl commands">
+<svg viewBox="0 0 660 230" width="660" height="230" xmlns="http://www.w3.org/2000/svg">
+  <!-- inactive -->
+  <rect x="10" y="92" width="110" height="36" rx="7" class="dgm-surface" stroke="none" fill="currentColor"/>
+  <rect x="10" y="92" width="110" height="36" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="65" y="115" text-anchor="middle" font-size="12" class="dgm-ink">inactive</text>
+
+  <!-- activating -->
+  <rect x="170" y="20" width="120" height="36" rx="7" class="dgm-surface" stroke="none" fill="currentColor"/>
+  <rect x="170" y="20" width="120" height="36" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="230" y="43" text-anchor="middle" font-size="12" class="dgm-ink">activating</text>
+
+  <!-- active / running -->
+  <rect x="340" y="92" width="140" height="36" rx="7" class="dgm-accent-soft" stroke="none" fill="currentColor"/>
+  <rect x="340" y="92" width="140" height="36" rx="7" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="410" y="110" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">active</text>
+  <text x="410" y="122" text-anchor="middle" font-size="10" class="dgm-muted">(running)</text>
+
+  <!-- deactivating -->
+  <rect x="170" y="164" width="120" height="36" rx="7" class="dgm-surface" stroke="none" fill="currentColor"/>
+  <rect x="170" y="164" width="120" height="36" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="230" y="187" text-anchor="middle" font-size="12" class="dgm-ink">deactivating</text>
+
+  <!-- failed -->
+  <rect x="540" y="92" width="110" height="36" rx="7" class="dgm-surface-2" stroke="none" fill="currentColor"/>
+  <rect x="540" y="92" width="110" height="36" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="595" y="115" text-anchor="middle" font-size="12" class="dgm-ink">failed</text>
+
+  <!-- Arrows -->
+  <!-- inactive → activating (start) -->
+  <line x1="120" y1="100" x2="168" y2="48" stroke-width="2" class="dgm-ink-stroke"/>
+  <path d="M 162 50 L 170 44 L 172 54 Z" class="dgm-ink" fill="currentColor"/>
+  <text x="130" y="72" font-size="10" class="dgm-accent" font-weight="bold">start</text>
+
+  <!-- activating → active -->
+  <line x1="290" y1="38" x2="338" y2="95" stroke-width="2" class="dgm-ink-stroke"/>
+  <path d="M 332 91 L 340 96 L 333 102 Z" class="dgm-ink" fill="currentColor"/>
+  <text x="326" y="64" font-size="10" class="dgm-muted">ExecStart ok</text>
+
+  <!-- activating → failed -->
+  <line x1="290" y1="27" x2="538" y2="97" stroke-width="2" class="dgm-muted-stroke" stroke-dasharray="5 3"/>
+  <path d="M 532 93 L 540 98 L 532 103 Z" class="dgm-muted" fill="currentColor"/>
+  <text x="410" y="56" font-size="10" class="dgm-muted">ExecStart fail</text>
+
+  <!-- active → deactivating (stop) -->
+  <line x1="340" y1="118" x2="292" y2="165" stroke-width="2" class="dgm-ink-stroke"/>
+  <path d="M 286 161 L 292 169 L 298 161 Z" class="dgm-ink" fill="currentColor"/>
+  <text x="290" y="147" font-size="10" class="dgm-accent" font-weight="bold">stop</text>
+
+  <!-- deactivating → inactive -->
+  <line x1="170" y1="182" x2="122" y2="127" stroke-width="2" class="dgm-muted-stroke"/>
+  <path d="M 117 131 L 120 123 L 127 128 Z" class="dgm-muted" fill="currentColor"/>
+
+  <!-- failed → inactive (reset) -->
+  <line x1="540" y1="110" x2="122" y2="110" stroke-width="1.5" class="dgm-muted-stroke" stroke-dasharray="4 3"/>
+  <path d="M 126 105 L 118 110 L 126 115 Z" class="dgm-muted" fill="currentColor"/>
+  <text x="380" y="106" font-size="10" class="dgm-muted">reset-failed</text>
+
+  <!-- enable/disable note box -->
+  <rect x="340" y="165" width="200" height="42" rx="6" class="dgm-surface" stroke="none" fill="currentColor"/>
+  <rect x="340" y="165" width="200" height="42" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="440" y="182" text-anchor="middle" font-size="10" class="dgm-muted">enable  → auto-start at boot</text>
+  <text x="440" y="197" text-anchor="middle" font-size="10" class="dgm-muted">disable → no auto-start</text>
+</svg>
+<figcaption>A systemd service cycles through states driven by <code>systemctl start/stop/restart</code>; <code>enable/disable</code> controls boot-time auto-start independently.</figcaption>
+</figure>
 
 ### Essential systemctl Commands
 
@@ -1796,6 +2076,56 @@ Common bonding modes: `active-backup` (failover), `balance-rr` (round robin), `8
 SSH is how you access every cloud VM, container host, and remote server. Beyond basic login, it gives you encrypted tunnels, file transfer, and agent forwarding. Misconfiguring it creates security holes; understanding it properly lets you build zero-trust access patterns.
 
 See also: [File Permissions Ownership](#file-permissions-ownership) — SSH enforces strict permission checks on key files. Going deeper on networking? See [Networking for DevOps](/learn/guides/networking-for-devops).
+
+<figure class="dgm" role="img" aria-label="SSH key-based authentication handshake diagram showing client with private key and server with authorized_keys exchanging a challenge and encrypted response">
+<svg viewBox="0 0 660 220" width="660" height="220" xmlns="http://www.w3.org/2000/svg">
+  <!-- Client box -->
+  <rect x="20" y="40" width="180" height="140" rx="8" class="dgm-surface" stroke="none" fill="currentColor"/>
+  <rect x="20" y="40" width="180" height="140" rx="8" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="110" y="64" text-anchor="middle" font-size="13" font-weight="bold" class="dgm-ink">Client</text>
+  <rect x="40" y="74" width="140" height="28" rx="6" class="dgm-accent-soft" stroke="none" fill="currentColor"/>
+  <rect x="40" y="74" width="140" height="28" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="110" y="93" text-anchor="middle" font-size="11" class="dgm-ink">~/.ssh/id_ed25519</text>
+  <text x="110" y="118" text-anchor="middle" font-size="10" class="dgm-muted">private key</text>
+  <text x="110" y="133" text-anchor="middle" font-size="10" class="dgm-muted">(never leaves this box)</text>
+  <text x="110" y="160" text-anchor="middle" font-size="10" class="dgm-muted">chmod 600 required</text>
+
+  <!-- Server box -->
+  <rect x="460" y="40" width="180" height="140" rx="8" class="dgm-surface" stroke="none" fill="currentColor"/>
+  <rect x="460" y="40" width="180" height="140" rx="8" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="550" y="64" text-anchor="middle" font-size="13" font-weight="bold" class="dgm-ink">Server</text>
+  <rect x="476" y="74" width="148" height="28" rx="6" class="dgm-surface-2" stroke="none" fill="currentColor"/>
+  <rect x="476" y="74" width="148" height="28" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="550" y="93" text-anchor="middle" font-size="11" class="dgm-ink">~/.ssh/authorized_keys</text>
+  <text x="550" y="118" text-anchor="middle" font-size="10" class="dgm-muted">public key stored here</text>
+  <text x="550" y="133" text-anchor="middle" font-size="10" class="dgm-muted">by ssh-copy-id</text>
+  <text x="550" y="160" text-anchor="middle" font-size="10" class="dgm-muted">chmod 600 required</text>
+
+  <!-- Step 1: connection request -->
+  <line x1="200" y1="90" x2="458" y2="90" stroke-width="2" class="dgm-muted-stroke"/>
+  <path d="M 454 85 L 462 90 L 454 95 Z" class="dgm-muted" fill="currentColor"/>
+  <text x="330" y="84" text-anchor="middle" font-size="10" class="dgm-ink">① connect + present public key</text>
+
+  <!-- Step 2: encrypted challenge -->
+  <line x1="458" y1="112" x2="200" y2="112" stroke-width="2" class="dgm-ink-stroke"/>
+  <path d="M 204 107 L 196 112 L 204 117 Z" class="dgm-ink" fill="currentColor"/>
+  <text x="330" y="107" text-anchor="middle" font-size="10" class="dgm-ink">② encrypted random challenge</text>
+
+  <!-- Step 3: signed response -->
+  <line x1="200" y1="134" x2="458" y2="134" stroke-width="2" class="dgm-accent-stroke"/>
+  <path d="M 454 129 L 462 134 L 454 139 Z" class="dgm-accent" fill="currentColor"/>
+  <text x="330" y="128" text-anchor="middle" font-size="10" class="dgm-ink">③ sign with private key → send</text>
+
+  <!-- Step 4: verify & grant -->
+  <line x1="458" y1="156" x2="200" y2="156" stroke-width="2" class="dgm-accent-stroke"/>
+  <path d="M 204 151 L 196 156 L 204 161 Z" class="dgm-accent" fill="currentColor"/>
+  <text x="330" y="150" text-anchor="middle" font-size="10" class="dgm-ink">④ verify signature → grant access</text>
+
+  <!-- Caption note -->
+  <text x="330" y="200" text-anchor="middle" font-size="10" class="dgm-muted">Password never sent. Server verifies the signed challenge using the stored public key.</text>
+</svg>
+<figcaption>SSH key auth: the client signs a server-issued challenge with its private key; the server verifies using the stored public key — no password ever crosses the network.</figcaption>
+</figure>
 
 ### Key-Based Authentication
 
@@ -5952,6 +6282,8 @@ You will be shocked how much of "learning AWS" is actually "applying Linux on re
 3. **AWS DevOps Engineer Professional** — once you have 1+ year of real AWS experience. This is the cert that anchors ₹30-40 LPA conversations.
 
 ### 30-day Linux-to-DevOps ramp (one focused task per day)
+
+Ready to apply what you've learned? Work through the [Hands-on DevOps Projects](/learn/guides/devops-projects) to build real systems with Linux, Docker, and CI/CD.
 
 1. Install Ubuntu 24.04 in a VM. Customize `.bashrc`, install zsh + oh-my-zsh.
 2. Complete OverTheWire Bandit levels 0–10.

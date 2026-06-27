@@ -24,7 +24,7 @@ faqs:
     a: "Three to four well-documented, end-to-end projects with READMEs and architecture notes are more convincing than many shallow ones."
 ---
 
-Four portfolio-worthy projects that progressively weave together Linux, Networking, Docker, and AWS. Every command is real and copy-pasteable — no placeholders, no hand-waving. The path: one container on one server → a multi-container stack behind nginx → an automated monitored deploy → a full mini CI/CD pipeline with rollback. By Project 4 you will see exactly how the four skills click together.
+Four portfolio-worthy projects that progressively weave together Linux, Networking, Docker, and AWS. Every command is real and copy-pasteable — no placeholders, no hand-waving. The path: one container on one server → a multi-container stack behind nginx → an automated monitored deploy → a full mini CI/CD pipeline with rollback. By Project 4 you will see exactly how the four skills click together. Not sure where to start? Follow the [DevOps roadmap](/learn/roadmaps/devops) first.
 
 New to the fundamentals? Start with [Docker for DevOps](/learn/guides/docker-for-devops) and [AWS for DevOps Engineers](/learn/guides/aws-for-devops-engineers).
 
@@ -68,6 +68,53 @@ Internet → User browser
         → ufw firewall (OS-level, second layer)
         → Docker container (node app on :3000 → host :80)
 ```
+
+<figure class="dgm" role="img" aria-label="Architecture: User browser reaches an EC2 instance running a Docker container via Elastic IP and layered firewalls">
+<svg viewBox="0 0 680 160" width="680" height="160" xmlns="http://www.w3.org/2000/svg">
+  <!-- Browser -->
+  <rect x="10" y="56" width="90" height="48" rx="7" fill="none" class="dgm-stroke" stroke-width="1.5"/>
+  <text x="55" y="77" text-anchor="middle" font-size="11" class="dgm-ink">User</text>
+  <text x="55" y="93" text-anchor="middle" font-size="11" class="dgm-ink">Browser</text>
+  <!-- Arrow 1 -->
+  <line x1="100" y1="80" x2="128" y2="80" class="dgm-ink-stroke" stroke-width="1.5" fill="none"/>
+  <polygon points="128,76 136,80 128,84" class="dgm-ink"/>
+  <!-- Elastic IP -->
+  <rect x="136" y="56" width="90" height="48" rx="7" class="dgm-accent-soft" fill="none" stroke-width="0"/>
+  <rect x="136" y="56" width="90" height="48" rx="7" fill="none" class="dgm-accent-stroke" stroke-width="1.5"/>
+  <text x="181" y="77" text-anchor="middle" font-size="11" class="dgm-ink">Elastic IP</text>
+  <text x="181" y="93" text-anchor="middle" font-size="10" class="dgm-muted">(static)</text>
+  <!-- Arrow 2 -->
+  <line x1="226" y1="80" x2="254" y2="80" class="dgm-ink-stroke" stroke-width="1.5" fill="none"/>
+  <polygon points="254,76 262,80 254,84" class="dgm-ink"/>
+  <!-- Security Group -->
+  <rect x="262" y="44" width="100" height="72" rx="7" fill="none" class="dgm-stroke" stroke-width="1.5"/>
+  <text x="312" y="66" text-anchor="middle" font-size="10" class="dgm-muted">Security</text>
+  <text x="312" y="80" text-anchor="middle" font-size="10" class="dgm-muted">Group</text>
+  <text x="312" y="96" text-anchor="middle" font-size="9" class="dgm-muted">22 (my IP)</text>
+  <text x="312" y="108" text-anchor="middle" font-size="9" class="dgm-muted">80 (0.0.0.0/0)</text>
+  <!-- Arrow 3 -->
+  <line x1="362" y1="80" x2="390" y2="80" class="dgm-ink-stroke" stroke-width="1.5" fill="none"/>
+  <polygon points="390,76 398,80 390,84" class="dgm-ink"/>
+  <!-- EC2 box -->
+  <rect x="398" y="32" width="130" height="96" rx="7" class="dgm-surface-2" fill="none" stroke-width="0"/>
+  <rect x="398" y="32" width="130" height="96" rx="7" fill="none" class="dgm-stroke" stroke-width="2"/>
+  <text x="463" y="52" text-anchor="middle" font-size="10" class="dgm-muted">EC2 Ubuntu 24.04</text>
+  <!-- ufw inside EC2 -->
+  <rect x="408" y="58" width="50" height="30" rx="6" fill="none" class="dgm-accent-stroke" stroke-width="1.5"/>
+  <text x="433" y="77" text-anchor="middle" font-size="10" class="dgm-ink">ufw</text>
+  <!-- Arrow inside EC2 -->
+  <line x1="458" y1="73" x2="468" y2="73" class="dgm-ink-stroke" stroke-width="1.5" fill="none"/>
+  <polygon points="468,70 474,73 468,76" class="dgm-ink"/>
+  <!-- Docker container inside EC2 -->
+  <rect x="474" y="56" width="46" height="34" rx="6" class="dgm-accent-soft" fill="none" stroke-width="0"/>
+  <rect x="474" y="56" width="46" height="34" rx="6" fill="none" class="dgm-accent-stroke" stroke-width="1.5"/>
+  <text x="497" y="72" text-anchor="middle" font-size="9" class="dgm-ink">Docker</text>
+  <text x="497" y="84" text-anchor="middle" font-size="9" class="dgm-ink">:3000</text>
+  <!-- port label -->
+  <text x="463" y="120" text-anchor="middle" font-size="9" class="dgm-muted">host :80 → container :3000</text>
+</svg>
+<figcaption>Browser traffic flows through an Elastic IP and dual-layer firewalls (Security Group and ufw) to the Docker container running inside the EC2 instance.</figcaption>
+</figure>
 
 ### Services and ports
 
@@ -450,6 +497,51 @@ Browser
     (all on appnet user-defined bridge network)
   (prod: DB lives in Private subnet 10.0.2.0/24, no IGW route)
 ```
+
+<figure class="dgm" role="img" aria-label="Docker Compose stack: nginx, Flask web app, and Postgres database on a shared private bridge network">
+<svg viewBox="0 0 680 200" width="680" height="200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Browser -->
+  <rect x="10" y="76" width="80" height="44" rx="7" fill="none" class="dgm-stroke" stroke-width="1.5"/>
+  <text x="50" y="96" text-anchor="middle" font-size="11" class="dgm-ink">Browser</text>
+  <text x="50" y="111" text-anchor="middle" font-size="9" class="dgm-muted">:80</text>
+  <!-- Arrow to nginx -->
+  <line x1="90" y1="98" x2="120" y2="98" class="dgm-ink-stroke" stroke-width="1.5" fill="none"/>
+  <polygon points="120,94 128,98 120,102" class="dgm-ink"/>
+  <!-- EC2 outer box -->
+  <rect x="128" y="14" width="532" height="170" rx="8" fill="none" class="dgm-stroke" stroke-width="1.5"/>
+  <text x="394" y="30" text-anchor="middle" font-size="10" class="dgm-muted">EC2 instance — Docker Compose</text>
+  <!-- appnet network box -->
+  <rect x="140" y="38" width="508" height="134" rx="7" class="dgm-surface-2" fill="none" stroke-width="0"/>
+  <rect x="140" y="38" width="508" height="134" rx="7" fill="none" class="dgm-stroke" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <text x="394" y="54" text-anchor="middle" font-size="9" class="dgm-muted">appnet (user-defined bridge — service-name DNS)</text>
+  <!-- nginx box -->
+  <rect x="154" y="62" width="110" height="84" rx="7" class="dgm-accent-soft" fill="none" stroke-width="0"/>
+  <rect x="154" y="62" width="110" height="84" rx="7" fill="none" class="dgm-accent-stroke" stroke-width="2"/>
+  <text x="209" y="87" text-anchor="middle" font-size="12" class="dgm-ink">nginx</text>
+  <text x="209" y="104" text-anchor="middle" font-size="10" class="dgm-muted">reverse proxy</text>
+  <text x="209" y="118" text-anchor="middle" font-size="10" class="dgm-muted">published :80</text>
+  <text x="209" y="132" text-anchor="middle" font-size="9" class="dgm-muted">→ web:3000</text>
+  <!-- Arrow nginx to web -->
+  <line x1="264" y1="104" x2="298" y2="104" class="dgm-ink-stroke" stroke-width="1.5" fill="none"/>
+  <polygon points="298,100 306,104 298,108" class="dgm-ink"/>
+  <!-- web box -->
+  <rect x="306" y="62" width="120" height="84" rx="7" fill="none" class="dgm-stroke" stroke-width="2"/>
+  <text x="366" y="87" text-anchor="middle" font-size="12" class="dgm-ink">web</text>
+  <text x="366" y="104" text-anchor="middle" font-size="10" class="dgm-muted">Flask + gunicorn</text>
+  <text x="366" y="118" text-anchor="middle" font-size="10" class="dgm-muted">internal :3000</text>
+  <text x="366" y="132" text-anchor="middle" font-size="9" class="dgm-muted">not published</text>
+  <!-- Arrow web to db -->
+  <line x1="426" y1="104" x2="460" y2="104" class="dgm-ink-stroke" stroke-width="1.5" fill="none"/>
+  <polygon points="460,100 468,104 460,108" class="dgm-ink"/>
+  <!-- db box -->
+  <rect x="468" y="62" width="160" height="84" rx="7" fill="none" class="dgm-stroke" stroke-width="2"/>
+  <text x="548" y="87" text-anchor="middle" font-size="12" class="dgm-ink">db</text>
+  <text x="548" y="104" text-anchor="middle" font-size="10" class="dgm-muted">Postgres 16-alpine</text>
+  <text x="548" y="118" text-anchor="middle" font-size="10" class="dgm-muted">internal :5432</text>
+  <text x="548" y="132" text-anchor="middle" font-size="9" class="dgm-muted">pgdata volume (named)</text>
+</svg>
+<figcaption>nginx is the only published port; web and db communicate privately over the appnet bridge network, with the database never exposed to the internet.</figcaption>
+</figure>
 
 ### Prerequisites and time estimate
 
@@ -951,6 +1043,47 @@ Dev laptop (docker build + docker push)
       backs up to S3 bucket (aws s3 cp via IAM role, no keys on disk)
 ```
 
+<figure class="dgm" role="img" aria-label="Monitoring architecture: app exposes /metrics, Prometheus scrapes it, Grafana reads Prometheus for dashboards and fires alerts">
+<svg viewBox="0 0 680 170" width="680" height="170" xmlns="http://www.w3.org/2000/svg">
+  <!-- App box -->
+  <rect x="10" y="60" width="130" height="64" rx="7" fill="none" class="dgm-stroke" stroke-width="2"/>
+  <text x="75" y="86" text-anchor="middle" font-size="12" class="dgm-ink">App Container</text>
+  <text x="75" y="103" text-anchor="middle" font-size="10" class="dgm-muted">:8080</text>
+  <text x="75" y="116" text-anchor="middle" font-size="10" class="dgm-muted">GET /metrics</text>
+  <!-- scrape arrow label -->
+  <text x="196" y="48" text-anchor="middle" font-size="9" class="dgm-muted">scrapes /metrics</text>
+  <line x1="155" y1="92" x2="215" y2="92" class="dgm-ink-stroke" stroke-width="1.5" fill="none" stroke-dasharray="4,3"/>
+  <polygon points="215,88 223,92 215,96" class="dgm-ink"/>
+  <!-- Prometheus box -->
+  <rect x="223" y="52" width="140" height="80" rx="7" class="dgm-accent-soft" fill="none" stroke-width="0"/>
+  <rect x="223" y="52" width="140" height="80" rx="7" fill="none" class="dgm-accent-stroke" stroke-width="2"/>
+  <text x="293" y="82" text-anchor="middle" font-size="12" class="dgm-ink">Prometheus</text>
+  <text x="293" y="98" text-anchor="middle" font-size="10" class="dgm-muted">time-series store</text>
+  <text x="293" y="113" text-anchor="middle" font-size="9" class="dgm-muted">alert rules</text>
+  <!-- Arrow to Grafana -->
+  <line x1="363" y1="92" x2="413" y2="92" class="dgm-ink-stroke" stroke-width="1.5" fill="none"/>
+  <polygon points="413,88 421,92 413,96" class="dgm-ink"/>
+  <text x="388" y="84" text-anchor="middle" font-size="9" class="dgm-muted">queries</text>
+  <!-- Grafana box -->
+  <rect x="421" y="52" width="130" height="80" rx="7" fill="none" class="dgm-stroke" stroke-width="2"/>
+  <text x="486" y="82" text-anchor="middle" font-size="12" class="dgm-ink">Grafana</text>
+  <text x="486" y="98" text-anchor="middle" font-size="10" class="dgm-muted">dashboards</text>
+  <text x="486" y="113" text-anchor="middle" font-size="9" class="dgm-muted">:3000</text>
+  <!-- Arrow to Alerts -->
+  <line x1="551" y1="92" x2="601" y2="92" class="dgm-ink-stroke" stroke-width="1.5" fill="none"/>
+  <polygon points="601,88 609,92 601,96" class="dgm-ink"/>
+  <!-- Alerts box -->
+  <rect x="609" y="64" width="60" height="56" rx="7" fill="none" class="dgm-stroke" stroke-width="1.5"/>
+  <text x="639" y="88" text-anchor="middle" font-size="10" class="dgm-ink">Alerts</text>
+  <text x="639" y="103" text-anchor="middle" font-size="9" class="dgm-muted">SNS/</text>
+  <text x="639" y="114" text-anchor="middle" font-size="9" class="dgm-muted">Slack</text>
+  <!-- systemd timer label below -->
+  <text x="75" y="145" text-anchor="middle" font-size="9" class="dgm-muted">healthcheck.timer (systemd)</text>
+  <line x1="75" y1="124" x2="75" y2="140" class="dgm-muted-stroke" stroke-width="1" fill="none"/>
+</svg>
+<figcaption>The app exposes a /metrics endpoint; Prometheus scrapes it on a schedule and evaluates alert rules; Grafana reads Prometheus to render dashboards and forward alerts.</figcaption>
+</figure>
+
 **Deploy pipeline flow:**
 1. `provision.sh` — idempotent bootstrap
 2. Install deps (docker, ufw) — each guarded by a check
@@ -1428,6 +1561,59 @@ Dev laptop (git push)
   Secrets path: EC2 pulls secrets from SSM Parameter Store at deploy time
 ```
 
+<figure class="dgm" role="img" aria-label="CI/CD pipeline flow: git push triggers build, test, image push to registry, then deploy to server">
+<svg viewBox="0 0 680 120" width="680" height="120" xmlns="http://www.w3.org/2000/svg">
+  <!-- git push -->
+  <rect x="8" y="36" width="84" height="48" rx="7" fill="none" class="dgm-stroke" stroke-width="1.5"/>
+  <text x="50" y="58" text-anchor="middle" font-size="11" class="dgm-ink">git push</text>
+  <text x="50" y="74" text-anchor="middle" font-size="9" class="dgm-muted">main branch</text>
+  <!-- arrow -->
+  <line x1="92" y1="60" x2="112" y2="60" class="dgm-ink-stroke" stroke-width="1.5" fill="none"/>
+  <polygon points="112,56 120,60 112,64" class="dgm-ink"/>
+  <!-- CI Build -->
+  <rect x="120" y="28" width="98" height="64" rx="7" class="dgm-accent-soft" fill="none" stroke-width="0"/>
+  <rect x="120" y="28" width="98" height="64" rx="7" fill="none" class="dgm-accent-stroke" stroke-width="2"/>
+  <text x="169" y="54" text-anchor="middle" font-size="11" class="dgm-ink">CI: Build</text>
+  <text x="169" y="70" text-anchor="middle" font-size="10" class="dgm-muted">docker build</text>
+  <text x="169" y="83" text-anchor="middle" font-size="9" class="dgm-muted">tag: git SHA</text>
+  <!-- arrow -->
+  <line x1="218" y1="60" x2="238" y2="60" class="dgm-ink-stroke" stroke-width="1.5" fill="none"/>
+  <polygon points="238,56 246,60 238,64" class="dgm-ink"/>
+  <!-- Test -->
+  <rect x="246" y="28" width="88" height="64" rx="7" fill="none" class="dgm-stroke" stroke-width="2"/>
+  <text x="290" y="54" text-anchor="middle" font-size="11" class="dgm-ink">Test</text>
+  <text x="290" y="70" text-anchor="middle" font-size="10" class="dgm-muted">run tests</text>
+  <text x="290" y="83" text-anchor="middle" font-size="9" class="dgm-muted">exit 0 = pass</text>
+  <!-- arrow -->
+  <line x1="334" y1="60" x2="354" y2="60" class="dgm-ink-stroke" stroke-width="1.5" fill="none"/>
+  <polygon points="354,56 362,60 354,64" class="dgm-ink"/>
+  <!-- Push registry -->
+  <rect x="362" y="28" width="104" height="64" rx="7" fill="none" class="dgm-stroke" stroke-width="2"/>
+  <text x="414" y="50" text-anchor="middle" font-size="11" class="dgm-ink">Push</text>
+  <text x="414" y="66" text-anchor="middle" font-size="10" class="dgm-muted">ECR registry</text>
+  <text x="414" y="79" text-anchor="middle" font-size="9" class="dgm-muted">SHA + :latest</text>
+  <!-- arrow -->
+  <line x1="466" y1="60" x2="486" y2="60" class="dgm-ink-stroke" stroke-width="1.5" fill="none"/>
+  <polygon points="486,56 494,60 486,64" class="dgm-ink"/>
+  <!-- Deploy -->
+  <rect x="494" y="28" width="110" height="64" rx="7" class="dgm-accent-soft" fill="none" stroke-width="0"/>
+  <rect x="494" y="28" width="110" height="64" rx="7" fill="none" class="dgm-accent-stroke" stroke-width="2"/>
+  <text x="549" y="50" text-anchor="middle" font-size="11" class="dgm-ink">Deploy</text>
+  <text x="549" y="66" text-anchor="middle" font-size="10" class="dgm-muted">EC2 pull</text>
+  <text x="549" y="79" text-anchor="middle" font-size="9" class="dgm-muted">healthcheck</text>
+  <!-- arrow -->
+  <line x1="604" y1="60" x2="626" y2="60" class="dgm-ink-stroke" stroke-width="1.5" fill="none"/>
+  <polygon points="626,56 634,60 626,64" class="dgm-ink"/>
+  <!-- Live -->
+  <rect x="634" y="36" width="40" height="48" rx="7" fill="none" class="dgm-stroke" stroke-width="1.5"/>
+  <text x="654" y="56" text-anchor="middle" font-size="10" class="dgm-ink">Live</text>
+  <text x="654" y="70" text-anchor="middle" font-size="9" class="dgm-muted">:80</text>
+  <!-- rollback note -->
+  <text x="549" y="106" text-anchor="middle" font-size="9" class="dgm-muted">healthcheck fail → auto-rollback to PREVIOUS_TAG</text>
+</svg>
+<figcaption>Every git push to main triggers the pipeline: build image, run tests, push to ECR with an immutable SHA tag, deploy to EC2 with a healthcheck gate, and auto-rollback on failure.</figcaption>
+</figure>
+
 The two dashed paths: the **rollback path** (if the new version is sick, the host redeploys the previous SHA) and the **secrets path** (the host pulls secrets from SSM at deploy time, so nothing sensitive ever lives in the image).
 
 ### Prerequisites and time
@@ -1850,7 +2036,7 @@ Automatic on failed healthcheck. Manual:
 
 ### Level it up
 
-- **Managed orchestration:** move from a single EC2 to **ECS** or **EKS** — they give you rolling deploys, healthchecks, and rollback as built-in features instead of bash.
+- **Managed orchestration:** move from a single EC2 to **ECS** or **EKS** — they give you rolling deploys, healthchecks, and rollback as built-in features instead of bash. See [Kubernetes for DevOps](/learn/guides/kubernetes-for-devops) for a full walkthrough.
 - **GitOps:** **ArgoCD** watches a git repo and reconciles your cluster to match — deploy = merge a PR; rollback = revert the commit.
 - **Canary:** shift 5% of traffic to the new version via an ALB or service mesh, watch error rates, then ramp to 100%.
 - **IaC:** define the ECR repo, IAM roles, and EC2/ECS in **Terraform** so the whole platform is reproducible and code-reviewed.

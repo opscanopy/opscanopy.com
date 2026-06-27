@@ -24,7 +24,7 @@ faqs:
     a: "kubectl get/describe (inspect), kubectl apply -f (declarative changes), kubectl logs and kubectl exec (debugging), kubectl rollout status/undo (deployments), and kubectl get events."
 ---
 
-Kubernetes (K8s) has become the standard runtime fabric for containerised workloads. Whether you are deploying a single microservice or coordinating hundreds of them across multiple availability zones, K8s gives you a consistent, declarative API to describe what should run, where it should run, and how it should behave. This guide walks through the core concepts a DevOps engineer needs day-to-day — cluster architecture, workload primitives, networking, configuration, observability, and troubleshooting — with working YAML and `kubectl` commands throughout.
+Kubernetes (K8s) has become the standard runtime fabric for containerised workloads. Whether you are deploying a single microservice or coordinating hundreds of them across multiple availability zones, K8s gives you a consistent, declarative API to describe what should run, where it should run, and how it should behave. This guide walks through the core concepts a DevOps engineer needs day-to-day — cluster architecture, workload primitives, networking, configuration, observability, and troubleshooting — with working YAML and `kubectl` commands throughout. To see where Kubernetes fits in the broader learning journey, check the [Kubernetes roadmap](/learn/roadmaps/kubernetes).
 
 ## Why Kubernetes?
 
@@ -76,9 +76,100 @@ Every node that runs workloads must have three components:
 4. `kubelet` on that node watches the API server, sees the Pod assigned to it, pulls the image, and starts the container.
 5. `kube-proxy` updates network rules so the Pod is reachable via its Service.
 
+<figure class="dgm" role="img" aria-label="Kubernetes cluster architecture: control plane components connected to worker nodes">
+<svg viewBox="0 0 680 310" width="680" height="310" xmlns="http://www.w3.org/2000/svg">
+  <!-- Control Plane box -->
+  <rect x="10" y="10" width="300" height="200" rx="8" fill="none" stroke-width="2" class="dgm-stroke"/>
+  <text x="160" y="30" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Control Plane</text>
+  <!-- API Server -->
+  <rect x="30" y="42" width="120" height="36" rx="6" class="dgm-surface-2" stroke-width="1.5" class2="dgm-stroke"/>
+  <rect x="30" y="42" width="120" height="36" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="90" y="57" text-anchor="middle" font-size="11" class="dgm-ink">kube-apiserver</text>
+  <text x="90" y="70" text-anchor="middle" font-size="10" class="dgm-muted">validates &amp; stores</text>
+  <!-- etcd -->
+  <rect x="170" y="42" width="120" height="36" rx="6" class="dgm-surface-2"/>
+  <rect x="170" y="42" width="120" height="36" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="230" y="57" text-anchor="middle" font-size="11" class="dgm-ink">etcd</text>
+  <text x="230" y="70" text-anchor="middle" font-size="10" class="dgm-muted">cluster state store</text>
+  <!-- Scheduler -->
+  <rect x="30" y="96" width="120" height="36" rx="6" class="dgm-surface-2"/>
+  <rect x="30" y="96" width="120" height="36" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="90" y="111" text-anchor="middle" font-size="11" class="dgm-ink">kube-scheduler</text>
+  <text x="90" y="124" text-anchor="middle" font-size="10" class="dgm-muted">assigns nodes</text>
+  <!-- Controller manager -->
+  <rect x="170" y="96" width="120" height="36" rx="6" class="dgm-surface-2"/>
+  <rect x="170" y="96" width="120" height="36" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="230" y="111" text-anchor="middle" font-size="11" class="dgm-ink">controller-manager</text>
+  <text x="230" y="124" text-anchor="middle" font-size="10" class="dgm-muted">reconciles state</text>
+  <!-- API <-> etcd arrow -->
+  <line x1="150" y1="60" x2="170" y2="60" stroke-width="1.5" fill="none" class="dgm-ink-stroke"/>
+  <polygon points="170,56 178,60 170,64" class="dgm-ink"/>
+  <!-- API <-> scheduler arrow -->
+  <line x1="90" y1="78" x2="90" y2="96" stroke-width="1.5" fill="none" class="dgm-ink-stroke"/>
+  <polygon points="86,96 90,104 94,96" class="dgm-ink"/>
+  <!-- API <-> controller arrow -->
+  <line x1="230" y1="78" x2="230" y2="96" stroke-width="1.5" fill="none" class="dgm-ink-stroke"/>
+  <polygon points="226,96 230,104 234,96" class="dgm-ink"/>
+  <!-- kubectl label -->
+  <rect x="60" y="160" width="190" height="30" rx="6" class="dgm-accent-soft"/>
+  <rect x="60" y="160" width="190" height="30" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="155" y="179" text-anchor="middle" font-size="11" class="dgm-ink">kubectl / API clients</text>
+  <!-- Arrow from kubectl to API server -->
+  <line x1="155" y1="160" x2="100" y2="78" stroke-width="1.5" stroke-dasharray="4 3" fill="none" class="dgm-accent-stroke"/>
+  <polygon points="97,78 104,72 108,80" class="dgm-accent"/>
+  <!-- Worker Node 1 -->
+  <rect x="360" y="10" width="150" height="200" rx="8" fill="none" stroke-width="2" class="dgm-stroke"/>
+  <text x="435" y="30" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Worker Node</text>
+  <rect x="375" y="42" width="120" height="28" rx="6" class="dgm-surface-2"/>
+  <rect x="375" y="42" width="120" height="28" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="435" y="60" text-anchor="middle" font-size="11" class="dgm-ink">kubelet</text>
+  <rect x="375" y="80" width="120" height="28" rx="6" class="dgm-surface-2"/>
+  <rect x="375" y="80" width="120" height="28" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="435" y="98" text-anchor="middle" font-size="11" class="dgm-ink">kube-proxy</text>
+  <rect x="375" y="118" width="120" height="28" rx="6" class="dgm-surface-2"/>
+  <rect x="375" y="118" width="120" height="28" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="435" y="136" text-anchor="middle" font-size="11" class="dgm-ink">container runtime</text>
+  <!-- Pods in worker -->
+  <rect x="380" y="156" width="50" height="40" rx="6" class="dgm-accent-soft"/>
+  <rect x="380" y="156" width="50" height="40" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="405" y="173" text-anchor="middle" font-size="10" class="dgm-ink">Pod</text>
+  <text x="405" y="187" text-anchor="middle" font-size="9" class="dgm-muted">A</text>
+  <rect x="440" y="156" width="50" height="40" rx="6" class="dgm-accent-soft"/>
+  <rect x="440" y="156" width="50" height="40" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="465" y="173" text-anchor="middle" font-size="10" class="dgm-ink">Pod</text>
+  <text x="465" y="187" text-anchor="middle" font-size="9" class="dgm-muted">B</text>
+  <!-- Worker Node 2 -->
+  <rect x="520" y="10" width="150" height="200" rx="8" fill="none" stroke-width="2" class="dgm-stroke"/>
+  <text x="595" y="30" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Worker Node</text>
+  <rect x="535" y="42" width="120" height="28" rx="6" class="dgm-surface-2"/>
+  <rect x="535" y="42" width="120" height="28" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="595" y="60" text-anchor="middle" font-size="11" class="dgm-ink">kubelet</text>
+  <rect x="535" y="80" width="120" height="28" rx="6" class="dgm-surface-2"/>
+  <rect x="535" y="80" width="120" height="28" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="595" y="98" text-anchor="middle" font-size="11" class="dgm-ink">kube-proxy</text>
+  <rect x="535" y="118" width="120" height="28" rx="6" class="dgm-surface-2"/>
+  <rect x="535" y="118" width="120" height="28" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="595" y="136" text-anchor="middle" font-size="11" class="dgm-ink">container runtime</text>
+  <rect x="540" y="156" width="50" height="40" rx="6" class="dgm-accent-soft"/>
+  <rect x="540" y="156" width="50" height="40" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="565" y="173" text-anchor="middle" font-size="10" class="dgm-ink">Pod</text>
+  <text x="565" y="187" text-anchor="middle" font-size="9" class="dgm-muted">C</text>
+  <!-- API server to worker nodes arrows -->
+  <line x1="310" y1="80" x2="360" y2="80" stroke-width="1.5" fill="none" class="dgm-ink-stroke"/>
+  <polygon points="360,76 368,80 360,84" class="dgm-ink"/>
+  <line x1="310" y1="80" x2="520" y2="80" stroke-width="1.5" fill="none" class="dgm-ink-stroke"/>
+  <polygon points="520,76 528,80 520,84" class="dgm-ink"/>
+  <!-- Label for connection -->
+  <text x="335" y="74" text-anchor="middle" font-size="9" class="dgm-muted">API</text>
+  <!-- Bottom labels -->
+  <text x="340" y="250" text-anchor="middle" font-size="10" class="dgm-muted">API server communicates with kubelets to schedule and monitor workloads</text>
+</svg>
+<figcaption>Kubernetes cluster architecture: control plane (API server, etcd, scheduler, controller-manager) communicates with worker nodes (kubelet, kube-proxy, runtime) that host Pods.</figcaption>
+</figure>
+
 ## Pods
 
-A Pod is the smallest schedulable unit in Kubernetes. It wraps one or more containers that share:
+A Pod is the smallest schedulable unit in Kubernetes. It wraps one or more containers (built from [Docker for DevOps](/learn/guides/docker-for-devops) images) that share:
 
 - **Network namespace** — all containers in a Pod share the same IP address and port space.
 - **Storage** — volumes are declared at the Pod level and mounted into individual containers.
@@ -169,6 +260,54 @@ A ReplicaSet ensures a specified number of identical Pod replicas are running at
 
 A Deployment wraps a ReplicaSet and adds rollout logic: you update the Pod template and the Deployment gradually replaces old Pods with new ones according to the configured strategy.
 
+<figure class="dgm" role="img" aria-label="Ownership hierarchy: Deployment owns ReplicaSet which owns Pods">
+<svg viewBox="0 0 560 200" width="560" height="200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Deployment box (outermost) -->
+  <rect x="10" y="10" width="540" height="175" rx="8" fill="none" stroke-width="2" class="dgm-stroke"/>
+  <text x="280" y="28" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Deployment</text>
+  <text x="280" y="42" text-anchor="middle" font-size="10" class="dgm-muted">manages rollouts, strategy, revision history</text>
+  <!-- ReplicaSet box (middle) -->
+  <rect x="30" y="55" width="500" height="120" rx="8" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="280" y="73" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">ReplicaSet</text>
+  <text x="280" y="86" text-anchor="middle" font-size="10" class="dgm-muted">maintains desired replica count via label selector</text>
+  <!-- Pod 1 -->
+  <rect x="55" y="98" width="110" height="64" rx="6" class="dgm-accent-soft"/>
+  <rect x="55" y="98" width="110" height="64" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="110" y="116" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">Pod</text>
+  <text x="110" y="130" text-anchor="middle" font-size="10" class="dgm-muted">app: web</text>
+  <rect x="68" y="138" width="84" height="16" rx="4" class="dgm-surface-2"/>
+  <rect x="68" y="138" width="84" height="16" rx="4" fill="none" stroke-width="1" class="dgm-stroke"/>
+  <text x="110" y="150" text-anchor="middle" font-size="9" class="dgm-muted">nginx:1.27</text>
+  <!-- Pod 2 -->
+  <rect x="225" y="98" width="110" height="64" rx="6" class="dgm-accent-soft"/>
+  <rect x="225" y="98" width="110" height="64" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="280" y="116" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">Pod</text>
+  <text x="280" y="130" text-anchor="middle" font-size="10" class="dgm-muted">app: web</text>
+  <rect x="238" y="138" width="84" height="16" rx="4" class="dgm-surface-2"/>
+  <rect x="238" y="138" width="84" height="16" rx="4" fill="none" stroke-width="1" class="dgm-stroke"/>
+  <text x="280" y="150" text-anchor="middle" font-size="9" class="dgm-muted">nginx:1.27</text>
+  <!-- Pod 3 -->
+  <rect x="395" y="98" width="110" height="64" rx="6" class="dgm-accent-soft"/>
+  <rect x="395" y="98" width="110" height="64" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="450" y="116" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">Pod</text>
+  <text x="450" y="130" text-anchor="middle" font-size="10" class="dgm-muted">app: web</text>
+  <rect x="408" y="138" width="84" height="16" rx="4" class="dgm-surface-2"/>
+  <rect x="408" y="138" width="84" height="16" rx="4" fill="none" stroke-width="1" class="dgm-stroke"/>
+  <text x="450" y="150" text-anchor="middle" font-size="9" class="dgm-muted">nginx:1.27</text>
+  <!-- Ownership arrows ReplicaSet -> Pods -->
+  <line x1="110" y1="86" x2="110" y2="98" stroke-width="1.5" fill="none" class="dgm-ink-stroke"/>
+  <polygon points="106,97 110,105 114,97" class="dgm-ink"/>
+  <line x1="280" y1="86" x2="280" y2="98" stroke-width="1.5" fill="none" class="dgm-ink-stroke"/>
+  <polygon points="276,97 280,105 284,97" class="dgm-ink"/>
+  <line x1="450" y1="86" x2="450" y2="98" stroke-width="1.5" fill="none" class="dgm-ink-stroke"/>
+  <polygon points="446,97 450,105 454,97" class="dgm-ink"/>
+  <!-- Deployment -> ReplicaSet arrow -->
+  <line x1="280" y1="42" x2="280" y2="55" stroke-width="1.5" fill="none" class="dgm-ink-stroke"/>
+  <polygon points="276,54 280,62 284,54" class="dgm-ink"/>
+</svg>
+<figcaption>A Deployment owns a ReplicaSet, which owns and maintains the desired number of identical Pods via a label selector.</figcaption>
+</figure>
+
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
@@ -242,6 +381,81 @@ A Service gives a stable DNS name and IP to a dynamic set of Pods selected by a 
 | `LoadBalancer` | External IP via cloud provider's load balancer | Production external traffic |
 | `ExternalName` | DNS alias for an external service | Pointing in-cluster workloads at external endpoints |
 
+<figure class="dgm" role="img" aria-label="Kubernetes Service types and Ingress routing diagram">
+<svg viewBox="0 0 680 290" width="680" height="290" xmlns="http://www.w3.org/2000/svg">
+  <!-- Internet / External client -->
+  <rect x="10" y="10" width="90" height="36" rx="6" class="dgm-surface-2"/>
+  <rect x="10" y="10" width="90" height="36" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="55" y="27" text-anchor="middle" font-size="11" class="dgm-ink">Internet</text>
+  <text x="55" y="40" text-anchor="middle" font-size="9" class="dgm-muted">external client</text>
+  <!-- Ingress controller -->
+  <rect x="150" y="10" width="130" height="36" rx="6" class="dgm-accent-soft"/>
+  <rect x="150" y="10" width="130" height="36" rx="6" fill="none" stroke-width="2" class="dgm-accent-stroke"/>
+  <text x="215" y="27" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">Ingress</text>
+  <text x="215" y="40" text-anchor="middle" font-size="9" class="dgm-muted">host/path routing (HTTP)</text>
+  <!-- LoadBalancer service -->
+  <rect x="150" y="80" width="130" height="36" rx="6" class="dgm-surface-2"/>
+  <rect x="150" y="80" width="130" height="36" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="215" y="97" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">LoadBalancer</text>
+  <text x="215" y="110" text-anchor="middle" font-size="9" class="dgm-muted">external IP (cloud LB)</text>
+  <!-- NodePort service -->
+  <rect x="150" y="155" width="130" height="36" rx="6" class="dgm-surface-2"/>
+  <rect x="150" y="155" width="130" height="36" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="215" y="172" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">NodePort</text>
+  <text x="215" y="185" text-anchor="middle" font-size="9" class="dgm-muted">30000–32767 on each node</text>
+  <!-- ClusterIP service -->
+  <rect x="150" y="225" width="130" height="36" rx="6" class="dgm-surface-2"/>
+  <rect x="150" y="225" width="130" height="36" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="215" y="242" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">ClusterIP</text>
+  <text x="215" y="255" text-anchor="middle" font-size="9" class="dgm-muted">internal only (default)</text>
+  <!-- Pods group -->
+  <rect x="380" y="80" width="270" height="185" rx="8" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="515" y="98" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">Pods (label: app=web)</text>
+  <rect x="395" y="108" width="70" height="50" rx="6" class="dgm-accent-soft"/>
+  <rect x="395" y="108" width="70" height="50" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="430" y="130" text-anchor="middle" font-size="11" class="dgm-ink">Pod</text>
+  <text x="430" y="144" text-anchor="middle" font-size="9" class="dgm-muted">:8080</text>
+  <rect x="480" y="108" width="70" height="50" rx="6" class="dgm-accent-soft"/>
+  <rect x="480" y="108" width="70" height="50" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="515" y="130" text-anchor="middle" font-size="11" class="dgm-ink">Pod</text>
+  <text x="515" y="144" text-anchor="middle" font-size="9" class="dgm-muted">:8080</text>
+  <rect x="565" y="108" width="70" height="50" rx="6" class="dgm-accent-soft"/>
+  <rect x="565" y="108" width="70" height="50" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="600" y="130" text-anchor="middle" font-size="11" class="dgm-ink">Pod</text>
+  <text x="600" y="144" text-anchor="middle" font-size="9" class="dgm-muted">:8080</text>
+  <!-- kube-proxy note -->
+  <rect x="395" y="178" width="240" height="28" rx="6" class="dgm-surface-2"/>
+  <rect x="395" y="178" width="240" height="28" rx="6" fill="none" stroke-width="1" class="dgm-stroke"/>
+  <text x="515" y="192" text-anchor="middle" font-size="10" class="dgm-muted">kube-proxy iptables/IPVS rules</text>
+  <text x="515" y="205" text-anchor="middle" font-size="9" class="dgm-muted">forward to healthy Pod IPs</text>
+  <!-- Arrows: Internet -> Ingress -->
+  <line x1="100" y1="28" x2="150" y2="28" stroke-width="1.5" fill="none" class="dgm-ink-stroke"/>
+  <polygon points="150,24 158,28 150,32" class="dgm-ink"/>
+  <!-- Internet -> LoadBalancer -->
+  <line x1="55" y1="46" x2="55" y2="98" stroke-width="1.5" stroke-dasharray="4 3" fill="none" class="dgm-ink-stroke"/>
+  <line x1="55" y1="98" x2="150" y2="98" stroke-width="1.5" stroke-dasharray="4 3" fill="none" class="dgm-ink-stroke"/>
+  <polygon points="150,94 158,98 150,102" class="dgm-ink"/>
+  <!-- Internet -> NodePort -->
+  <line x1="55" y1="46" x2="55" y2="173" stroke-width="1.5" stroke-dasharray="4 3" fill="none" class="dgm-ink-stroke"/>
+  <line x1="55" y1="173" x2="150" y2="173" stroke-width="1.5" stroke-dasharray="4 3" fill="none" class="dgm-ink-stroke"/>
+  <polygon points="150,169 158,173 150,177" class="dgm-ink"/>
+  <!-- Services -> Pods arrows -->
+  <line x1="280" y1="28" x2="380" y2="130" stroke-width="1.5" fill="none" class="dgm-accent-stroke"/>
+  <polygon points="377,126 385,134 381,124" class="dgm-accent"/>
+  <line x1="280" y1="98" x2="380" y2="130" stroke-width="1.5" fill="none" class="dgm-ink-stroke"/>
+  <polygon points="377,126 385,134 381,124" class="dgm-ink"/>
+  <line x1="280" y1="173" x2="380" y2="140" stroke-width="1.5" fill="none" class="dgm-ink-stroke"/>
+  <polygon points="377,136 385,144 381,136" class="dgm-ink"/>
+  <line x1="280" y1="243" x2="380" y2="155" stroke-width="1.5" fill="none" class="dgm-ink-stroke"/>
+  <polygon points="377,151 385,159 381,151" class="dgm-ink"/>
+  <!-- Labels on arrows -->
+  <text x="325" y="24" text-anchor="middle" font-size="9" class="dgm-accent">host/path</text>
+  <!-- Legend -->
+  <text x="10" y="275" font-size="9" class="dgm-muted">— — external access   —— internal routing</text>
+</svg>
+<figcaption>Service types and Ingress: Ingress routes HTTP traffic by host/path to Services, while LoadBalancer and NodePort expose Services externally; ClusterIP is internal-only.</figcaption>
+</figure>
+
 ### ClusterIP Example
 
 ```yaml
@@ -303,7 +517,7 @@ A Service of type `LoadBalancer` creates a separate cloud load balancer per serv
 An Ingress object is just a configuration resource. You also need an **Ingress controller** — a Pod that reads Ingress objects and programs a reverse proxy. Common choices:
 
 - **NGINX Ingress Controller** (most widely deployed)
-- **AWS Load Balancer Controller** (for ALB on EKS)
+- **AWS Load Balancer Controller** (for ALB on EKS — see [AWS for DevOps Engineers](/learn/guides/aws-for-devops-engineers))
 - **Traefik** (dynamic config, good for smaller clusters)
 - **Istio Gateway** (service mesh, advanced traffic management)
 
@@ -445,6 +659,56 @@ Secrets store sensitive data — passwords, API tokens, TLS certificates, SSH ke
 | `kubernetes.io/service-account-token` | SA tokens (auto-managed) |
 | `kubernetes.io/ssh-auth` | SSH private keys |
 | `kubernetes.io/basic-auth` | Username/password pairs |
+
+<figure class="dgm" role="img" aria-label="ConfigMap and Secret injection into a Pod as environment variables and mounted volumes">
+<svg viewBox="0 0 660 240" width="660" height="240" xmlns="http://www.w3.org/2000/svg">
+  <!-- ConfigMap box -->
+  <rect x="10" y="30" width="160" height="90" rx="8" fill="none" stroke-width="2" class="dgm-stroke"/>
+  <text x="90" y="50" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">ConfigMap</text>
+  <text x="90" y="66" text-anchor="middle" font-size="10" class="dgm-muted">LOG_LEVEL: info</text>
+  <text x="90" y="80" text-anchor="middle" font-size="10" class="dgm-muted">MAX_CONNECTIONS: 100</text>
+  <text x="90" y="94" text-anchor="middle" font-size="10" class="dgm-muted">config.yaml: |...</text>
+  <text x="90" y="110" text-anchor="middle" font-size="9" class="dgm-accent">non-sensitive config</text>
+  <!-- Secret box -->
+  <rect x="10" y="145" width="160" height="80" rx="8" fill="none" stroke-width="2" class="dgm-stroke"/>
+  <text x="90" y="165" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Secret</text>
+  <text x="90" y="181" text-anchor="middle" font-size="10" class="dgm-muted">username: YWRtaW4=</text>
+  <text x="90" y="195" text-anchor="middle" font-size="10" class="dgm-muted">password: c3VwZXI=</text>
+  <text x="90" y="212" text-anchor="middle" font-size="9" class="dgm-accent">base64 + RBAC</text>
+  <!-- Pod box -->
+  <rect x="310" y="10" width="330" height="220" rx="8" fill="none" stroke-width="2" class="dgm-stroke"/>
+  <text x="475" y="30" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Pod</text>
+  <!-- env vars section -->
+  <rect x="325" y="40" width="295" height="80" rx="6" class="dgm-surface-2"/>
+  <rect x="325" y="40" width="295" height="80" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="472" y="58" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">Environment Variables</text>
+  <text x="340" y="74" font-size="10" class="dgm-muted">LOG_LEVEL=info            (envFrom: configMapRef)</text>
+  <text x="340" y="88" font-size="10" class="dgm-muted">DB_USERNAME=admin    (secretKeyRef)</text>
+  <text x="340" y="102" font-size="10" class="dgm-muted">DB_PASSWORD=***         (secretKeyRef)</text>
+  <!-- volume section -->
+  <rect x="325" y="132" width="295" height="80" rx="6" class="dgm-accent-soft"/>
+  <rect x="325" y="132" width="295" height="80" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
+  <text x="472" y="150" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">Mounted Volume</text>
+  <text x="340" y="166" font-size="10" class="dgm-muted">/etc/app/config.yaml  (configMap volume)</text>
+  <text x="340" y="180" font-size="10" class="dgm-muted">/etc/tls/cert, /etc/tls/key  (secret volume)</text>
+  <text x="340" y="198" font-size="9" class="dgm-muted">files updated ~60s after ConfigMap change</text>
+  <!-- Arrows ConfigMap -> env vars -->
+  <line x1="170" y1="60" x2="325" y2="70" stroke-width="1.5" fill="none" class="dgm-ink-stroke"/>
+  <polygon points="323,66 331,70 323,74" class="dgm-ink"/>
+  <!-- Arrows ConfigMap -> volume -->
+  <line x1="170" y1="90" x2="325" y2="155" stroke-width="1.5" stroke-dasharray="4 3" fill="none" class="dgm-ink-stroke"/>
+  <polygon points="323,151 331,155 323,159" class="dgm-ink"/>
+  <!-- Arrows Secret -> env vars -->
+  <line x1="170" y1="175" x2="325" y2="95" stroke-width="1.5" fill="none" class="dgm-ink-stroke"/>
+  <polygon points="323,91 331,95 323,99" class="dgm-ink"/>
+  <!-- Arrows Secret -> volume -->
+  <line x1="170" y1="185" x2="325" y2="180" stroke-width="1.5" stroke-dasharray="4 3" fill="none" class="dgm-ink-stroke"/>
+  <polygon points="323,176 331,180 323,184" class="dgm-ink"/>
+  <!-- Legend -->
+  <text x="175" y="230" font-size="9" class="dgm-muted">—— env inject   - - volume mount</text>
+</svg>
+<figcaption>ConfigMaps and Secrets inject configuration into Pods as environment variables (envFrom / secretKeyRef) or as mounted files in volumes.</figcaption>
+</figure>
 
 ### Creating an Opaque Secret
 
@@ -602,6 +866,73 @@ Kubernetes assigns one of three Quality of Service classes to every Pod based on
 | **Guaranteed** | Every container has `requests == limits` for both CPU and memory | Last to be evicted |
 | **Burstable** | At least one container has a request or limit, but not Guaranteed | Middle priority |
 | **BestEffort** | No container has any request or limit | First to be evicted under pressure |
+
+<figure class="dgm" role="img" aria-label="Resource requests versus limits bar chart and the three QoS classes">
+<svg viewBox="0 0 660 280" width="660" height="280" xmlns="http://www.w3.org/2000/svg">
+  <!-- Title -->
+  <text x="330" y="20" text-anchor="middle" font-size="13" font-weight="bold" class="dgm-ink">CPU / Memory: Request vs Limit</text>
+  <!-- Node capacity bar background -->
+  <rect x="30" y="35" width="580" height="40" rx="6" class="dgm-surface-2"/>
+  <rect x="30" y="35" width="580" height="40" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <text x="320" y="58" text-anchor="middle" font-size="10" class="dgm-muted">Node allocatable capacity</text>
+  <!-- Request segment (reserved for scheduler) -->
+  <rect x="30" y="35" width="230" height="40" rx="6" class="dgm-accent-soft"/>
+  <rect x="30" y="35" width="230" height="40" rx="0" fill="none" stroke-width="0"/>
+  <text x="145" y="58" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">Request (reserved)</text>
+  <text x="145" y="70" text-anchor="middle" font-size="9" class="dgm-muted">scheduler guarantees this</text>
+  <!-- Limit segment overlay -->
+  <rect x="30" y="35" width="370" height="40" rx="0" fill="none" stroke-width="2" stroke-dasharray="5 3" class="dgm-accent-stroke"/>
+  <!-- Limit label -->
+  <text x="260" y="88" text-anchor="middle" font-size="10" class="dgm-accent">Limit (ceiling)</text>
+  <line x1="260" y1="75" x2="260" y2="84" stroke-width="1.5" fill="none" class="dgm-accent-stroke"/>
+  <!-- Request label line -->
+  <line x1="260" y1="35" x2="260" y2="30" stroke-width="1.5" fill="none" class="dgm-ink-stroke"/>
+  <line x1="30" y1="30" x2="260" y2="30" stroke-width="1" fill="none" class="dgm-ink-stroke"/>
+  <text x="145" y="26" text-anchor="middle" font-size="9" class="dgm-ink">request = 250m CPU / 256Mi</text>
+  <line x1="400" y1="35" x2="400" y2="28" stroke-width="1.5" fill="none" class="dgm-accent-stroke"/>
+  <line x1="260" y1="28" x2="400" y2="28" stroke-width="1" fill="none" class="dgm-accent-stroke"/>
+  <text x="330" y="24" text-anchor="middle" font-size="9" class="dgm-accent">limit = 500m CPU / 512Mi</text>
+  <!-- QoS classes section -->
+  <text x="30" y="115" font-size="12" font-weight="bold" class="dgm-ink">QoS Classes</text>
+  <!-- Guaranteed -->
+  <rect x="30" y="125" width="185" height="130" rx="8" fill="none" stroke-width="2" class="dgm-stroke"/>
+  <text x="122" y="144" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">Guaranteed</text>
+  <rect x="45" y="152" width="155" height="20" rx="4" class="dgm-accent-soft"/>
+  <rect x="45" y="152" width="155" height="20" rx="4" fill="none" stroke-width="1" class="dgm-accent-stroke"/>
+  <text x="122" y="166" text-anchor="middle" font-size="10" class="dgm-ink">requests == limits</text>
+  <text x="122" y="184" text-anchor="middle" font-size="10" class="dgm-muted">(CPU + memory)</text>
+  <text x="122" y="200" text-anchor="middle" font-size="10" class="dgm-muted">all containers</text>
+  <text x="122" y="218" text-anchor="middle" font-size="10" class="dgm-ink">Last evicted</text>
+  <rect x="45" y="222" width="155" height="24" rx="4" class="dgm-accent-soft"/>
+  <rect x="45" y="222" width="155" height="24" rx="4" fill="none" stroke-width="1" class="dgm-accent-stroke"/>
+  <text x="122" y="238" text-anchor="middle" font-size="10" class="dgm-ink">Production: use this</text>
+  <!-- Burstable -->
+  <rect x="237" y="125" width="185" height="130" rx="8" fill="none" stroke-width="2" class="dgm-stroke"/>
+  <text x="329" y="144" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">Burstable</text>
+  <rect x="252" y="152" width="155" height="20" rx="4" class="dgm-surface-2"/>
+  <rect x="252" y="152" width="155" height="20" rx="4" fill="none" stroke-width="1" class="dgm-stroke"/>
+  <text x="329" y="166" text-anchor="middle" font-size="10" class="dgm-ink">requests &lt; limits</text>
+  <text x="329" y="184" text-anchor="middle" font-size="10" class="dgm-muted">at least one container</text>
+  <text x="329" y="200" text-anchor="middle" font-size="10" class="dgm-muted">has a request/limit</text>
+  <text x="329" y="218" text-anchor="middle" font-size="10" class="dgm-ink">Middle priority</text>
+  <rect x="252" y="222" width="155" height="24" rx="4" class="dgm-surface-2"/>
+  <rect x="252" y="222" width="155" height="24" rx="4" fill="none" stroke-width="1" class="dgm-stroke"/>
+  <text x="329" y="238" text-anchor="middle" font-size="10" class="dgm-ink">Acceptable for most</text>
+  <!-- BestEffort -->
+  <rect x="444" y="125" width="185" height="130" rx="8" fill="none" stroke-width="2" class="dgm-stroke"/>
+  <text x="536" y="144" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">BestEffort</text>
+  <rect x="459" y="152" width="155" height="20" rx="4" class="dgm-surface-2"/>
+  <rect x="459" y="152" width="155" height="20" rx="4" fill="none" stroke-width="1" class="dgm-stroke"/>
+  <text x="536" y="166" text-anchor="middle" font-size="10" class="dgm-ink">no requests/limits set</text>
+  <text x="536" y="184" text-anchor="middle" font-size="10" class="dgm-muted">any container</text>
+  <text x="536" y="200" text-anchor="middle" font-size="10" class="dgm-muted">has none</text>
+  <text x="536" y="218" text-anchor="middle" font-size="10" class="dgm-ink">Evicted first</text>
+  <rect x="459" y="222" width="155" height="24" rx="4" class="dgm-surface-2"/>
+  <rect x="459" y="222" width="155" height="24" rx="4" fill="none" stroke-width="1" class="dgm-stroke"/>
+  <text x="536" y="238" text-anchor="middle" font-size="10" class="dgm-ink">Avoid in production</text>
+</svg>
+<figcaption>CPU/memory request (scheduler reservation) versus limit (hard ceiling), and the three QoS classes that determine eviction order under node pressure.</figcaption>
+</figure>
 
 > **Tip:** For production workloads, aim for **Guaranteed** or **Burstable** QoS. Use `kubectl describe pod <name>` and look for `QoS Class:` in the output.
 

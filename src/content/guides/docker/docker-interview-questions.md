@@ -24,7 +24,7 @@ faqs:
     a: "Named volumes in production for Docker-managed persistent data; bind mounts mainly in local development for live source code."
 ---
 
-This guide is built for DevOps interview prep. It covers the ten core Docker topics that come up repeatedly — from why containers exist through to a production-grade troubleshooting playbook — using scenario-based questions, clear answers, worked examples, and the gotchas interviewers love to probe. Every command is real and runnable on Ubuntu 24.04 with a current Docker Engine.
+This guide is built for DevOps interview prep. It covers the ten core Docker topics that come up repeatedly — from why containers exist through to a production-grade troubleshooting playbook — using scenario-based questions, clear answers, worked examples, and the gotchas interviewers love to probe. Every command is real and runnable on Ubuntu 24.04 with a current Docker Engine. Before diving in, bookmark the [Docker roadmap](/learn/roadmaps/docker) to see how these topics fit into a full learning path.
 
 Study the concepts first in [Docker for DevOps](/learn/guides/docker-for-devops).
 
@@ -82,6 +82,45 @@ This is the single most important distinction in Docker, and it maps perfectly o
 | Analogy | Class / recipe | Object / cooked dish |
 | Lifecycle | Built once, stored, reused | Created, started, stopped, removed |
 | Quantity | One image | Many containers from that one image |
+
+<figure class="dgm" role="img" aria-label="One read-only image producing three independent running containers, each with its own writable layer">
+<svg viewBox="0 0 680 220" width="680" height="220" xmlns="http://www.w3.org/2000/svg">
+  <!-- Image box -->
+  <rect x="20" y="70" width="160" height="80" rx="8" fill="none" stroke-width="2" class="dgm-accent-stroke"/>
+  <rect x="20" y="70" width="160" height="80" rx="8" class="dgm-accent-soft"/>
+  <text x="100" y="104" text-anchor="middle" font-size="13" font-weight="bold" class="dgm-ink">Docker Image</text>
+  <text x="100" y="122" text-anchor="middle" font-size="10" class="dgm-muted">(read-only template)</text>
+  <!-- Arrows -->
+  <path d="M182 90 L240 60" fill="none" stroke-width="1.5" class="dgm-ink-stroke"/>
+  <path d="M182 110 L240 110" fill="none" stroke-width="1.5" class="dgm-ink-stroke"/>
+  <path d="M182 130 L240 160" fill="none" stroke-width="1.5" class="dgm-ink-stroke"/>
+  <polygon points="240,56 232,62 238,68" class="dgm-ink"/>
+  <polygon points="240,106 232,108 232,114" class="dgm-ink"/>
+  <polygon points="240,156 232,154 236,162" class="dgm-ink"/>
+  <!-- Container 1 -->
+  <rect x="244" y="30" width="140" height="60" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <rect x="244" y="30" width="140" height="60" rx="6" class="dgm-surface-2"/>
+  <text x="314" y="57" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Container 1</text>
+  <rect x="256" y="66" width="116" height="14" rx="3" class="dgm-accent-soft"/>
+  <text x="314" y="77" text-anchor="middle" font-size="9" class="dgm-muted">writable layer</text>
+  <!-- Container 2 -->
+  <rect x="244" y="80" width="140" height="60" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <rect x="244" y="80" width="140" height="60" rx="6" class="dgm-surface-2"/>
+  <text x="314" y="107" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Container 2</text>
+  <rect x="256" y="116" width="116" height="14" rx="3" class="dgm-accent-soft"/>
+  <text x="314" y="127" text-anchor="middle" font-size="9" class="dgm-muted">writable layer</text>
+  <!-- Container 3 -->
+  <rect x="244" y="130" width="140" height="60" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
+  <rect x="244" y="130" width="140" height="60" rx="6" class="dgm-surface-2"/>
+  <text x="314" y="157" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Container 3</text>
+  <rect x="256" y="166" width="116" height="14" rx="3" class="dgm-accent-soft"/>
+  <text x="314" y="177" text-anchor="middle" font-size="9" class="dgm-muted">writable layer</text>
+  <!-- Legend labels -->
+  <text x="100" y="168" text-anchor="middle" font-size="10" class="dgm-muted">shared image layers</text>
+  <text x="314" y="205" text-anchor="middle" font-size="10" class="dgm-muted">each container: isolated, running instance</text>
+</svg>
+<figcaption>One immutable image produces many independent containers, each adding its own ephemeral writable layer on top.</figcaption>
+</figure>
 
 ### The Docker Engine Model
 
@@ -360,6 +399,35 @@ CMD ["server.js"]
 | Typical use | App that users may re-run with different args | Wrapper / tool where the binary is fixed |
 | Can appear multiple times | Only last one wins | Only last one wins |
 
+<figure class="dgm" role="img" aria-label="ENTRYPOINT provides the fixed executable while CMD supplies default overridable arguments, combining into the final container command">
+<svg viewBox="0 0 680 180" width="680" height="180" xmlns="http://www.w3.org/2000/svg">
+  <!-- ENTRYPOINT box -->
+  <rect x="20" y="40" width="180" height="60" rx="8" fill="none" stroke-width="2" class="dgm-accent-stroke"/>
+  <rect x="20" y="40" width="180" height="60" rx="8" class="dgm-accent-soft"/>
+  <text x="110" y="66" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">ENTRYPOINT</text>
+  <text x="110" y="84" text-anchor="middle" font-size="11" class="dgm-muted">["node"]</text>
+  <text x="110" y="115" text-anchor="middle" font-size="9" class="dgm-muted">fixed — needs --entrypoint to override</text>
+  <!-- CMD box -->
+  <rect x="240" y="40" width="180" height="60" rx="8" fill="none" stroke-width="2" class="dgm-stroke"/>
+  <rect x="240" y="40" width="180" height="60" rx="8" class="dgm-surface-2"/>
+  <text x="330" y="66" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">CMD</text>
+  <text x="330" y="84" text-anchor="middle" font-size="11" class="dgm-muted">["server.js"]</text>
+  <text x="330" y="115" text-anchor="middle" font-size="9" class="dgm-muted">default args — easily overridden at run time</text>
+  <!-- Plus sign -->
+  <text x="225" y="76" text-anchor="middle" font-size="20" font-weight="bold" class="dgm-muted">+</text>
+  <!-- Arrow -->
+  <path d="M422 70 L462 70" fill="none" stroke-width="1.5" class="dgm-ink-stroke"/>
+  <polygon points="462,65 472,70 462,75" class="dgm-ink"/>
+  <!-- Result box -->
+  <rect x="476" y="40" width="184" height="60" rx="8" fill="none" stroke-width="2" class="dgm-stroke"/>
+  <rect x="476" y="40" width="184" height="60" rx="8" class="dgm-surface-2"/>
+  <text x="568" y="63" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Final command</text>
+  <text x="568" y="81" text-anchor="middle" font-size="11" class="dgm-muted">node server.js</text>
+  <text x="568" y="115" text-anchor="middle" font-size="9" class="dgm-muted">override CMD only: docker run img other.js</text>
+</svg>
+<figcaption>ENTRYPOINT locks in the executable; CMD provides the default arguments that a caller can replace without touching the entrypoint.</figcaption>
+</figure>
+
 ### EXPOSE — document the port
 
 `EXPOSE` documents which port the container listens on. It does **not** publish the port — it is metadata for humans and tools. You still need `docker run -p 3000:3000` to actually map it to the host.
@@ -575,6 +643,46 @@ Containers are **ephemeral**. The writable layer lives and dies with the contain
 | Portability | High (Docker-native) | Low (host-path dependent) | N/A (ephemeral) |
 | Performance on Mac/Win | Fast (in VM) | Slower (host↔VM sync) | Fast (RAM) |
 | Survives container rm | Yes | Yes (it's on host) | No |
+
+<figure class="dgm" role="img" aria-label="Named volume managed by Docker on the left and a bind mount pointing to a specific host path on the right, both feeding into the same container">
+<svg viewBox="0 0 680 230" width="680" height="230" xmlns="http://www.w3.org/2000/svg">
+  <!-- Container (center) -->
+  <rect x="260" y="80" width="160" height="70" rx="8" fill="none" stroke-width="2" class="dgm-stroke"/>
+  <rect x="260" y="80" width="160" height="70" rx="8" class="dgm-surface-2"/>
+  <text x="340" y="110" text-anchor="middle" font-size="13" font-weight="bold" class="dgm-ink">Container</text>
+  <text x="340" y="130" text-anchor="middle" font-size="10" class="dgm-muted">/var/lib/postgresql/data</text>
+  <text x="280" y="162" text-anchor="middle" font-size="9" class="dgm-muted">/app (bind)</text>
+
+  <!-- Named volume (left) -->
+  <rect x="20" y="60" width="170" height="70" rx="8" fill="none" stroke-width="2" class="dgm-accent-stroke"/>
+  <rect x="20" y="60" width="170" height="70" rx="8" class="dgm-accent-soft"/>
+  <text x="105" y="86" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Named Volume</text>
+  <text x="105" y="103" text-anchor="middle" font-size="10" class="dgm-muted">pgdata</text>
+  <text x="105" y="119" text-anchor="middle" font-size="9" class="dgm-muted">Docker-managed storage</text>
+  <text x="105" y="148" text-anchor="middle" font-size="9" class="dgm-muted">/var/lib/docker/volumes/pgdata</text>
+
+  <!-- Named volume arrow -->
+  <path d="M192 96 L258 105" fill="none" stroke-width="1.5" class="dgm-ink-stroke"/>
+  <polygon points="258,100 252,107 264,110" class="dgm-ink"/>
+
+  <!-- Bind mount (right) -->
+  <rect x="490" y="60" width="170" height="70" rx="8" fill="none" stroke-width="2" class="dgm-stroke"/>
+  <rect x="490" y="60" width="170" height="70" rx="8" class="dgm-surface-2"/>
+  <text x="575" y="86" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Bind Mount</text>
+  <text x="575" y="103" text-anchor="middle" font-size="10" class="dgm-muted">/home/user/project</text>
+  <text x="575" y="119" text-anchor="middle" font-size="9" class="dgm-muted">host path you control</text>
+  <text x="575" y="148" text-anchor="middle" font-size="9" class="dgm-muted">live edits visible instantly</text>
+
+  <!-- Bind mount arrow -->
+  <path d="M488 96 L422 112" fill="none" stroke-width="1.5" class="dgm-ink-stroke"/>
+  <polygon points="422,107 428,114 416,116" class="dgm-ink"/>
+
+  <!-- Labels below -->
+  <text x="105" y="175" text-anchor="middle" font-size="10" class="dgm-muted">production DB data</text>
+  <text x="575" y="175" text-anchor="middle" font-size="10" class="dgm-muted">local development source</text>
+</svg>
+<figcaption>Named volumes are Docker-managed and portable (best for production data); bind mounts expose a specific host directory (best for local development).</figcaption>
+</figure>
 
 > **Note:** On Mac/Windows, Docker runs inside a Linux VM, so bind mounts involve syncing between host and VM on every file change — hence the slowdown. Named volumes live entirely inside the VM and are therefore fast.
 
@@ -829,7 +937,7 @@ For readiness, add a `healthcheck` to the dependency service and use `condition:
 
 > **Note:** A new dev joining a team, instead of working through a half-day setup doc, can clone the repo, copy `.env.example` to `.env`, and run `docker compose up -d`. Sixty seconds later the API, database, and cache are running and wired together identically to every other machine — including CI.
 
-> **Tip:** Expect: "What does Compose actually do for you?" — declarative multi-container orchestration on a *single host*: networks, volumes, env, and start order in one file. Be ready for "Does depends_on wait for the service to be ready?" — No, only start order; for readiness add a healthcheck + `condition: service_healthy`. Note the scope: Compose is single-host; for multi-host/cluster orchestration you move to Kubernetes. See the [Kubernetes Resource Calculator](/kubernetes-resource-calculator) when you are ready to plan resource requests for a containerised workload running in a cluster. Mentioning this boundary shows you understand where Compose stops.
+> **Tip:** Expect: "What does Compose actually do for you?" — declarative multi-container orchestration on a *single host*: networks, volumes, env, and start order in one file. Be ready for "Does depends_on wait for the service to be ready?" — No, only start order; for readiness add a healthcheck + `condition: service_healthy`. Note the scope: Compose is single-host; for multi-host/cluster orchestration you move to Kubernetes — see [Kubernetes for DevOps](/learn/guides/kubernetes-for-devops) for a full introduction. See also the [Kubernetes Resource Calculator](/kubernetes-resource-calculator) when you are ready to plan resource requests for a containerised workload running in a cluster. Mentioning this boundary shows you understand where Compose stops.
 
 > **Caution:** `docker compose down -v` deletes named volumes — that `pgdata` volume holding your database goes with it. Great for a clean dev reset, catastrophic on anything you care about. Plain `docker compose down` (no `-v`) keeps volumes. Build the muscle memory now, before you run it on the wrong project.
 
@@ -1005,6 +1113,39 @@ docker inspect -f '{{.State.ExitCode}}' <container>   # just the exit code
 # 4. Get a shell inside a RUNNING container and poke around
 docker exec -it <container> sh     # or 'bash' if the image has it
 ```
+
+<figure class="dgm" role="img" aria-label="Crash-debug flow: docker ps -a reveals exit code, docker logs shows the error, run interactive overrides entrypoint for live inspection, then fix and rebuild">
+<svg viewBox="0 0 680 290" width="680" height="290" xmlns="http://www.w3.org/2000/svg">
+  <!-- Step 1: docker ps -a -->
+  <rect x="220" y="10" width="240" height="50" rx="8" fill="none" stroke-width="2" class="dgm-accent-stroke"/>
+  <rect x="220" y="10" width="240" height="50" rx="8" class="dgm-accent-soft"/>
+  <text x="340" y="32" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">docker ps -a</text>
+  <text x="340" y="50" text-anchor="middle" font-size="10" class="dgm-muted">check exit code (0=clean, 1+=crash)</text>
+  <!-- Arrow -->
+  <path d="M340 62 L340 88" fill="none" stroke-width="1.5" class="dgm-ink-stroke"/>
+  <polygon points="335,88 340,96 345,88" class="dgm-ink"/>
+  <!-- Step 2: docker logs -->
+  <rect x="220" y="98" width="240" height="50" rx="8" fill="none" stroke-width="2" class="dgm-stroke"/>
+  <rect x="220" y="98" width="240" height="50" rx="8" class="dgm-surface-2"/>
+  <text x="340" y="120" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">docker logs</text>
+  <text x="340" y="138" text-anchor="middle" font-size="10" class="dgm-muted">read stdout/stderr for error message</text>
+  <!-- Arrow -->
+  <path d="M340 150 L340 176" fill="none" stroke-width="1.5" class="dgm-ink-stroke"/>
+  <polygon points="335,176 340,184 345,176" class="dgm-ink"/>
+  <!-- Step 3: run interactive -->
+  <rect x="220" y="186" width="240" height="50" rx="8" fill="none" stroke-width="2" class="dgm-stroke"/>
+  <rect x="220" y="186" width="240" height="50" rx="8" class="dgm-surface-2"/>
+  <text x="340" y="208" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">docker run --entrypoint sh</text>
+  <text x="340" y="226" text-anchor="middle" font-size="10" class="dgm-muted">interactive shell to reproduce error live</text>
+  <!-- Arrow -->
+  <path d="M340 238 L340 262" fill="none" stroke-width="1.5" class="dgm-ink-stroke"/>
+  <polygon points="335,262 340,270 345,262" class="dgm-ink"/>
+  <!-- Step 4: fix -->
+  <rect x="220" y="272" width="240" height="12" rx="4" class="dgm-accent-soft"/>
+  <text x="340" y="282" text-anchor="middle" font-size="10" font-weight="bold" class="dgm-ink">fix code / config → rebuild image</text>
+</svg>
+<figcaption>Four-step crash-debug loop: check state, read logs, reproduce interactively, then fix and rebuild.</figcaption>
+</figure>
 
 > **Tip:** A classic question is "a container starts and immediately stops, how do you debug it?" The winning answer names the loop: `docker ps -a` to confirm it exited and see the code, `docker logs` to read the error, then explain the most common cause — there was no long-running foreground process keeping PID 1 alive, or the app crashed on startup. If you can't `exec` into it (because it already exited), mention you can override the entrypoint to debug: `docker run -it --entrypoint sh <image>`.
 
