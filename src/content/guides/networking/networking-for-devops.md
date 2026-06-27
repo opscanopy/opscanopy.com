@@ -62,75 +62,63 @@ Two reference models describe how data travels from application to wire. The OSI
   <!-- TCP/IP column header -->
   <rect x="360" y="10" width="200" height="28" rx="6" class="dgm-accent-soft" />
   <text x="460" y="28" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">TCP/IP Model (4 Layers)</text>
-
   <!-- OSI Layer 7 -->
   <rect x="10" y="48" width="200" height="32" rx="6" class="dgm-surface-2" stroke-width="1.5" />
   <rect x="10" y="48" width="200" height="32" rx="6" class="dgm-accent-stroke" fill="none" stroke-width="1.5" />
   <text x="70" y="68" text-anchor="middle" font-size="11" class="dgm-ink">7 · Application</text>
   <text x="175" y="68" text-anchor="middle" font-size="10" class="dgm-muted">HTTP, DNS, SMTP, SSH</text>
-
   <!-- OSI Layer 6 -->
   <rect x="10" y="84" width="200" height="32" rx="6" class="dgm-surface-2" fill="none" stroke-width="1.5" />
   <rect x="10" y="84" width="200" height="32" rx="6" class="dgm-accent-stroke" fill="none" stroke-width="1.5" />
   <text x="70" y="104" text-anchor="middle" font-size="11" class="dgm-ink">6 · Presentation</text>
   <text x="175" y="104" text-anchor="middle" font-size="10" class="dgm-muted">TLS/SSL, MIME</text>
-
   <!-- OSI Layer 5 -->
   <rect x="10" y="120" width="200" height="32" rx="6" class="dgm-surface-2" fill="none" stroke-width="1.5" />
   <rect x="10" y="120" width="200" height="32" rx="6" class="dgm-accent-stroke" fill="none" stroke-width="1.5" />
   <text x="70" y="140" text-anchor="middle" font-size="11" class="dgm-ink">5 · Session</text>
   <text x="175" y="140" text-anchor="middle" font-size="10" class="dgm-muted">TLS sessions, RPC</text>
-
   <!-- OSI Layer 4 -->
   <rect x="10" y="160" width="200" height="32" rx="6" class="dgm-surface-2" fill="none" stroke-width="1.5" />
   <rect x="10" y="160" width="200" height="32" rx="6" class="dgm-ink-stroke" fill="none" stroke-width="2" />
   <text x="70" y="180" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">4 · Transport</text>
   <text x="175" y="180" text-anchor="middle" font-size="10" class="dgm-muted">TCP, UDP, SCTP</text>
-
   <!-- OSI Layer 3 -->
   <rect x="10" y="196" width="200" height="32" rx="6" class="dgm-surface-2" fill="none" stroke-width="1.5" />
   <rect x="10" y="196" width="200" height="32" rx="6" class="dgm-ink-stroke" fill="none" stroke-width="2" />
   <text x="70" y="216" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">3 · Network</text>
   <text x="175" y="216" text-anchor="middle" font-size="10" class="dgm-muted">IPv4, IPv6, ICMP</text>
-
   <!-- OSI Layer 2 -->
   <rect x="10" y="232" width="200" height="32" rx="6" class="dgm-surface-2" fill="none" stroke-width="1.5" />
   <rect x="10" y="232" width="200" height="32" rx="6" class="dgm-muted-stroke" fill="none" stroke-width="1.5" />
   <text x="70" y="252" text-anchor="middle" font-size="11" class="dgm-ink">2 · Data Link</text>
   <text x="175" y="252" text-anchor="middle" font-size="10" class="dgm-muted">Ethernet, ARP, VLAN</text>
-
   <!-- OSI Layer 1 -->
   <rect x="10" y="268" width="200" height="32" rx="6" class="dgm-surface-2" fill="none" stroke-width="1.5" />
   <rect x="10" y="268" width="200" height="32" rx="6" class="dgm-muted-stroke" fill="none" stroke-width="1.5" />
   <text x="70" y="288" text-anchor="middle" font-size="11" class="dgm-ink">1 · Physical</text>
   <text x="175" y="288" text-anchor="middle" font-size="10" class="dgm-muted">Cable, fiber, radio</text>
-
   <!-- TCP/IP: Application (maps L5-L7) -->
   <rect x="360" y="48" width="200" height="104" rx="6" class="dgm-accent-soft" stroke-width="1.5" />
   <rect x="360" y="48" width="200" height="104" rx="6" class="dgm-accent-stroke" fill="none" stroke-width="1.5" />
   <text x="460" y="105" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Application</text>
   <text x="460" y="122" text-anchor="middle" font-size="10" class="dgm-muted">HTTP · HTTPS · DNS</text>
   <text x="460" y="138" text-anchor="middle" font-size="10" class="dgm-muted">SMTP · TLS · SSH</text>
-
   <!-- TCP/IP: Transport (maps L4) -->
   <rect x="360" y="160" width="200" height="32" rx="6" class="dgm-surface-2" fill="none" stroke-width="1.5" />
   <rect x="360" y="160" width="200" height="32" rx="6" class="dgm-ink-stroke" fill="none" stroke-width="2" />
   <text x="460" y="175" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Transport</text>
   <text x="460" y="188" text-anchor="middle" font-size="10" class="dgm-muted">TCP · UDP · SCTP</text>
-
   <!-- TCP/IP: Internet (maps L3) -->
   <rect x="360" y="196" width="200" height="32" rx="6" class="dgm-surface-2" fill="none" stroke-width="1.5" />
   <rect x="360" y="196" width="200" height="32" rx="6" class="dgm-ink-stroke" fill="none" stroke-width="2" />
   <text x="460" y="211" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Internet</text>
   <text x="460" y="224" text-anchor="middle" font-size="10" class="dgm-muted">IPv4 · IPv6 · ICMP</text>
-
   <!-- TCP/IP: Network Access (maps L1-L2) -->
   <rect x="360" y="232" width="200" height="68" rx="6" class="dgm-surface-2" fill="none" stroke-width="1.5" />
   <rect x="360" y="232" width="200" height="68" rx="6" class="dgm-muted-stroke" fill="none" stroke-width="1.5" />
   <text x="460" y="261" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Network Access</text>
   <text x="460" y="278" text-anchor="middle" font-size="10" class="dgm-muted">Ethernet · Wi-Fi · ARP</text>
   <text x="460" y="293" text-anchor="middle" font-size="10" class="dgm-muted">Cable · fiber · radio</text>
-
   <!-- Mapping arrows -->
   <!-- L7-L5 → Application -->
   <line x1="210" y1="100" x2="360" y2="100" class="dgm-ink-stroke" stroke-width="1.5" fill="none" />
@@ -224,27 +212,22 @@ A **subnet mask** is a 32-bit value with all network bits set to 1 and all host 
 <svg viewBox="0 0 680 260" width="680" height="260" xmlns="http://www.w3.org/2000/svg">
   <!-- Title -->
   <text x="340" y="22" text-anchor="middle" font-size="13" font-weight="bold" class="dgm-ink">192.168.1.0 /24 — CIDR Breakdown</text>
-
   <!-- 32-bit bar divided: 24 network bits + 8 host bits -->
   <!-- Network bits block -->
   <rect x="20" y="38" width="420" height="44" rx="6" class="dgm-accent-soft" stroke-width="1.5" />
   <rect x="20" y="38" width="420" height="44" rx="6" class="dgm-accent-stroke" fill="none" stroke-width="1.5" />
   <text x="230" y="56" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">Network Portion — 24 bits</text>
   <text x="230" y="72" text-anchor="middle" font-size="10" class="dgm-muted">192 . 168 . 1</text>
-
   <!-- Host bits block -->
   <rect x="444" y="38" width="216" height="44" rx="6" class="dgm-surface-2" stroke-width="1.5" />
   <rect x="444" y="38" width="216" height="44" rx="6" class="dgm-ink-stroke" fill="none" stroke-width="2" />
   <text x="552" y="56" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">Host Portion — 8 bits</text>
   <text x="552" y="72" text-anchor="middle" font-size="10" class="dgm-muted">0 – 255  (256 addresses)</text>
-
   <!-- Divider label -->
   <line x1="440" y1="30" x2="440" y2="90" class="dgm-ink-stroke" stroke-width="1.5" fill="none" stroke-dasharray="4 3" />
   <text x="440" y="104" text-anchor="middle" font-size="10" class="dgm-muted">/24 boundary</text>
-
   <!-- Subnet mask -->
   <text x="340" y="124" text-anchor="middle" font-size="11" class="dgm-ink">Subnet mask: <tspan font-weight="bold">255.255.255.0</tspan>  |  Binary: <tspan font-weight="bold">11111111.11111111.11111111.00000000</tspan></text>
-
   <!-- Three address boxes -->
   <!-- Network address -->
   <rect x="20" y="138" width="198" height="52" rx="8" class="dgm-surface-2" stroke-width="1.5" />
@@ -252,21 +235,18 @@ A **subnet mask** is a 32-bit value with all network bits set to 1 and all host 
   <text x="119" y="158" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">Network Address</text>
   <text x="119" y="176" text-anchor="middle" font-size="12" class="dgm-accent">192.168.1.0</text>
   <text x="119" y="191" text-anchor="middle" font-size="9" class="dgm-muted">(all host bits = 0)</text>
-
   <!-- Usable range -->
   <rect x="240" y="138" width="200" height="52" rx="8" class="dgm-accent-soft" stroke-width="1.5" />
   <rect x="240" y="138" width="200" height="52" rx="8" class="dgm-accent-stroke" fill="none" stroke-width="2" />
   <text x="340" y="158" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">Usable Hosts (254)</text>
   <text x="340" y="176" text-anchor="middle" font-size="11" class="dgm-ink">192.168.1.1 – .254</text>
   <text x="340" y="191" text-anchor="middle" font-size="9" class="dgm-muted">2^8 − 2 = 254 hosts</text>
-
   <!-- Broadcast address -->
   <rect x="462" y="138" width="198" height="52" rx="8" class="dgm-surface-2" stroke-width="1.5" />
   <rect x="462" y="138" width="198" height="52" rx="8" class="dgm-muted-stroke" fill="none" stroke-width="1.5" />
   <text x="561" y="158" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">Broadcast Address</text>
   <text x="561" y="176" text-anchor="middle" font-size="12" class="dgm-accent">192.168.1.255</text>
   <text x="561" y="191" text-anchor="middle" font-size="9" class="dgm-muted">(all host bits = 1)</text>
-
   <!-- Formula reminder -->
   <rect x="160" y="204" width="360" height="48" rx="8" class="dgm-surface-2" stroke-width="1.5" />
   <rect x="160" y="204" width="360" height="48" rx="8" class="dgm-muted-stroke" fill="none" stroke-width="1.5" />
@@ -346,34 +326,28 @@ Client → Server   ACK       (ack Y+1)
   <rect x="30" y="10" width="120" height="36" rx="8" class="dgm-accent-soft" stroke-width="1.5" />
   <rect x="30" y="10" width="120" height="36" rx="8" class="dgm-accent-stroke" fill="none" stroke-width="1.5" />
   <text x="90" y="33" text-anchor="middle" font-size="13" font-weight="bold" class="dgm-ink">Client</text>
-
   <!-- Server column -->
   <rect x="410" y="10" width="120" height="36" rx="8" class="dgm-accent-soft" stroke-width="1.5" />
   <rect x="410" y="10" width="120" height="36" rx="8" class="dgm-accent-stroke" fill="none" stroke-width="1.5" />
   <text x="470" y="33" text-anchor="middle" font-size="13" font-weight="bold" class="dgm-ink">Server</text>
-
   <!-- Lifelines -->
   <line x1="90" y1="46" x2="90" y2="240" class="dgm-muted-stroke" stroke-width="1.5" fill="none" stroke-dasharray="5 4" />
   <line x1="470" y1="46" x2="470" y2="240" class="dgm-muted-stroke" stroke-width="1.5" fill="none" stroke-dasharray="5 4" />
-
   <!-- Step 1: SYN -->
   <line x1="90" y1="80" x2="460" y2="110" class="dgm-accent-stroke" stroke-width="2" fill="none" />
   <polygon points="454,104 470,110 460,118" class="dgm-accent" />
   <rect x="190" y="66" width="180" height="26" rx="6" class="dgm-surface-2" />
   <text x="280" y="84" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">SYN  (seq=X)</text>
-
   <!-- Step 2: SYN-ACK -->
   <line x1="470" y1="130" x2="100" y2="160" class="dgm-ink-stroke" stroke-width="2" fill="none" />
   <polygon points="106,154 90,160 100,168" class="dgm-ink" />
   <rect x="185" y="132" width="190" height="26" rx="6" class="dgm-surface-2" />
   <text x="280" y="150" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">SYN-ACK  (seq=Y, ack=X+1)</text>
-
   <!-- Step 3: ACK -->
   <line x1="90" y1="180" x2="460" y2="210" class="dgm-accent-stroke" stroke-width="2" fill="none" />
   <polygon points="454,204 470,210 460,218" class="dgm-accent" />
   <rect x="210" y="182" width="140" height="26" rx="6" class="dgm-surface-2" />
   <text x="280" y="200" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">ACK  (ack=Y+1)</text>
-
   <!-- Connection established label -->
   <line x1="60" y1="230" x2="500" y2="230" class="dgm-muted-stroke" stroke-width="1.5" fill="none" stroke-dasharray="3 3" />
   <text x="280" y="248" text-anchor="middle" font-size="10" class="dgm-muted">Connection established — data transfer begins</text>
@@ -499,49 +473,40 @@ Client → Stub Resolver → Recursive Resolver → Root NS → TLD NS → Auth 
   <rect x="10" y="20" width="90" height="44" rx="8" class="dgm-accent-stroke" fill="none" stroke-width="1.5" />
   <text x="55" y="40" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">Client</text>
   <text x="55" y="56" text-anchor="middle" font-size="9" class="dgm-muted">browser / app</text>
-
   <!-- Recursive Resolver -->
   <rect x="150" y="20" width="110" height="44" rx="8" class="dgm-surface-2" stroke-width="1.5" />
   <rect x="150" y="20" width="110" height="44" rx="8" class="dgm-ink-stroke" fill="none" stroke-width="1.5" />
   <text x="205" y="40" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">Recursive</text>
   <text x="205" y="56" text-anchor="middle" font-size="9" class="dgm-muted">Resolver (8.8.8.8)</text>
-
   <!-- Root NS -->
   <rect x="320" y="20" width="90" height="44" rx="8" class="dgm-surface-2" stroke-width="1.5" />
   <rect x="320" y="20" width="90" height="44" rx="8" class="dgm-muted-stroke" fill="none" stroke-width="1.5" />
   <text x="365" y="40" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">Root NS</text>
   <text x="365" y="56" text-anchor="middle" font-size="9" class="dgm-muted">13 root servers</text>
-
   <!-- TLD NS -->
   <rect x="460" y="20" width="90" height="44" rx="8" class="dgm-surface-2" stroke-width="1.5" />
   <rect x="460" y="20" width="90" height="44" rx="8" class="dgm-muted-stroke" fill="none" stroke-width="1.5" />
   <text x="505" y="40" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">TLD NS</text>
   <text x="505" y="56" text-anchor="middle" font-size="9" class="dgm-muted">.com / .io / .net</text>
-
   <!-- Authoritative NS -->
   <rect x="590" y="20" width="84" height="44" rx="8" class="dgm-surface-2" stroke-width="1.5" />
   <rect x="590" y="20" width="84" height="44" rx="8" class="dgm-accent-stroke" fill="none" stroke-width="2" />
   <text x="632" y="40" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">Auth NS</text>
   <text x="632" y="56" text-anchor="middle" font-size="9" class="dgm-muted">ns1.example.com</text>
-
   <!-- Forward query arrows (top row) -->
   <!-- Client → Resolver -->
   <line x1="100" y1="36" x2="148" y2="36" class="dgm-accent-stroke" stroke-width="2" fill="none" />
   <polygon points="142,32 150,36 142,40" class="dgm-accent" />
   <text x="124" y="30" text-anchor="middle" font-size="9" class="dgm-muted">query</text>
-
   <!-- Resolver → Root -->
   <line x1="260" y1="36" x2="318" y2="36" class="dgm-ink-stroke" stroke-width="1.5" fill="none" />
   <polygon points="312,32 320,36 312,40" class="dgm-ink" />
-
   <!-- Root → TLD -->
   <line x1="410" y1="36" x2="458" y2="36" class="dgm-ink-stroke" stroke-width="1.5" fill="none" />
   <polygon points="452,32 460,36 452,40" class="dgm-ink" />
-
   <!-- TLD → Auth -->
   <line x1="550" y1="36" x2="588" y2="36" class="dgm-ink-stroke" stroke-width="1.5" fill="none" />
   <polygon points="582,32 590,36 582,40" class="dgm-ink" />
-
   <!-- Return arrows (bottom row) -->
   <!-- Auth → TLD return -->
   <line x1="590" y1="70" x2="552" y2="130" class="dgm-accent-stroke" stroke-width="1.5" fill="none" stroke-dasharray="5 3" />
@@ -549,12 +514,10 @@ Client → Stub Resolver → Recursive Resolver → Root NS → TLD NS → Auth 
   <line x1="320" y1="130" x2="262" y2="130" class="dgm-accent-stroke" stroke-width="1.5" fill="none" stroke-dasharray="5 3" />
   <line x1="150" y1="130" x2="102" y2="130" class="dgm-accent-stroke" stroke-width="1.5" fill="none" stroke-dasharray="5 3" />
   <polygon points="108,126 100,130 108,134" class="dgm-accent" />
-
   <!-- Return path label -->
   <rect x="200" y="110" width="260" height="32" rx="6" class="dgm-surface-2" />
   <text x="330" y="126" text-anchor="middle" font-size="10" class="dgm-muted">A record returned + cached by TTL</text>
   <text x="330" y="140" text-anchor="middle" font-size="10" font-weight="bold" class="dgm-ink">example.com → 93.184.216.34</text>
-
   <!-- Label: query type -->
   <text x="340" y="180" text-anchor="middle" font-size="10" class="dgm-muted">Cache miss: resolver walks Root → TLD → Authoritative iteratively</text>
   <text x="340" y="196" text-anchor="middle" font-size="10" class="dgm-muted">Cache hit: resolver returns immediately without contacting upstream servers</text>
@@ -719,37 +682,29 @@ A load balancer distributes incoming connections or requests across a pool of ba
   <!-- L4 Panel -->
   <rect x="10" y="10" width="318" height="280" rx="8" class="dgm-surface-2" stroke-width="1.5" />
   <rect x="10" y="10" width="318" height="280" rx="8" class="dgm-muted-stroke" fill="none" stroke-width="1.5" />
-
   <rect x="10" y="10" width="318" height="36" rx="8" class="dgm-ink" />
   <text x="169" y="33" text-anchor="middle" font-size="13" font-weight="bold" fill="white">L4 — Transport Layer</text>
-
   <!-- L4 client -->
   <rect x="30" y="62" width="80" height="36" rx="6" class="dgm-surface-2" stroke-width="1.5" />
   <rect x="30" y="62" width="80" height="36" rx="6" class="dgm-ink-stroke" fill="none" stroke-width="1.5" />
   <text x="70" y="84" text-anchor="middle" font-size="11" class="dgm-ink">Client</text>
-
   <!-- L4 LB -->
   <rect x="145" y="62" width="80" height="36" rx="6" class="dgm-accent-soft" stroke-width="1.5" />
   <rect x="145" y="62" width="80" height="36" rx="6" class="dgm-accent-stroke" fill="none" stroke-width="2" />
   <text x="185" y="78" text-anchor="middle" font-size="10" font-weight="bold" class="dgm-ink">L4 Load</text>
   <text x="185" y="92" text-anchor="middle" font-size="10" font-weight="bold" class="dgm-ink">Balancer</text>
-
   <!-- L4 route label -->
   <text x="169" y="120" text-anchor="middle" font-size="10" class="dgm-muted">Routing basis: IP + port only</text>
-
   <!-- L4 backends -->
   <rect x="245" y="140" width="70" height="32" rx="6" class="dgm-surface-2" stroke-width="1.5" />
   <rect x="245" y="140" width="70" height="32" rx="6" class="dgm-muted-stroke" fill="none" stroke-width="1.5" />
   <text x="280" y="160" text-anchor="middle" font-size="10" class="dgm-ink">Server A</text>
-
   <rect x="245" y="184" width="70" height="32" rx="6" class="dgm-surface-2" stroke-width="1.5" />
   <rect x="245" y="184" width="70" height="32" rx="6" class="dgm-muted-stroke" fill="none" stroke-width="1.5" />
   <text x="280" y="204" text-anchor="middle" font-size="10" class="dgm-ink">Server B</text>
-
   <rect x="245" y="228" width="70" height="32" rx="6" class="dgm-surface-2" stroke-width="1.5" />
   <rect x="245" y="228" width="70" height="32" rx="6" class="dgm-muted-stroke" fill="none" stroke-width="1.5" />
   <text x="280" y="248" text-anchor="middle" font-size="10" class="dgm-ink">Server C</text>
-
   <!-- L4 arrows: client → LB → servers -->
   <line x1="110" y1="80" x2="143" y2="80" class="dgm-ink-stroke" stroke-width="1.5" fill="none" />
   <polygon points="137,76 145,80 137,84" class="dgm-ink" />
@@ -759,49 +714,39 @@ A load balancer distributes incoming connections or requests across a pool of ba
   <polygon points="241,194 245,202 249,194" class="dgm-ink" />
   <line x1="225" y1="80" x2="244" y2="244" class="dgm-ink-stroke" stroke-width="1.5" fill="none" />
   <polygon points="241,238 245,246 249,238" class="dgm-ink" />
-
   <text x="169" y="275" text-anchor="middle" font-size="9" class="dgm-muted">AWS NLB · HAProxy TCP · IPVS</text>
-
   <!-- L7 Panel -->
   <rect x="352" y="10" width="318" height="280" rx="8" class="dgm-surface-2" stroke-width="1.5" />
   <rect x="352" y="10" width="318" height="280" rx="8" class="dgm-accent-stroke" fill="none" stroke-width="1.5" />
-
   <rect x="352" y="10" width="318" height="36" rx="8" class="dgm-accent" />
   <text x="511" y="33" text-anchor="middle" font-size="13" font-weight="bold" fill="white">L7 — Application Layer</text>
-
   <!-- L7 client -->
   <rect x="372" y="62" width="80" height="36" rx="6" class="dgm-surface-2" stroke-width="1.5" />
   <rect x="372" y="62" width="80" height="36" rx="6" class="dgm-ink-stroke" fill="none" stroke-width="1.5" />
   <text x="412" y="84" text-anchor="middle" font-size="11" class="dgm-ink">Client</text>
-
   <!-- L7 LB -->
   <rect x="487" y="55" width="80" height="50" rx="6" class="dgm-accent-soft" stroke-width="1.5" />
   <rect x="487" y="55" width="80" height="50" rx="6" class="dgm-accent-stroke" fill="none" stroke-width="2" />
   <text x="527" y="73" text-anchor="middle" font-size="10" font-weight="bold" class="dgm-ink">L7 Load</text>
   <text x="527" y="86" text-anchor="middle" font-size="10" font-weight="bold" class="dgm-ink">Balancer</text>
   <text x="527" y="99" text-anchor="middle" font-size="8" class="dgm-muted">(inspects HTTP)</text>
-
   <!-- L7 route labels inside LB -->
   <rect x="372" y="120" width="278" height="28" rx="6" class="dgm-accent-soft" stroke-width="1" />
   <rect x="372" y="120" width="278" height="28" rx="6" class="dgm-accent-stroke" fill="none" stroke-width="1" />
   <text x="511" y="138" text-anchor="middle" font-size="9" class="dgm-ink">Routes on: Host header · URL path · Cookie · Method</text>
-
   <!-- L7 backends with route rules -->
   <rect x="579" y="140" width="84" height="32" rx="6" class="dgm-surface-2" stroke-width="1.5" />
   <rect x="579" y="140" width="84" height="32" rx="6" class="dgm-muted-stroke" fill="none" stroke-width="1.5" />
   <text x="621" y="156" text-anchor="middle" font-size="9" font-weight="bold" class="dgm-ink">/api/*</text>
   <text x="621" y="168" text-anchor="middle" font-size="9" class="dgm-muted">API service</text>
-
   <rect x="579" y="184" width="84" height="32" rx="6" class="dgm-surface-2" stroke-width="1.5" />
   <rect x="579" y="184" width="84" height="32" rx="6" class="dgm-muted-stroke" fill="none" stroke-width="1.5" />
   <text x="621" y="200" text-anchor="middle" font-size="9" font-weight="bold" class="dgm-ink">app.example</text>
   <text x="621" y="212" text-anchor="middle" font-size="9" class="dgm-muted">App service</text>
-
   <rect x="579" y="228" width="84" height="32" rx="6" class="dgm-surface-2" stroke-width="1.5" />
   <rect x="579" y="228" width="84" height="32" rx="6" class="dgm-muted-stroke" fill="none" stroke-width="1.5" />
   <text x="621" y="244" text-anchor="middle" font-size="9" font-weight="bold" class="dgm-ink">canary=true</text>
   <text x="621" y="256" text-anchor="middle" font-size="9" class="dgm-muted">Canary pods</text>
-
   <!-- L7 arrows -->
   <line x1="452" y1="80" x2="485" y2="80" class="dgm-ink-stroke" stroke-width="1.5" fill="none" />
   <polygon points="479,76 487,80 479,84" class="dgm-ink" />
@@ -811,7 +756,6 @@ A load balancer distributes incoming connections or requests across a pool of ba
   <polygon points="575,194 579,202 583,194" class="dgm-accent" />
   <line x1="567" y1="80" x2="578" y2="244" class="dgm-accent-stroke" stroke-width="1.5" fill="none" />
   <polygon points="575,238 579,246 583,238" class="dgm-accent" />
-
   <text x="511" y="275" text-anchor="middle" font-size="9" class="dgm-muted">AWS ALB · NGINX · Envoy · Traefik</text>
 </svg>
 <figcaption>L4 load balancers forward TCP/UDP connections by IP and port alone; L7 load balancers inspect HTTP and can route each request by host, path, headers, or cookies.</figcaption>

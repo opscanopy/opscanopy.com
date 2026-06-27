@@ -652,7 +652,6 @@ Containers are **ephemeral**. The writable layer lives and dies with the contain
   <text x="340" y="110" text-anchor="middle" font-size="13" font-weight="bold" class="dgm-ink">Container</text>
   <text x="340" y="130" text-anchor="middle" font-size="10" class="dgm-muted">/var/lib/postgresql/data</text>
   <text x="280" y="162" text-anchor="middle" font-size="9" class="dgm-muted">/app (bind)</text>
-
   <!-- Named volume (left) -->
   <rect x="20" y="60" width="170" height="70" rx="8" fill="none" stroke-width="2" class="dgm-accent-stroke"/>
   <rect x="20" y="60" width="170" height="70" rx="8" class="dgm-accent-soft"/>
@@ -660,11 +659,9 @@ Containers are **ephemeral**. The writable layer lives and dies with the contain
   <text x="105" y="103" text-anchor="middle" font-size="10" class="dgm-muted">pgdata</text>
   <text x="105" y="119" text-anchor="middle" font-size="9" class="dgm-muted">Docker-managed storage</text>
   <text x="105" y="148" text-anchor="middle" font-size="9" class="dgm-muted">/var/lib/docker/volumes/pgdata</text>
-
   <!-- Named volume arrow -->
   <path d="M192 96 L258 105" fill="none" stroke-width="1.5" class="dgm-ink-stroke"/>
   <polygon points="258,100 252,107 264,110" class="dgm-ink"/>
-
   <!-- Bind mount (right) -->
   <rect x="490" y="60" width="170" height="70" rx="8" fill="none" stroke-width="2" class="dgm-stroke"/>
   <rect x="490" y="60" width="170" height="70" rx="8" class="dgm-surface-2"/>
@@ -672,11 +669,9 @@ Containers are **ephemeral**. The writable layer lives and dies with the contain
   <text x="575" y="103" text-anchor="middle" font-size="10" class="dgm-muted">/home/user/project</text>
   <text x="575" y="119" text-anchor="middle" font-size="9" class="dgm-muted">host path you control</text>
   <text x="575" y="148" text-anchor="middle" font-size="9" class="dgm-muted">live edits visible instantly</text>
-
   <!-- Bind mount arrow -->
   <path d="M488 96 L422 112" fill="none" stroke-width="1.5" class="dgm-ink-stroke"/>
   <polygon points="422,107 428,114 416,116" class="dgm-ink"/>
-
   <!-- Labels below -->
   <text x="105" y="175" text-anchor="middle" font-size="10" class="dgm-muted">production DB data</text>
   <text x="575" y="175" text-anchor="middle" font-size="10" class="dgm-muted">local development source</text>

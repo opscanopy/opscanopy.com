@@ -204,10 +204,8 @@ A **Container** shares the host OS kernel but runs in an isolated process namesp
   <text x="83" y="210" text-anchor="middle" font-size="10" class="dgm-muted">VM 1</text>
   <text x="227" y="210" text-anchor="middle" font-size="10" class="dgm-muted">VM 2</text>
   <text x="155" y="232" text-anchor="middle" font-size="10" class="dgm-muted">Each VM includes a full OS (~2–4 GB overhead)</text>
-
   <!-- Divider -->
   <line x1="340" y1="10" x2="340" y2="290" stroke-width="1.5" class="dgm-ink-stroke" stroke-dasharray="6,4"/>
-
   <!-- Container stack -->
   <text x="520" y="18" text-anchor="middle" font-size="13" font-weight="bold" class="dgm-ink">Container</text>
   <!-- Hardware -->
@@ -549,13 +547,11 @@ Docker follows a client-server architecture. When you type `docker run nginx`, a
   <text x="85" y="109" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Docker CLI</text>
   <text x="85" y="126" text-anchor="middle" font-size="10" class="dgm-muted">docker run/build</text>
   <text x="85" y="141" text-anchor="middle" font-size="10" class="dgm-muted">docker push/pull</text>
-
   <!-- Arrow CLI → Daemon -->
   <line x1="151" y1="115" x2="219" y2="115" stroke-width="2" class="dgm-ink-stroke"/>
   <polygon points="219,110 230,115 219,120" class="dgm-ink"/>
   <text x="190" y="108" text-anchor="middle" font-size="9" class="dgm-muted">REST API</text>
   <text x="190" y="129" text-anchor="middle" font-size="9" class="dgm-muted">/var/run/docker.sock</text>
-
   <!-- Docker Daemon box -->
   <rect x="230" y="50" width="200" height="130" rx="8" class="dgm-surface-2" stroke="none"/>
   <rect x="230" y="50" width="200" height="130" rx="8" fill="none" stroke-width="1.5" class="dgm-stroke"/>
@@ -571,17 +567,14 @@ Docker follows a client-server architecture. When you type `docker run nginx`, a
   <!-- containerd label -->
   <text x="330" y="148" text-anchor="middle" font-size="10" class="dgm-muted">containerd → runc</text>
   <text x="330" y="165" text-anchor="middle" font-size="10" class="dgm-muted">namespaces + cgroups</text>
-
   <!-- Arrow Daemon → Registry (pull) -->
   <line x1="431" y1="100" x2="499" y2="100" stroke-width="2" class="dgm-ink-stroke"/>
   <polygon points="499,95 510,100 499,105" class="dgm-ink"/>
   <text x="470" y="93" text-anchor="middle" font-size="9" class="dgm-muted">push</text>
-
   <!-- Arrow Registry → Daemon (push) -->
   <line x1="510" y1="130" x2="432" y2="130" stroke-width="2" class="dgm-ink-stroke"/>
   <polygon points="432,125 421,130 432,135" class="dgm-ink"/>
   <text x="470" y="148" text-anchor="middle" font-size="9" class="dgm-muted">pull</text>
-
   <!-- Registry box -->
   <rect x="510" y="60" width="150" height="110" rx="8" class="dgm-surface-2" stroke="none"/>
   <rect x="510" y="60" width="150" height="110" rx="8" fill="none" stroke-width="1.5" class="dgm-stroke"/>
@@ -1428,7 +1421,6 @@ docker logout myregistry.company.com
   <rect x="478" y="228" width="82" height="22" rx="6" class="dgm-accent-soft" stroke="none"/>
   <rect x="478" y="228" width="82" height="22" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
   <text x="519" y="244" text-anchor="middle" font-size="10" font-weight="bold" class="dgm-ink">cache HIT ✓</text>
-
   <!-- Layer 2: Deps -->
   <rect x="60" y="168" width="400" height="44" rx="7" class="dgm-surface-2" stroke="none"/>
   <rect x="60" y="168" width="400" height="44" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
@@ -1438,7 +1430,6 @@ docker logout myregistry.company.com
   <rect x="478" y="176" width="82" height="22" rx="6" class="dgm-accent-soft" stroke="none"/>
   <rect x="478" y="176" width="82" height="22" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
   <text x="519" y="192" text-anchor="middle" font-size="10" font-weight="bold" class="dgm-ink">cache HIT ✓</text>
-
   <!-- Layer 3: App code -->
   <rect x="60" y="116" width="400" height="44" rx="7" class="dgm-surface-2" stroke="none"/>
   <rect x="60" y="116" width="400" height="44" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
@@ -1448,13 +1439,11 @@ docker logout myregistry.company.com
   <rect x="478" y="124" width="82" height="22" rx="6" class="dgm-surface-2" stroke="none"/>
   <rect x="478" y="124" width="82" height="22" rx="6" fill="none" stroke-width="1.5" class="dgm-muted-stroke"/>
   <text x="519" y="140" text-anchor="middle" font-size="10" font-weight="bold" class="dgm-muted">cache MISS ✗</text>
-
   <!-- Container writable layer -->
   <rect x="60" y="58" width="400" height="44" rx="7" class="dgm-accent-soft" stroke="none"/>
   <rect x="60" y="58" width="400" height="44" rx="7" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
   <text x="260" y="78" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Container Layer — WRITABLE (OverlayFS upperdir)</text>
   <text x="260" y="94" text-anchor="middle" font-size="10" class="dgm-muted">Runtime writes · CoW · deleted when container is removed</text>
-
   <!-- Up arrows between layers -->
   <line x1="260" y1="216" x2="260" y2="214" stroke-width="2" class="dgm-ink-stroke"/>
   <line x1="260" y1="216" x2="260" y2="164" stroke-width="1.5" class="dgm-ink-stroke"/>
@@ -1463,7 +1452,6 @@ docker logout myregistry.company.com
   <polygon points="255,113 260,102 265,113" class="dgm-ink"/>
   <line x1="260" y1="112" x2="260" y2="104" stroke-width="1.5" class="dgm-ink-stroke"/>
   <polygon points="255,105 260,94 265,105" class="dgm-ink"/>
-
   <!-- Read-only label -->
   <text x="22" y="200" text-anchor="middle" font-size="10" class="dgm-muted" transform="rotate(-90,22,200)">READ-ONLY</text>
   <!-- Writable label -->
@@ -2841,14 +2829,12 @@ trivy image myapp:latest
   <!-- Size badge -->
   <rect x="90" y="166" width="130" height="20" rx="5" class="dgm-surface-2" stroke="none"/>
   <text x="155" y="181" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-muted">~1.2 GB  (discarded)</text>
-
   <!-- COPY arrow -->
   <line x1="292" y1="110" x2="356" y2="110" stroke-width="2" class="dgm-ink-stroke"/>
   <polygon points="356,105 368,110 356,115" class="dgm-ink"/>
   <text x="330" y="100" text-anchor="middle" font-size="10" class="dgm-ink">COPY</text>
   <text x="330" y="128" text-anchor="middle" font-size="9" class="dgm-muted">--from=builder</text>
   <text x="330" y="142" text-anchor="middle" font-size="9" class="dgm-muted">/app/dist only</text>
-
   <!-- Final stage (slim) -->
   <rect x="368" y="54" width="290" height="112" rx="8" class="dgm-accent-soft" stroke="none"/>
   <rect x="368" y="54" width="290" height="112" rx="8" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
@@ -3495,12 +3481,10 @@ Internet traffic arrives at the host → is forwarded to the `docker0` bridge �
   <rect x="10" y="10" width="660" height="260" rx="8" class="dgm-surface-2" stroke="none"/>
   <rect x="10" y="10" width="660" height="260" rx="8" fill="none" stroke-width="1.5" class="dgm-stroke"/>
   <text x="340" y="32" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Host Machine  (eth0: 192.168.1.10)</text>
-
   <!-- Bridge network outline -->
   <rect x="160" y="50" width="360" height="130" rx="8" class="dgm-accent-soft" stroke="none"/>
   <rect x="160" y="50" width="360" height="130" rx="8" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
   <text x="340" y="70" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">docker0 bridge  (172.17.0.1/16)</text>
-
   <!-- Container A -->
   <rect x="175" y="82" width="150" height="80" rx="7" class="dgm-surface-2" stroke="none"/>
   <rect x="175" y="82" width="150" height="80" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
@@ -3508,7 +3492,6 @@ Internet traffic arrives at the host → is forwarded to the `docker0` bridge �
   <text x="250" y="118" text-anchor="middle" font-size="10" class="dgm-muted">eth0: 172.17.0.2</text>
   <text x="250" y="133" text-anchor="middle" font-size="10" class="dgm-muted">port 80 (nginx)</text>
   <text x="250" y="148" text-anchor="middle" font-size="10" class="dgm-muted">veth0 ↔ bridge</text>
-
   <!-- Container B -->
   <rect x="355" y="82" width="150" height="80" rx="7" class="dgm-surface-2" stroke="none"/>
   <rect x="355" y="82" width="150" height="80" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
@@ -3516,11 +3499,9 @@ Internet traffic arrives at the host → is forwarded to the `docker0` bridge �
   <text x="430" y="118" text-anchor="middle" font-size="10" class="dgm-muted">eth0: 172.17.0.3</text>
   <text x="430" y="133" text-anchor="middle" font-size="10" class="dgm-muted">port 3000 (api)</text>
   <text x="430" y="148" text-anchor="middle" font-size="10" class="dgm-muted">veth1 ↔ bridge</text>
-
   <!-- Container-to-container arrow -->
   <line x1="326" y1="122" x2="354" y2="122" stroke-width="1.5" class="dgm-ink-stroke" stroke-dasharray="4,3"/>
   <polygon points="354,117 362,122 354,127" class="dgm-ink"/>
-
   <!-- Published port arrow: external → host → container A -->
   <text x="340" y="215" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">Published Port Mapping</text>
   <!-- External request box -->
@@ -3538,7 +3519,6 @@ Internet traffic arrives at the host → is forwarded to the `docker0` bridge �
   <!-- Arrow up into Container A -->
   <line x1="271" y1="208" x2="250" y2="165" stroke-width="1.5" class="dgm-ink-stroke"/>
   <polygon points="245,166 250,155 255,166" class="dgm-ink"/>
-
   <!-- Internet label outside -->
   <text x="80" y="182" text-anchor="middle" font-size="10" class="dgm-muted">Internet</text>
 </svg>
@@ -4485,39 +4465,33 @@ Also make sure your `.env` files are correctly structured — you can validate t
   <text x="100" y="136" text-anchor="middle" font-size="10" class="dgm-muted">  db: image: postgres</text>
   <text x="100" y="152" text-anchor="middle" font-size="10" class="dgm-muted">  cache: image: redis</text>
   <text x="100" y="172" text-anchor="middle" font-size="10" class="dgm-muted">networks: app-net</text>
-
   <!-- Arrow + command label -->
   <line x1="182" y1="125" x2="240" y2="125" stroke-width="2" class="dgm-ink-stroke"/>
   <polygon points="240,120 252,125 240,130" class="dgm-ink"/>
   <text x="216" y="115" text-anchor="middle" font-size="10" class="dgm-ink">docker</text>
   <text x="216" y="143" text-anchor="middle" font-size="10" class="dgm-ink">compose up</text>
-
   <!-- Shared network outline -->
   <rect x="252" y="30" width="408" height="180" rx="8" class="dgm-accent-soft" stroke="none"/>
   <rect x="252" y="30" width="408" height="180" rx="8" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
   <text x="456" y="52" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">Shared Network: app-net</text>
-
   <!-- Web service -->
   <rect x="268" y="64" width="114" height="72" rx="7" class="dgm-surface-2" stroke="none"/>
   <rect x="268" y="64" width="114" height="72" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
   <text x="325" y="86" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">web</text>
   <text x="325" y="103" text-anchor="middle" font-size="10" class="dgm-muted">nginx / React</text>
   <text x="325" y="119" text-anchor="middle" font-size="10" class="dgm-muted">port 3000:80</text>
-
   <!-- DB service -->
   <rect x="399" y="64" width="114" height="72" rx="7" class="dgm-surface-2" stroke="none"/>
   <rect x="399" y="64" width="114" height="72" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
   <text x="456" y="86" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">db</text>
   <text x="456" y="103" text-anchor="middle" font-size="10" class="dgm-muted">postgres:15</text>
   <text x="456" y="119" text-anchor="middle" font-size="10" class="dgm-muted">volume: pg_data</text>
-
   <!-- Cache service -->
   <rect x="530" y="64" width="114" height="72" rx="7" class="dgm-surface-2" stroke="none"/>
   <rect x="530" y="64" width="114" height="72" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
   <text x="587" y="86" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">cache</text>
   <text x="587" y="103" text-anchor="middle" font-size="10" class="dgm-muted">redis:alpine</text>
   <text x="587" y="119" text-anchor="middle" font-size="10" class="dgm-muted">volume: redis_data</text>
-
   <!-- Named volume cylinders -->
   <!-- pg_data volume -->
   <ellipse cx="456" cy="175" rx="38" ry="10" class="dgm-accent-soft" stroke="none"/>
@@ -4537,7 +4511,6 @@ Also make sure your `.env` files are correctly structured — you can validate t
   <ellipse cx="587" cy="195" rx="38" ry="10" class="dgm-accent-soft" stroke="none"/>
   <ellipse cx="587" cy="195" rx="38" ry="10" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
   <text x="587" y="191" text-anchor="middle" font-size="9" class="dgm-ink">redis_data</text>
-
   <!-- Connect volumes to services -->
   <line x1="456" y1="136" x2="456" y2="164" stroke-width="1.5" class="dgm-ink-stroke" stroke-dasharray="4,3"/>
   <line x1="587" y1="136" x2="587" y2="164" stroke-width="1.5" class="dgm-ink-stroke" stroke-dasharray="4,3"/>

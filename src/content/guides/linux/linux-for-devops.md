@@ -625,7 +625,6 @@ See also: [SSH Secure Shell Critical](#ssh-secure-shell-critical) for how permis
   <rect x="450" y="10" width="180" height="30" rx="7" class="dgm-surface-2" stroke="none" fill="currentColor"/>
   <rect x="450" y="10" width="180" height="30" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
   <text x="540" y="30" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">Others (o)</text>
-
   <!-- Bit boxes — Owner -->
   <rect x="30" y="55" width="52" height="42" rx="6" class="dgm-accent-soft" stroke="none" fill="currentColor"/>
   <rect x="30" y="55" width="52" height="42" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
@@ -639,7 +638,6 @@ See also: [SSH Secure Shell Critical](#ssh-secure-shell-critical) for how permis
   <rect x="158" y="55" width="52" height="42" rx="6" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
   <text x="184" y="73" text-anchor="middle" font-size="14" font-weight="bold" class="dgm-ink">x</text>
   <text x="184" y="89" text-anchor="middle" font-size="10" class="dgm-muted">1</text>
-
   <!-- Bit boxes — Group -->
   <rect x="240" y="55" width="52" height="42" rx="6" class="dgm-surface" stroke="none" fill="currentColor"/>
   <rect x="240" y="55" width="52" height="42" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
@@ -653,7 +651,6 @@ See also: [SSH Secure Shell Critical](#ssh-secure-shell-critical) for how permis
   <rect x="368" y="55" width="52" height="42" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
   <text x="394" y="73" text-anchor="middle" font-size="14" font-weight="bold" class="dgm-ink">x</text>
   <text x="394" y="89" text-anchor="middle" font-size="10" class="dgm-muted">1</text>
-
   <!-- Bit boxes — Others -->
   <rect x="450" y="55" width="52" height="42" rx="6" class="dgm-surface-2" stroke="none" fill="currentColor"/>
   <rect x="450" y="55" width="52" height="42" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
@@ -667,18 +664,15 @@ See also: [SSH Secure Shell Critical](#ssh-secure-shell-critical) for how permis
   <rect x="578" y="55" width="52" height="42" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
   <text x="604" y="73" text-anchor="middle" font-size="14" font-weight="bold" class="dgm-muted">x</text>
   <text x="604" y="89" text-anchor="middle" font-size="10" class="dgm-muted">1</text>
-
   <!-- Octal sums -->
   <text x="120" y="118" text-anchor="middle" font-size="12" class="dgm-ink">4+2+1 = <tspan font-weight="bold">7</tspan> (rwx)</text>
   <text x="330" y="118" text-anchor="middle" font-size="12" class="dgm-ink">4+0+1 = <tspan font-weight="bold">5</tspan> (r-x)</text>
   <text x="540" y="118" text-anchor="middle" font-size="12" class="dgm-ink">4+0+1 = <tspan font-weight="bold">5</tspan> (r-x)</text>
-
   <!-- chmod 755 example -->
   <rect x="170" y="140" width="320" height="40" rx="8" class="dgm-surface" stroke="none" fill="currentColor"/>
   <rect x="170" y="140" width="320" height="40" rx="8" fill="none" stroke-width="1.5" class="dgm-ink-stroke"/>
   <text x="330" y="157" text-anchor="middle" font-size="11" class="dgm-muted">Example:</text>
   <text x="330" y="173" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">chmod 755 script.sh  →  rwxr-xr-x</text>
-
   <!-- Legend -->
   <text x="330" y="220" text-anchor="middle" font-size="10" class="dgm-muted">Active bits shown in accent; dash (−) means permission is absent. 4=read, 2=write, 1=execute.</text>
 </svg>
@@ -967,45 +961,37 @@ The Unix philosophy: small tools that do one thing well, composed via pipes. Mas
   <!-- Arrow stdin → cmd1 -->
   <line x1="90" y1="94" x2="138" y2="94" stroke-width="2" class="dgm-muted-stroke"/>
   <path d="M 134 89 L 142 94 L 134 99 Z" class="dgm-muted" fill="currentColor"/>
-
   <!-- cmd1 box -->
   <rect x="140" y="70" width="120" height="48" rx="7" class="dgm-surface" stroke="none" fill="currentColor"/>
   <rect x="140" y="70" width="120" height="48" rx="7" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
   <text x="200" y="91" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">command 1</text>
   <text x="200" y="107" text-anchor="middle" font-size="10" class="dgm-muted">e.g. grep ERROR</text>
-
   <!-- Pipe arrow cmd1 → cmd2 -->
   <line x1="260" y1="94" x2="308" y2="94" stroke-width="2" class="dgm-ink-stroke"/>
   <path d="M 304 89 L 312 94 L 304 99 Z" class="dgm-ink" fill="currentColor"/>
   <text x="284" y="88" text-anchor="middle" font-size="10" font-weight="bold" class="dgm-accent">|</text>
-
   <!-- cmd2 box -->
   <rect x="310" y="70" width="120" height="48" rx="7" class="dgm-surface" stroke="none" fill="currentColor"/>
   <rect x="310" y="70" width="120" height="48" rx="7" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
   <text x="370" y="91" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">command 2</text>
   <text x="370" y="107" text-anchor="middle" font-size="10" class="dgm-muted">e.g. sort -rn</text>
-
   <!-- Redirect arrow cmd2 → file -->
   <line x1="430" y1="94" x2="478" y2="94" stroke-width="2" class="dgm-ink-stroke"/>
   <path d="M 474 89 L 482 94 L 474 99 Z" class="dgm-ink" fill="currentColor"/>
   <text x="454" y="88" text-anchor="middle" font-size="10" font-weight="bold" class="dgm-accent">&gt;</text>
-
   <!-- file box -->
   <rect x="480" y="70" width="100" height="48" rx="7" class="dgm-surface-2" stroke="none" fill="currentColor"/>
   <rect x="480" y="70" width="100" height="48" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
   <text x="530" y="91" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">file.txt</text>
   <text x="530" y="107" text-anchor="middle" font-size="10" class="dgm-muted">stdout</text>
-
   <!-- stderr drop from cmd1 -->
   <line x1="200" y1="118" x2="200" y2="155" stroke-width="1.5" class="dgm-muted-stroke" stroke-dasharray="5 3"/>
   <path d="M 195 151 L 200 158 L 205 151 Z" class="dgm-muted" fill="currentColor"/>
   <rect x="148" y="158" width="104" height="28" rx="6" class="dgm-surface-2" stroke="none" fill="currentColor"/>
   <rect x="148" y="158" width="104" height="28" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
   <text x="200" y="176" text-anchor="middle" font-size="10" class="dgm-muted">stderr (fd 2)</text>
-
   <!-- 2>&1 label -->
   <text x="200" y="148" text-anchor="middle" font-size="10" class="dgm-muted">2&gt;&amp;1 merges</text>
-
   <!-- legend at bottom -->
   <text x="330" y="18" text-anchor="middle" font-size="11" font-weight="bold" class="dgm-ink">command | command &gt; file</text>
   <text x="330" y="35" text-anchor="middle" font-size="10" class="dgm-muted">Bold arrow = pipe (stdout flows right).  &gt; = redirect stdout to file.  2&gt;&amp;1 = merge stderr into stdout.</text>
@@ -1253,58 +1239,47 @@ systemd is the init system on every modern Linux distro. It manages services, mo
   <rect x="10" y="92" width="110" height="36" rx="7" class="dgm-surface" stroke="none" fill="currentColor"/>
   <rect x="10" y="92" width="110" height="36" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
   <text x="65" y="115" text-anchor="middle" font-size="12" class="dgm-ink">inactive</text>
-
   <!-- activating -->
   <rect x="170" y="20" width="120" height="36" rx="7" class="dgm-surface" stroke="none" fill="currentColor"/>
   <rect x="170" y="20" width="120" height="36" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
   <text x="230" y="43" text-anchor="middle" font-size="12" class="dgm-ink">activating</text>
-
   <!-- active / running -->
   <rect x="340" y="92" width="140" height="36" rx="7" class="dgm-accent-soft" stroke="none" fill="currentColor"/>
   <rect x="340" y="92" width="140" height="36" rx="7" fill="none" stroke-width="1.5" class="dgm-accent-stroke"/>
   <text x="410" y="110" text-anchor="middle" font-size="12" font-weight="bold" class="dgm-ink">active</text>
   <text x="410" y="122" text-anchor="middle" font-size="10" class="dgm-muted">(running)</text>
-
   <!-- deactivating -->
   <rect x="170" y="164" width="120" height="36" rx="7" class="dgm-surface" stroke="none" fill="currentColor"/>
   <rect x="170" y="164" width="120" height="36" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
   <text x="230" y="187" text-anchor="middle" font-size="12" class="dgm-ink">deactivating</text>
-
   <!-- failed -->
   <rect x="540" y="92" width="110" height="36" rx="7" class="dgm-surface-2" stroke="none" fill="currentColor"/>
   <rect x="540" y="92" width="110" height="36" rx="7" fill="none" stroke-width="1.5" class="dgm-stroke"/>
   <text x="595" y="115" text-anchor="middle" font-size="12" class="dgm-ink">failed</text>
-
   <!-- Arrows -->
   <!-- inactive → activating (start) -->
   <line x1="120" y1="100" x2="168" y2="48" stroke-width="2" class="dgm-ink-stroke"/>
   <path d="M 162 50 L 170 44 L 172 54 Z" class="dgm-ink" fill="currentColor"/>
   <text x="130" y="72" font-size="10" class="dgm-accent" font-weight="bold">start</text>
-
   <!-- activating → active -->
   <line x1="290" y1="38" x2="338" y2="95" stroke-width="2" class="dgm-ink-stroke"/>
   <path d="M 332 91 L 340 96 L 333 102 Z" class="dgm-ink" fill="currentColor"/>
   <text x="326" y="64" font-size="10" class="dgm-muted">ExecStart ok</text>
-
   <!-- activating → failed -->
   <line x1="290" y1="27" x2="538" y2="97" stroke-width="2" class="dgm-muted-stroke" stroke-dasharray="5 3"/>
   <path d="M 532 93 L 540 98 L 532 103 Z" class="dgm-muted" fill="currentColor"/>
   <text x="410" y="56" font-size="10" class="dgm-muted">ExecStart fail</text>
-
   <!-- active → deactivating (stop) -->
   <line x1="340" y1="118" x2="292" y2="165" stroke-width="2" class="dgm-ink-stroke"/>
   <path d="M 286 161 L 292 169 L 298 161 Z" class="dgm-ink" fill="currentColor"/>
   <text x="290" y="147" font-size="10" class="dgm-accent" font-weight="bold">stop</text>
-
   <!-- deactivating → inactive -->
   <line x1="170" y1="182" x2="122" y2="127" stroke-width="2" class="dgm-muted-stroke"/>
   <path d="M 117 131 L 120 123 L 127 128 Z" class="dgm-muted" fill="currentColor"/>
-
   <!-- failed → inactive (reset) -->
   <line x1="540" y1="110" x2="122" y2="110" stroke-width="1.5" class="dgm-muted-stroke" stroke-dasharray="4 3"/>
   <path d="M 126 105 L 118 110 L 126 115 Z" class="dgm-muted" fill="currentColor"/>
   <text x="380" y="106" font-size="10" class="dgm-muted">reset-failed</text>
-
   <!-- enable/disable note box -->
   <rect x="340" y="165" width="200" height="42" rx="6" class="dgm-surface" stroke="none" fill="currentColor"/>
   <rect x="340" y="165" width="200" height="42" rx="6" fill="none" stroke-width="1.5" class="dgm-stroke"/>
@@ -2089,7 +2064,6 @@ See also: [File Permissions Ownership](#file-permissions-ownership) — SSH enfo
   <text x="110" y="118" text-anchor="middle" font-size="10" class="dgm-muted">private key</text>
   <text x="110" y="133" text-anchor="middle" font-size="10" class="dgm-muted">(never leaves this box)</text>
   <text x="110" y="160" text-anchor="middle" font-size="10" class="dgm-muted">chmod 600 required</text>
-
   <!-- Server box -->
   <rect x="460" y="40" width="180" height="140" rx="8" class="dgm-surface" stroke="none" fill="currentColor"/>
   <rect x="460" y="40" width="180" height="140" rx="8" fill="none" stroke-width="1.5" class="dgm-stroke"/>
@@ -2100,27 +2074,22 @@ See also: [File Permissions Ownership](#file-permissions-ownership) — SSH enfo
   <text x="550" y="118" text-anchor="middle" font-size="10" class="dgm-muted">public key stored here</text>
   <text x="550" y="133" text-anchor="middle" font-size="10" class="dgm-muted">by ssh-copy-id</text>
   <text x="550" y="160" text-anchor="middle" font-size="10" class="dgm-muted">chmod 600 required</text>
-
   <!-- Step 1: connection request -->
   <line x1="200" y1="90" x2="458" y2="90" stroke-width="2" class="dgm-muted-stroke"/>
   <path d="M 454 85 L 462 90 L 454 95 Z" class="dgm-muted" fill="currentColor"/>
   <text x="330" y="84" text-anchor="middle" font-size="10" class="dgm-ink">① connect + present public key</text>
-
   <!-- Step 2: encrypted challenge -->
   <line x1="458" y1="112" x2="200" y2="112" stroke-width="2" class="dgm-ink-stroke"/>
   <path d="M 204 107 L 196 112 L 204 117 Z" class="dgm-ink" fill="currentColor"/>
   <text x="330" y="107" text-anchor="middle" font-size="10" class="dgm-ink">② encrypted random challenge</text>
-
   <!-- Step 3: signed response -->
   <line x1="200" y1="134" x2="458" y2="134" stroke-width="2" class="dgm-accent-stroke"/>
   <path d="M 454 129 L 462 134 L 454 139 Z" class="dgm-accent" fill="currentColor"/>
   <text x="330" y="128" text-anchor="middle" font-size="10" class="dgm-ink">③ sign with private key → send</text>
-
   <!-- Step 4: verify & grant -->
   <line x1="458" y1="156" x2="200" y2="156" stroke-width="2" class="dgm-accent-stroke"/>
   <path d="M 204 151 L 196 156 L 204 161 Z" class="dgm-accent" fill="currentColor"/>
   <text x="330" y="150" text-anchor="middle" font-size="10" class="dgm-ink">④ verify signature → grant access</text>
-
   <!-- Caption note -->
   <text x="330" y="200" text-anchor="middle" font-size="10" class="dgm-muted">Password never sent. Server verifies the signed challenge using the stored public key.</text>
 </svg>
