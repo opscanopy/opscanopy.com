@@ -35,4 +35,26 @@ const blog = defineCollection({
   }),
 });
 
-export const collections = { blog };
+const guides = defineCollection({
+  loader: glob({ pattern: '**/*.md', base: './src/content/guides' }),
+  schema: z.object({
+    title: z.string(),
+    description: z.string(),
+    track: z.enum(['linux', 'docker', 'aws', 'kubernetes', 'networking', 'projects']),
+    order: z.number(),
+    difficulty: z.enum(['beginner', 'intermediate', 'advanced']),
+    updatedDate: z.coerce.date().optional(),
+    estMinutes: z.number().optional(),
+    tags: z.array(z.string()).optional(),
+    relatedTools: z.array(z.string()).optional(),
+    draft: z.boolean().default(false),
+    lang: z.enum(['en', 'es', 'de', 'fr', 'pt-br']).default('en'),
+    translationOf: z.string().optional(),
+    author: z.string().default('OpsCanopy'),
+    seoTitle: z.string().optional(),
+    metaDescription: z.string().optional(),
+    faqs: z.array(z.object({ q: z.string(), a: z.string() })).optional(),
+  }),
+});
+
+export const collections = { blog, guides };
