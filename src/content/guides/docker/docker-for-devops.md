@@ -4,6 +4,7 @@ description: "A practical, comprehensive Docker guide for DevOps engineers — i
 track: docker
 order: 1
 difficulty: beginner
+estMinutes: 250
 updatedDate: 2026-06-27
 tags: ["docker", "containers", "devops", "dockerfile", "docker-compose"]
 relatedTools: ["docker-run-to-compose", "env-example-checker", "github-actions-validator", "gitlab-ci-validator", "kubernetes-resource-calculator"]

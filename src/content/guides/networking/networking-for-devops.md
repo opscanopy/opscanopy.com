@@ -4,6 +4,7 @@ description: "TCP/IP, subnets and CIDR, DNS, HTTP/TLS, load balancing, firewalls
 track: networking
 order: 1
 difficulty: intermediate
+estMinutes: 45
 updatedDate: 2026-06-27
 tags: ["networking", "devops", "tcp-ip", "dns", "subnetting"]
 relatedTools: ["subnet-calculator", "cidr-checker", "subnet-splitter", "ip-address-converter", "reverse-dns-ptr", "mac-address-formatter"]

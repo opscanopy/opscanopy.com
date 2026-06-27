@@ -4,6 +4,7 @@ description: "Learn Kubernetes for DevOps — pods, deployments, services, ingre
 track: kubernetes
 order: 1
 difficulty: intermediate
+estMinutes: 40
 updatedDate: 2026-06-27
 tags: ["kubernetes", "k8s", "devops", "containers", "kubectl"]
 relatedTools: ["kubernetes-resource-calculator", "promql-explainer", "prometheus-relabel-tester"]

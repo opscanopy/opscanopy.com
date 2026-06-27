@@ -4,6 +4,7 @@ description: "Docker interview preparation for DevOps engineers: scenario-based 
 track: docker
 order: 2
 difficulty: intermediate
+estMinutes: 55
 updatedDate: 2026-06-27
 tags: ["docker", "interview", "devops", "containers"]
 relatedTools: ["docker-run-to-compose", "kubernetes-resource-calculator", "env-example-checker"]

@@ -4,6 +4,7 @@ description: "A comprehensive guide to Linux fundamentals for DevOps: filesystem
 track: "linux"
 order: 1
 difficulty: "beginner"
+estMinutes: 200
 updatedDate: "2026-06-27"
 tags: ["linux", "bash", "systemd", "ssh", "devops", "cli"]
 relatedTools: ["regex-log-tester", "cron-expression-tester", "base64-encoder-decoder", "hash-generator", "reverse-dns-ptr"]

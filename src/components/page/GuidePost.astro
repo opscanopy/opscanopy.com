@@ -38,7 +38,12 @@ const absoluteUrl = `${site.url}${canonical}`;
 const isoPublished = (d.updatedDate ?? new Date('2026-06-27')).toISOString();
 const isoModified = d.updatedDate?.toISOString();
 const readingTime = d.estMinutes ?? estimateReadingTime(entry.body);
-const readingLabel = t('blog.readingTime', { minutes: readingTime });
+// Long guides run to several hours; a raw "201 min read" reads as alarming, so
+// express anything ≥ 1h as "Xh Ym read". Short reads keep the localized string.
+const readingLabel =
+  readingTime >= 60
+    ? `${Math.floor(readingTime / 60)} hr${readingTime % 60 ? ` ${readingTime % 60} min` : ''} read`
+    : t('blog.readingTime', { minutes: readingTime });
 
 const all = await getGuidesForLocale(lang);
 const { prev, next } = getPrevNextInTrack(guide, all);
@@ -51,6 +56,13 @@ const relatedTools = (d.relatedTools ?? [])
 const toc = headings.filter((h) => h.depth === 2 || h.depth === 3);
 const difficultyProficiency =
   d.difficulty === 'beginner' ? 'Beginner' : d.difficulty === 'advanced' ? 'Advanced' : 'Intermediate';
+
+// Every guide belongs to a track; surface its roadmap so a finished guide is
+// never a dead-end. Tracks without their own roadmap (e.g. projects) fall back
+// to the master DevOps roadmap.
+const roadmapSlug = track?.roadmapSlug ?? 'devops';
+const roadmapHref = `/learn/roadmaps/${roadmapSlug}`;
+const roadmapLinkLabel = track?.roadmapSlug ? `${trackName} roadmap` : 'DevOps roadmap';
 
 const breadcrumbJsonLd = breadcrumbLd([
   { name: 'Home', item: `${site.url}/` },
@@ -143,6 +155,10 @@ if (d.faqs && d.faqs.length) jsonLd.push(faqPageLd(d.faqs));
             <span class="badge code-mono lowercase">{d.difficulty}</span>
             <span aria-hidden="true">·</span>
             <span class="tabular-nums">{readingLabel}</span>
+            <span aria-hidden="true">·</span>
+            <a href={roadmapHref} class="font-medium text-link underline-offset-2 hover:underline">
+              Part of the {roadmapLinkLabel}
+            </a>
             {d.updatedDate && (
               <>
                 <span aria-hidden="true">·</span>
@@ -227,6 +243,46 @@ if (d.faqs && d.faqs.length) jsonLd.push(faqPageLd(d.faqs));
   )
 }
 
+{/* On-page FAQ — renders the same frontmatter Q&A that feeds the FAQPage JSON-LD
+    above, so the structured data has visible matching content (Google policy). */}
+{
+  d.faqs && d.faqs.length > 0 && (
+    <section class="mt-16 border-t border-hairline pt-12" aria-labelledby="faq-heading">
+      <h2 id="faq-heading" class="display-sm text-ink">Frequently asked questions</h2>
+      <div class="mt-6 divide-y divide-hairline border-y border-hairline">
+        {d.faqs.map((f) => (
+          <details class="guide-faq group">
+            <summary class="flex cursor-pointer list-none items-start justify-between gap-4 py-4">
+              <span class="body-md text-balance font-semibold text-ink transition-colors group-hover:text-link">
+                {f.q}
+              </span>
+              <span
+                aria-hidden="true"
+                class="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full text-mute transition-colors group-hover:bg-canvas-soft-2 group-hover:text-ink"
+              >
+                <svg
+                  class="guide-faq-chevron size-4 transition-transform duration-200 ease-out"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </span>
+            </summary>
+            <div class="pb-5">
+              <p class="body-sm text-pretty text-body">{f.a}</p>
+            </div>
+          </details>
+        ))}
+      </div>
+    </section>
+  )
+}
+
         {
           related.length > 0 && (
             <section class="mt-16 border-t border-hairline pt-12" aria-labelledby="related-heading">
@@ -272,6 +328,32 @@ if (d.faqs && d.faqs.length) jsonLd.push(faqPageLd(d.faqs));
             </section>
           )
         }
+
+        {/* Journey-closing CTA: most tracks have a single guide, so the sibling
+            pager below is often empty — this always points back to the roadmap
+            (the one surface that remembers progress) so a finished guide leads
+            somewhere. */}
+        <section
+          class="mt-16 rounded-xl border border-hairline bg-canvas-soft-2 p-6 sm:p-8"
+          aria-labelledby="next-step-heading"
+        >
+          <p class="eyebrow text-brand-strong">Keep going</p>
+          <h2 id="next-step-heading" class="display-sm mt-2 text-balance text-ink">
+            Continue your {trackName} path
+          </h2>
+          <p class="body-sm mt-2 max-w-xl text-pretty text-body">
+            Pick the next topic on the roadmap and track what you’ve covered — your progress is
+            saved in this browser.
+          </p>
+          <div class="mt-5 flex flex-wrap gap-3">
+            <a href={roadmapHref} class="btn btn-primary btn-sm">Back to the {roadmapLinkLabel}</a>
+            {roadmapSlug !== 'devops' && (
+              <a href="/learn/roadmaps/devops" class="btn btn-secondary btn-sm">
+                See the full DevOps roadmap
+              </a>
+            )}
+          </div>
+        </section>
 
         {
           (prev || next) && (
@@ -516,6 +598,22 @@ if (d.faqs && d.faqs.length) jsonLd.push(faqPageLd(d.faqs));
     document.addEventListener('astro:page-load', initGuidePost);
   </script>
 </Shell>
+
+<style>
+  /* On-page FAQ disclosure (authored in this component's template, so scoped
+     styles apply). Suppress the native marker and rotate our own chevron. */
+  .guide-faq > summary::-webkit-details-marker {
+    display: none;
+  }
+  .guide-faq[open] > summary .guide-faq-chevron {
+    transform: rotate(180deg);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .guide-faq-chevron {
+      transition: none;
+    }
+  }
+</style>
 
 <style is:global>
   /*

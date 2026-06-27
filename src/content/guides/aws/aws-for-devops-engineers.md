@@ -4,6 +4,7 @@ description: "A practical guide to AWS for DevOps engineers — IAM, EC2, VPC, S
 track: aws
 order: 1
 difficulty: beginner
+estMinutes: 55
 updatedDate: 2026-06-27
 tags: ["aws", "cloud", "devops", "iam", "ec2", "vpc"]
 relatedTools: ["subnet-calculator", "cidr-checker"]

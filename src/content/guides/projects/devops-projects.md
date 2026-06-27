@@ -4,6 +4,7 @@ description: "Build real DevOps portfolio projects step by step: deploy a contai
 track: projects
 order: 1
 difficulty: beginner
+estMinutes: 75
 updatedDate: 2026-06-27
 tags: ["devops", "projects", "portfolio", "ci-cd", "docker", "aws"]
 relatedTools: ["docker-run-to-compose", "github-actions-validator", "prometheus-relabel-tester"]
