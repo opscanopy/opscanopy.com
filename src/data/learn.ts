@@ -27,7 +27,7 @@ export const tracks: Track[] = [
     name: 'Docker',
     tagline: 'Build, ship, and run containers with confidence.',
     accent: 'ship',
-    roadmapSlug: 'docker',
+    roadmapSlug: undefined,
     guideSlugs: ['docker-for-devops', 'docker-interview-questions'],
   },
   {
@@ -35,7 +35,7 @@ export const tracks: Track[] = [
     name: 'Kubernetes',
     tagline: 'Orchestrate containers at scale.',
     accent: 'preview',
-    roadmapSlug: 'kubernetes',
+    roadmapSlug: undefined,
     guideSlugs: ['kubernetes-for-devops'],
   },
   {
@@ -43,7 +43,7 @@ export const tracks: Track[] = [
     name: 'AWS',
     tagline: 'The core cloud services a DevOps engineer actually needs.',
     accent: 'ship',
-    roadmapSlug: 'aws',
+    roadmapSlug: undefined,
     guideSlugs: ['aws-for-devops-engineers'],
   },
   {
@@ -51,7 +51,7 @@ export const tracks: Track[] = [
     name: 'Networking',
     tagline: 'TCP/IP, subnets, DNS, and troubleshooting for engineers.',
     accent: 'develop',
-    roadmapSlug: 'networking',
+    roadmapSlug: undefined,
     guideSlugs: ['networking-for-devops'],
   },
   {
