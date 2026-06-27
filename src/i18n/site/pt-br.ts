@@ -8,6 +8,7 @@ const ptBr: Partial<SiteContent> = {
     'O OpsCanopy é um hub em crescimento de utilitários de DevOps gratuitos e baseados no navegador — validadores, conversores, testadores e linters que rodam inteiramente no lado do cliente. Sem cadastro, sem servidores, seus dados nunca saem do dispositivo.',
   nav: [
     { href: '/tools', label: 'Ferramentas' },
+    { href: '/learn', label: 'Learn' },
     { href: '/blog', label: 'Blog' },
   ],
   footer: [
@@ -16,6 +17,15 @@ const ptBr: Partial<SiteContent> = {
       links: [
         { href: '/loki-alert-rule-tester', label: 'AlertLint — testador de regras do Loki' },
         { href: '/tools', label: 'Todas as ferramentas' },
+      ],
+    },
+    {
+      title: 'Learn',
+      links: [
+        { href: '/learn', label: 'All guides' },
+        { href: '/learn/roadmaps/devops', label: 'DevOps roadmap' },
+        { href: '/learn/guides/linux-for-devops', label: 'Linux for DevOps' },
+        { href: '/learn/guides/docker-for-devops', label: 'Docker for DevOps' },
       ],
     },
     {

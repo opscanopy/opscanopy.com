@@ -34,6 +34,7 @@ const en: SiteContent = {
     'OpsCanopy is a growing hub of free, browser-based DevOps utilities — validators, converters, testers and linters that run entirely client-side. No signup, no servers, your data never leaves the device.',
   nav: [
     { href: '/tools', label: 'Tools' },
+    { href: '/learn', label: 'Learn' },
     { href: '/blog', label: 'Blog' },
   ],
   footer: [
@@ -42,6 +43,15 @@ const en: SiteContent = {
       links: [
         { href: '/loki-alert-rule-tester', label: 'AlertLint — Loki rule tester' },
         { href: '/tools', label: 'All tools' },
+      ],
+    },
+    {
+      title: 'Learn',
+      links: [
+        { href: '/learn', label: 'All guides' },
+        { href: '/learn/roadmaps/devops', label: 'DevOps roadmap' },
+        { href: '/learn/guides/linux-for-devops', label: 'Linux for DevOps' },
+        { href: '/learn/guides/docker-for-devops', label: 'Docker for DevOps' },
       ],
     },
     {
