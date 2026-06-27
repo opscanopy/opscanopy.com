@@ -8,10 +8,14 @@ export type NodeKind = 'core' | 'optional';
 
 export interface RoadmapNode {
   label: string;
+  /** Slug of a guide in src/content/guides (filename without .md). */
   guideSlug?: string;
+  /** github-slugger id of an H2/H3 within that guide (optional deep-link). */
   anchor?: string;
+  /** External or tool href used instead of a guide link. */
   href?: string;
   kind: NodeKind;
+  /** Short description shown in the node drawer. */
   desc?: string;
 }
 
