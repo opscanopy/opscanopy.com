@@ -82,3 +82,31 @@ export function faqPageLd(faqs: { q: string; a: string }[]): Record<string, unkn
     })),
   };
 }
+
+/**
+ * TechArticle object for a Learn guide page. Mirrors the BlogPosting shape used
+ * by blog posts but typed as TechArticle (technical how-to/reference content).
+ */
+export function techArticleLd(o: {
+  headline: string;
+  description: string;
+  url: string;
+  datePublished: string;
+  dateModified?: string;
+  keywords?: string;
+  proficiencyLevel?: 'Beginner' | 'Intermediate' | 'Advanced';
+}): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'TechArticle',
+    headline: o.headline,
+    description: o.description,
+    proficiencyLevel: o.proficiencyLevel,
+    datePublished: o.datePublished,
+    dateModified: o.dateModified ?? o.datePublished,
+    keywords: o.keywords,
+    mainEntityOfPage: { '@type': 'WebPage', '@id': o.url },
+    author: { '@type': 'Organization', name: site.name, url: site.url },
+    publisher: { '@type': 'Organization', name: site.name, url: site.url },
+  };
+}
