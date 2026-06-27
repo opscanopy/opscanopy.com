@@ -1,0 +1,117 @@
+---
+/**
+ * Vertical staged roadmap. Renders stages as a spine of nodes; each node links
+ * to a guide (guideSlug [+ anchor]) or an href. localStorage marks nodes done
+ * (privacy-first, no backend). State legend + per-stage and overall progress.
+ */
+import type { Roadmap } from '../data/roadmaps';
+interface Props { roadmap: Roadmap; }
+const { roadmap } = Astro.props;
+
+const nodeId = (s: number, n: number) => `${roadmap.slug}-${s}-${n}`;
+const nodeHref = (node: { guideSlug?: string; anchor?: string; href?: string }) =>
+  node.href
+    ? node.href
+    : node.guideSlug
+      ? `/learn/guides/${node.guideSlug}${node.anchor ? `#${node.anchor}` : ''}`
+      : undefined;
+const totalNodes = roadmap.stages.reduce((acc, s) => acc + s.nodes.length, 0);
+---
+
+<section class="roadmap" data-roadmap={roadmap.slug} aria-label={roadmap.title}>
+  <div class="mb-8 flex flex-wrap items-center gap-4">
+    <p class="caption text-mute" data-roadmap-progress aria-live="polite">0% · 0 of {totalNodes} topics</p>
+    <ul class="flex flex-wrap items-center gap-3 text-[11px] text-mute" aria-label="Legend">
+      <li class="inline-flex items-center gap-1.5"><span class="rm-dot rm-done"></span>Done</li>
+      <li class="inline-flex items-center gap-1.5"><span class="rm-dot rm-pending"></span>To do</li>
+      <li class="inline-flex items-center gap-1.5"><span class="rm-dot rm-optional"></span>Optional</li>
+    </ul>
+  </div>
+
+  <ol class="rm-spine" role="list">
+    {roadmap.stages.map((stage, si) => (
+      <li class="rm-stage" id={`${roadmap.slug}-stage-${si}`}>
+        <h2 class="display-sm text-ink">{stage.title}</h2>
+        {stage.summary && <p class="body-sm mt-1 text-mute">{stage.summary}</p>}
+        <ul role="list" class="mt-4 space-y-2">
+          {stage.nodes.map((node, ni) => {
+            const href = nodeHref(node);
+            const id = nodeId(si, ni);
+            return (
+              <li class:list={["rm-node", node.kind === 'optional' && 'rm-node-optional']} data-node-id={id}>
+                <label class="rm-check">
+                  <input type="checkbox" data-node-check={id} class="sr-only" aria-label={node.label} />
+                  <span class="rm-dot rm-pending" data-node-dot aria-hidden="true"></span>
+                </label>
+                <div class="min-w-0">
+                  {href ? (
+                    <a href={href} class="body-sm font-medium text-ink hover:text-brand-strong">{node.label}</a>
+                  ) : (
+                    <span class="body-sm font-medium text-ink">{node.label}</span>
+                  )}
+                  {node.desc && <p class="mt-0.5 text-[13px] text-mute">{node.desc}</p>}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </li>
+    ))}
+  </ol>
+</section>
+
+<style>
+  .rm-spine { position: relative; display: flex; flex-direction: column; gap: 2.5rem; }
+  .rm-stage { position: relative; padding-left: 1.25rem; border-left: 2px solid var(--color-hairline); }
+  .rm-node { display: flex; align-items: flex-start; gap: 0.625rem; }
+  .rm-node-optional .rm-dot { border-style: dashed; }
+  .rm-check { cursor: pointer; flex-shrink: 0; margin-top: 2px; }
+  .rm-dot { display: inline-block; width: 14px; height: 14px; border-radius: 9999px; border: 2px solid var(--color-mute); background: transparent; }
+  .rm-pending { border-color: var(--color-mute); }
+  .rm-optional { border-color: var(--color-mute); border-style: dashed; }
+  .rm-done { background: var(--color-brand); border-color: var(--color-brand); }
+  .rm-node[data-done="true"] .rm-dot { background: var(--color-brand); border-color: var(--color-brand); border-style: solid; }
+  .rm-node[data-done="true"] a, .rm-node[data-done="true"] span { text-decoration: line-through; color: var(--color-mute); }
+  @media (prefers-reduced-motion: reduce) { .rm-dot { transition: none; } }
+</style>
+
+<script>
+  function initRoadmaps() {
+    document.querySelectorAll<HTMLElement>('.roadmap').forEach((root) => {
+      const key = `oc-roadmap-${root.dataset.roadmap}`;
+      let done: Record<string, boolean> = {};
+      try { done = JSON.parse(localStorage.getItem(key) || '{}'); } catch { done = {}; }
+      const nodes = Array.from(root.querySelectorAll<HTMLElement>('.rm-node'));
+      const progress = root.querySelector<HTMLElement>('[data-roadmap-progress]');
+      const total = nodes.length;
+      const render = () => {
+        let count = 0;
+        nodes.forEach((n) => {
+          const id = n.dataset.nodeId!;
+          const checked = !!done[id];
+          n.dataset.done = String(checked);
+          const cb = n.querySelector<HTMLInputElement>('input[type=checkbox]');
+          if (cb) cb.checked = checked;
+          if (checked) count++;
+        });
+        if (progress) {
+          const pct = total ? Math.round((count / total) * 100) : 0;
+          progress.textContent = `${pct}% · ${count} of ${total} topics`;
+        }
+      };
+      nodes.forEach((n) => {
+        if (n.dataset.bound) return;
+        n.dataset.bound = 'true';
+        const cb = n.querySelector<HTMLInputElement>('input[type=checkbox]');
+        cb?.addEventListener('change', () => {
+          done[n.dataset.nodeId!] = cb.checked;
+          try { localStorage.setItem(key, JSON.stringify(done)); } catch { /* private mode */ }
+          render();
+        });
+      });
+      render();
+    });
+  }
+  initRoadmaps();
+  document.addEventListener('astro:page-load', initRoadmaps);
+</script>
