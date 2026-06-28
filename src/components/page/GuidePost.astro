@@ -224,9 +224,12 @@ if (d.faqs && d.faqs.length) jsonLd.push(faqPageLd(d.faqs));
                   <li>
                     <a
                       href={`#${g.h2.slug}`}
-                      class="body-sm block py-2.5 font-medium text-mute transition-colors hover:text-ink"
+                      data-toc-link={g.h2.slug}
+                      data-toc-mobile
+                      class="toc-mobile-link body-sm flex items-baseline justify-between gap-3 py-2.5 font-medium text-mute transition-colors hover:text-ink"
                     >
-                      {g.h2.text}
+                      <span class="min-w-0">{g.h2.text}</span>
+                      <span class="toc-mobile-min code-mono shrink-0 text-[11px] text-mute tabular-nums" data-toc-min={g.h2.slug} hidden />
                     </a>
                   </li>
                 ))}
@@ -237,6 +240,7 @@ if (d.faqs && d.faqs.length) jsonLd.push(faqPageLd(d.faqs));
 
         <div
           class="rich-text"
+          data-guide-slug={slug}
           data-copy-label={t('blog.copyCode')}
           data-copied-label={t('blog.copiedCode')}
           data-copy-aria={t('blog.copyCodeAriaLabel')}
@@ -464,6 +468,82 @@ if (d.faqs && d.faqs.length) jsonLd.push(faqPageLd(d.faqs));
     </svg>
   </button>
 
+  {
+    /* Mobile (< lg) "Jump to section" FAB + slide-up panel. The desktop sticky
+       rail already covers lg+, so both are hidden there. Stacked above the
+       back-to-top button (same right gutter). */
+    toc.length > 1 && (
+      <>
+        <button
+          type="button"
+          data-sections-fab
+          aria-label="Jump to section"
+          aria-haspopup="dialog"
+          aria-expanded="false"
+          aria-controls="guide-sections-panel"
+          class="sections-fab lg:hidden"
+        >
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M2 4h12M2 8h12M2 12h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+          </svg>
+        </button>
+
+        <div data-sections-scrim class="sections-scrim lg:hidden" hidden />
+
+        <div
+          id="guide-sections-panel"
+          data-sections-panel
+          role="dialog"
+          aria-modal="true"
+          aria-label={t('blog.tocTitle')}
+          tabindex="-1"
+          class="sections-panel lg:hidden"
+          hidden
+        >
+          <div class="sections-panel-head">
+            <p class="eyebrow text-mute">
+              {t('blog.tocTitle')} <span class="font-normal">· {tocGroups.length} sections</span>
+            </p>
+            <button type="button" data-sections-close aria-label="Close" class="sections-close">
+              <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+              </svg>
+            </button>
+          </div>
+          <ul role="list" class="sections-panel-list">
+            {tocGroups.map((g) => (
+              <li>
+                <a
+                  href={`#${g.h2.slug}`}
+                  data-toc-link={g.h2.slug}
+                  data-toc-mobile
+                  data-sections-link
+                  class="toc-mobile-link sections-panel-link flex items-baseline justify-between gap-3"
+                >
+                  <span class="min-w-0">{g.h2.text}</span>
+                  <span class="toc-mobile-min code-mono shrink-0 text-[11px] text-mute tabular-nums" data-toc-min={g.h2.slug} hidden />
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </>
+    )
+  }
+
+  {/* Reading-position resume toast (shown on load when a saved position exists). */}
+  <div data-resume-toast class="resume-toast" role="status" aria-live="polite" hidden>
+    <span class="resume-toast-text">
+      Resumed at <span data-resume-title class="resume-toast-section">this section</span>
+    </span>
+    <button type="button" data-resume-top class="resume-toast-action">Start from top</button>
+    <button type="button" data-resume-dismiss class="resume-toast-dismiss" aria-label="Dismiss">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+      </svg>
+    </button>
+  </div>
+
   <script type="application/ld+json" set:html={JSON.stringify(breadcrumbJsonLd)} />
 
   <script>
@@ -483,6 +563,8 @@ if (d.faqs && d.faqs.length) jsonLd.push(faqPageLd(d.faqs));
       const root = document.querySelector<HTMLElement>('.rich-text');
       if (!root) return;
       const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const guideSlug = root.dataset.guideSlug ?? '';
+      const posKey = guideSlug ? `oc-guide-${guideSlug}-pos` : '';
 
       // --- Code-copy buttons (per <pre>) ---
       if (navigator.clipboard) {
@@ -531,6 +613,29 @@ if (d.faqs && d.faqs.length) jsonLd.push(faqPageLd(d.faqs));
         h.appendChild(a);
       });
 
+      // --- Mobile TOC per-section time hint (from rehype-chapters' .chapter-meta) ---
+      // rehype-chapters injects "Section X of Y · ~N min" as a .chapter-meta <p>
+      // immediately after each H2. Lift the "~N min" out and surface it next to the
+      // matching mobile TOC entry (data-toc-min keyed by the H2 slug). Idempotent.
+      const minTargets = document.querySelectorAll<HTMLElement>('[data-toc-min]');
+      if (minTargets.length) {
+        const minBySlug = new Map<string, string>();
+        root.querySelectorAll<HTMLElement>('h2[id]').forEach((h2) => {
+          const meta = h2.nextElementSibling;
+          if (!meta || !meta.classList.contains('chapter-meta')) return;
+          const m = (meta.textContent ?? '').match(/~\s*\d+\s*min/i);
+          if (m) minBySlug.set(h2.id, m[0].replace(/\s+/g, ' ').trim());
+        });
+        minTargets.forEach((el) => {
+          const slug = el.dataset.tocMin ?? '';
+          const label = minBySlug.get(slug);
+          if (label) {
+            el.textContent = label;
+            el.hidden = false;
+          }
+        });
+      }
+
       // --- Copy-link share buttons ---
       document.querySelectorAll<HTMLButtonElement>('[data-copy-link]').forEach((btn) => {
         if (btn.dataset.bound) return;
@@ -568,22 +673,49 @@ if (d.faqs && d.faqs.length) jsonLd.push(faqPageLd(d.faqs));
           slugToGroup.set(l.dataset.tocLink ?? '', gid);
         });
       });
+      // Resume needs the current section's id + human title; the scroll-spy already
+      // computes the active id, so reuse it (no second observer). `currentActive`
+      // is read by the debounced position writer below.
+      let currentActive = '';
+      let savePosTimer: number | undefined;
+      const persistPos = () => {
+        if (!posKey || !currentActive) return;
+        try {
+          window.localStorage.setItem(posKey, currentActive);
+        } catch {
+          /* storage blocked (private mode / quota) — resume just won't work. */
+        }
+      };
+
       let observer: IntersectionObserver | null = null;
       if (tocLinks.length) {
         let active = '';
         const setActive = (slug: string) => {
           if (slug === active) return;
           active = slug;
+          currentActive = slug;
+          const groupId = slugToGroup.get(slug);
           tocLinks.forEach((l) => {
-            const on = l.dataset.tocLink === slug;
+            // Desktop rail links match the exact active heading (H2 or H3).
+            // The mobile <details>/sheet list only H2s, so highlight them by
+            // their group (parent H2) — otherwise the highlight disappears the
+            // moment you scroll into any H3 of the section.
+            const on =
+              l.dataset.tocMobile != null
+                ? l.dataset.tocLink === (groupId ?? slug)
+                : l.dataset.tocLink === slug;
             l.classList.toggle('is-active', on);
             if (on) l.setAttribute('aria-current', 'true');
             else l.removeAttribute('aria-current');
           });
-          const groupId = slugToGroup.get(slug);
           tocGroupEls.forEach((g) => {
             g.toggleAttribute('data-open', g.dataset.tocGroup === groupId);
           });
+          // Debounced write of the reading position (~400ms after spy settles).
+          if (posKey) {
+            window.clearTimeout(savePosTimer);
+            savePosTimer = window.setTimeout(persistPos, 400);
+          }
         };
         const slugs = Array.from(new Set(tocLinks.map((l) => l.dataset.tocLink ?? '')));
         const headingEls = slugs
@@ -624,10 +756,166 @@ if (d.faqs && d.faqs.length) jsonLd.push(faqPageLd(d.faqs));
         );
       }
 
+      // --- Mobile "Jump to section" FAB + slide-up panel (< lg) ---
+      // Accessible bottom sheet (aria-modal): focus moves in on open and is
+      // trapped (Tab / Shift+Tab wrap) while open, returning to the FAB on
+      // close; Escape + scrim + close button all dismiss; body scroll is locked.
+      // Close defers `hidden` until the slide-out transition finishes so it
+      // animates out symmetrically with the open (immediate under reduced motion).
+      const fab = document.querySelector<HTMLElement>('[data-sections-fab]');
+      const panel = document.querySelector<HTMLElement>('[data-sections-panel]');
+      const scrim = document.querySelector<HTMLElement>('[data-sections-scrim]');
+      let panelKeydown: ((e: KeyboardEvent) => void) | null = null;
+      let panelCloseTimer: number | undefined;
+      const panelFocusable = (): HTMLElement[] =>
+        panel
+          ? Array.from(
+              panel.querySelectorAll<HTMLElement>('a[href], button:not([disabled])'),
+            ).filter((el) => el.offsetParent !== null)
+          : [];
+      const closeSectionsPanel = () => {
+        if (!panel || !fab || fab.getAttribute('aria-expanded') !== 'true') return;
+        panel.classList.remove('is-open');
+        if (scrim) scrim.classList.remove('is-open');
+        fab.setAttribute('aria-expanded', 'false');
+        document.body.style.removeProperty('overflow');
+        if (panelKeydown) {
+          panel.removeEventListener('keydown', panelKeydown);
+          panelKeydown = null;
+        }
+        fab.focus();
+        // Wait for the slide-out before hiding (no transition under reduced motion).
+        window.clearTimeout(panelCloseTimer);
+        const hideNow = () => {
+          panel.hidden = true;
+          if (scrim) scrim.hidden = true;
+        };
+        if (reduceMotion) hideNow();
+        else panelCloseTimer = window.setTimeout(hideNow, 280);
+      };
+      const openSectionsPanel = () => {
+        if (!panel || !fab) return;
+        window.clearTimeout(panelCloseTimer);
+        panel.hidden = false;
+        if (scrim) scrim.hidden = false;
+        // Force a frame so the transition runs from the hidden state.
+        requestAnimationFrame(() => {
+          panel.classList.add('is-open');
+          if (scrim) scrim.classList.add('is-open');
+        });
+        fab.setAttribute('aria-expanded', 'true');
+        document.body.style.overflow = 'hidden';
+        // Move focus into the panel (close button is the first interactive target).
+        const first = panel.querySelector<HTMLElement>('[data-sections-close]');
+        (first ?? panel).focus();
+        panelKeydown = (e: KeyboardEvent) => {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            closeSectionsPanel();
+            return;
+          }
+          if (e.key === 'Tab') {
+            // Keep Tab within the dialog so the aria-modal contract holds.
+            const f = panelFocusable();
+            if (!f.length) return;
+            const firstEl = f[0];
+            const lastEl = f[f.length - 1];
+            if (e.shiftKey && document.activeElement === firstEl) {
+              e.preventDefault();
+              lastEl.focus();
+            } else if (!e.shiftKey && document.activeElement === lastEl) {
+              e.preventDefault();
+              firstEl.focus();
+            }
+          }
+        };
+        panel.addEventListener('keydown', panelKeydown);
+      };
+      if (fab && panel && !fab.dataset.bound) {
+        fab.dataset.bound = 'true';
+        fab.addEventListener('click', () => {
+          if (fab.getAttribute('aria-expanded') === 'true') closeSectionsPanel();
+          else openSectionsPanel();
+        });
+        panel.querySelector<HTMLElement>('[data-sections-close]')?.addEventListener('click', closeSectionsPanel);
+        scrim?.addEventListener('click', closeSectionsPanel);
+        panel.querySelectorAll<HTMLAnchorElement>('[data-sections-link]').forEach((link) => {
+          link.addEventListener('click', () => {
+            // Native #anchor handles the scroll; just close the sheet.
+            closeSectionsPanel();
+          });
+        });
+      }
+
+      // --- Reading-position resume ---
+      // On load, if a saved position exists for this guide AND no URL #hash is
+      // present (a hash always wins), scroll to the saved section and offer a
+      // dismissible toast. Reuses the scroll-spy's heading ids; no extra observer.
+      const resumeToast = document.querySelector<HTMLElement>('[data-resume-toast]');
+      let resumeTimer: number | undefined;
+      const dismissResume = () => {
+        if (!resumeToast) return;
+        resumeToast.classList.remove('is-visible');
+        window.clearTimeout(resumeTimer);
+        resumeTimer = window.setTimeout(() => {
+          resumeToast.hidden = true;
+        }, 250);
+      };
+      if (resumeToast && posKey && !window.location.hash) {
+        let saved = '';
+        try {
+          saved = window.localStorage.getItem(posKey) ?? '';
+        } catch {
+          saved = '';
+        }
+        const target = saved ? document.getElementById(saved) : null;
+        // Only resume when there's a real saved section that isn't the very first
+        // heading (resuming "at the top" is just noise).
+        const firstHeading = root.querySelector<HTMLElement>('h2[id]');
+        if (target && target !== firstHeading) {
+          // Title for the toast: the injected "#" anchor is always the LAST child,
+          // so slice off the final "#" rather than replace() (which strips the
+          // FIRST "#", mangling headings that contain one, e.g. "C# basics").
+          const anchor = target.querySelector('.heading-anchor');
+          const raw = target.textContent ?? '';
+          const title = (anchor ? raw.slice(0, raw.lastIndexOf('#')) : raw).trim();
+          const titleEl = resumeToast.querySelector<HTMLElement>('[data-resume-title]');
+          target.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+          resumeToast.hidden = false;
+          // Set the title AFTER the region is unhidden so the polite aria-live
+          // announcement fires (Chrome/Edge skip content present before unhide).
+          requestAnimationFrame(() => {
+            if (titleEl) titleEl.textContent = title;
+            resumeToast.classList.add('is-visible');
+          });
+          resumeTimer = window.setTimeout(dismissResume, 6000);
+        }
+      }
+      if (resumeToast && !resumeToast.dataset.bound) {
+        resumeToast.dataset.bound = 'true';
+        resumeToast.querySelector<HTMLElement>('[data-resume-dismiss]')?.addEventListener('click', dismissResume);
+        resumeToast.querySelector<HTMLElement>('[data-resume-top]')?.addEventListener('click', () => {
+          if (posKey) {
+            try {
+              window.localStorage.removeItem(posKey);
+            } catch {
+              /* ignore */
+            }
+          }
+          window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+          dismissResume();
+        });
+      }
+
       w.__guidePostCleanup = () => {
         window.removeEventListener('scroll', onScroll);
         window.removeEventListener('resize', onScroll);
         observer?.disconnect();
+        window.clearTimeout(savePosTimer);
+        window.clearTimeout(resumeTimer);
+        window.clearTimeout(panelCloseTimer);
+        if (panel && panelKeydown) panel.removeEventListener('keydown', panelKeydown);
+        document.body.style.removeProperty('overflow');
       };
     }
     // Run on initial load too — the site has no ClientRouter, so `astro:page-load`
@@ -701,19 +989,22 @@ if (d.faqs && d.faqs.length) jsonLd.push(faqPageLd(d.faqs));
     display: block;
   }
 
-  /* --- Heading anchor links (hover-reveal #) --- */
+  /* --- Heading anchor links (#) ---
+     Below xl: rendered inline after the heading text (static flow, always shown
+     but low-key) so the anchor stays reachable on touch/tablet where there is no
+     gutter. At xl+: lifted into the left gutter as a hover-reveal "#", matching
+     the desktop rails treatment. Keyboard :focus-visible shows it at all widths. */
   .rich-text :is(h2, h3) {
     position: relative;
   }
   .heading-anchor {
-    position: absolute;
-    left: -1.1em;
-    top: 0;
-    width: 1.1em;
-    text-align: center;
+    /* < xl default: inline, static, after the heading text. */
+    margin-left: 0.4em;
     color: var(--color-mute);
     text-decoration: none;
-    opacity: 0;
+    font-weight: 400;
+    /* Don't let the trailing "#" push the line into horizontal overflow. */
+    word-break: keep-all;
     transition:
       opacity 0.15s ease,
       color 0.15s ease;
@@ -721,14 +1012,24 @@ if (d.faqs && d.faqs.length) jsonLd.push(faqPageLd(d.faqs));
   .heading-anchor:hover {
     color: var(--color-brand-strong);
   }
-  .rich-text :is(h2, h3):hover > .heading-anchor,
   .heading-anchor:focus-visible {
     opacity: 1;
+    color: var(--color-brand-strong);
   }
-  /* No room for the gutter anchor below the xl rails layout. */
-  @media (max-width: 1279px) {
+  /* xl+: move the anchor into the left gutter and reveal it only on hover/focus. */
+  @media (min-width: 1280px) {
     .heading-anchor {
-      display: none;
+      position: absolute;
+      left: -1.1em;
+      top: 0;
+      width: 1.1em;
+      margin-left: 0;
+      text-align: center;
+      opacity: 0;
+    }
+    .rich-text :is(h2, h3):hover > .heading-anchor,
+    .heading-anchor:focus-visible {
+      opacity: 1;
     }
   }
 
@@ -768,11 +1069,230 @@ if (d.faqs && d.faqs.length) jsonLd.push(faqPageLd(d.faqs));
     border-color: var(--color-brand);
   }
 
+  /* --- Mobile TOC active highlight (shared by the <details> list + FAB panel) ---
+     The desktop rail uses .toc-link.is-active; the mobile entries use a sibling
+     class so the rail's left-border treatment doesn't bleed into the flat list. */
+  .toc-mobile-link.is-active {
+    color: var(--color-ink);
+    font-weight: 600;
+  }
+  .toc-mobile-link.is-active .toc-mobile-min {
+    color: var(--color-brand-strong);
+  }
+
+  /* --- Mobile "Jump to section" FAB (stacked above back-to-top) --- */
+  .sections-fab {
+    position: fixed;
+    right: 1.25rem;
+    /* Sit above the 44px back-to-top button (1.25rem gutter + 44px + 0.625rem gap). */
+    bottom: calc(1.25rem + 44px + 0.625rem);
+    z-index: 50;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 9999px;
+    border: 1px solid var(--color-hairline-strong);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: 0 4px 16px rgb(0 0 0 / 0.12);
+    transition:
+      color 0.15s ease,
+      border-color 0.15s ease;
+  }
+  .sections-fab:hover {
+    color: var(--color-brand-strong);
+    border-color: var(--color-brand);
+  }
+  .sections-fab[aria-expanded='true'] {
+    color: var(--color-brand-strong);
+    border-color: var(--color-brand);
+  }
+  /* The desktop sticky rail (lg+) already provides section navigation, so the
+     FAB + bottom sheet are mobile-only. This must live in scoped CSS: the
+     component's own `.sections-fab { display: … }` rule out-specifies Tailwind's
+     `lg:hidden` utility (Astro appends a [data-astro-cid] attribute, raising
+     specificity), so the utility alone does NOT hide it on desktop. */
+  @media (min-width: 64rem) {
+    .sections-fab,
+    .sections-scrim,
+    .sections-panel {
+      display: none !important;
+    }
+  }
+
+  /* --- Sections bottom sheet: scrim + slide-up panel --- */
+  .sections-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: rgb(0 0 0 / 0.4);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+  .sections-scrim.is-open {
+    opacity: 1;
+  }
+  .sections-panel {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 61;
+    max-height: 75dvh;
+    display: flex;
+    flex-direction: column;
+    background: var(--color-canvas);
+    border-top: 1px solid var(--color-hairline-strong);
+    border-top-left-radius: var(--radius-lg);
+    border-top-right-radius: var(--radius-lg);
+    box-shadow: 0 -8px 32px rgb(0 0 0 / 0.18);
+    padding: 0.75rem 1rem calc(1rem + env(safe-area-inset-bottom));
+    transform: translateY(100%);
+    transition: transform 0.25s ease;
+  }
+  .sections-panel.is-open {
+    transform: none;
+  }
+  .sections-panel:focus {
+    outline: none;
+  }
+  .sections-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--color-hairline);
+  }
+  .sections-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    color: var(--color-mute);
+    transition:
+      color 0.15s ease,
+      background-color 0.15s ease;
+  }
+  .sections-close:hover {
+    color: var(--color-ink);
+    background: var(--color-canvas-soft-2);
+  }
+  .sections-panel-list {
+    margin-top: 0.25rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    display: flex;
+    flex-direction: column;
+  }
+  .sections-panel-list > li + li {
+    border-top: 1px solid var(--color-hairline);
+  }
+  .sections-panel-link {
+    padding: 0.7rem 0.25rem;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-mute);
+    text-decoration: none;
+    transition: color 0.15s ease;
+  }
+  .sections-panel-link:hover {
+    color: var(--color-ink);
+  }
+
+  /* --- Reading-position resume toast --- */
+  .resume-toast {
+    position: fixed;
+    left: 50%;
+    bottom: 1.25rem;
+    z-index: 62;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    max-width: calc(100vw - 2rem);
+    padding: 0.625rem 0.75rem 0.625rem 1rem;
+    border-radius: 9999px;
+    border: 1px solid var(--color-hairline-strong);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: 0 6px 24px rgb(0 0 0 / 0.16);
+    font-size: 13px;
+    opacity: 0;
+    transform: translate(-50%, 8px);
+    transition:
+      opacity 0.2s ease,
+      transform 0.2s ease;
+  }
+  .resume-toast.is-visible {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  /* Keep the toast clear of the right-edge FABs on small screens. */
+  @media (max-width: 1023px) {
+    .resume-toast {
+      left: 1rem;
+      right: calc(1.25rem + 44px + 0.75rem);
+      max-width: none;
+      transform: translateY(8px);
+    }
+    .resume-toast.is-visible {
+      transform: translateY(0);
+    }
+  }
+  .resume-toast-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--color-mute);
+  }
+  .resume-toast-section {
+    color: var(--color-ink);
+    font-weight: 600;
+  }
+  .resume-toast-action {
+    flex-shrink: 0;
+    padding: 0.25rem 0.6rem;
+    border-radius: 9999px;
+    border: 1px solid var(--color-hairline-strong);
+    color: var(--color-brand-strong);
+    font-weight: 600;
+    white-space: nowrap;
+    transition:
+      border-color 0.15s ease,
+      background-color 0.15s ease;
+  }
+  .resume-toast-action:hover {
+    border-color: var(--color-brand);
+    background: color-mix(in srgb, var(--color-brand) 8%, transparent);
+  }
+  .resume-toast-dismiss {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 9999px;
+    color: var(--color-mute);
+    transition: color 0.15s ease;
+  }
+  .resume-toast-dismiss:hover {
+    color: var(--color-ink);
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .reading-progress-fill,
     .back-to-top,
     .heading-anchor,
-    .toc-link {
+    .toc-link,
+    .sections-fab,
+    .sections-scrim,
+    .sections-panel,
+    .resume-toast {
       transition: none;
     }
   }
