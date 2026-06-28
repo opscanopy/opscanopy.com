@@ -3,6 +3,7 @@ import { defineConfig } from 'astro/config';
 import tailwindcss from '@tailwindcss/vite';
 import sitemap from '@astrojs/sitemap';
 import remarkCallouts from './src/lib/remark-callouts.mjs';
+import rehypeChapters from './src/lib/rehype-chapters.mjs';
 
 // https://astro.build/config
 export default defineConfig({
@@ -35,6 +36,7 @@ export default defineConfig({
   ],
   markdown: {
     remarkPlugins: [remarkCallouts],
+    rehypePlugins: [rehypeChapters],
   },
   vite: {
     plugins: [tailwindcss()],
