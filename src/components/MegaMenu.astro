@@ -33,7 +33,7 @@ for (const tool of liveTools) {
   hidden
   role="dialog"
   aria-label={t('megamenu.dialogLabel')}
-  aria-modal="false"
+  aria-modal="true"
   class="mega-menu absolute inset-x-0 top-full z-50 border-t border-hairline bg-canvas shadow-modal"
 >
   <div class="container-page py-6 sm:py-8">
@@ -138,6 +138,12 @@ function initMegaMenu() {
   const emptyQ  = document.getElementById("mega-empty-q") as HTMLElement | null;
 
   if (!menu || !trigger) return;
+  // Idempotency: initMegaMenu() runs both at script parse AND on astro:page-load,
+  // so guard against double-binding every listener (Escape would otherwise fire
+  // twice, search would run twice, etc.). Mirrors the dataset.*Wired pattern used
+  // by the playgrounds and Header; the element persists across soft navigations.
+  if (menu.dataset.megaWired === "true") return;
+  menu.dataset.megaWired = "true";
 
   // ── Timers ──────────────────────────────────────────────────────────────────
   let hoverOpenTimer: ReturnType<typeof setTimeout> | null = null;
@@ -149,6 +155,30 @@ function initMegaMenu() {
   // ── Helpers ─────────────────────────────────────────────────────────────────
   function isOpen(): boolean {
     return !menu!.hasAttribute("hidden");
+  }
+
+  /**
+   * Returns the ordered list of currently-focusable controls inside the menu —
+   * mirrors the `focusables()` helper in Header.astro's mobile-overlay trap.
+   * Order: search input → visible .mega-tool links → clear button (if shown) →
+   * view-all footer link.
+   */
+  function megaFocusables(): HTMLElement[] {
+    const items: HTMLElement[] = [];
+    // 1. Search input is always present and visible when the menu is open.
+    if (search) items.push(search);
+    // 2. Clear button sits beside the search input, so keep it adjacent in Tab
+    //    order (only when not hidden, i.e. the search has content).
+    if (clearBtn && !clearBtn.hidden) items.push(clearBtn);
+    // 3. All visible tool links (li not hidden by search filter).
+    menu!.querySelectorAll<HTMLAnchorElement>("a.mega-tool").forEach((link) => {
+      const li = link.closest("li") as HTMLElement | null;
+      if (!li?.hidden) items.push(link);
+    });
+    // 4. View-all footer link.
+    const viewAllLink = menu!.querySelector<HTMLAnchorElement>("[data-mega-viewall]");
+    if (viewAllLink) items.push(viewAllLink);
+    return items;
   }
 
   function resetSearch() {
@@ -231,11 +261,42 @@ function initMegaMenu() {
     }
   });
 
-  // ── Escape key ───────────────────────────────────────────────────────────────
+  // ── Escape + Tab focus-trap ───────────────────────────────────────────────────
+  //
+  // Mirrors the mobile-overlay trap in Header.astro:
+  //   • Escape → close and return focus to the trigger button.
+  //   • Tab at last focusable → wrap to first.
+  //   • Shift+Tab at first focusable → wrap to last.
+  //
   document.addEventListener("keydown", (e: KeyboardEvent) => {
-    if (e.key === "Escape" && isOpen()) {
+    if (!isOpen()) return;
+
+    if (e.key === "Escape") {
       closeMenu();
       trigger!.focus();
+      return;
+    }
+
+    if (e.key === "Tab") {
+      const items = megaFocusables();
+      if (items.length === 0) return;
+      const first = items[0];
+      const last  = items[items.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+
+      if (e.shiftKey) {
+        // Shift+Tab at the first focusable → wrap to last.
+        if (active === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        // Tab at the last focusable → wrap to first.
+        if (active === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     }
   });
 
