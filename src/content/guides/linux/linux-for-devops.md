@@ -29,15 +29,15 @@ Linux is the operating system under every Docker container, every Kubernetes nod
 
 ## Introduction to Linux
 
-Imagine you bought a brand new car. You see the dashboard, the steering wheel, the leather seats, the touchscreen infotainment system. But what actually *moves* the car? The engine. You rarely open the hood, you never see it during your daily drive, yet without it, nothing works. **Linux is exactly that engine** for the entire modern internet. Every time you scroll Instagram, order from Zomato, watch Netflix, or pay through UPI — somewhere in a datacenter, a Linux server is doing the heavy lifting. You never see it. You never think about it. But it's powering 96% of the world's digital infrastructure in 2026.
+Imagine you bought a brand new car. You see the dashboard, the steering wheel, the leather seats, the touchscreen infotainment system. But what actually *moves* the car? The engine. You rarely open the hood, you never see it during your daily drive, yet without it, nothing works. **Linux is exactly that engine** for the entire modern internet. Every time you scroll Instagram, order from Uber Eats, watch Netflix, or tap your phone to pay — somewhere in a datacenter, a Linux server is doing the heavy lifting. You never see it. You never think about it. But it's powering 96% of the world's digital infrastructure in 2026.
 
-As a React developer for over a decade, you've been writing code that *runs on top of* this engine. You've been the person designing the dashboard. Now you're about to learn what's under the hood — and that's exactly what the highest-paid DevOps engineers in India know cold. The transition from frontend to DevOps is one of the most valuable career moves in tech today, because you already understand how applications behave; now you'll learn how they live, breathe, scale, and recover at the infrastructure level.
+As an experienced frontend developer, you've been writing code that *runs on top of* this engine. You've been the person designing the dashboard. Now you're about to learn what's under the hood — and that's exactly what the highest-paid DevOps engineers know cold. The transition from frontend to DevOps is one of the most valuable career moves in tech today, because you already understand how applications behave; now you'll learn how they live, breathe, scale, and recover at the infrastructure level.
 
-> **Real world:** Think of Linux like the Indian Railways network. You don't see the tracks, signals, or control rooms when you travel — but they're the reason 13,000+ trains run every day moving 8 billion passengers a year. Linux is the railway network of the internet. AWS, Azure, GCP, Netflix, Google, Facebook, WhatsApp, Paytm, Flipkart — sab Linux par chalte hain.
+> **Real world:** Think of Linux like the global air-traffic network. You don't see the radar, the control towers, or the routing systems when you fly — but they're the reason tens of thousands of flights move millions of passengers safely every single day. Linux is the air-traffic network of the internet. AWS, Azure, GCP, Netflix, Google, Facebook, WhatsApp, Spotify, Amazon — they all run on Linux.
 
 ### Why Linux Dominates DevOps in 2026
 
-If you walked into any tech company in Bengaluru, Hyderabad, Pune, or Gurgaon today and asked their SRE team what operating system runs production, the answer is almost universally Linux. Here's why this domination is now absolute:
+If you walked into any tech company in a major tech hub today and asked their SRE team what operating system runs production, the answer is almost universally Linux. Here's why this domination is now absolute:
 
 - **~96% of public cloud servers run Linux** — AWS EC2, Azure VMs, Google Compute Engine. Even Microsoft, which makes Windows, runs the majority of Azure on Linux.
 - **100% of containers use the Linux kernel** — Docker, Podman, containerd all rely on Linux namespaces and cgroups. Even "Windows containers" running on Docker Desktop spin up a hidden Linux VM underneath.
@@ -52,7 +52,7 @@ For a React developer transitioning to DevOps, this means one undeniable truth: 
 
 | Feature | Linux | Windows | macOS |
 |---|---|---|---|
-| **Cost** | Free (most distros) | ~₹12,000 per license | Bundled with Apple hardware (₹1L+) |
+| **Cost** | Free (most distros) | ~$140 per license | Bundled with Apple hardware (premium) |
 | **Customization** | Unlimited — change anything | Limited to UI/registry | Restricted — Apple's way only |
 | **CLI Power** | Native, world-class (bash, zsh) | Catching up (PowerShell, WSL2) | Strong (Unix-based, zsh default) |
 | **Server Use** | ~96% of internet servers | ~3% (legacy enterprise AD) | Negligible (not a server OS) |
@@ -116,15 +116,17 @@ Linux is released under the **GNU General Public License version 2 (GPLv2)**. Th
 
 Why do massive corporations like Google, Meta, Amazon, and Microsoft pour billions into a "free" project? Because open-source Linux gives them zero licensing cost at scale, total customizability, security through transparency, vendor independence, and faster innovation.
 
-### The DevOps Salary Reality in India (2026)
+### The DevOps Salary Reality (2026)
 
-| Level | Experience | Salary Range (INR) | Typical Skills |
-|---|---|---|---|
-| **Junior DevOps** | 0-2 years | ₹6 - 12 LPA | Linux basics, Git, Docker, basic CI/CD, one cloud |
-| **Mid DevOps / SRE** | 2-5 years | ₹15 - 25 LPA | Kubernetes, Terraform, Prometheus, scripting, multi-cloud |
-| **Senior DevOps / SRE** | 5-8 years | ₹30 - 50 LPA | Architecture, security, cost optimization, on-call leadership |
-| **Lead / Staff / Principal** | 8-12+ years | ₹50 - 80+ LPA | Platform engineering, multi-team coordination, strategy |
-| **DevOps Manager / Director** | 10+ years | ₹70 LPA - 1.5 Cr+ | People management, business alignment, P&L |
+| Level | Experience | US (USD) | Europe (EUR) | India (INR) | Typical Skills |
+|---|---|---|---|---|---|
+| **Junior DevOps** | 0-2 years | $65k–100k | €45k–70k | ₹6–12 LPA | Linux basics, Git, Docker, basic CI/CD, one cloud |
+| **Mid DevOps / SRE** | 2-5 years | $100k–150k | €70k–105k | ₹15–25 LPA | Kubernetes, Terraform, Prometheus, scripting, multi-cloud |
+| **Senior DevOps / SRE** | 5-8 years | $150k–200k | €105k–145k | ₹30–50 LPA | Architecture, security, cost optimization, on-call leadership |
+| **Lead / Staff / Principal** | 8-12+ years | $190k–270k | €140k–190k | ₹50–80+ LPA | Platform engineering, multi-team coordination, strategy |
+| **DevOps Manager / Director** | 10+ years | $200k–350k+ | €150k–230k | ₹70 LPA–1.5 Cr+ | People management, business alignment, P&L |
+
+*Figures are rough 2026 market signals, not guarantees. They swing widely with company size, city, cost of living, and equity — treat them as the relative gaps between levels, not absolute targets.*
 
 ## Linux Architecture
 
@@ -3675,7 +3677,7 @@ These are the highest-frequency Linux questions asked in DevOps and SRE intervie
 
 ## Quick Reference Cheat Sheets
 
-*Yeh section bookmark karke rakho* — these are the reference sheets you will hit Ctrl+F on during your first 6 months on the job. Print them, paste them on your wall, whatever works. Real production-grade reference, no fluff.
+*Bookmark this section* — these are the reference sheets you will hit Ctrl+F on during your first 6 months on the job. Print them, paste them on your wall, whatever works. Real production-grade reference, no fluff.
 
 ### 1. Top 100 Linux Commands (Grouped)
 
@@ -4307,7 +4309,7 @@ Rule of thumb: use `grep -E` (ERE) — fewer backslashes, fewer tears.
 | 5 | Date YYYY-MM-DD | `[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])` |
 | 6 | Time HH:MM:SS (24h) | `([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]` |
 | 7 | ISO timestamp | `[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})` |
-| 8 | Indian mobile number | `(\+91[- ]?)?[6-9][0-9]{9}` |
+| 8 | E.164 phone number | `\+[1-9][0-9]{7,14}` |
 | 9 | UUIDv4 | `[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}` |
 | 10 | Nginx access log IP | `^([0-9]{1,3}\.){3}[0-9]{1,3} ` |
 
@@ -4890,7 +4892,7 @@ MAILTO=ops@1buy.ai
 
 ## Keyboard Shortcuts and Aliases
 
-Speed comes from muscle memory, not from typing faster. *Jab tak yeh shortcuts hath mein nahi aate, productivity boost nahi milega.* Pick 10 from this list, drill them this week, then come back for the next 10.
+Speed comes from muscle memory, not from typing faster. *Until these shortcuts live in your fingers, you won't feel the productivity boost.* Pick 10 from this list, drill them this week, then come back for the next 10.
 
 ### Terminal Keyboard Shortcuts (Readline / Bash)
 
@@ -5053,7 +5055,7 @@ alias psg='ps aux | grep -v grep | grep -iE'  # process search
 # ---------- Network ----------
 alias myip='curl -s https://ifconfig.me && echo'   # public IP
 alias localip="ip -4 -br a | grep -v '^lo'"        # local IPs
-alias weather='curl -s wttr.in/Bengaluru?format=3' # quick weather
+alias weather='curl -s wttr.in/?format=3'          # quick weather
 alias headers='curl -sI'                           # response headers only
 
 # ---------- Git ----------
@@ -5168,59 +5170,59 @@ fkill() {
 }
 ```
 
-Drop these into `~/.bashrc` (or a sourced `~/.bash_functions` file), run `source ~/.bashrc`, and they become first-class commands. The `extract` function alone will save you "wait, was it `xjvf` or `xzvf`?" lookups for the rest of your career. *Ek baar set kar do, jeevan bhar kaam aayega.*
+Drop these into `~/.bashrc` (or a sourced `~/.bash_functions` file), run `source ~/.bashrc`, and they become first-class commands. The `extract` function alone will save you "wait, was it `xjvf` or `xzvf`?" lookups for the rest of your career. *Set it up once, and it pays off for life.*
 
 ## Advanced Linux for DevOps
 
-Yahan se asli DevOps game shuru hota hai. Containers, kernel tuning, boot internals, LVM, RAID — yeh sab woh layer hai jo "React dev to ₹30+ LPA DevOps engineer" ka transition complete karta hai. Ek interviewer aapse poochega: "Docker container kaise kaam karta hai under the hood?" — agar aap namespaces + cgroups + overlayfs + capabilities samjha sake, aap already top 20% candidates mein hain.
+This is where the real DevOps game begins. Containers, kernel tuning, boot internals, LVM, RAID — this is the layer that completes the transition from frontend developer to six-figure (USD) DevOps engineer. An interviewer will ask you: "How does a Docker container work under the hood?" — if you can explain namespaces + cgroups + overlayfs + capabilities, you're already in the top 20% of candidates.
 
 ### Containers Are Not Magic — They Are Linux Features
 
-Ek container = **namespaces (isolation) + cgroups (resource limits) + overlayfs (layered FS) + capabilities (privilege control)**. Docker, containerd, Podman — sab kuch is foundation pe baithe hain. VM ke jaise full hypervisor nahi chahiye; kernel shared hota hai host ke saath, lekin processes ko alag dikhta hai jaise unka apna OS ho.
+A container = **namespaces (isolation) + cgroups (resource limits) + overlayfs (layered FS) + capabilities (privilege control)**. Docker, containerd, Podman — they all sit on this foundation. You don't need a full hypervisor like a VM; the kernel is shared with the host, but each process sees an isolated world as if it had its own OS.
 
-### Linux Namespaces — Process Ka Apna Universe
+### Linux Namespaces — A Process Gets Its Own Universe
 
-Namespaces ek process group ko system ka ek subset dikhate hain. Container ke andar process ko lagta hai woh PID 1 hai, uska apna network stack hai, apna filesystem root hai.
+Namespaces show a process group only a subset of the system. Inside a container, a process thinks it's PID 1, with its own network stack and its own filesystem root.
 
 | Namespace | Flag | What It Isolates | Practical Effect |
 |---|---|---|---|
-| `pid` | `CLONE_NEWPID` | Process IDs | Container ka PID 1 host ka PID 14523 ho sakta hai |
-| `mnt` | `CLONE_NEWNS` | Mount points / filesystem view | Container ko apna `/`, host ka `/` nahi dikhta |
-| `net` | `CLONE_NEWNET` | Network interfaces, routes, iptables, sockets | Apna eth0, apni loopback, apni iptables rules |
+| `pid` | `CLONE_NEWPID` | Process IDs | The container's PID 1 might be PID 14523 on the host |
+| `mnt` | `CLONE_NEWNS` | Mount points / filesystem view | The container sees its own `/`, not the host's `/` |
+| `net` | `CLONE_NEWNET` | Network interfaces, routes, iptables, sockets | Its own eth0, its own loopback, its own iptables rules |
 | `ipc` | `CLONE_NEWIPC` | SysV IPC, POSIX message queues | Shared memory segments isolated |
-| `uts` | `CLONE_NEWUTS` | Hostname, domain name | Har container ka apna hostname (`hostname` command) |
-| `user` | `CLONE_NEWUSER` | UID/GID mappings | Container ka root (UID 0) host pe unprivileged user 100000 |
-| `cgroup` | `CLONE_NEWCGROUP` | Cgroup root view | Container ko cgroup hierarchy ka subset dikhta hai |
+| `uts` | `CLONE_NEWUTS` | Hostname, domain name | Each container gets its own hostname (`hostname` command) |
+| `user` | `CLONE_NEWUSER` | UID/GID mappings | The container's root (UID 0) maps to unprivileged user 100000 on the host |
+| `cgroup` | `CLONE_NEWCGROUP` | Cgroup root view | The container sees only a subset of the cgroup hierarchy |
 
-### Manual Namespace Creation — Container Banayein Bina Docker Ke
+### Manual Namespace Creation — Build a Container Without Docker
 
 ```bash
-# Naya PID + network + mount namespace banayein
+# Create a new PID + network + mount namespace
 sudo unshare --pid --net --mount --uts --ipc --fork --mount-proc bash
 
-# Andar jaake check karein
-echo $$                    # PID 1 dikhega (host pe yeh kuch aur hai)
-hostname container-demo    # Sirf is namespace mein change hoga
-ps aux                     # Sirf is namespace ke processes
-ip addr                    # Sirf loopback dikhega (network isolated)
+# Go inside and check
+echo $$                    # Shows PID 1 (it's something else on the host)
+hostname container-demo    # Changes only inside this namespace
+ps aux                     # Only the processes in this namespace
+ip addr                    # Only loopback (network is isolated)
 
-# Exit karne pe sab cleanup ho jata hai
+# Everything is cleaned up on exit
 exit
 ```
 
-Yeh hi to Docker karta hai — bas sath mein image, overlayfs, aur orchestration add karta hai.
+This is exactly what Docker does — it just adds an image, overlayfs, and orchestration on top.
 
-### Inspect Namespaces — lsns aur /proc
+### Inspect Namespaces — lsns and /proc
 
 ```bash
-# Saare namespaces list karein
+# List all namespaces
 lsns
 
 # Specific type
 lsns -t net
 lsns -t pid
 
-# Apne shell ke namespaces dekho
+# Look at your own shell's namespaces
 ls -l /proc/$$/ns/
 # Output:
 # lrwxrwxrwx 1 user user 0 May 26 10:23 cgroup -> 'cgroup:[4026531835]'
@@ -5231,16 +5233,16 @@ ls -l /proc/$$/ns/
 # lrwxrwxrwx 1 user user 0 May 26 10:23 user   -> 'user:[4026531837]'
 # lrwxrwxrwx 1 user user 0 May 26 10:23 uts    -> 'uts:[4026531838]'
 
-# Container ke namespace mein enter karein (Docker PID milne ke baad)
+# Enter a container's namespace (once you have the Docker PID)
 sudo nsenter --target 14523 --pid --net --mount
 ```
 
 ### cgroups v2 (Ubuntu 24.04 Default)
 
-cgroups (control groups) processes ke **resource usage** ko limit/account karte hain. Ubuntu 24.04 unified cgroup v2 use karta hai — single hierarchy at `/sys/fs/cgroup`.
+cgroups (control groups) limit and account for the **resource usage** of processes. Ubuntu 24.04 uses the unified cgroup v2 — a single hierarchy at `/sys/fs/cgroup`.
 
 ```bash
-# cgroup v2 verify karein
+# Verify cgroup v2
 mount | grep cgroup
 # cgroup2 on /sys/fs/cgroup type cgroup2 (rw,nosuid,nodev,noexec,relatime,nsdelegate)
 
@@ -5248,7 +5250,7 @@ mount | grep cgroup
 cat /sys/fs/cgroup/cgroup.controllers
 # cpu io memory pids hugetlb cpuset rdma misc
 
-# Ek naya cgroup banayein aur limits set karein
+# Create a new cgroup and set limits
 sudo mkdir /sys/fs/cgroup/myapp
 echo "+cpu +memory +io +pids" | sudo tee /sys/fs/cgroup/cgroup.subtree_control
 
@@ -5264,21 +5266,21 @@ echo "100" | sudo tee /sys/fs/cgroup/myapp/pids.max
 # IO: weight (10-1000, default 100), per-device limits also possible
 echo "default 50" | sudo tee /sys/fs/cgroup/myapp/io.weight
 
-# Process ko cgroup mein daalein
+# Put a process into the cgroup
 echo $$ | sudo tee /sys/fs/cgroup/myapp/cgroup.procs
 
-# Current usage dekhein
+# Check current usage
 cat /sys/fs/cgroup/myapp/memory.current
 cat /sys/fs/cgroup/myapp/cpu.stat
 ```
 
-> **Tip:** Docker ka `--memory 512m --cpus="0.5"` internally yeh hi cgroup files likhta hai. Kubernetes pod ke `resources.limits` bhi yahin pohchte hain via kubelet → containerd → runc.
+> **Tip:** Docker's `--memory 512m --cpus="0.5"` writes to exactly these cgroup files internally. A Kubernetes pod's `resources.limits` also end up here via kubelet → containerd → runc.
 
 ### How Docker Stitches It All Together
 
 | Layer | Technology | Role |
 |---|---|---|
-| Isolation | Namespaces (pid, net, mnt, uts, ipc, user) | Process apne universe mein |
+| Isolation | Namespaces (pid, net, mnt, uts, ipc, user) | Each process in its own universe |
 | Resource limits | cgroups v2 | CPU, memory, IO, PIDs cap |
 | Filesystem | overlayfs (lowerdir + upperdir = merged) | Image layers + writable container layer |
 | Privileges | Capabilities (drop most by default) | Container root != host root |
@@ -5286,7 +5288,7 @@ cat /sys/fs/cgroup/myapp/cpu.stat
 | Networking | veth pair + bridge (docker0) + iptables | Container-to-host-to-internet |
 
 ```bash
-# Overlayfs ko khud try karein
+# Try overlayfs yourself
 mkdir -p /tmp/ovl/{lower,upper,work,merged}
 echo "from image" > /tmp/ovl/lower/file.txt
 
@@ -5300,39 +5302,39 @@ cat /tmp/ovl/lower/file.txt               # Still "from image" — read-only
 cat /tmp/ovl/upper/file.txt               # "container write" — copy-on-write
 ```
 
-### Linux Capabilities — Setuid Ka Modern Replacement
+### Linux Capabilities — The Modern Replacement for Setuid
 
-Old Unix mein binary ya to root (UID 0, all-powerful) tha ya normal user. Linux capabilities root ki powers ko 40+ chhote chunks mein todte hain. `ping` ko raw socket chahiye — pehle setuid-root tha, ab use sirf `CAP_NET_RAW` diya jata hai.
+In old Unix, a binary was either root (UID 0, all-powerful) or a normal user. Linux capabilities break root's powers into 40+ smaller chunks. `ping` needs a raw socket — it used to be setuid-root, now it's given only `CAP_NET_RAW`.
 
 ```bash
-# Apne shell ki capabilities dekho
+# Look at your shell's capabilities
 capsh --print
 
-# File capabilities dekho
+# Look at a file's capabilities
 getcap /usr/bin/ping
 # /usr/bin/ping cap_net_raw=ep
 
-# Nginx ko port 80 (privileged port) bind karne ki capability dein, root chalaye bina
+# Give Nginx the capability to bind port 80 (a privileged port) without running as root
 sudo setcap 'cap_net_bind_service=+ep' /usr/local/bin/nginx
 getcap /usr/local/bin/nginx
 # /usr/local/bin/nginx cap_net_bind_service=ep
 
 # Common capabilities
-# CAP_NET_BIND_SERVICE  - port < 1024 bind karna
+# CAP_NET_BIND_SERVICE  - bind ports < 1024
 # CAP_NET_ADMIN         - network config (ip, iptables)
-# CAP_SYS_ADMIN         - "almost root" — bahut powerful, careful
-# CAP_CHOWN             - file ownership change
-# CAP_DAC_OVERRIDE      - permission bypass
-# CAP_KILL              - kisi bhi process ko signal bhejna
-# CAP_SETUID/SETGID     - UID/GID change
+# CAP_SYS_ADMIN         - "almost root" — very powerful, be careful
+# CAP_CHOWN             - change file ownership
+# CAP_DAC_OVERRIDE      - bypass permissions
+# CAP_KILL              - send a signal to any process
+# CAP_SETUID/SETGID     - change UID/GID
 
-# Capability remove karein
+# Remove a capability
 sudo setcap -r /usr/local/bin/nginx
 
-# Docker default mein bahut saari caps drop karta hai
+# Docker drops a lot of caps by default
 docker run --rm alpine sh -c 'apk add -q libcap; capsh --print' | grep Current
 # Current: cap_chown,cap_dac_override,cap_fowner,cap_fsetid,cap_kill,cap_setgid,...
-# (full root capabilities NAHI hain)
+# (NOT full root capabilities)
 ```
 
 ### Performance Tuning — sysctl, ulimit, I/O Schedulers
@@ -5340,15 +5342,15 @@ docker run --rm alpine sh -c 'apk add -q libcap; capsh --print' | grep Current
 #### Kernel Parameters via sysctl
 
 ```bash
-# Current value dekhein
+# Check the current value
 sysctl vm.swappiness
 sysctl net.core.somaxconn
 
-# Runtime change (reboot pe gayab)
+# Runtime change (gone after reboot)
 sudo sysctl -w vm.swappiness=10
 sudo sysctl -w net.core.somaxconn=4096
 
-# Persist karein — /etc/sysctl.d/ mein file banayein
+# Persist it — create a file in /etc/sysctl.d/
 sudo tee /etc/sysctl.d/99-devops-tuning.conf <<'EOF'
 # Memory: prefer dropping cache over swapping (DB/app servers)
 vm.swappiness = 10
@@ -5372,10 +5374,10 @@ fs.inotify.max_user_watches = 524288
 net.netfilter.nf_conntrack_max = 1048576
 EOF
 
-# Apply karein
+# Apply it
 sudo sysctl --system
 
-# Saare current values
+# All current values
 sysctl -a | less
 ```
 
@@ -5385,14 +5387,14 @@ sysctl -a | less
 # Current limits
 ulimit -a
 
-# Open files limit (sabse common bottleneck)
+# Open files limit (the most common bottleneck)
 ulimit -n               # soft
 ulimit -Hn              # hard
 
-# Temporarily badhayein (current shell only)
+# Raise it temporarily (current shell only)
 ulimit -n 65535
 
-# Permanent — /etc/security/limits.conf ya /etc/security/limits.d/
+# Permanent — /etc/security/limits.conf or /etc/security/limits.d/
 sudo tee /etc/security/limits.d/99-app.conf <<'EOF'
 # domain  type  item   value
 *         soft  nofile 65535
@@ -5403,7 +5405,7 @@ www-data  soft  nofile 100000
 www-data  hard  nofile 200000
 EOF
 
-# systemd services ke liye — service unit file mein
+# For systemd services — in the service unit file
 # [Service]
 # LimitNOFILE=1048576
 # LimitNPROC=65535
@@ -5412,14 +5414,14 @@ EOF
 #### I/O Schedulers
 
 ```bash
-# Current scheduler dekho
+# Look at the current scheduler
 cat /sys/block/sda/queue/scheduler
 # [mq-deadline] kyber bfq none
 
-# NVMe ke liye 'none' best — NVMe ka apna queue management hai
+# 'none' is best for NVMe — NVMe has its own queue management
 echo none | sudo tee /sys/block/nvme0n1/queue/scheduler
 
-# SATA SSD / HDD ke liye 'mq-deadline' ya 'bfq'
+# For SATA SSD / HDD use 'mq-deadline' or 'bfq'
 echo mq-deadline | sudo tee /sys/block/sda/queue/scheduler
 
 # Persist via udev rule
@@ -5433,11 +5435,11 @@ ACTION=="add|change", KERNEL=="sd[a-z]", ATTR{queue/rotational}=="1", ATTR{queue
 EOF
 ```
 
-> **Caution:** Sabse common production outage cause — `ulimit -n` too low. Node.js / Java apps under load 1024 file descriptors mein crash ho jate hain with "EMFILE: too many open files". Hamesha 65535+ set karein.
+> **Caution:** The most common cause of production outages — `ulimit -n` set too low. Under load, Node.js / Java apps crash at 1024 file descriptors with "EMFILE: too many open files". Always set it to 65535+.
 
 ### Boot Process Deep Dive
 
-Power button daba → kernel running → systemd → login prompt. Beech mein bahut layers hain:
+Press the power button → kernel running → systemd → login prompt. There are many layers in between:
 
 | Stage | UEFI Boot | Legacy BIOS |
 |---|---|---|
@@ -5450,10 +5452,10 @@ Power button daba → kernel running → systemd → login prompt. Beech mein ba
 | 7. Disk size | > 2 TB OK (GPT) | 2 TB limit (MBR) |
 
 ```bash
-# UEFI mein boot ho rahe ho check karein
+# Check whether you booted in UEFI mode
 ls /sys/firmware/efi && echo "UEFI" || echo "BIOS"
 
-# ESP partition dekho
+# Look at the ESP partition
 df -h /boot/efi
 mount | grep /boot/efi
 # /dev/nvme0n1p1 on /boot/efi type vfat ...
@@ -5483,7 +5485,7 @@ GRUB_CMDLINE_LINUX_DEFAULT="quiet splash ipv6.disable=1"
 sudo update-grub
 # OR:  sudo grub-mkconfig -o /boot/grub/grub.cfg
 
-# initramfs rebuild (driver change ya crypto ke baad)
+# Rebuild initramfs (after a driver change or crypto change)
 sudo update-initramfs -u -k all
 
 # Kernel command line currently running
@@ -5492,10 +5494,10 @@ cat /proc/cmdline
 
 #### initramfs (initial RAM filesystem)
 
-Kernel boot hone ke turant baad asli root filesystem mount karne ke liye drivers chahiye (NVMe, RAID, LVM, encrypted disk). Yeh sab ek temporary RAM-based filesystem mein hota hai — `initramfs`. `/boot/initrd.img-*` ek compressed cpio archive hai.
+Right after the kernel boots, it needs drivers to mount the real root filesystem (NVMe, RAID, LVM, encrypted disk). All of this happens in a temporary RAM-based filesystem — the `initramfs`. `/boot/initrd.img-*` is a compressed cpio archive.
 
 ```bash
-# Dekho kya hai andar
+# See what's inside
 lsinitramfs /boot/initrd.img-$(uname -r) | head -50
 
 # Rebuild
@@ -5506,87 +5508,87 @@ sudo update-initramfs -u -k all
 
 ```bash
 # Current target
-systemctl get-default          # graphical.target ya multi-user.target
+systemctl get-default          # graphical.target or multi-user.target
 
-# Set karein
+# Set it
 sudo systemctl set-default multi-user.target
 
-# Server ke liye total boot time
+# Total boot time for a server
 systemd-analyze
 # Startup finished in 3.124s (kernel) + 8.456s (userspace) = 11.580s
 
-# Kaunsa service slow hai?
+# Which service is slow?
 systemd-analyze blame
 # 4.123s snapd.service
 # 2.456s cloud-init.service
 # 1.234s apt-daily.service
 
-# Critical path (boot ke serial dependency chain)
+# Critical path (the serial dependency chain of boot)
 systemd-analyze critical-chain
 systemd-analyze critical-chain nginx.service
 
 # Visual SVG plot
 systemd-analyze plot > /tmp/boot-plot.svg
-# Browser mein open karein — beautiful timeline dikhega
+# Open it in a browser — you get a beautiful timeline
 ```
 
 ### LVM — Logical Volume Manager (Production Essential)
 
-LVM disks ko abstract karta hai. Aap multiple physical disks (PVs) ko ek pool (VG) mein daalte ho, aur usme se flexible chunks (LVs) carve karte ho — runtime resize, snapshots, online migration sab milta hai.
+LVM abstracts your disks. You pool multiple physical disks (PVs) into a group (VG), and carve flexible chunks (LVs) out of it — runtime resize, snapshots, and online migration all come for free.
 
 The LVM stack, top to bottom: **Filesystems** (`/` ext4, `/var/lib/docker`, `/data` xfs) sit on **LVs** (lv-root 20G, lv-docker 50G, lv-data 200G), which are carved from the **VG** (`vg_main` — Volume Group, 500 GB total, 230 GB free), which pools the **PVs** (`/dev/nvme0n1p3` 200G, `/dev/nvme1n1` 200G, `/dev/nvme2n1` 100G — physical disks / partitions / raw block devices).
 
 #### Full End-to-End LVM Example
 
 ```bash
-# 1. Physical Volumes banayein (raw disks ko LVM-managed banao)
+# 1. Create Physical Volumes (turn raw disks into LVM-managed devices)
 sudo pvcreate /dev/nvme1n1 /dev/nvme2n1
 sudo pvs
 
-# 2. Volume Group banayein (PVs ka pool)
+# 2. Create a Volume Group (a pool of PVs)
 sudo vgcreate vg_main /dev/nvme1n1 /dev/nvme2n1
 sudo vgs
 sudo vgdisplay vg_main
 
-# 3. Logical Volume banayein
+# 3. Create Logical Volumes
 sudo lvcreate -L 50G -n lv-docker vg_main
 sudo lvcreate -L 200G -n lv-data vg_main
-# Ya saari free space:
+# Or all the free space:
 # sudo lvcreate -l 100%FREE -n lv-data vg_main
 sudo lvs
 
-# 4. Filesystem banayein
+# 4. Create filesystems
 sudo mkfs.ext4 /dev/vg_main/lv-docker
 sudo mkfs.xfs  /dev/vg_main/lv-data
 
-# 5. Mount karein
+# 5. Mount them
 sudo mkdir -p /var/lib/docker /data
 sudo mount /dev/vg_main/lv-docker /var/lib/docker
 sudo mount /dev/vg_main/lv-data /data
 
-# 6. /etc/fstab mein add karein (UUID best practice)
+# 6. Add to /etc/fstab (UUID is best practice)
 echo "/dev/vg_main/lv-docker /var/lib/docker ext4 defaults,noatime 0 2" | sudo tee -a /etc/fstab
 echo "/dev/vg_main/lv-data   /data           xfs  defaults,noatime 0 2" | sudo tee -a /etc/fstab
 
-# ===== AB LIVE EXTEND — yeh LVM ki asli power hai =====
+# ===== NOW THE LIVE EXTEND — this is the real power of LVM =====
 
-# Disk full ho rahi hai. lv-data ko 100G aur badhao
+# The disk is filling up. Grow lv-data by another 100G
 sudo lvextend -L +100G /dev/vg_main/lv-data
 sudo xfs_growfs /data                    # XFS online grow
 
-# ext4 ke liye:
+# For ext4:
 # sudo lvextend -L +50G /dev/vg_main/lv-docker
 # sudo resize2fs /dev/vg_main/lv-docker
 
-# Combined (lvextend + filesystem resize ek hi command mein):
+# Combined (lvextend + filesystem resize in a single command):
 sudo lvextend -r -L +50G /dev/vg_main/lv-docker
 
-# VG mein space khatam? Nayi disk add karo
+# Out of space in the VG? Add a new disk
 sudo pvcreate /dev/nvme3n1
 sudo vgextend vg_main /dev/nvme3n1
 sudo lvextend -r -L +500G /dev/vg_main/lv-data
 
-# ===== SNAPSHOTS — backup ke liye =====
+# ===== SNAPSHOTS — for backups =====
 sudo lvcreate -L 10G -s -n lv-data-snap /dev/vg_main/lv-data
 sudo mount -o ro /dev/vg_main/lv-data-snap /mnt/snapshot
 tar czf /backup/data-$(date +%F).tar.gz -C /mnt/snapshot .
@@ -5594,9 +5596,9 @@ sudo umount /mnt/snapshot
 sudo lvremove -f /dev/vg_main/lv-data-snap
 ```
 
-> **Tip:** Cloud relevance — AWS pe LVM kyun? Multiple EBS volumes ko stripe ya pool karne ke liye. Ek instance pe 4×500GB gp3 volumes lo, LVM se ek 2TB volume banao — combined IOPS bhi badh jata hai aur grow karna easy.
+> **Tip:** Cloud relevance — why LVM on AWS? To stripe or pool multiple EBS volumes. Take 4×500GB gp3 volumes on an instance and make a single 2TB volume with LVM — combined IOPS goes up and growing it is easy.
 
-### RAID — Redundancy aur Performance
+### RAID — Redundancy and Performance
 
 | RAID Level | Min Disks | Redundancy | Capacity | Read/Write | Use Case |
 |---|---|---|---|---|---|
@@ -5618,33 +5620,33 @@ sudo mdadm --create /dev/md0 --level=10 --raid-devices=4 \
 cat /proc/mdstat
 sudo mdadm --detail /dev/md0
 
-# Save config (else boot pe disappear)
+# Save config (otherwise it disappears on boot)
 sudo mdadm --detail --scan | sudo tee -a /etc/mdadm/mdadm.conf
 sudo update-initramfs -u
 
-# Use as LVM PV ya direct filesystem
+# Use as an LVM PV or a direct filesystem
 sudo mkfs.xfs /dev/md0
 ```
 
-> **Caution:** Cloud reality — AWS EBS / GCP PD / Azure Managed Disks pehle se replicated hain (3 copies cross-AZ). Aap cloud mein RAID rarely karte ho — provider already kar raha hai. Bas multiple EBS attach + LVM stripe for IOPS — that's the cloud pattern. mdadm sirf bare-metal / on-prem mein critical hai.
+> **Caution:** Cloud reality — AWS EBS / GCP PD / Azure Managed Disks are already replicated (3 copies cross-AZ). You rarely run RAID in the cloud — the provider already does it. Just attach multiple EBS volumes + LVM stripe for IOPS — that's the cloud pattern. mdadm is only critical on bare-metal / on-prem.
 
 ### Filesystem Tuning
 
 ```bash
-# ext4: reserved blocks (root-only) ko 5% se 1% karein — big data disks pe space bachao
+# ext4: lower reserved blocks (root-only) from 5% to 1% — save space on big data disks
 sudo tune2fs -m 1 /dev/vg_main/lv-data
 
-# Forced fsck interval / mount count off (production servers — fsck on boot avoid)
+# Turn off forced fsck interval / mount count (production servers — avoid fsck on boot)
 sudo tune2fs -c 0 -i 0 /dev/vg_main/lv-data
 
-# Saari options dekho
+# Show all options
 sudo tune2fs -l /dev/vg_main/lv-data
 
-# Mount options jo production mein matter karte hain
-# noatime    — har read pe atime update mat karo (huge perf gain, esp. for DBs, web)
-# nodiratime — directory atime skip
+# Mount options that matter in production
+# noatime    — don't update atime on every read (huge perf gain, esp. for DBs, web)
+# nodiratime — skip directory atime
 # discard    — SSD TRIM on delete (alternative: fstrim weekly via timer)
-# nofail     — boot mein disk missing pe fail mat karo (cloud detached EBS scenario)
+# nofail     — don't fail boot if the disk is missing (cloud detached EBS scenario)
 # nosuid,nodev,noexec — security for /tmp, /var
 
 # /etc/fstab example for production
@@ -5655,11 +5657,11 @@ sudo tune2fs -l /dev/vg_main/lv-data
 sudo mount -t tmpfs -o size=4G,mode=1777 tmpfs /var/cache/build
 ```
 
-> **Note:** Hinglish summary — Yeh section padh ke samjho: Docker container = unshare + cgroups + overlayfs + capability drop. Boot = UEFI → GRUB → kernel → initramfs → systemd. LVM = flexible disks, runtime grow. RAID = redundancy. Cloud mein RAID ki zaroorat kam, but LVM aur tuning sab jagah kaam aate hain. Yeh saari cheezein interview mein "how does X work internally" ke jawab mein aati hain.
+> **Note:** Quick recap — A Docker container = unshare + cgroups + overlayfs + capability drop. Boot = UEFI → GRUB → kernel → initramfs → systemd. LVM = flexible disks, runtime grow. RAID = redundancy. You rarely need RAID in the cloud, but LVM and tuning are useful everywhere. All of these show up in interviews as the answer to "how does X work internally?"
 
 ## Linux in Cloud Context
 
-Ab tak humne Linux ko ek isolated machine pe samjha. Cloud mein woh hi Linux chal raha hai, lekin alag patterns hain — ephemeral instances, metadata service, cloud-init bootstrapping, EBS attach/grow, SSH replacement with SSM. Ek React-dev-turned-DevOps engineer ka roz ka 70% time AWS Linux instances + Kubernetes nodes pe spend hota hai. Yeh section us 70% ko cover karta hai.
+So far we've looked at Linux on a single isolated machine. In the cloud the same Linux is running, but with different patterns — ephemeral instances, the metadata service, cloud-init bootstrapping, EBS attach/grow, replacing SSH with SSM. A developer-turned-DevOps engineer spends roughly 70% of each day on AWS Linux instances + Kubernetes nodes. This section covers that 70%.
 
 ### AWS EC2 Linux Distributions
 
@@ -5672,11 +5674,11 @@ Ab tak humne Linux ko ek isolated machine pe samjha. Cloud mein woh hi Linux cha
 | Debian 12 | `admin` | `apt` | Minimal, stable, like Ubuntu's parent. |
 | Custom AMI | Whatever you bake | Whatever | Pre-configured golden image via Packer. |
 
-> **Tip:** Practical pick — Production Kubernetes nodes → Amazon Linux 2023 (Bottlerocket bhi consider karo). General app servers → Ubuntu 24.04. Enterprise compliance → RHEL/Rocky.
+> **Tip:** Practical pick — Production Kubernetes nodes → Amazon Linux 2023 (also consider Bottlerocket). General app servers → Ubuntu 24.04. Enterprise compliance → RHEL/Rocky.
 
-### Instance Metadata Service (IMDS) — Cloud Ka /proc
+### Instance Metadata Service (IMDS) — The Cloud's /proc
 
-Har EC2 instance ko ek special endpoint milta hai: `http://169.254.169.254`. Yahan se instance apne baare mein sab kuch jaan sakta hai — region, AZ, instance type, IAM role credentials, user-data, public IP. SDKs (boto3, aws-cli) bhi IAM creds yahin se uthate hain.
+Every EC2 instance gets a special endpoint: `http://169.254.169.254`. From here the instance can learn everything about itself — region, AZ, instance type, IAM role credentials, user-data, public IP. SDKs (boto3, aws-cli) also pull their IAM creds from here.
 
 ```bash
 # IMDSv1 (legacy, insecure — SSRF attacks possible)
@@ -5707,32 +5709,32 @@ curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta
 curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/user-data
 ```
 
-> **Caution:** IMDSv1 SSRF attacks ka shikar hota hai — Capital One breach yahin se hua. Hamesha enforce IMDSv2 (HttpTokens=required) instance metadata options mein.
+> **Caution:** IMDSv1 is vulnerable to SSRF attacks — the Capital One breach happened through it. Always enforce IMDSv2 (HttpTokens=required) in the instance metadata options.
 
 ### EBS Volumes — Attach, Format, Mount, Grow
 
 ```bash
-# Naya volume attach karne ke baad device list dekho
+# After attaching a new volume, look at the device list
 lsblk
 # NAME         SIZE TYPE MOUNTPOINTS
 # nvme0n1       30G disk
 # `-nvme0n1p1   30G part /
 # nvme1n1      100G disk                  <-- new EBS volume
 
-# Filesystem nahi hai abhi
+# No filesystem on it yet
 sudo file -s /dev/nvme1n1
-# /dev/nvme1n1: data        (matlab empty)
+# /dev/nvme1n1: data        (i.e. empty)
 
-# Filesystem banayein
+# Create a filesystem
 sudo mkfs.ext4 /dev/nvme1n1
 # Modern alternative: sudo mkfs.xfs /dev/nvme1n1
 
-# Mountpoint banayein aur mount karein
+# Create a mountpoint and mount it
 sudo mkdir -p /data
 sudo mount /dev/nvme1n1 /data
 
 # /etc/fstab — UUID best practice; nofail critical for cloud
-# (instance reboot ho aur volume detached ho to boot fail nahi hoga)
+# (if the instance reboots with the volume detached, boot won't fail)
 UUID=$(sudo blkid -s UUID -o value /dev/nvme1n1)
 echo "UUID=$UUID  /data  ext4  defaults,nofail,noatime  0  2" | sudo tee -a /etc/fstab
 
@@ -5744,23 +5746,23 @@ df -h /data
 #### Grow EBS Volume In-Place (Zero Downtime)
 
 ```bash
-# Step 1: AWS console ya CLI se volume size badhao
+# Step 1: Increase the volume size from the AWS console or CLI
 aws ec2 modify-volume --volume-id vol-0abc123 --size 200
 
 # Wait for "optimizing" state
 aws ec2 describe-volumes-modifications --volume-id vol-0abc123
 
-# Step 2: Instance ke andar kernel ko naya size dikhega
+# Step 2: Inside the instance, the kernel sees the new size
 lsblk
 # nvme1n1      200G disk
-# `-nvme1n1p1  100G part /data         <-- partition abhi 100G hai
+# `-nvme1n1p1  100G part /data         <-- partition is still 100G
 
-# Step 3: Partition grow karo (agar partition use kar rahe ho)
+# Step 3: Grow the partition (if you're using a partition)
 sudo growpart /dev/nvme1n1 1
 
-# Direct raw device pe filesystem (no partition) — yeh step skip
+# Filesystem directly on the raw device (no partition) — skip this step
 
-# Step 4: Filesystem grow karo
+# Step 4: Grow the filesystem
 # ext4:
 sudo resize2fs /dev/nvme1n1p1
 # OR direct:
@@ -5793,7 +5795,7 @@ chmod 400 ~/.ssh/my-key.pem
 ssh -i ~/.ssh/my-key.pem ec2-user@54.221.10.45    # Amazon Linux
 ssh -i ~/.ssh/my-key.pem ubuntu@54.221.10.45      # Ubuntu
 
-# ~/.ssh/config mein convenient alias
+# A convenient alias in ~/.ssh/config
 cat >> ~/.ssh/config <<'EOF'
 Host prod-web
   HostName 54.221.10.45
@@ -5805,7 +5807,7 @@ ssh prod-web
 
 # Bastion host pattern (private instance via public jump box)
 ssh -i key.pem -J bastion.example.com ubuntu@10.0.5.20
-# Ya config mein ProxyJump
+# Or ProxyJump in your config
 Host prod-db
   HostName 10.0.5.20
   User ubuntu
@@ -5831,11 +5833,11 @@ Host i-* mi-*
 ssh ec2-user@i-0abc123def456
 ```
 
-> **Tip:** Production gold-standard — Security groups mein port 22 EVER open mat karo. SSM Session Manager use karo — no public IP, no SSH key management, full audit log in CloudTrail, IAM-based access control. Yeh hi modern DevOps practice hai.
+> **Tip:** Production gold-standard — never open port 22 in your security groups. Use SSM Session Manager — no public IP, no SSH key management, full audit log in CloudTrail, IAM-based access control. This is the modern DevOps practice.
 
 ### cloud-init — First Boot Bootstrap
 
-cloud-init Linux ka standard first-boot configuration tool hai. AWS, GCP, Azure, OpenStack — sab pe chalta hai. User-data field jo aap launch time pe dete ho, woh cloud-init parse karta hai aur execute karta hai.
+cloud-init is Linux's standard first-boot configuration tool. It runs on AWS, GCP, Azure, OpenStack — everywhere. The user-data field you provide at launch time is parsed and executed by cloud-init.
 
 ```bash
 # Status check
@@ -5851,11 +5853,11 @@ ls /etc/cloud/
 # cloud.cfg.d/            drop-ins (vendor + user)
 # templates/              hostname etc.
 
-# Logs (debugging ke liye SABSE IMPORTANT)
+# Logs (THE MOST IMPORTANT thing for debugging)
 sudo tail -f /var/log/cloud-init.log              # detailed
 sudo tail -f /var/log/cloud-init-output.log       # stdout/stderr of user-data
 
-# Re-run cloud-init (testing ke liye)
+# Re-run cloud-init (for testing)
 sudo cloud-init clean --logs
 sudo cloud-init init
 sudo cloud-init modules --mode=config
@@ -5959,7 +5961,7 @@ power_state:
 
 ### AMI Creation — Golden Images
 
-Production mein har deploy pe full user-data se setup karne ki bajaye pre-baked AMI use karte hain — boot 30 seconds instead of 5 minutes. Lekin AMI banane se pehle "sysprep" (clean) zaroori hai.
+In production, instead of doing a full user-data setup on every deploy, you use pre-baked AMIs — boot in 30 seconds instead of 5 minutes. But before creating an AMI, a "sysprep" (clean) is essential.
 
 ```bash
 # Pre-AMI cleanup script (run before creating image)
@@ -5969,7 +5971,7 @@ set -e
 # Stop services that hold state
 sudo systemctl stop docker nginx
 
-# Remove SSH host keys (instance pe regenerate honge first boot pe)
+# Remove SSH host keys (they'll regenerate on the instance's first boot)
 sudo rm -f /etc/ssh/ssh_host_*
 
 # Clear machine-id (cloud-init will regenerate)
@@ -6033,13 +6035,13 @@ curl -s -H "Metadata:true" \
 
 #### 1. Immutable Infrastructure
 
-Server ko mat patch karo — naye AMI se naya instance launch karo, traffic shift karo, purana terminate karo. Configuration drift = zero. Rollback = pichla AMI re-launch. This is the modern way.
+Don't patch the server — launch a new instance from a new AMI, shift traffic, terminate the old one. Configuration drift = zero. Rollback = re-launch the previous AMI. This is the modern way.
 
 #### 2. cloud-init + Configuration Management Combo
 
 ```bash
 #cloud-config
-# cloud-init sirf "Ansible/Chef bootstrap" karta hai, baaki sab woh karta hai
+# cloud-init only "bootstraps Ansible/Chef" — that tool does the rest
 package_update: true
 packages: [ansible, git]
 runcmd:
@@ -6049,7 +6051,7 @@ runcmd:
 
 #### 3. Centralized Logging
 
-Instance pe local logs (`/var/log/*`) ephemeral hain — instance terminate hua to logs gone. Production mein logs hamesha ship karo:
+Local logs on an instance (`/var/log/*`) are ephemeral — when the instance is terminated, the logs are gone. In production, always ship your logs:
 
 ```bash
 # CloudWatch agent
@@ -6070,7 +6072,7 @@ DD_API_KEY=xxx DD_SITE="datadoghq.com" \
 #### 4. EBS Snapshots — Automated Backup
 
 ```bash
-# AWS Backup ya Data Lifecycle Manager (DLM) — preferred
+# AWS Backup or Data Lifecycle Manager (DLM) — preferred
 # Snapshot daily, retain 7 days, cross-region copy weekly
 
 # Manual snapshot (one-off)
@@ -6094,7 +6096,7 @@ aws ec2 create-volume \
 # Access only via:
 aws ssm start-session --target i-0abc123
 
-# Aur agar SSH protocol chahiye (scp, rsync, git):
+# And if you need the SSH protocol (scp, rsync, git):
 ssh ec2-user@i-0abc123    # ProxyCommand via SSM (config shown earlier)
 scp -r ./code/ ec2-user@i-0abc123:/home/ec2-user/
 ```
@@ -6128,25 +6130,25 @@ scp -r ./code/ ec2-user@i-0abc123:/home/ec2-user/
 #   - Bigger instance: ASG rolling update with new instance type
 ```
 
-> **Note:** Hinglish wrap-up — Cloud Linux mein 5 cheezein roz kaam aati hain: (1) IMDSv2 se instance ka data fetch karna, (2) EBS volume attach + format + mount + fstab nofail, (3) cloud-init user-data se bootstrap, (4) SSM Session Manager se SSH ke bina access, (5) golden AMI + immutable infra pattern. Yeh sab itne baar repeat karoge ki muscle memory ban jayega.
+> **Note:** Wrap-up — Five things you'll use daily with cloud Linux: (1) fetching instance data via IMDSv2, (2) EBS volume attach + format + mount + fstab nofail, (3) bootstrapping via cloud-init user-data, (4) keyless SSH access via SSM Session Manager, (5) the golden AMI + immutable infra pattern. You'll repeat these so often they become muscle memory.
 
-> **Tip:** Interview question jo aapko 30+ LPA dilayega — "Describe what happens from `aws ec2 run-instances` till an application is serving traffic." Answer: AMI snapshot se EBS root volume create, ENI attach, instance boot (UEFI → GRUB → kernel → initramfs → systemd) → cloud-init pulls user-data from IMDS → packages install, config files written, services start → application binds to port → health check passes → ALB target group marks healthy → traffic routes. Iss puri chain ko 60 seconds mein samjha sako, to job aapki hai.
+> **Tip:** The interview question that lands you a senior-level (USD six-figure) offer — "Describe what happens from `aws ec2 run-instances` until an application is serving traffic." Answer: an EBS root volume is created from the AMI snapshot, an ENI is attached, the instance boots (UEFI → GRUB → kernel → initramfs → systemd) → cloud-init pulls user-data from IMDS → packages install, config files are written, services start → the application binds to its port → the health check passes → the ALB target group marks it healthy → traffic routes. If you can explain that whole chain in 60 seconds, the job is yours.
 
 ## Further Learning
 
-You've built the foundation. Now you need to keep the muscle warm. This section is a curated map of where to go next — channels, platforms, books, and certifications that actually move the needle for the Indian DevOps market. Spend 30 minutes a day here for the next three months and you will be unrecognizable.
+You've built the foundation. Now you need to keep the muscle warm. This section is a curated map of where to go next — channels, platforms, books, and certifications that actually move the needle in the global DevOps market. Spend 30 minutes a day here for the next three months and you will be unrecognizable.
 
 > **Tip:** Study advice #1 — Pick ONE channel and finish it. Don't channel-hop. Bookmark 50 videos and watch zero. Pick Abhishek Veeramalla's Linux + DevOps playlist OR NetworkChuck's Linux for hackers, and finish it end-to-end before you touch anything else.
 
 ### YouTube channels worth your subscription
 
-**Hindi creators (great for concepts in your native rhythm):**
+**Concept-first creators (great for building intuition):**
 
-- **Abhishek Veeramalla** — gold standard for Indian DevOps aspirants. His "DevOps Zero to Hero" playlist is the single most recommended free resource in Indian DevOps WhatsApp groups. Real interview questions, real scenarios.
+- **Abhishek Veeramalla** — a gold standard for DevOps aspirants. His "DevOps Zero to Hero" playlist is one of the most recommended free resources in DevOps communities. Real interview questions, real scenarios.
 - **Telusko (Navin Reddy)** — clean Linux fundamentals, scripting basics, Docker primers. Great when you want a relaxed explanation.
-- **Cyber Platter** — strong on shell scripting, system administration, and Red Hat workflows. Useful for RHCSA prep in Hindi.
+- **Cyber Platter** — strong on shell scripting, system administration, and Red Hat workflows. Useful for RHCSA prep.
 
-**English creators (depth + production polish):**
+**Production-polished creators (depth + polish):**
 
 - **NetworkChuck** — high-energy, hands-on. His "Linux for Hackers" series is the most fun way to fall in love with the terminal.
 - **Learn Linux TV (Jay LaCroix)** — calm, thorough, no-fluff. The Ubuntu Server and Bash scripting series are excellent.
@@ -6179,29 +6181,29 @@ You've built the foundation. Now you need to keep the muscle warm. This section 
 - **"How Linux Works" by Brian Ward (No Starch Press)** — the single best book to understand *why* Linux behaves the way it does. Bootloaders, init, devices, networking. Read it twice.
 - **"The Linux Command Line" by William Shotts** — legally free PDF at `linuxcommand.org/tlcl.php`. The reference for shell mastery.
 - **"Linux Bible" by Christopher Negus** — fat, slightly dry, but covers RHEL/Fedora workflows thoroughly. Perfect companion for RHCSA.
-- **"Site Reliability Engineering" (Google SRE Book)** — free at `sre.google/books`. Not Linux-specific but it teaches you how to *think* like the engineers earning ₹40+ LPA.
+- **"Site Reliability Engineering" (Google SRE Book)** — free at `sre.google/books`. Not Linux-specific but it teaches you how to *think* like the engineers earning top-of-market (USD six-figure) salaries.
 - **Bonus: "UNIX and Linux System Administration Handbook" by Nemeth et al.** — the "purple book." If you go senior sysadmin, this is the bible.
 
-### Certifications — what actually matters in the Indian DevOps market
+### Certifications — what actually matters in the DevOps market
 
-Ranked by ROI for someone at your stage (37yo React dev pivoting to DevOps, targeting ₹30+ LPA):
+Ranked by ROI for someone at your stage (an experienced developer pivoting to DevOps, targeting six-figure USD roles):
 
-1. **RHCSA (Red Hat Certified System Administrator) — EX200.** The most respected Linux cert in India. Hands-on exam, no MCQs. Recruiters at TCS, Infosys, Wipro, Red Hat partners, and most product startups recognize it instantly. Cost: ~₹35k. Worth every rupee if your goal is Linux-heavy DevOps roles.
-2. **LFCS (Linux Foundation Certified Sysadmin).** Vendor-neutral, performance-based, cheaper (~$300, often 50% off). Less brand recognition than RHCSA in India but globally respected.
+1. **RHCSA (Red Hat Certified System Administrator) — EX200.** The most respected Linux cert in the industry. Hands-on exam, no MCQs. Recruiters at enterprises, Red Hat partners, and most product companies recognize it instantly. It isn't cheap, but it's worth it if your goal is Linux-heavy DevOps roles.
+2. **LFCS (Linux Foundation Certified Sysadmin).** Vendor-neutral, performance-based, cheaper (~$300, often 50% off). Less brand recognition than RHCSA but globally respected.
 3. **CompTIA Linux+.** Decent foundational cert. MCQ-based. Good for resumes scanned by ATS bots, weaker signal to senior engineers.
-4. **LPIC-1.** Vendor-neutral, two exams. Solid content but lower brand pull in India compared to RHCSA.
-5. **Honest take:** **AWS Solutions Architect Associate (SAA-C03) + provable Linux skills (Bandit + a GitHub of scripts) beats any pure-Linux cert** for ₹30+ LPA DevOps roles. Hiring managers want cloud + Linux, not Linux alone. If you can only afford one cert this year, do SAA-C03 first, then RHCSA.
+4. **LPIC-1.** Vendor-neutral, two exams. Solid content but lower brand pull than RHCSA.
+5. **Honest take:** **AWS Solutions Architect Associate (SAA-C03) + provable Linux skills (Bandit + a GitHub of scripts) beats any pure-Linux cert** for six-figure (USD) DevOps roles. Hiring managers want cloud + Linux, not Linux alone. If you can only afford one cert this year, do SAA-C03 first, then RHCSA.
 
 ### Online sandboxes (practice without burning your laptop)
 
 - **Killercoda** — instant Ubuntu/CentOS/K8s playgrounds in the browser. No signup needed for basic labs.
 - **JSLinux** (`bellard.org/jslinux`) — a full Linux kernel running in your browser via JavaScript. Useful for quick "what does this command do" checks on a locked-down machine.
-- **DigitalOcean** — $200 free credit for new accounts, ₹500/month droplets after. Cleanest UX for spinning up real VMs.
+- **DigitalOcean** — $200 free credit for new accounts, droplets from ~$6/month after. Cleanest UX for spinning up real VMs.
 - **Linode (Akamai)** — similar to DO, $100 credit, slightly cheaper at the low end.
 - **AWS EC2 free tier** — t2.micro / t3.micro free for 12 months. This should be your daily-driver sandbox because it also teaches you AWS.
 - **GCP free tier** — e2-micro is free forever in select regions. Great for a persistent personal Linux server.
 
-> **Note:** Study advice #3 — Build in public. Push every script, every dotfile, every broken-then-fixed config to a GitHub repo called `linux-journey-2026`. Tweet/LinkedIn one thing you learned each week. In six months that repo + timeline is worth more than any certificate, because it's *proof of consistent practice* — which is exactly what Indian DevOps hiring managers screen for.
+> **Note:** Study advice #3 — Build in public. Push every script, every dotfile, every broken-then-fixed config to a GitHub repo called `linux-journey-2026`. Tweet/LinkedIn one thing you learned each week. In six months that repo + timeline is worth more than any certificate, because it's *proof of consistent practice* — which is exactly what DevOps hiring managers screen for.
 
 ## Next Steps After Linux
 
@@ -6239,7 +6241,7 @@ A Kubernetes cluster is a fleet of Linux machines (*nodes*) running containers (
 2. Learn pods → deployments → services → ingress in that order. Don't skip ahead.
 3. Do the free **Kubernetes Basics** tutorial on kubernetes.io.
 4. KillerCoda K8s scenarios — 30 minutes/day for 3 weeks.
-5. Aim for **CKAD (Certified Kubernetes Application Developer)**. It's hands-on, performance-based, and worth ~₹2-4 LPA in salary negotiation in India. CKA comes later when you're ops-focused.
+5. Aim for **CKAD (Certified Kubernetes Application Developer)**. It's hands-on, performance-based, and can add a meaningful bump to your offer. CKA comes later when you're ops-focused.
 
 ### Linux → AWS (EC2 is Linux, Lambda is Linux, Fargate is Linux)
 
@@ -6249,7 +6251,7 @@ You will be shocked how much of "learning AWS" is actually "applying Linux on re
 
 1. **AWS Solutions Architect Associate (SAA-C03)** — your gateway cert. ~$150, three months of evening study. Stephane Maarek's Udemy course is the standard.
 2. Hands-on: build a 3-tier app (VPC + EC2 + RDS + S3 + CloudFront) and tear it down with Terraform.
-3. **AWS DevOps Engineer Professional** — once you have 1+ year of real AWS experience. This is the cert that anchors ₹30-40 LPA conversations.
+3. **AWS DevOps Engineer Professional** — once you have 1+ year of real AWS experience. This is the cert that anchors senior-level (USD six-figure) conversations.
 
 ### 30-day Linux-to-DevOps ramp (one focused task per day)
 
@@ -6290,11 +6292,11 @@ Ready to apply what you've learned? Work through the [Hands-on DevOps Projects](
 
 - **Day 30 — Linux comfort.** You can SSH anywhere, debug a stuck process, write a 100-line bash script, and edit any system config without panic. You speak fluent terminal.
 - **Day 60 — Docker + AWS basics.** You've containerized 3+ apps, you understand VPC/EC2/S3/IAM, and you've deployed something real to production with HTTPS. You can answer "explain Docker to a junior" in an interview.
-- **Day 90 — K8s + CI/CD interview-ready.** You've passed (or can pass) CKAD-style scenarios, you have a working GitHub Actions pipeline in a public repo, and you've cleared 3-5 mock interviews. **Target: ₹15-20 LPA junior/mid DevOps roles in Bangalore/Hyderabad/Pune.** At your age + React background, recruiters will fast-track you because you bring product sense most freshers lack.
-- **Month 6 — Mid-level inflection.** One real production system on your resume, SAA-C03 passed, CKAD passed, contributing to an open-source DevOps tool. **Target: ₹25-35 LPA mid-level DevOps / SRE / Platform Engineer roles.** The React-to-DevOps story becomes your superpower — you understand what developers actually need from a platform, which most pure-ops engineers don't.
+- **Day 90 — K8s + CI/CD interview-ready.** You've passed (or can pass) CKAD-style scenarios, you have a working GitHub Actions pipeline in a public repo, and you've cleared 3-5 mock interviews. **Target: junior/mid DevOps roles at strong product companies.** With your background, recruiters will fast-track you because you bring product sense most freshers lack.
+- **Month 6 — Mid-level inflection.** One real production system on your resume, SAA-C03 passed, CKAD passed, contributing to an open-source DevOps tool. **Target: mid-level DevOps / SRE / Platform Engineer roles.** The frontend-to-DevOps story becomes your superpower — you understand what developers actually need from a platform, which most pure-ops engineers don't.
 
-> **Real world:** The pep talk you came here for. You are 37. You are not late. The Indian DevOps market in 2026 is desperate for engineers who can talk to developers *and* ops — because most candidates can only do one. Your years of React shipping real features is not a liability; it is a wedge. Recruiters will pay a premium for someone who has actually pushed code to production and now understands the pipeline that delivers it.
+> **Real world:** The pep talk you came here for. You are not late. The global DevOps market in 2026 is desperate for engineers who can talk to developers *and* ops — because most candidates can only do one. Your years of shipping real features is not a liability; it is a wedge. Recruiters will pay a premium for someone who has actually pushed code to production and now understands the pipeline that delivers it.
 >
-> Six months from now, a hiring manager is going to look at your GitHub, see 180 days of consistent commits, see one solid end-to-end project, see SAA-C03 and maybe CKAD on the resume, and offer you ₹28 LPA without blinking. The only thing standing between you and that offer is showing up to the terminal every day between now and then.
+> Six months from now, a hiring manager is going to look at your GitHub, see 180 days of consistent commits, see one solid end-to-end project, see SAA-C03 and maybe CKAD on the resume, and make you a strong offer without blinking. The only thing standing between you and that offer is showing up to the terminal every day between now and then.
 >
 > Close this tab. Open one. Type `ssh`. Begin.

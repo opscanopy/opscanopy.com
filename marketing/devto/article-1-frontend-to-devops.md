@@ -7,7 +7,7 @@ cover_image: ""
 canonical_url: ""
 ---
 
-It was a Friday around 11pm and I was three hours into a build that wouldn't go green on a colleague's machine. Not a bug in my code. A version mismatch in a Webpack loader, a Node engine warning, and a peer-dependency tree that looked like the Bengaluru traffic on a Monday morning. I remember thinking: I've been doing React for six years and I still spend half my week fighting the *machine my code runs on*, not the code itself.
+It was a Friday around 11pm and I was three hours into a build that wouldn't go green on a colleague's machine. Not a bug in my code. A version mismatch in a Webpack loader, a Node engine warning, and a peer-dependency tree that looked like rush-hour traffic on a Monday morning. I remember thinking: I've been doing React for six years and I still spend half my week fighting the *machine my code runs on*, not the code itself.
 
 That night I started reading about Docker. Not to become a DevOps engineer. Just to make the pain stop.
 
@@ -61,7 +61,7 @@ If you're doing this on the side while holding a frontend job, say 8 to 10 hours
 
 The good news is you can earn while you learn by doing it *inside* your current job. Volunteer to own the team's CI pipeline. Dockerize the dev environment nobody wants to touch. Fix the deploy that breaks every other Friday. You become the "infra person" on a frontend team long before your title changes, and that internal track record is worth more than any cert.
 
-On money, since everyone asks and nobody answers honestly: from what I've seen and from public salary data in India, DevOps/SRE roles tend to sit a notch above equivalent frontend roles. Rough ranges I've seen floating around for the Indian market: early-career landing somewhere in the ₹8–15 LPA band, mid-level often ₹18–30 LPA, and seniors/SREs in good product companies in Bengaluru, Hyderabad or Pune going well beyond that. Treat those as ballpark, not gospel; they swing hard with company, location, and whether it's a product firm or a services shop.
+On money, since everyone asks and nobody answers honestly: from what I've seen and from public salary data, DevOps/SRE roles tend to sit a notch above equivalent frontend roles. Rough ranges I've seen floating around: early-career landing somewhere in the US$65–100k band, mid-level often US$100–150k, and seniors/SREs in good product companies going well beyond that (often US$150–200k+). Treat those as rough estimates, not gospel; they swing hard with company, region, and whether it's a product firm or a services shop.
 
 ## The mindset shift that mattered most
 

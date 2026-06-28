@@ -117,7 +117,7 @@ A startup with 20 microservices using VMs wastes a minimum of 40 GB RAM just for
 
 Before the 1950s, international shipping was chaos. Every ship had a different design, every port used different equipment, and cargo had to be repacked repeatedly. A shipment from Europe to America could take months, and costs were astronomical.
 
-**In 1956, Malcolm McLean invented the standardized shipping container.** One fixed size (20ft/40ft), standard corners, works on any ship, any port, any truck, any train. Load once in Shanghai — unload in Mumbai without opening the box.
+**In 1956, Malcolm McLean invented the standardized shipping container.** One fixed size (20ft/40ft), standard corners, works on any ship, any port, any truck, any train. Load once in Shanghai — unload in Rotterdam without opening the box.
 
 **Result:** Global trade exploded. Shipping costs dropped 90%.
 
@@ -310,11 +310,13 @@ Code (React/Node/Python) → Build (docker build / Dockerfile) → Test (docker 
 
 Docker knowledge significantly expands your career options:
 
-| Skill Level | Typical Role | Salary Range (India) |
-|---|---|---|
-| Without Docker | Junior/Mid Developer (Frontend/Backend) | ₹15–20 LPA |
-| Docker + Kubernetes | DevOps / SRE (2–5 yrs exp) | ₹30–50 LPA |
-| Docker + AWS + K8s + CI/CD | Senior DevOps / Staff SRE (5+ yrs exp) | ₹50+ LPA |
+| Skill Level | Typical Role | US (USD) | India (INR) |
+|---|---|---|---|
+| Without Docker | Junior/Mid Developer (Frontend/Backend) | $80k–120k | ₹15–20 LPA |
+| Docker + Kubernetes | DevOps / SRE (2–5 yrs exp) | $120k–170k | ₹30–50 LPA |
+| Docker + AWS + K8s + CI/CD | Senior DevOps / Staff SRE (5+ yrs exp) | $170k+ | ₹50+ LPA |
+
+*Ranges are rough 2026 signals and vary widely by region, company size, and cost of living.*
 
 A React/frontend background is a unique advantage in DevOps — engineers who understand both frontend containerization and backend infrastructure are in high demand.
 
@@ -341,7 +343,7 @@ Docker containers are not magic — they're **three Linux kernel features** work
 
 ### Linux Namespaces — The Isolation Magic
 
-A namespace makes a container feel like it is the only process on the machine — like an actor on a film set who is made to feel they are actually in a Mughal palace, when they are actually standing in a Mumbai studio.
+A namespace makes a container feel like it is the only process on the machine — like an actor on a film set who is made to feel they are actually in a royal palace, when they are actually standing on a soundstage.
 
 Linux has **7 types of namespaces**. Docker uses 6 of them:
 
@@ -5586,7 +5588,7 @@ username/myapp:v1.0                                           # Docker Hub user 
 
 # Cloud registries
 ghcr.io/username/myapp:latest                                 # GitHub Container Registry
-123456789.dkr.ecr.ap-south-1.amazonaws.com/myapp:v1.0        # AWS ECR (India region)
+123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.0         # AWS ECR (region-scoped)
 asia.gcr.io/myproject/myapp:latest                            # Google Container Registry
 registry.gitlab.com/group/project/myapp:1.0                   # GitLab Registry
 
@@ -5831,7 +5833,7 @@ docker push asia-south1-docker.pkg.dev/my-project/my-repo/myapp:v1.0
 | Harbor | Self-hosted | Free (infra cost) | Enterprise, full control |
 | Nexus Repository | Self-hosted | Free/Commercial | Enterprise artifact management |
 
-> **Tip:** Deploying to AWS → use ECR (ap-south-1 Mumbai region). Using GitHub Actions → use ghcr.io (free for public repos). Startup or open source → start with the Docker Hub free tier.
+> **Tip:** Deploying to AWS → use ECR (pick the Region closest to your users). Using GitHub Actions → use ghcr.io (free for public repos). Startup or open source → start with the Docker Hub free tier.
 
 ---
 

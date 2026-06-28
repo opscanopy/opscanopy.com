@@ -7,7 +7,7 @@ cover_image: ""
 canonical_url: ""
 ---
 
-I've been on both sides of the table. Some years I'm the one sweating through a Docker round; other years I'm the one asking "okay, your image is 1.2GB, walk me through shrinking it." So this list isn't scraped off the internet. These are questions I either got asked in 2026 or asked candidates myself, mostly for backend/DevOps roles (a chunk of these come up in almost every Bengaluru product-company loop).
+I've been on both sides of the table. Some years I'm the one sweating through a Docker round; other years I'm the one asking "okay, your image is 1.2GB, walk me through shrinking it." So this list isn't scraped off the internet. These are questions I either got asked in 2026 or asked candidates myself, mostly for backend/DevOps roles (a chunk of these come up in almost every product-company interview loop).
 
 **TL;DR:** Interviewers don't want textbook definitions. They want to know you've actually run `docker logs` on a crashing container at 11pm. Below are 14 questions grouped into Fundamentals, Images & Builds, Networking & Storage, and Debugging. Each has the question, what they're *really* testing, and the answer I'd give.
 

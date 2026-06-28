@@ -33,10 +33,10 @@ Before you touch a single EC2 instance, you need the mental map: **where** your 
 
 ### Regions and Availability Zones
 
-AWS physically runs in **Regions** (e.g. `ap-south-1` = Mumbai, `us-east-1` = N. Virginia). Each Region is a cluster of isolated datacenters grouped into **Availability Zones (AZs)**. An AZ is one or more physical datacenters with independent power, cooling, and networking, but AZs in the same Region are linked by low-latency private fiber.
+AWS physically runs in **Regions** (e.g. `us-east-1` = N. Virginia, `eu-west-1` = Ireland, `ap-southeast-1` = Singapore). Each Region is a cluster of isolated datacenters grouped into **Availability Zones (AZs)**. An AZ is one or more physical datacenters with independent power, cooling, and networking, but AZs in the same Region are linked by low-latency private fiber.
 
-- **Region** = a city (Mumbai). A geographic area you pick.
-- **AZ** = separate neighborhoods in that city (`ap-south-1a`, `ap-south-1b`, `ap-south-1c`), each with its own power grid, far enough apart that one flood/fire won't take down another.
+- **Region** = a city (N. Virginia). A geographic area you pick.
+- **AZ** = separate neighborhoods in that city (`us-east-1a`, `us-east-1b`, `us-east-1c`), each with its own power grid, far enough apart that one flood/fire won't take down another.
 - **Edge Location** = a corner shop close to your house — used by CloudFront (CDN) and Route 53 to cache content near users for speed.
 
 > **Note:** Think of a Region like a big housing society in one city. Each AZ is a separate building (Tower A, B, C) with its *own* generator and water tank. If Tower A's power trips, Tower B is fine. So you spread your app across multiple towers — that's **Multi-AZ**. Edge Locations are the ATMs scattered all over the city so you don't have to drive to the main bank for cash.
@@ -49,15 +49,15 @@ If you run everything in one AZ and that AZ goes down, your app goes down. Perio
 - **EC2 + ELB Auto Scaling**: spread instances across AZs; the load balancer routes around the dead AZ.
 - **Multi-Region** is the next level up — for disaster recovery (DR) and global latency, not just AZ failure. It costs more and is harder (data replication, DNS failover).
 
-> **Note:** A fintech in Mumbai runs its API on EC2 across `ap-south-1a` and `ap-south-1b` behind an Application Load Balancer, with RDS in Multi-AZ mode. When AWS had an AZ-level network issue, the ALB stopped sending traffic to the unhealthy AZ and RDS failed over to the standby. End users saw a 90-second blip instead of an outage. Single-AZ would have meant hours of downtime.
+> **Note:** A fintech runs its API on EC2 across `us-east-1a` and `us-east-1b` behind an Application Load Balancer, with RDS in Multi-AZ mode. When AWS had an AZ-level network issue, the ALB stopped sending traffic to the unhealthy AZ and RDS failed over to the standby. End users saw a 90-second blip instead of an outage. Single-AZ would have meant hours of downtime.
 
 #### How to Choose a Region
 
 | Factor | What to check |
 |---|---|
-| **Latency** | Pick the Region closest to your *users*. Mumbai users → `ap-south-1`. Test with cloudping or RTT measurements. |
-| **Cost** | Prices differ per Region. `us-east-1` is usually cheapest; Mumbai/Sydney can be pricier. Same instance, different bill. |
-| **Compliance / Data residency** | Indian customer/financial data may legally need to stay in India → use `ap-south-1`. GDPR data → an EU Region like `eu-west-1`. |
+| **Latency** | Pick the Region closest to your *users*. Users in Southeast Asia → `ap-southeast-1`. Test with cloudping or RTT measurements. |
+| **Cost** | Prices differ per Region. `us-east-1` is usually cheapest; some Regions (e.g. Sydney, São Paulo) can be pricier. Same instance, different bill. |
+| **Compliance / Data residency** | Customer/financial data may legally need to stay in-country → pick the matching Region. GDPR data → an EU Region like `eu-west-1`. |
 | **Service availability** | Newest services launch in `us-east-1` first. Some Regions lag. Check before committing. |
 
 > **Tip:** Some services are **global**, not regional: IAM, Route 53, CloudFront, and WAF (for CloudFront). But the AWS console quietly defaults a lot of regional resources to `us-east-1` — always confirm your selected Region (top-right of the console) before creating resources, or you'll "lose" an EC2 instance that's actually running (and billing) in the wrong Region.

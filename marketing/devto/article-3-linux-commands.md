@@ -9,7 +9,7 @@ canonical_url: ""
 
 Every Linux tutorial throws a hundred commands at you. `tar`, `sed`, `cut`, `xargs`, forty flags each, and you nod along and forget all of it by Tuesday.
 
-Then you get paged at 3am. Production down hai, ab kya karein? And in that moment your brain doesn't reach for the hundred. It reaches for maybe twelve. The same twelve, every single incident. Those are the ones worth burning into muscle memory.
+Then you get paged at 3am. Production's down — now what? And in that moment your brain doesn't reach for the hundred. It reaches for maybe twelve. The same twelve, every single incident. Those are the ones worth burning into muscle memory.
 
 This is that list. Not the comprehensive one — the *honest* one. For each command I'll give you a real situation, a copy-pasteable example, and the flag explanations that actually matter. Plus a mistake or two I've made so you don't have to.
 
