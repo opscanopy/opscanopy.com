@@ -2,6 +2,7 @@
 import { defineConfig } from 'astro/config';
 import tailwindcss from '@tailwindcss/vite';
 import sitemap from '@astrojs/sitemap';
+import remarkCallouts from './src/lib/remark-callouts.mjs';
 
 // https://astro.build/config
 export default defineConfig({
@@ -32,6 +33,9 @@ export default defineConfig({
         !page.includes('/500'),
     }),
   ],
+  markdown: {
+    remarkPlugins: [remarkCallouts],
+  },
   vite: {
     plugins: [tailwindcss()],
   },

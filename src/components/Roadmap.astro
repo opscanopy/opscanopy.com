@@ -1,12 +1,20 @@
 ---
 /**
- * Vertical staged roadmap. Renders stages as a spine of nodes; each node links
- * to a guide (guideSlug [+ anchor]) or an href. localStorage marks nodes done
- * (privacy-first, no backend). State legend + per-stage and overall progress.
+ * Staged roadmap. A prominent progress header (big %, bar, legend) sits above a
+ * vertical sequence of stage cards; each stage lays its nodes out in a responsive
+ * grid so the path fills desktop width while staying a clear top-to-bottom journey.
+ * Nodes link to a guide (guideSlug [+ anchor]) or an href and can be ticked done;
+ * progress persists in localStorage (privacy-first, no backend). The `accent`
+ * prop colors the stage chips/spine to carry the track's identity from the hub.
  */
 import type { Roadmap } from '../data/roadmaps';
-interface Props { roadmap: Roadmap; }
-const { roadmap } = Astro.props;
+import { accentGradients, type ToolAccent } from '../data/tools';
+
+interface Props { roadmap: Roadmap; accent?: ToolAccent; }
+const { roadmap, accent = 'develop' } = Astro.props;
+// Raw hex, not the --color-gradient-* token: Tailwind v4 drops theme vars that only
+// appear in inline-style strings, which would leave --rm-accent empty.
+const [accentHex] = accentGradients[accent] ?? accentGradients.develop;
 
 const nodeId = (s: number, n: number) => `${roadmap.slug}-${s}-${n}`;
 const nodeHref = (node: { guideSlug?: string; anchor?: string; href?: string }) =>
@@ -16,40 +24,69 @@ const nodeHref = (node: { guideSlug?: string; anchor?: string; href?: string }) 
       ? `/learn/guides/${node.guideSlug}${node.anchor ? `#${node.anchor}` : ''}`
       : undefined;
 const totalNodes = roadmap.stages.reduce((acc, s) => acc + s.nodes.length, 0);
+const accentStyle = `--rm-accent:${accentHex}`;
 ---
 
-<section class="roadmap" data-roadmap={roadmap.slug} aria-label={roadmap.title}>
-  <div class="mb-8 flex flex-wrap items-center gap-4">
-    <p class="caption text-mute" data-roadmap-progress aria-live="polite">0% · 0 of {totalNodes} topics</p>
-    <ul class="flex flex-wrap items-center gap-3 text-[11px] text-mute" aria-label="Legend">
-      <li class="inline-flex items-center gap-1.5"><span class="rm-dot rm-done"></span>Done</li>
-      <li class="inline-flex items-center gap-1.5"><span class="rm-dot rm-pending"></span>To do</li>
-      <li class="inline-flex items-center gap-1.5"><span class="rm-dot rm-optional"></span>Optional</li>
-    </ul>
+<section class="roadmap" data-roadmap={roadmap.slug} aria-label={roadmap.title} style={accentStyle}>
+  {/* Progress header — the headline feature, made prominent. */}
+  <div class="rm-progress-card">
+    <div class="rm-progress-head">
+      <div class="rm-pct-wrap">
+        <p class="rm-pct"><span data-roadmap-pct>0</span><span class="rm-pct-unit">%</span></p>
+        <p class="rm-pct-sub" data-roadmap-progress aria-live="polite">0 of {totalNodes} topics complete</p>
+      </div>
+      <ul class="rm-legend" aria-label="Legend">
+        <li><span class="rm-dot-mini rm-done"></span>Done</li>
+        <li><span class="rm-dot-mini rm-pending"></span>To do</li>
+        <li><span class="rm-dot-mini rm-optional-mini"></span>Optional</li>
+      </ul>
+    </div>
+    <div class="rm-bar" role="progressbar" aria-label="Roadmap progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-roadmap-barwrap>
+      <span class="rm-bar-fill" data-roadmap-bar style="width:0%"></span>
+    </div>
+    <p class="rm-hint">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+      Tick a topic as you finish — saved in this browser only.
+    </p>
+    <div class="rm-complete" data-roadmap-complete hidden>
+      <strong>Roadmap complete — nice work.</strong>
+      <a href="/learn/roadmaps/devops">See the full DevOps roadmap &rarr;</a>
+    </div>
   </div>
 
-  <ol class="rm-spine" role="list">
+  {/* Stages — stacked for sequence; nodes grid out to fill desktop width. */}
+  <ol class="rm-stages" role="list">
     {roadmap.stages.map((stage, si) => (
       <li class="rm-stage" id={`${roadmap.slug}-stage-${si}`}>
-        <h2 class="display-sm text-ink">{stage.title}</h2>
-        {stage.summary && <p class="body-sm mt-1 text-mute">{stage.summary}</p>}
-        <ul role="list" class="mt-4 space-y-2">
+        <div class="rm-stage-head">
+          <span class="rm-stage-num" aria-hidden="true">{String(si + 1).padStart(2, '0')}</span>
+          <div class="min-w-0">
+            <h2 class="display-sm text-ink">{stage.title}</h2>
+            {stage.summary && <p class="body-sm mt-1 text-mute">{stage.summary}</p>}
+          </div>
+        </div>
+        <ul role="list" class="rm-nodes">
           {stage.nodes.map((node, ni) => {
             const href = nodeHref(node);
             const id = nodeId(si, ni);
             return (
               <li class:list={["rm-node", node.kind === 'optional' && 'rm-node-optional']} data-node-id={id}>
                 <label class="rm-check">
-                  <input type="checkbox" data-node-check={id} class="sr-only" aria-label={node.label} />
-                  <span class="rm-dot rm-pending" data-node-dot aria-hidden="true"></span>
+                  <input type="checkbox" data-node-check={id} class="sr-only" aria-label={`Mark "${node.label}" as done`} />
+                  <span class="rm-dot" data-node-dot aria-hidden="true">
+                    <svg class="rm-tick" viewBox="0 0 16 16" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.4 6.8 11.2 12 5"/></svg>
+                  </span>
                 </label>
-                <div class="min-w-0">
-                  {href ? (
-                    <a href={href} class="body-sm font-medium text-ink hover:text-brand-strong">{node.label}</a>
-                  ) : (
-                    <span class="body-sm font-medium text-ink">{node.label}</span>
-                  )}
-                  {node.desc && <p class="mt-0.5 text-[13px] text-mute">{node.desc}</p>}
+                <div class="rm-node-body min-w-0">
+                  <div class="rm-node-label-row">
+                    {href ? (
+                      <a href={href} class="rm-node-label">{node.label}</a>
+                    ) : (
+                      <span class="rm-node-label">{node.label}</span>
+                    )}
+                    {node.kind === 'optional' && <span class="rm-optional-pill">optional</span>}
+                  </div>
+                  {node.desc && <p class="rm-node-desc">{node.desc}</p>}
                 </div>
               </li>
             );
@@ -61,32 +98,107 @@ const totalNodes = roadmap.stages.reduce((acc, s) => acc + s.nodes.length, 0);
 </section>
 
 <style>
-  .rm-spine { position: relative; display: flex; flex-direction: column; gap: 2.5rem; }
-  .rm-stage { position: relative; padding-left: 1.25rem; border-left: 2px solid var(--color-hairline); }
-  .rm-node { display: flex; align-items: flex-start; gap: 0.625rem; }
-  .rm-node-optional .rm-dot { border-style: dashed; }
-  .rm-check { cursor: pointer; flex-shrink: 0; margin-top: 2px; }
-  /* The real checkbox is sr-only, so surface its keyboard focus on the visible
-     dot (WCAG 2.4.7). */
+  .roadmap { display: flex; flex-direction: column; gap: 1.5rem; }
+
+  /* --- Progress header --- */
+  .rm-progress-card {
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-lg);
+    background: var(--color-canvas);
+    padding: 1.5rem;
+    box-shadow: var(--shadow-subtle);
+  }
+  .rm-progress-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .rm-pct { display: flex; align-items: baseline; font-weight: 700; letter-spacing: -0.03em; color: var(--color-ink); line-height: 1; font-size: clamp(2rem, 5vw, 2.5rem); font-variant-numeric: tabular-nums; }
+  .rm-pct-unit { font-size: 1.1rem; font-weight: 600; color: var(--color-mute); margin-left: 3px; }
+  .rm-pct-sub { margin-top: 0.35rem; font-size: 13px; color: var(--color-mute); font-variant-numeric: tabular-nums; }
+  .rm-legend { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; font-size: 12px; color: var(--color-mute); }
+  .rm-legend li { display: inline-flex; align-items: center; gap: 0.4rem; }
+  .rm-dot-mini { display: inline-block; width: 12px; height: 12px; border-radius: 9999px; border: 2px solid var(--color-mute); }
+  .rm-dot-mini.rm-done { background: var(--color-brand); border-color: var(--color-brand); }
+  .rm-dot-mini.rm-optional-mini { border-color: var(--color-hairline-strong); }
+
+  .rm-bar { margin-top: 1rem; height: 8px; border-radius: 9999px; background: var(--color-canvas-soft-2); overflow: hidden; }
+  .rm-bar-fill { display: block; height: 100%; border-radius: 9999px; background: linear-gradient(90deg, var(--color-brand), var(--color-brand-strong)); transition: width 0.4s ease; }
+  .rm-hint { margin-top: 0.85rem; display: inline-flex; align-items: center; gap: 0.4rem; font-size: 12px; color: var(--color-mute); }
+  .rm-complete {
+    margin-top: 1rem; border: 1px solid color-mix(in srgb, var(--color-brand) 30%, transparent);
+    background: color-mix(in srgb, var(--color-brand) 7%, transparent);
+    border-radius: var(--radius-md); padding: 0.75rem 1rem; font-size: 14px; color: var(--color-ink);
+  }
+  .rm-complete a { color: var(--color-link); font-weight: 600; text-decoration: none; }
+  .rm-complete a:hover { text-decoration: underline; }
+
+  /* --- Stage cards --- */
+  .rm-stages { display: flex; flex-direction: column; gap: 1rem; }
+  .rm-stage {
+    border: 1px solid var(--color-hairline);
+    border-left: 3px solid color-mix(in srgb, var(--rm-accent) 60%, var(--color-hairline));
+    border-radius: var(--radius-lg);
+    background: var(--color-canvas);
+    padding: 1.5rem;
+    box-shadow: var(--shadow-subtle);
+  }
+  .rm-stage-head { display: flex; align-items: flex-start; gap: 0.75rem; }
+  .rm-stage-num {
+    flex-shrink: 0; display: inline-grid; place-items: center; width: 2rem; height: 2rem; border-radius: 9999px;
+    background: color-mix(in srgb, var(--rm-accent) 18%, var(--color-canvas));
+    color: var(--color-ink); font-size: 12px; font-weight: 700; font-family: var(--font-mono); letter-spacing: -0.02em;
+  }
+  .rm-nodes { margin-top: 1rem; display: grid; grid-template-columns: 1fr; gap: 0.125rem; }
+  @media (min-width: 640px) { .rm-nodes { grid-template-columns: 1fr 1fr; column-gap: 1.5rem; } }
+
+  /* --- Node + checkbox --- */
+  .rm-node { display: flex; align-items: flex-start; gap: 0.5rem; border-radius: var(--radius-sm); padding: 0.5rem; margin: 0 -0.5rem; min-height: 44px; transition: background-color 0.15s ease; }
+  .rm-node:hover { background: var(--color-canvas-soft-2); }
+  .rm-check { flex-shrink: 0; display: grid; place-items: center; width: 28px; height: 28px; margin-top: -2px; cursor: pointer; }
   .rm-check:focus-within .rm-dot { outline: 2px solid var(--color-brand); outline-offset: 2px; }
-  .rm-dot { display: inline-block; width: 14px; height: 14px; border-radius: 9999px; border: 2px solid var(--color-mute); background: transparent; }
-  .rm-pending { border-color: var(--color-mute); }
-  .rm-optional { border-color: var(--color-mute); border-style: dashed; }
-  .rm-done { background: var(--color-brand); border-color: var(--color-brand); }
-  .rm-node[data-done="true"] .rm-dot { background: var(--color-brand); border-color: var(--color-brand); border-style: solid; }
-  .rm-node[data-done="true"] a, .rm-node[data-done="true"] span { text-decoration: line-through; color: var(--color-mute); }
-  @media (prefers-reduced-motion: reduce) { .rm-dot { transition: none; } }
+  .rm-dot {
+    position: relative; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 9999px;
+    border: 2px solid var(--color-mute); background: var(--color-canvas);
+    transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+  }
+  .rm-check:hover .rm-dot { border-color: var(--color-brand); background: color-mix(in srgb, var(--color-brand) 14%, transparent); }
+  .rm-node-optional .rm-dot { border-color: var(--color-hairline-strong); }
+  .rm-tick { width: 11px; height: 11px; stroke: #fff; stroke-width: 2.5; opacity: 0; transition: opacity 0.15s ease; }
+  .rm-dot.rm-pop { animation: rm-pop 0.22s ease; }
+  @keyframes rm-pop { 0% { transform: scale(0.8); } 60% { transform: scale(1.12); } 100% { transform: scale(1); } }
+
+  .rm-node[data-done="true"] .rm-dot { background: var(--color-brand); border-color: var(--color-brand); }
+  .rm-node[data-done="true"] .rm-tick { opacity: 1; }
+  .rm-node[data-done="true"] .rm-node-label { color: var(--color-mute); text-decoration: line-through; }
+
+  .rm-node-body { padding-top: 1px; }
+  .rm-node-label-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.5rem; }
+  .rm-node-label { font-size: 14px; font-weight: 500; color: var(--color-ink); transition: color 0.15s ease; }
+  a.rm-node-label:hover { color: var(--color-brand-strong); }
+  .rm-node-desc { margin-top: 2px; font-size: 13px; color: var(--color-mute); }
+  .rm-optional-pill {
+    font-size: 10px; line-height: 1; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-mute);
+    border: 1px solid var(--color-hairline-strong); border-radius: 9999px; padding: 2px 6px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .rm-dot, .rm-bar-fill, .rm-node, .rm-node-label { transition: none; }
+    .rm-dot.rm-pop { animation: none; }
+  }
 </style>
 
 <script>
   function initRoadmaps() {
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     document.querySelectorAll<HTMLElement>('.roadmap').forEach((root) => {
       const key = `oc-roadmap-${root.dataset.roadmap}`;
       let done: Record<string, boolean> = {};
       try { done = JSON.parse(localStorage.getItem(key) || '{}'); } catch { done = {}; }
       const nodes = Array.from(root.querySelectorAll<HTMLElement>('.rm-node'));
-      const progress = root.querySelector<HTMLElement>('[data-roadmap-progress]');
+      const pctEl = root.querySelector<HTMLElement>('[data-roadmap-pct]');
+      const subEl = root.querySelector<HTMLElement>('[data-roadmap-progress]');
+      const bar = root.querySelector<HTMLElement>('[data-roadmap-bar]');
+      const barWrap = root.querySelector<HTMLElement>('[data-roadmap-barwrap]');
+      const complete = root.querySelector<HTMLElement>('[data-roadmap-complete]');
       const total = nodes.length;
+
       const render = () => {
         let count = 0;
         nodes.forEach((n) => {
@@ -97,11 +209,14 @@ const totalNodes = roadmap.stages.reduce((acc, s) => acc + s.nodes.length, 0);
           if (cb) cb.checked = checked;
           if (checked) count++;
         });
-        if (progress) {
-          const pct = total ? Math.round((count / total) * 100) : 0;
-          progress.textContent = `${pct}% · ${count} of ${total} topics`;
-        }
+        const pct = total ? Math.round((count / total) * 100) : 0;
+        if (pctEl) pctEl.textContent = String(pct);
+        if (subEl) subEl.textContent = `${count} of ${total} topics complete`;
+        if (bar) bar.style.width = pct + '%';
+        if (barWrap) barWrap.setAttribute('aria-valuenow', String(pct));
+        if (complete) complete.hidden = !(total > 0 && count === total);
       };
+
       nodes.forEach((n) => {
         if (n.dataset.bound) return;
         n.dataset.bound = 'true';
@@ -109,6 +224,10 @@ const totalNodes = roadmap.stages.reduce((acc, s) => acc + s.nodes.length, 0);
         cb?.addEventListener('change', () => {
           done[n.dataset.nodeId!] = cb.checked;
           try { localStorage.setItem(key, JSON.stringify(done)); } catch { /* private mode */ }
+          if (cb.checked && !reduceMotion) {
+            const dot = n.querySelector<HTMLElement>('[data-node-dot]');
+            if (dot) { dot.classList.remove('rm-pop'); void dot.offsetWidth; dot.classList.add('rm-pop'); }
+          }
           render();
         });
       });

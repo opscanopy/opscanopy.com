@@ -11,6 +11,8 @@ export interface Track {
   accent: ToolAccent;
   roadmapSlug?: string;
   guideSlugs: string[];
+  /** Marks the recommended starting track — surfaces a "Start here" badge. */
+  startHere?: boolean;
 }
 
 export const tracks: Track[] = [
@@ -21,6 +23,7 @@ export const tracks: Track[] = [
     accent: 'develop',
     roadmapSlug: 'linux',
     guideSlugs: ['linux-for-devops'],
+    startHere: true,
   },
   {
     slug: 'docker',
