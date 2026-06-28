@@ -6,6 +6,12 @@
  * <Shell> (src/components/Shell.astro) which composes Header + Footer here.
  */
 import '../styles/global.css';
+// Resolve the content-hashed latin normal-weight woff2 URLs at build (Vite ?url
+// returns the SAME hashed asset the compiled CSS references), so we can preload
+// the LCP fonts and avoid the late-discovery FOUT. Only the latin normal subsets
+// are preloaded — italic/other-script subsets stay lazy via the CSS @font-face.
+import geistLatinUrl from '@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url';
+import geistMonoLatinUrl from '@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2?url';
 import SEO from '../components/SEO.astro';
 import { site } from '../data/site';
 import { BCP47, DEFAULT_LOCALE, type Locale } from '../i18n/config';
@@ -54,7 +60,15 @@ const lang: Locale = (Astro.currentLocale as Locale) ?? DEFAULT_LOCALE;
     <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
-    {/* Google tag (gtag.js) */}
+    {/* Preload the latin normal-weight variable fonts (LCP text). These woff2 are
+        otherwise discovered late via the @import'd font CSS, causing FOUT. URLs are
+        build-resolved (?url) so the hash always matches the emitted asset. */}
+    <link rel="preload" as="font" type="font/woff2" href={geistLatinUrl} crossorigin />
+    <link rel="preload" as="font" type="font/woff2" href={geistMonoLatinUrl} crossorigin />
+    {/* Google tag (gtag.js) — async loader (non-blocking). The dataLayer + gtag
+        shim is tiny and stays inline so events queued before config still buffer.
+        The config call + engagement-event wiring are deferred off the critical
+        path (idle / DOMContentLoaded) so they no longer block first paint. */}
     <script is:inline async src="https://www.googletagmanager.com/gtag/js?id=G-EGNWVFWMP0"></script>
     <script is:inline>
       window.dataLayer = window.dataLayer || [];
@@ -62,11 +76,14 @@ const lang: Locale = (Astro.currentLocale as Locale) ?? DEFAULT_LOCALE;
         dataLayer.push(arguments);
       }
       gtag('js', new Date());
-      gtag('config', 'G-EGNWVFWMP0');
-    </script>
-    {/* GA4 engagement events — tool_engaged (first interaction in #playground) + result_copied (copy controls). Defensive, dependency-free. */}
-    <script is:inline>
+      /* GA config('config') is deferred off the critical path (idle) so it doesn't
+         block first paint — but the engagement-event listeners are attached
+         SYNCHRONOUSLY below, so a fast interaction (e.g. an above-the-fold
+         playground while the idle callback is still pending) is never missed.
+         Events fired before config buffer in dataLayer, so nothing is lost. */
       (function () {
+        // Engagement events — attached synchronously (before any interaction).
+        // tool_engaged (first interaction in #playground) + result_copied.
         var engaged = false;
         function send(name) {
           try {
@@ -115,6 +132,23 @@ const lang: Locale = (Astro.currentLocale as Locale) ?? DEFAULT_LOCALE;
           },
           true
         );
+
+        // gtag('config') deferred off the critical path (runs after first paint).
+        function defer() {
+          function run() {
+            gtag('config', 'G-EGNWVFWMP0');
+          }
+          if ('requestIdleCallback' in window) {
+            requestIdleCallback(run, { timeout: 2000 });
+          } else {
+            setTimeout(run, 1);
+          }
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', defer, { once: true });
+        } else {
+          defer();
+        }
       })();
     </script>
     <SEO

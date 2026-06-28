@@ -345,6 +345,38 @@
   const ALERT_SVG =
     '<svg class="snc-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
 
+  // Copy-button glyphs: the default clipboard icon and a transient checkmark.
+  const COPY_SVG =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>';
+  const CHECK_SVG =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>';
+
+  /** Copy text to the clipboard with a legacy fallback; resolves to success. */
+  async function copyText(text: string): Promise<boolean> {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      /* fall through to legacy path */
+    }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'absolute';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
     summary.textContent = '';
     summary.classList.remove('text-error');
@@ -374,11 +406,12 @@
       .map((r) => {
         const v = typeof r.value === 'string' ? r.value : '';
         const cls = r.mono ? 'snc-row__v is-mono' : 'snc-row__v';
+        const label = r.label ?? '';
         const copyBtn =
-          '<button class="copy-btn ml-2 text-mute hover:text-brand transition-colors" title="Copy to clipboard" aria-label="Copy" onclick="navigator.clipboard.writeText(this.previousSibling.textContent.trim());this.textContent=\'✓\';setTimeout(()=>this.textContent=\'\'  ,1500);"><svg xmlns=\'http://www.w3.org/2000/svg\' width=\'13\' height=\'13\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'><rect width=\'14\' height=\'14\' x=\'8\' y=\'8\' rx=\'2\' ry=\'2\'/><path d=\'M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2\'/></svg></button>';
+          `<button type="button" class="copy-btn ml-2 text-mute hover:text-brand transition-colors" title="Copy to clipboard" aria-label="Copy ${escapeHtml(label)}" data-copy-value="${escapeHtml(v)}">${COPY_SVG}</button>`;
         return (
           '<div class="snc-row">' +
-          `<span class="snc-row__k">${escapeHtml(r.label ?? '')}</span>` +
+          `<span class="snc-row__k">${escapeHtml(label)}</span>` +
           `<span class="${cls}">${escapeHtml(v)}</span>${copyBtn}</div>`
         );
       })
@@ -397,6 +430,35 @@
     const resultsBox = el<HTMLElement>(root, '#snc-results');
     const summaryEl = el<HTMLElement>(root, '#snc-summary');
     if (!input || !exampleSel || !resultsBox || !summaryEl) return;
+
+    // Copy-to-clipboard via event delegation: one listener on the results
+    // container reads `data-copy-value` off the clicked button. Wired once here
+    // so it survives the innerHTML swaps in renderResult().
+    let copyResetTimer: number | undefined;
+    let lastCopiedBtn: HTMLButtonElement | null = null;
+    resultsBox.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement | null;
+      const btn = target?.closest<HTMLButtonElement>('.copy-btn');
+      if (!btn || !resultsBox.contains(btn)) return;
+      const value = btn.dataset.copyValue ?? '';
+      void copyText(value).then((ok) => {
+        if (!ok) return;
+        // Restore any previously-copied button before showing the new state.
+        // Guard isConnected: a re-render (renderResult swaps the container's
+        // innerHTML) can detach a button while its reset is still pending, which
+        // would leave a stale reference / mutate a dead node.
+        window.clearTimeout(copyResetTimer);
+        if (lastCopiedBtn && lastCopiedBtn !== btn && lastCopiedBtn.isConnected) {
+          lastCopiedBtn.innerHTML = COPY_SVG;
+        }
+        btn.innerHTML = CHECK_SVG;
+        lastCopiedBtn = btn;
+        copyResetTimer = window.setTimeout(() => {
+          if (btn.isConnected) btn.innerHTML = COPY_SVG;
+          lastCopiedBtn = null;
+        }, 1500);
+      });
+    });
 
     let engine: EngineModule;
     let examples: Example[] = [];
