@@ -735,11 +735,12 @@
 </style>
 
 <script>
-  import { EditorState } from '@codemirror/state';
-  import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
-  import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-  import { oneDark } from '@codemirror/theme-one-dark';
+  import type { EditorView } from '@codemirror/view';
   import { escapeHtml } from '../lib/escape-html';
+
+  // CodeMirror is loaded via dynamic import inside init() so its ~200KB runtime
+  // code-splits into its own chunk instead of shipping in the page's initial JS.
+  // The `EditorView` type above is erased at build time and ships no runtime code.
 
   /* ---- Types mirrored from the engine contract (structural, not imported). -- */
   type EnvResult = {
@@ -807,47 +808,6 @@
       }
     }
     return out;
-  }
-
-  /* ---- Editor factory ------------------------------------------------------- */
-
-  const baseTheme = EditorView.theme({
-    '&': { color: '#e6e6e6' },
-    '.cm-content': { caretColor: '#e6e6e6' },
-    '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
-      backgroundColor: 'rgba(0, 112, 243, 0.32)',
-    },
-    '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
-    '.cm-activeLineGutter': { backgroundColor: 'transparent' },
-  });
-
-  function makeEditor(host: HTMLElement, doc: string, onChange: () => void): EditorView {
-    const state = EditorState.create({
-      doc,
-      extensions: [
-        lineNumbers(),
-        history(),
-        highlightActiveLine(),
-        oneDark,
-        EditorView.lineWrapping,
-        keymap.of([
-          ...defaultKeymap,
-          ...historyKeymap,
-          indentWithTab,
-          { key: 'Escape', run: function(view) { view.contentDOM.blur(); return true; } },
-        ]),
-        baseTheme,
-        EditorView.updateListener.of((u) => {
-          if (u.docChanged) onChange();
-        }),
-      ],
-    });
-    return new EditorView({ state, parent: host });
-  }
-
-  function setEditorDoc(view: EditorView, doc: string): void {
-    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
   }
 
   /* ---- Clipboard ------------------------------------------------------------ */
@@ -1037,16 +997,71 @@
       return;
     }
 
-    // Lazily load the sibling engine + examples (kept out of the initial path).
+    // Lazily load CodeMirror + the sibling engine + examples (kept out of the
+    // initial path so the ~200KB CM runtime code-splits into its own chunk).
     let engine: EngineModule;
     let examples: Example[] = [];
+    let makeEditor: (host: HTMLElement, doc: string, onChange: () => void) => EditorView;
+    let setEditorDoc: (view: EditorView, doc: string) => void;
     try {
-      const [engineMod, examplesMod] = await Promise.all([
+      const [
+        { EditorState },
+        { EditorView, keymap, lineNumbers, highlightActiveLine },
+        { defaultKeymap, history, historyKeymap, indentWithTab },
+        { oneDark },
+        engineMod,
+        examplesMod,
+      ] = await Promise.all([
+        import('@codemirror/state'),
+        import('@codemirror/view'),
+        import('@codemirror/commands'),
+        import('@codemirror/theme-one-dark'),
         import('../lib/env-checker/engine'),
         import('../lib/env-checker/examples'),
       ]);
       engine = engineMod as unknown as EngineModule;
       examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+
+      // Editor factory + doc-setter as closures over the freshly imported CM
+      // symbols (so no runtime CM reference lives at module top level).
+      const baseTheme = EditorView.theme({
+        '&': { color: '#e6e6e6' },
+        '.cm-content': { caretColor: '#e6e6e6' },
+        '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
+        '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
+          backgroundColor: 'rgba(0, 112, 243, 0.32)',
+        },
+        '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
+        '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+      });
+
+      makeEditor = (host: HTMLElement, doc: string, onChange: () => void): EditorView => {
+        const state = EditorState.create({
+          doc,
+          extensions: [
+            lineNumbers(),
+            history(),
+            highlightActiveLine(),
+            oneDark,
+            EditorView.lineWrapping,
+            keymap.of([
+              ...defaultKeymap,
+              ...historyKeymap,
+              indentWithTab,
+              { key: 'Escape', run: function(view) { view.contentDOM.blur(); return true; } },
+            ]),
+            baseTheme,
+            EditorView.updateListener.of((u) => {
+              if (u.docChanged) onChange();
+            }),
+          ],
+        });
+        return new EditorView({ state, parent: host });
+      };
+
+      setEditorDoc = (view: EditorView, doc: string): void => {
+        view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
+      };
     } catch (err) {
       renderError(
         reportBox,

@@ -59,7 +59,7 @@ const en: PagesContent = {
   privacy: {
     metaTitle: 'Privacy Policy',
     description:
-      'How OpsCanopy handles your data: every tool runs entirely in your browser. Nothing you paste is uploaded, logged, or shared. No accounts, no tracking.',
+      'How OpsCanopy handles your data: every tool runs entirely in your browser. Nothing you paste is uploaded, logged, or shared. No accounts, and nothing you paste leaves your device.',
     eyebrow: 'Privacy',
     heading: 'Your data never leaves your device.',
     lead: 'OpsCanopy is built privacy-first. Every tool runs entirely in your browser — there is no server to receive your input, no account to create, and nothing to upload. This policy explains exactly what that means.',

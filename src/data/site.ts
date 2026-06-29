@@ -23,6 +23,7 @@ export interface NavLink {
 /** Centre link row in the top nav. */
 export const navLinks: NavLink[] = [
   { label: 'Tools', href: '/tools' },
+  { label: 'Learn', href: '/learn' },
   { label: 'Blog', href: '/blog' },
 ];
 
