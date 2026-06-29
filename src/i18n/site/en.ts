@@ -41,8 +41,12 @@ const en: SiteContent = {
     {
       title: 'Tools',
       links: [
-        { href: '/loki-alert-rule-tester', label: 'AlertLint — Loki rule tester' },
         { href: '/tools', label: 'All tools' },
+        { href: '/subnet-calculator', label: 'Subnet Calculator' },
+        { href: '/jwt-decoder', label: 'JWT Decoder' },
+        { href: '/docker-run-to-compose', label: 'Docker Run to Compose' },
+        { href: '/github-actions-validator', label: 'GitHub Actions Validator' },
+        { href: '/loki-alert-rule-tester', label: 'AlertLint — Loki rule tester' },
       ],
     },
     {
@@ -58,6 +62,7 @@ const en: SiteContent = {
       title: 'Resources',
       links: [
         { href: '/blog', label: 'Blog' },
+        { href: '/rss.xml', label: 'RSS feed' },
         { href: '/#why', label: 'Why OpsCanopy' },
       ],
     },

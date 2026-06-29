@@ -632,11 +632,12 @@
 </style>
 
 <script>
-  import { EditorState } from '@codemirror/state';
-  import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
-  import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-  import { oneDark } from '@codemirror/theme-one-dark';
+  import type { EditorView } from '@codemirror/view';
   import { escapeHtml } from '../lib/escape-html';
+
+  // CodeMirror is loaded via dynamic import inside init() so its ~200KB runtime
+  // code-splits into its own chunk instead of shipping in the page's initial JS.
+  // The `EditorView` type above is erased at build time and ships no runtime code.
 
   /* ---- Types mirrored from the engine contract (structural, not imported). -- */
   type Direction = 'logql-to-promql' | 'promql-to-logql';
@@ -695,60 +696,6 @@
         } satisfies Example;
       })
       .filter((e) => e.query.length > 0);
-  }
-
-  /* ---- Editor factory ------------------------------------------------------- */
-
-  const baseTheme = EditorView.theme({
-    '&': { color: '#e6e6e6' },
-    '.cm-content': { caretColor: '#e6e6e6' },
-    '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
-      backgroundColor: 'rgba(0, 112, 243, 0.32)',
-    },
-    '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
-    '.cm-activeLineGutter': { backgroundColor: 'transparent' },
-  });
-
-  function makeInputEditor(host: HTMLElement, doc: string): EditorView {
-    const state = EditorState.create({
-      doc,
-      extensions: [
-        lineNumbers(),
-        history(),
-        highlightActiveLine(),
-        oneDark,
-        EditorView.lineWrapping,
-        keymap.of([
-          ...defaultKeymap,
-          ...historyKeymap,
-          indentWithTab,
-          { key: 'Escape', run: function(view) { view.contentDOM.blur(); return true; } },
-        ]),
-        baseTheme,
-      ],
-    });
-    return new EditorView({ state, parent: host });
-  }
-
-  function makeOutputEditor(host: HTMLElement, doc: string): EditorView {
-    const state = EditorState.create({
-      doc,
-      extensions: [
-        lineNumbers(),
-        oneDark,
-        EditorView.lineWrapping,
-        EditorView.editable.of(false),
-        EditorState.readOnly.of(true),
-        baseTheme,
-      ],
-    });
-    host.classList.add('lp-editor--ro');
-    return new EditorView({ state, parent: host });
-  }
-
-  function setEditorDoc(view: EditorView, doc: string): void {
-    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
   }
 
   /* ---- Note rendering (mapping notes / errors / success / empty) ------------ */
@@ -876,16 +823,85 @@
       return;
     }
 
-    // Lazily load the sibling engine + examples (off the initial path).
+    // Lazily load CodeMirror + the sibling engine + examples (off the initial
+    // path so the ~200KB CM runtime code-splits into its own chunk).
     let engine: EngineModule;
     let examples: Example[] = [];
+    let makeInputEditor: (host: HTMLElement, doc: string) => EditorView;
+    let makeOutputEditor: (host: HTMLElement, doc: string) => EditorView;
+    let setEditorDoc: (view: EditorView, doc: string) => void;
     try {
-      const [engineMod, examplesMod] = await Promise.all([
+      const [
+        { EditorState },
+        { EditorView, keymap, lineNumbers, highlightActiveLine },
+        { defaultKeymap, history, historyKeymap, indentWithTab },
+        { oneDark },
+        engineMod,
+        examplesMod,
+      ] = await Promise.all([
+        import('@codemirror/state'),
+        import('@codemirror/view'),
+        import('@codemirror/commands'),
+        import('@codemirror/theme-one-dark'),
         import('../lib/logql-promql/engine'),
         import('../lib/logql-promql/examples'),
       ]);
       engine = engineMod as unknown as EngineModule;
       examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+
+      // Editor factories + doc-setter as closures over the freshly imported CM
+      // symbols (so no runtime CM reference lives at module top level).
+      const baseTheme = EditorView.theme({
+        '&': { color: '#e6e6e6' },
+        '.cm-content': { caretColor: '#e6e6e6' },
+        '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
+        '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
+          backgroundColor: 'rgba(0, 112, 243, 0.32)',
+        },
+        '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
+        '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+      });
+
+      makeInputEditor = (host: HTMLElement, doc: string): EditorView => {
+        const state = EditorState.create({
+          doc,
+          extensions: [
+            lineNumbers(),
+            history(),
+            highlightActiveLine(),
+            oneDark,
+            EditorView.lineWrapping,
+            keymap.of([
+              ...defaultKeymap,
+              ...historyKeymap,
+              indentWithTab,
+              { key: 'Escape', run: function(view) { view.contentDOM.blur(); return true; } },
+            ]),
+            baseTheme,
+          ],
+        });
+        return new EditorView({ state, parent: host });
+      };
+
+      makeOutputEditor = (host: HTMLElement, doc: string): EditorView => {
+        const state = EditorState.create({
+          doc,
+          extensions: [
+            lineNumbers(),
+            oneDark,
+            EditorView.lineWrapping,
+            EditorView.editable.of(false),
+            EditorState.readOnly.of(true),
+            baseTheme,
+          ],
+        });
+        host.classList.add('lp-editor--ro');
+        return new EditorView({ state, parent: host });
+      };
+
+      setEditorDoc = (view: EditorView, doc: string): void => {
+        view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
+      };
     } catch (err) {
       renderError(
         notesBox,

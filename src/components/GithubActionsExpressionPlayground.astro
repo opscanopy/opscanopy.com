@@ -325,12 +325,12 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
 </style>
 
 <script>
-  import { EditorState } from '@codemirror/state';
-  import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
-  import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-  import { yaml as yamlLang } from '@codemirror/lang-yaml';
-  import { oneDark } from '@codemirror/theme-one-dark';
+  import type { EditorView } from '@codemirror/view';
   import { escapeHtml } from '../lib/escape-html';
+
+  // CodeMirror is loaded via dynamic import inside init() so its ~200KB runtime
+  // code-splits into its own chunk instead of shipping in the page's initial JS.
+  // The `EditorView` type above is erased at build time and ships no runtime code.
 
   type EngineModule = typeof import('../lib/github-actions-expression-tester/engine');
   type ExamplesModule = typeof import('../lib/github-actions-expression-tester/examples');
@@ -349,27 +349,6 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
     return root.querySelector<T>(sel);
   }
 
-  const escAndBlur = { key: 'Escape', run: (v: EditorView) => { v.contentDOM.blur(); return true; } };
-  const baseTheme = EditorView.theme({
-    '&': { color: '#e6e6e6' },
-    '.cm-content': { caretColor: '#e6e6e6' },
-    '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: 'rgba(0,112,243,.32)' },
-    '.cm-activeLine': { backgroundColor: 'rgba(255,255,255,.035)' },
-    '.cm-activeLineGutter': { backgroundColor: 'transparent' },
-  });
-
-  function makeEditor(host: HTMLElement, doc: string, opts: { yaml?: boolean } = {}): EditorView {
-    const ext = [
-      lineNumbers(), history(), highlightActiveLine(), EditorView.lineWrapping,
-      keymap.of([escAndBlur, ...defaultKeymap, ...historyKeymap, indentWithTab]),
-      oneDark, baseTheme,
-    ];
-    if (opts.yaml) ext.push(yamlLang());
-    return new EditorView({ state: EditorState.create({ doc, extensions: ext }), parent: host });
-  }
-  const setDoc = (v: EditorView, doc: string) => v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: doc } });
-
   /* ── share-link codec ──────────────────────────────────────────────────── */
   function encodeState(obj: unknown): string {
     try { return btoa(encodeURIComponent(JSON.stringify(obj))); } catch { return ''; }
@@ -383,11 +362,53 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
   async function init(root: HTMLElement): Promise<void> {
     let engine: EngineModule;
     let examples: ExamplesModule;
+    // Editor factory + doc-setter are assigned from closures over the freshly
+    // imported CM symbols (so no runtime CM reference lives at module top level).
+    let makeEditor: (host: HTMLElement, doc: string, opts?: { yaml?: boolean }) => EditorView;
+    let setDoc: (v: EditorView, doc: string) => void;
     try {
-      [engine, examples] = await Promise.all([
+      // Load CodeMirror + the engine + examples together so the ~200KB CM
+      // runtime code-splits into its own chunk off the initial page JS.
+      const [
+        { EditorState },
+        { EditorView, keymap, lineNumbers, highlightActiveLine },
+        { defaultKeymap, history, historyKeymap, indentWithTab },
+        { yaml: yamlLang },
+        { oneDark },
+        engineMod,
+        examplesMod,
+      ] = await Promise.all([
+        import('@codemirror/state'),
+        import('@codemirror/view'),
+        import('@codemirror/commands'),
+        import('@codemirror/lang-yaml'),
+        import('@codemirror/theme-one-dark'),
         import('../lib/github-actions-expression-tester/engine'),
         import('../lib/github-actions-expression-tester/examples'),
       ]);
+      engine = engineMod;
+      examples = examplesMod;
+
+      const escAndBlur = { key: 'Escape', run: (v: EditorView) => { v.contentDOM.blur(); return true; } };
+      const baseTheme = EditorView.theme({
+        '&': { color: '#e6e6e6' },
+        '.cm-content': { caretColor: '#e6e6e6' },
+        '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
+        '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: 'rgba(0,112,243,.32)' },
+        '.cm-activeLine': { backgroundColor: 'rgba(255,255,255,.035)' },
+        '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+      });
+
+      makeEditor = (host: HTMLElement, doc: string, opts: { yaml?: boolean } = {}): EditorView => {
+        const ext = [
+          lineNumbers(), history(), highlightActiveLine(), EditorView.lineWrapping,
+          keymap.of([escAndBlur, ...defaultKeymap, ...historyKeymap, indentWithTab]),
+          oneDark, baseTheme,
+        ];
+        if (opts.yaml) ext.push(yamlLang());
+        return new EditorView({ state: EditorState.create({ doc, extensions: ext }), parent: host });
+      };
+      setDoc = (v: EditorView, doc: string) => v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: doc } });
     } catch (err) {
       console.error('[GHA playground] engine failed to load', err);
       return;
@@ -605,7 +626,8 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
         try { await navigator.clipboard.writeText(url); } catch { /* ignore */ }
         const label = btn.querySelector('.ga-share-label');
         if (label) { const prev = label.textContent; label.textContent = 'Copied!'; setTimeout(() => { label.textContent = prev; }, 1400); }
-        // NB: window.history — `history` (unprefixed) is the CodeMirror extension import.
+        // NB: window.history — keep it explicit; `history` (unprefixed) is the
+        // CodeMirror commands extension, imported dynamically inside init().
         window.history.replaceState(null, '', `#s=${hash}`);
       });
     }

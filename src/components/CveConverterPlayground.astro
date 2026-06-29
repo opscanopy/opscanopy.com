@@ -626,11 +626,7 @@
 </style>
 
 <script>
-  import { EditorState } from '@codemirror/state';
-  import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
-  import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-  import { yaml } from '@codemirror/lang-yaml';
-  import { oneDark } from '@codemirror/theme-one-dark';
+  import type { EditorView } from '@codemirror/view';
   import { escapeHtml } from '../lib/escape-html';
 
   /* ---- Types mirrored from the engine contract (structural, not imported). -- */
@@ -698,62 +694,6 @@
   function filenameFor(formats: FormatDescriptor[], value: Format): string {
     const f = formats.find((x) => x.value === value);
     return f?.filename || f?.label || value || 'output';
-  }
-
-  /* ---- Editor factory ------------------------------------------------------- */
-
-  const baseTheme = EditorView.theme({
-    '&': { color: '#e6e6e6' },
-    '.cm-content': { caretColor: '#e6e6e6' },
-    '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
-      backgroundColor: 'rgba(0, 112, 243, 0.32)',
-    },
-    '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
-    '.cm-activeLineGutter': { backgroundColor: 'transparent' },
-  });
-
-  function makeInputEditor(host: HTMLElement, doc: string): EditorView {
-    const state = EditorState.create({
-      doc,
-      extensions: [
-        lineNumbers(),
-        history(),
-        highlightActiveLine(),
-        yaml(),
-        oneDark,
-        EditorView.lineWrapping,
-        keymap.of([
-          { key: 'Escape', run: function(view) { view.contentDOM.blur(); return true; } },
-          ...defaultKeymap,
-          ...historyKeymap,
-          indentWithTab,
-        ]),
-        baseTheme,
-      ],
-    });
-    return new EditorView({ state, parent: host });
-  }
-
-  function makeOutputEditor(host: HTMLElement, doc: string): EditorView {
-    const state = EditorState.create({
-      doc,
-      extensions: [
-        lineNumbers(),
-        yaml(),
-        oneDark,
-        EditorView.lineWrapping,
-        EditorView.editable.of(false),
-        EditorState.readOnly.of(true),
-        baseTheme,
-      ],
-    });
-    host.classList.add('cv-editor--ro');
-    return new EditorView({ state, parent: host });
-  }
-
-  function setEditorDoc(view: EditorView, doc: string): void {
-    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
   }
 
   /* ---- Message rendering (warnings / errors / success / empty) -------------- */
@@ -883,19 +823,42 @@
       return;
     }
 
-    // Lazily load the sibling engine, types and examples (off the initial path).
+    // Lazily load the sibling engine, types, examples + CodeMirror (off the
+    // initial path so CM code-splits into its own chunk).
     let engine: EngineModule;
     let formats: FormatDescriptor[] = [];
     let examples: Example[] = [];
+    let EditorState: typeof import('@codemirror/state').EditorState;
+    let EditorViewCtor: typeof import('@codemirror/view').EditorView;
+    let keymap: typeof import('@codemirror/view').keymap;
+    let lineNumbers: typeof import('@codemirror/view').lineNumbers;
+    let highlightActiveLine: typeof import('@codemirror/view').highlightActiveLine;
+    let defaultKeymap: typeof import('@codemirror/commands').defaultKeymap;
+    let history: typeof import('@codemirror/commands').history;
+    let historyKeymap: typeof import('@codemirror/commands').historyKeymap;
+    let indentWithTab: typeof import('@codemirror/commands').indentWithTab;
+    let yaml: typeof import('@codemirror/lang-yaml').yaml;
+    let oneDark: typeof import('@codemirror/theme-one-dark').oneDark;
     try {
-      const [engineMod, typesMod, examplesMod] = await Promise.all([
-        import('../lib/cve-ignore/engine'),
-        import('../lib/cve-ignore/types'),
-        import('../lib/cve-ignore/examples'),
-      ]);
+      const [engineMod, typesMod, examplesMod, stateMod, viewMod, commandsMod, yamlMod, themeMod] =
+        await Promise.all([
+          import('../lib/cve-ignore/engine'),
+          import('../lib/cve-ignore/types'),
+          import('../lib/cve-ignore/examples'),
+          import('@codemirror/state'),
+          import('@codemirror/view'),
+          import('@codemirror/commands'),
+          import('@codemirror/lang-yaml'),
+          import('@codemirror/theme-one-dark'),
+        ]);
       engine = engineMod as unknown as EngineModule;
       formats = normaliseFormats((typesMod as TypesModule).FORMATS);
       examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+      ({ EditorState } = stateMod);
+      ({ EditorView: EditorViewCtor, keymap, lineNumbers, highlightActiveLine } = viewMod);
+      ({ defaultKeymap, history, historyKeymap, indentWithTab } = commandsMod);
+      ({ yaml } = yamlMod);
+      ({ oneDark } = themeMod);
     } catch (err) {
       renderError(
         messagesBox,
@@ -956,6 +919,62 @@
     });
     exampleSel.value = examples.length ? '0' : '-1';
     if (!examples.length) exampleSel.disabled = true;
+
+    /* ---- Editor factory (CM symbols now in async scope) --------------------- */
+
+    const baseTheme = EditorViewCtor.theme({
+      '&': { color: '#e6e6e6' },
+      '.cm-content': { caretColor: '#e6e6e6' },
+      '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
+      '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
+        backgroundColor: 'rgba(0, 112, 243, 0.32)',
+      },
+      '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
+      '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+    });
+
+    function makeInputEditor(host: HTMLElement, doc: string): EditorView {
+      const state = EditorState.create({
+        doc,
+        extensions: [
+          lineNumbers(),
+          history(),
+          highlightActiveLine(),
+          yaml(),
+          oneDark,
+          EditorViewCtor.lineWrapping,
+          keymap.of([
+            { key: 'Escape', run: function(view) { view.contentDOM.blur(); return true; } },
+            ...defaultKeymap,
+            ...historyKeymap,
+            indentWithTab,
+          ]),
+          baseTheme,
+        ],
+      });
+      return new EditorViewCtor({ state, parent: host });
+    }
+
+    function makeOutputEditor(host: HTMLElement, doc: string): EditorView {
+      const state = EditorState.create({
+        doc,
+        extensions: [
+          lineNumbers(),
+          yaml(),
+          oneDark,
+          EditorViewCtor.lineWrapping,
+          EditorViewCtor.editable.of(false),
+          EditorState.readOnly.of(true),
+          baseTheme,
+        ],
+      });
+      host.classList.add('cv-editor--ro');
+      return new EditorViewCtor({ state, parent: host });
+    }
+
+    function setEditorDoc(view: EditorView, doc: string): void {
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
+    }
 
     // Editors.
     const inputView = makeInputEditor(inputHost, seed?.text ?? '');

@@ -544,11 +544,7 @@
 </style>
 
 <script>
-  import { EditorState } from '@codemirror/state';
-  import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
-  import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-  import { yaml } from '@codemirror/lang-yaml';
-  import { oneDark } from '@codemirror/theme-one-dark';
+  import type { EditorView } from '@codemirror/view';
   import { escapeHtml } from '../lib/escape-html';
 
   /* ---- Types mirrored from the engine contract (structural, not imported). -- */
@@ -631,44 +627,6 @@
     '<svg class="amr-warn__icon" width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
   const ICON_ALERT =
     '<svg class="amr-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-
-  /* ---- Editor factory ------------------------------------------------------- */
-
-  function makeEditor(host: HTMLElement, doc: string): EditorView {
-    const state = EditorState.create({
-      doc,
-      extensions: [
-        lineNumbers(),
-        history(),
-        highlightActiveLine(),
-        yaml(),
-        oneDark,
-        EditorView.lineWrapping,
-        keymap.of([
-          ...defaultKeymap,
-          ...historyKeymap,
-          indentWithTab,
-          { key: 'Escape', run: function (view) { view.contentDOM.blur(); return true; } },
-        ]),
-        EditorView.theme({
-          '&': { color: '#e6e6e6' },
-          '.cm-content': { caretColor: '#e6e6e6' },
-          '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
-          '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection':
-            { backgroundColor: 'rgba(0, 112, 243, 0.32)' },
-          '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
-          '.cm-activeLineGutter': { backgroundColor: 'transparent' },
-        }),
-      ],
-    });
-    return new EditorView({ state, parent: host });
-  }
-
-  function setEditorDoc(view: EditorView, doc: string): void {
-    view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: doc },
-    });
-  }
 
   /* ---- Result rendering ----------------------------------------------------- */
 
@@ -893,16 +851,39 @@
       return;
     }
 
-    // Lazily load the sibling engine + examples (kept out of the initial path).
+    // Lazily load the sibling engine + examples + CodeMirror (kept out of the
+    // initial path so CM code-splits into its own chunk).
     let engine: EngineModule;
     let examples: Example[] = [];
+    let EditorState: typeof import('@codemirror/state').EditorState;
+    let EditorViewCtor: typeof import('@codemirror/view').EditorView;
+    let keymap: typeof import('@codemirror/view').keymap;
+    let lineNumbers: typeof import('@codemirror/view').lineNumbers;
+    let highlightActiveLine: typeof import('@codemirror/view').highlightActiveLine;
+    let defaultKeymap: typeof import('@codemirror/commands').defaultKeymap;
+    let history: typeof import('@codemirror/commands').history;
+    let historyKeymap: typeof import('@codemirror/commands').historyKeymap;
+    let indentWithTab: typeof import('@codemirror/commands').indentWithTab;
+    let yaml: typeof import('@codemirror/lang-yaml').yaml;
+    let oneDark: typeof import('@codemirror/theme-one-dark').oneDark;
     try {
-      const [engineMod, examplesMod] = await Promise.all([
-        import('../lib/alertmanager-route-tester/engine'),
-        import('../lib/alertmanager-route-tester/examples'),
-      ]);
+      const [engineMod, examplesMod, stateMod, viewMod, commandsMod, yamlMod, themeMod] =
+        await Promise.all([
+          import('../lib/alertmanager-route-tester/engine'),
+          import('../lib/alertmanager-route-tester/examples'),
+          import('@codemirror/state'),
+          import('@codemirror/view'),
+          import('@codemirror/commands'),
+          import('@codemirror/lang-yaml'),
+          import('@codemirror/theme-one-dark'),
+        ]);
       engine = engineMod as unknown as EngineModule;
       examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+      ({ EditorState } = stateMod);
+      ({ EditorView: EditorViewCtor, keymap, lineNumbers, highlightActiveLine } = viewMod);
+      ({ defaultKeymap, history, historyKeymap, indentWithTab } = commandsMod);
+      ({ yaml } = yamlMod);
+      ({ oneDark } = themeMod);
     } catch (err) {
       renderError(
         resultsBox,
@@ -925,6 +906,44 @@
       seedConfig = shared.config;
       seedLabels = shared.labels;
       fromShare = true;
+    }
+
+    /* ---- Editor factory (CM symbols now in async scope) --------------------- */
+
+    function makeEditor(host: HTMLElement, doc: string): EditorView {
+      const state = EditorState.create({
+        doc,
+        extensions: [
+          lineNumbers(),
+          history(),
+          highlightActiveLine(),
+          yaml(),
+          oneDark,
+          EditorViewCtor.lineWrapping,
+          keymap.of([
+            ...defaultKeymap,
+            ...historyKeymap,
+            indentWithTab,
+            { key: 'Escape', run: function (view) { view.contentDOM.blur(); return true; } },
+          ]),
+          EditorViewCtor.theme({
+            '&': { color: '#e6e6e6' },
+            '.cm-content': { caretColor: '#e6e6e6' },
+            '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
+            '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection':
+              { backgroundColor: 'rgba(0, 112, 243, 0.32)' },
+            '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
+            '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+          }),
+        ],
+      });
+      return new EditorViewCtor({ state, parent: host });
+    }
+
+    function setEditorDoc(view: EditorView, doc: string): void {
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: doc },
+      });
     }
 
     const configView = makeEditor(configHost, seedConfig);
@@ -1004,7 +1023,7 @@
         const result = await Promise.resolve(engine.matchRoute(cfg, lbl));
         renderResults(resultsBox!, summaryEl!, result);
         try {
-          history.replaceState(null, '', encodeShare(cfg, lbl));
+          window.history.replaceState(null, '', encodeShare(cfg, lbl));
         } catch {
           /* non-fatal: sharing just won't update */
         }
@@ -1059,7 +1078,7 @@
       const base = window.location.href.split('#')[0];
       const shareUrl = `${base}${frag}`;
       try {
-        history.replaceState(null, '', frag);
+        window.history.replaceState(null, '', frag);
       } catch {
         /* fall back to the current URL */
       }
