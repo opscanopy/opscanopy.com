@@ -1,0 +1,64 @@
+# UI/UX Spec — Mission 90 (grounded in the live design system)
+
+All tokens/classes below exist in `src/styles/global.css` / components today. Theme rule: light-first, `html[data-theme='dark']` token re-pointing, never `dark:` variants. Terminal/code on `bg-inverse text-inverse-fg`; on inverse surfaces use **literal** colors (`text-white/80`, `#34d399`, `#ff6166`) — theme tokens like `--color-error` fail AA there.
+
+## 1. Experience principles → concrete elements
+- **Time-to-first-win <60s:** two zero-friction first wins — Mission 1 is playable instantly in the browser (no setup at all), and the hub primary CTA routes to Day 0 setup → Day 1 whose first copy-able code block is above the fold; no signup anywhere.
+- **Visible progress everywhere:** `M90ProgressCard` (Roadmap.astro `.rm-progress-card` clone) on hub; per-phase counts on accordion summaries; ✓ dots per row; objectives HUD ticks; reading-progress bar on day pages.
+- **Zero-friction return:** state-aware CTA ("Continue Day N"); current-row highlight + scrollIntoView; completion band deep-links tomorrow; welcome-back toast (reuses `.resume-toast`).
+- **One clear next action:** exactly one `btn-primary` per viewport on every screen.
+- **Earned authenticity:** `real-error` callout unlike any other; "Drops soon" `Badge variant="planned"` honesty; learn-in-public credibility card.
+
+## 2. Hub (`/mission-90/` — own top-level section, own nav item "90 Days DevOps") — section order (conversion-focused, per SEO-MARKETING §5)
+resume card (returning users) → hero → 3-layer time model (3 cards) → 5-phase journey → **missions teaser (above the table — the moat goes first)** → 90-day table → FAQ → final CTA + founding-learner note.
+
+- **Hero:** homepage recipe — `section.section-pad relative isolate overflow-hidden bg-canvas-soft` + `MeshGradient` + scrims. h1 `display-xl text-balance` (NOT display-hero — homepage-exclusive): *"From developer to DevOps engineer in 90 days."* Eyebrow `MISSION: 90 DAYS · DEVOPS`. Trust caption: "~80 hrs core (from `totalCoreMinutes`) · free, no signup · progress saved in your browser". Under CTA row: static `CodeBlock` (`filename="mission: server-down"`) showing an 8-line real play transcript — sells the game with zero JS.
+- **Phase journey:** `ol` grid-cols-2 sm:grid-cols-5 of `Card variant="soft"`; `.rm-stage-num` mono circle w/ `color-mix` brand accent; per-phase `8/20` mono counts; anchor-links to phase groups.
+- **90-day table — decision: 5 phase `<details>` accordions, NOT a flat table/`<table>`.** Phase 1 statically open; script opens current phase. Rows = `<ol role="list">` of `.rm-node`-style rows: sr-only checkbox + 18px `.rm-dot` (rm-pop on check), mono day number, title link (done → `text-mute line-through`), `~45m` badge chip, Mission badge (`variant="live"` + 14px gamepad SVG — no emoji), Project badge (`variant="medium"` + crane SVG, `border-l-2` warning), current-day highlight (`bg-brand/[0.06] border-l-2 border-brand` + "Up next" chip), draft rows = plain `<span>` + "Drops soon" `variant="planned"`, no checkbox, no link.
+- **`M90StateCta` matrix (MVP):** first visit → "Start Day 0 · 20-min setup" + "How it works"; returning → "Continue Day {N}: {title}" + "{n} of 90 done — picking up where you left off."; all-live-done → "Replay a mission" + "Day {N} drops soon — I'm writing it live." *(Streak chip state is **Phase B** — logic ships tested in progress.ts, display is deferred; unreachable at launch anyway with one live day.)*
+- **Mobile:** journey 2-col; row chips wrap line 2; min-h-11 rows; accordions collapse 12 screens → ~2.
+
+## 3. Day page (`MissionDay.astro` — GuidePost sibling: `.rich-text`, reading-progress, pager; NO TOC rail)
+Column `max-w-[44rem]` (`--container-article`). Anatomy:
+1. Breadcrumb → eyebrow `PHASE 2 · CONTAINERS & CI/CD` → h1 `display-lg` → meta row: `badge code-mono` "day N of 90" + clock-SVG "~45 min" chip + phase progress strip ("▓▓▓░░ 5/25 in phase") + "Builds on Day N-1" link.
+2. **Orientation banner** (cold SEO visitors only: no `oc-m90-v1` AND day>1): slim dismissible — "You've landed on Day 24 of a free 90-day DevOps path · [Full roadmap] · [Start at Day 1]". Never gate, never redirect.
+3. Goals: `card-soft p-6`, 3 items w/ static emerald check SVGs — deliberately non-interactive.
+4. Concept: `.rich-text`; analogy via `> **Real world:**` (existing aside callout).
+5. Hands-on: fenced blocks (already dark surface + Shiki + injected copy buttons).
+6. **Real Errors:** new `real-error` callout — `border-left-color: var(--color-error); background: color-mix(in srgb, var(--color-error) 6%, var(--color-canvas-soft-2))`; pasted error text in inner fenced block.
+7. Interview Q&A: `<details>/<summary>` list (guide-faq markup verbatim) — keyboard-native, recall-before-reveal, feeds `faqPageLd` legitimately.
+8. Go Deeper: collapsed `<details>`, summary eyebrow `GO DEEPER · OPTIONAL · +30–60 MIN` in `text-mute` (de-emphasis is the design).
+9. **`M90CompleteCheck`:** full-width `card p-6` band — 28px `.rm-check` scale-up, "Mark Day N complete" `display-sm` (real checkbox: toggle-off allowed, no confirm dialog); on check: rm-pop (reduced-motion-guarded), label → "Day N done.", tomorrow teaser upgrades `text-mute`→`text-ink`, next CTA flips secondary→primary, `<link rel="prefetch">` for next day injected. If next is a mission day: **"Tomorrow you play: {nextMissionTitle}"** (strongest comeback hook). **If next is draft (the launch-day state): never dead-end — primary becomes "Play Mission 1 — free-play, no setup", secondary "Back to roadmap", plus "Day {N+1} drops soon".** On a `hasMission` day's completion, the band renders the **mission unlock banner** ("Mission unlocked: {title} — you have the skills now. → Play (15–20 min)"); mission title/href derived from the registry via `day` (no extra props needed). Below: GuidePost prev/next pager verbatim; draft next → non-link `card-soft` + "Drops soon". *(Day-completion copy-share block: Phase B; victory-screen share is the MVP share moment.)*
+Sticky: only `.reading-progress` bar + site header.
+
+## 4. Missions
+- **`MissionCard` states — FOUR** (shared chassis: `Card` + dark inverse header strip w/ CodeBlock traffic dots + `code-mono text-white/45` id). Availability canon: `status:'live'` missions are ALWAYS playable (free-play; `unlockAfterDay` is badge copy — "Pairs with Day 7"); hard-lock display is Phase B.
+  - **playable** (live, not yet completed): `card-interactive`, stretched-link h3, `Badge variant="live"` "Ready to play", "Start mission →"; Mission 1 adds "no setup — runs in your browser" + "no programming required".
+  - **completed:** badge "Completed", best stats `12 commands · 1 hint · {rank}` mono, "Replay →" (replay keeps best stats — a worse run never overwrites).
+  - **planned** (missions 2–10 at MVP): non-link, header dots `bg-white/10`, `Badge variant="planned"` "In production", body line "Drops around week {N} — pairs with Day {unlockAfterDay}". NEVER claims free-play.
+  - **locked-live** (Phase B, once unlock enforcement exists): non-link body `opacity-60` EXCEPT the unlock line at full opacity ("Unlocks after Day 14 · or free-play") — the unlock condition is the motivator.
+- **Play screen:** `grid lg:grid-cols-[minmax(0,7fr)_3fr]`; compact masthead (terminal is the hero).
+  - **Terminal:** CodeBlock chrome scaled (`bg-inverse shadow-float rounded-md`, dots bar + `mission: server-down` label + Restart ghost button `border-white/10 bg-white/5`). Output `code-mono` 13/20, `tab-size:2`; echo `text-white`, stdout `text-white/80`, narration `text-white/60 italic`, success `#34d399`, error `#ff6166`, hints `#f5a623`. Prompt `student@prod-web-01:~$` green w/ blue path; real `<input>` with **`autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="off" enterkeyhint="send"`** (without these, phone keyboards send `Pwd`/autocorrected commands → command-not-found → 60%-mobile persona bounces), native caret (`caret-color:#34d399`), **no autofocus**; Enter submits, ↑/↓ history, **Escape blurs** (repo convention). `min-h-[420px] overflow-y-auto overscroll-contain`, output **pinned to bottom** on new lines unless the user has scrolled up.
+  - **First-run onboarding, in-fiction:** briefing narration prints on mount → "Type `help` to see your commands." No modal, no tour.
+  - **HUD:** `card-soft p-6 lg:sticky lg:top-24`; eyebrow OBJECTIVES; `.rm-node` rows w/ pop-on-complete (rows tick in ANY order — engine completion is unordered; the list order is just the story); mini `.rm-bar` (2/5). Hint block: `btn-nav` **"Reveal hint {i} of {hints.length} — costs your rank"** (data-driven count; there is NO points system — cost = rank tiers from ENGINE-SPEC), progressive one-per-click, forgiving line: "Stuck is normal. Hints cost rank; finishing doesn't." Hints echo into transcript `#f5a623` prefixed `hint:`. Mobile: HUD = `<details open>` drawer above terminal, `sticky top-16 z-30`.
+  - **Victory (inline, replaces input row — no modal):** `display-md` "Mission complete." (`tabindex="-1"` + JS focus), stats + **rank** `14 commands · 1 hint · 6:42 · Solid on-call` mono, CTAs: "Continue to Day {next live day}" primary (if next is draft → "Back to the roadmap" primary + "Day {N} drops soon" caption — no dead end) · "Replay" secondary · copy-share ghost (CodeBlock copy pattern + sr-only aria-live confirm; share text includes the rank). Celebration = objectives bar fill + staggered dot pops (transform/opacity only; skipped under reduced-motion). Share text per SEO-MARKETING §4.
+
+## 5. Habit mechanics (MVP)
+Storage `oc-m90-v1` (PLAN canon): schema + parsing owned by `progress.ts`; reads/writes happen in page scripts; all access try/catch. **Streak display is Phase B** (logic ships tested in T2; when it lands: shown only ≥2, in exactly 2 places — hub chip, completion band; **no broken-streak state will ever exist** — returning-after-gap copy: "{n} of 90 done — picking up where you left off."). Binge-friendly: days are a sequence, not a calendar (Persona C). Edge states: all-live-done → `.rm-complete`-pattern band "You're up to date — Day N drops soon; replay a mission"; all-90 → "Mission accomplished — take the projects to your portfolio."; storage cleared/blocked → everything degrades to cold-start (static default IS the empty state) + `.rm-hint` lock line pre-explains device-local progress. Multi-tab desync (no `storage` listener) accepted at MVP — noted for Phase B.
+
+## 6. A11y checklist
+Terminal: container `role="group" aria-label`; output `role="log"` (implicit polite live region); objective/hint changes mirrored to one sr-only `role="status"` node; input real `<input aria-label="Terminal command input">`, prompt aria-hidden; never autofocus on load; Escape releases; keyboard-only playthrough must pass; victory heading receives focus. Roadmap: `<details><summary>` wraps `<h3>`; rows in `ol[role=list]`; `role="progressbar"` + aria-valuenow; counts aria-live polite. Checkboxes: real sr-only inputs + aria-label "Mark Day N as complete", focus ring via `.rm-check:focus-within`. Contrast on inverse (#171717 / dark #1c1c1c): white 15.6:1 · white/80 9.9:1 · white/60 6.1:1 (floor for meaningful text) · white/45 4.0:1 decorative only · #34d399 8.5:1 · #f5a623 7.9:1 · #ff6166 5.3:1 (token --color-error 3.9:1 FAILS — never use). Reduced motion: global zeroing + JS guards (rm-pop conditional, scrollIntoView behavior:'auto', caret `animation:none;opacity:1`).
+
+## 7. Performance
+Hub/day pages: only the progress `<script>` (~1.5 KB, no framework). Play page: engine dynamic-imported in boot closure, target <15 KB gz. No CodeMirror in this feature. Lighthouse targets: Perf ≥95, A11y 100, SEO 100.
+
+## 8. "Make it a hit" extras (ranked, each ≤1 dev-day)
+**MVP (in tasks):**
+1. Gameplay-transcript CodeBlock on hub (~2h) — sells the moat with zero JS. (T12)
+2. Flagship card on `/learn` + homepage learn band (~2h) — top-traffic distribution. (T14)
+3. Victory copy-share block (~2h) — learn-in-public flywheel, one click. (T10)
+4. Prefetch tomorrow on completion (~1h) — instant next-day at peak momentum. (T11)
+**Phase B:** welcome-back toast (`.resume-toast` reuse), day-completion copy-share block, streak chip.
+
+## 9. New-component register
+`M90ProgressCard` {total} · `M90DayTable` {days} (owns progress/highlight script) · `M90StateCta` (static first-visit + state swap) · `MissionCard` {mission, state: 'playable'|'completed'|'planned'|'locked-live'} · `MissionTerminal` {missionId} · `MissionDay` (day layout) · `M90CompleteCheck` {day, tomorrowTitle, nextHref, nextIsDraft, nextMissionTitle?} — mission-unlock banner data derived from the registry via `day` · `real-error` callout · `courseLd()` + `techArticleLd` author param · `progress.ts`. Everything else is existing chrome — **zero new tokens.** Hub trust caption reads from `totalCoreMinutes` (≈79 h core → copy "~80 hrs core"; never hand-write the number).
