@@ -24,7 +24,7 @@ const pageUrl = `${site.url}${pagePath}`;
 const faqs = [
   {
     q: 'O que o conversor de endereços IP faz?',
-    a: 'Cole um endereço IP em qualquer forma comum — decimal com pontos (192.168.1.10), um inteiro de 32 bits (3232235786), hexadecimal (0xC0A8010A), binário ou um literal IPv6 (2001:db8::1) — e ele mostra todas as outras representações de uma vez, além do tipo de endereço. Tudo é calculado no seu navegador.',
+    a: 'Cole um endereço IP em qualquer forma comum — decimal com pontos (192.168.1.10), um inteiro (3232235786), hexadecimal com ou sem o prefixo 0x, binário ou um literal IPv6 (2001:db8::1) — e ele mostra todas as outras representações de uma vez, além do nome PTR e do tipo de endereço. Um modo em massa converte uma lista inteira, um endereço por linha. Tudo é calculado no seu navegador.',
   },
   {
     q: 'Meu endereço chega a sair do meu navegador?',
@@ -32,7 +32,7 @@ const faqs = [
   },
   {
     q: 'Quais formatos de entrada são detectados automaticamente?',
-    a: 'Um valor com dois-pontos é lido como IPv6; um valor com prefixo 0x como hexadecimal; uma cadeia formada apenas por 0 e 1 (com 32 ou 128 de comprimento) como binário; uma sequência simples de dígitos como um inteiro; e um valor com pontos como IPv4. Você não escolhe o formato: o conversor o deduz e informa o que interpretou.',
+    a: 'Um valor com dois-pontos é lido como um literal IPv6; um valor com prefixo 0x como hexadecimal (mais de 8 dígitos hexadecimais significa IPv6); hexadecimal puro sem o 0x é aceito quando tem exatamente 8 ou 32 dígitos e contém pelo menos uma letra; uma cadeia de 0 e 1 totalizando 32 ou 128 bits é binário, com pontos, dois-pontos, sublinhados ou espaços permitidos como separadores; uma sequência simples de dígitos é um inteiro; e um valor com pontos é IPv4. Um sufixo %zone é removido e exibido como uma linha própria, e um /prefixo é ignorado com um aviso. Você não escolhe o formato: o conversor o deduz e informa o que interpretou.',
   },
   {
     q: 'Como converto um endereço IP para decimal?',
@@ -44,15 +44,19 @@ const faqs = [
   },
   {
     q: 'Como converto um endereço IP para hexadecimal?',
-    a: 'Cada octeto se torna um valor hexadecimal de dois dígitos, concatenado e com o prefixo 0x, então 192.168.1.10 é 0xC0A8010A. A ferramenta sempre gera hexadecimal preenchido com zeros à esquerda — 8 dígitos para IPv4 e 32 dígitos para IPv6 — para que a largura não seja ambígua.',
+    a: 'Cada octeto se torna um valor hexadecimal de dois dígitos, concatenado e com o prefixo 0x, então 192.168.1.10 é 0xC0A8010A. A ferramenta sempre gera hexadecimal preenchido com zeros à esquerda — 8 dígitos para IPv4 e 32 para IPv6 — e aceita hexadecimal puro sem o 0x quando tem exatamente 8 ou 32 dígitos. Para IPv4 ela também mostra a forma com bytes invertidos (0x0A01A8C0) que fontes little-endian como /proc/net/tcp imprimem.',
   },
   {
     q: 'Ele lida com IPv6?',
     a: 'Sim. O IPv6 é convertido com precisão completa de 128 bits: você obtém a forma comprimida RFC 5952, a forma totalmente expandida, o inteiro decimal e o hexadecimal de 32 dígitos preenchido. O IPv4 embutido também é analisado (por exemplo, ::ffff:192.168.1.1).',
   },
   {
+    q: 'O que é a linha de nome PTR?',
+    a: 'O DNS reverso armazena o nome de host de um endereço sob um domínio especial: os octetos IPv4 são invertidos sob in-addr.arpa (192.168.1.10 se torna 10.1.168.192.in-addr.arpa) e os nibbles IPv6 são invertidos sob ip6.arpa. O conversor deriva o nome PTR de cada endereço; para montar o registro PTR correspondente e a zona reversa, abra o Reverse DNS / PTR Helper.',
+  },
+  {
     q: 'Como converto um endereço IP para binário?',
-    a: 'Cada um dos quatro octetos é escrito como um número binário de 8 bits, o que dá 192.168.1.10 como 11000000.10101000.00000001.00001010. O conversor mostra a visão binária com pontos agrupada em quatro octetos, o que é prático para visualizar máscaras de sub-rede.',
+    a: 'Cada um dos quatro octetos é escrito como um número binário de 8 bits, o que dá 192.168.1.10 como 11000000.10101000.00000001.00001010. O conversor também aceita binário de volta — com ou sem os pontos separadores — então a própria saída dele faz a ida e volta, e endereços IPv6 ganham uma visão binária de 128 bits agrupada por dois-pontos.',
   },
   {
     q: 'Por que um endereço IP funciona como um número simples em uma URL?',
@@ -70,6 +74,10 @@ const softwareApp = softwareAppLd({
     'Converte entre decimal com pontos, inteiro, hex e binário',
     'Detecção automática do formato de entrada',
     'IPv4 e IPv6 (comprimido + expandido)',
+    'Classificação do endereço — privado, loopback, CGNAT e mais',
+    'Nomes PTR / DNS reverso (in-addr.arpa e ip6.arpa)',
+    'Conversão em massa — um endereço por linha',
+    'Links compartilháveis que reabrem uma conversão',
     '100% no lado do cliente, sem enviar nada, sem cadastro',
   ],
   keywords: tool?.keywords.join(', '),
@@ -95,17 +103,20 @@ const pipeline = [
   },
 ];
 
-const formatsExample = `192.168.1.10            dotted decimal
-3232235786              integer (decimal)
-0xC0A8010A              hexadecimal
-11000000.10101000.      binary (by octet)
-  00000001.00001010`;
+const formatsExample = `100.64.0.1              decimal com pontos
+1681915905              inteiro (decimal)
+0x64400001              hexadecimal
+01100100.01000000.      binário (por octeto)
+  00000000.00000001
+1.0.64.100.in-addr.arpa nome PTR
+Carrier-grade NAT       tipo de endereço (RFC 6598)`;
 
-const ipv6FormsExample = `2001:db8::1             compressed (RFC 5952)
-2001:0db8:0000:0000:    expanded
-  0000:0000:0000:0001
-42540766411282592856…   integer (decimal)
-0x20010db8000000000…    hexadecimal (32 digits)`;
+const ipv6FormsExample = `::ffff:c0a8:10a         comprimido (RFC 5952)
+0000:0000:0000:0000:    expandido
+  0000:ffff:c0a8:010a
+192.168.1.10            IPv4 embutido
+281473913979146         inteiro (decimal)
+IPv4-mapped             tipo de endereço (RFC 4291)`;
 import type { Locale as __Locale } from '../../i18n/config';
 import { localizeKey as __l } from '../../i18n/utils';
 const __lang = (Astro.currentLocale ?? 'en') as __Locale;
@@ -128,11 +139,9 @@ const __lang = (Astro.currentLocale ?? 'en') as __Locale;
   >
     <Fragment slot="headline">Veja um endereço IP em todas as suas formas de uma vez.</Fragment>
     <Fragment slot="lead">
-      Cole um IP em qualquer forma —
-      <span class="code-mono text-ink" translate="no">192.168.1.10</span>,
-      <span class="code-mono text-ink" translate="no">3232235786</span> ou
-      <span class="code-mono text-ink" translate="no">0xC0A8010A</span> — e obtenha decimal com pontos,
-      inteiro, hex e binário juntos.
+      Cole um endereço na forma em que um log, um firewall ou uma captura de pacotes o entregou
+      e leia todas as outras representações de volta de uma vez — além do que o endereço é:
+      privado, loopback, CGNAT.
     </Fragment>
   </ToolHero>
 
@@ -189,22 +198,23 @@ const __lang = (Astro.currentLocale ?? 'en') as __Locale;
         <h2 class="display-lg mt-3 text-ink">Um valor, todas as representações.</h2>
         <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
           Cada forma é só uma codificação diferente do mesmo número subjacente — 32 bits para IPv4,
-          128 para IPv6.
+          128 para IPv6 — e o intervalo em que esse número cai indica que tipo de endereço ele é.
         </p>
       </div>
       <div class="mx-auto mt-10 grid max-w-5xl gap-8 lg:grid-cols-2">
         <div class="min-w-0">
           <h3 class="display-sm text-ink">IPv4</h3>
           <p class="body-sm mt-2 mb-4 text-pretty text-body">
-            <span class="code-mono text-ink" translate="no">192.168.1.10</span> em cada forma:
+            <span class="code-mono text-ink" translate="no">100.64.0.1</span> — espaço de NAT de
+            operadora (carrier-grade), fácil de confundir com um endereço privado — em cada forma:
           </p>
           <CodeBlock lang="text" filename="ipv4-forms" code={formatsExample} />
         </div>
         <div class="min-w-0">
           <h3 class="display-sm text-ink">IPv6</h3>
           <p class="body-sm mt-2 mb-4 text-pretty text-body">
-            <span class="code-mono text-ink" translate="no">2001:db8::1</span> comprimido, expandido
-            e como número:
+            <span class="code-mono text-ink" translate="no">::ffff:192.168.1.10</span> — um endereço
+            IPv4 mapeado — em cada forma:
           </p>
           <CodeBlock lang="text" filename="ipv6-forms" code={ipv6FormsExample} />
         </div>
@@ -251,8 +261,10 @@ const __lang = (Astro.currentLocale ?? 'en') as __Locale;
     </Fragment>
     <Fragment slot="links">
       Mais sobre redes: a
-      <a class="link-inline" href={__l("/subnet-calculator", __lang)}>Calculadora de sub-redes</a> e o
-      <a class="link-inline" href={__l("/cidr-checker", __lang)}>Verificador CIDR / de sub-redes</a>, ou explore o
+      <a class="link-inline" href={__l("/subnet-calculator", __lang)}>Calculadora de sub-redes</a>, o
+      <a class="link-inline" href={__l("/cidr-checker", __lang)}>Verificador CIDR / de sub-redes</a>, o
+      <a class="link-inline" href={__l("/reverse-dns-ptr", __lang)}>Reverse DNS / PTR Helper</a> e o
+      <a class="link-inline" href={__l("/subnet-splitter", __lang)}>Subnet Splitter</a>, ou explore o
       <a class="link-inline" href={__l(navLinks[0].href, __lang)}>diretório de ferramentas</a> completo.
     </Fragment>
     <Fragment slot="disclaimer">

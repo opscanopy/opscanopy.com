@@ -24,7 +24,7 @@ const pageUrl = `${site.url}${pagePath}`;
 const faqs = [
   {
     q: 'What does the IP Address Converter do?',
-    a: 'Paste an IP address in any common form — dotted decimal (192.168.1.10), a 32-bit integer (3232235786), hexadecimal (0xC0A8010A), binary, or an IPv6 literal (2001:db8::1) — and it shows every other representation at once, plus the address type. Everything is computed in your browser.',
+    a: 'Paste an IP address in any common form — dotted decimal (192.168.1.10), an integer (3232235786), hexadecimal with or without the 0x prefix, binary, or an IPv6 literal (2001:db8::1) — and it shows every other representation at once, plus the PTR name and the address type. A bulk mode converts a whole list, one address per line. Everything is computed in your browser.',
   },
   {
     q: 'Does my address ever leave my browser?',
@@ -32,7 +32,7 @@ const faqs = [
   },
   {
     q: 'Which input formats are detected automatically?',
-    a: 'A value with colons is read as IPv6; a 0x-prefixed value as hexadecimal; a string of only 0s and 1s (32 or 128 long) as binary; a plain run of digits as an integer; and a dotted value as IPv4. You do not pick the format — the converter infers it and tells you what it read.',
+    a: 'A value with colons is read as an IPv6 literal; a 0x-prefixed value as hexadecimal (more than 8 hex digits means IPv6); bare hexadecimal without the 0x is accepted when it is exactly 8 or 32 digits and contains at least one letter; a string of 0s and 1s totalling 32 or 128 bits is binary, with dots, colons, underscores or spaces allowed as separators; a plain run of digits is an integer; and a dotted value is IPv4. A %zone suffix is stripped and shown as its own row, and a /prefix is ignored with a warning. You do not pick the format — the converter infers it and tells you what it read.',
   },
   {
     q: 'How do I convert an IP address to decimal?',
@@ -44,15 +44,19 @@ const faqs = [
   },
   {
     q: 'How do I convert an IP address to hexadecimal?',
-    a: 'Each octet becomes a two-digit hex value, concatenated and 0x-prefixed, so 192.168.1.10 is 0xC0A8010A. The tool always outputs zero-padded hex — 8 digits for IPv4 and 32 digits for IPv6 — so the width is unambiguous.',
+    a: 'Each octet becomes a two-digit hex value, concatenated and 0x-prefixed, so 192.168.1.10 is 0xC0A8010A. The tool always outputs zero-padded hex — 8 digits for IPv4 and 32 for IPv6 — and accepts bare hex without the 0x when it is exactly 8 or 32 digits. For IPv4 it also shows the byte-swapped form (0x0A01A8C0) that little-endian sources such as /proc/net/tcp print.',
   },
   {
     q: 'Does it handle IPv6?',
     a: 'Yes. IPv6 is converted with full 128-bit precision: you get the RFC 5952 compressed form, the fully expanded form, the decimal integer and the padded 32-digit hexadecimal. Embedded IPv4 (for example ::ffff:192.168.1.1) is parsed too.',
   },
   {
+    q: 'What is the PTR name row?',
+    a: 'Reverse DNS stores the hostname for an address under a special domain: IPv4 octets are reversed under in-addr.arpa (192.168.1.10 becomes 10.1.168.192.in-addr.arpa) and IPv6 nibbles are reversed under ip6.arpa. The converter derives the PTR name for every address; to build the matching PTR record and reverse zone, open the Reverse DNS / PTR Helper.',
+  },
+  {
     q: 'How do I convert an IP address to binary?',
-    a: 'Each of the four octets is written as an 8-bit binary number, giving 192.168.1.10 as 11000000.10101000.00000001.00001010. The converter shows the dotted-binary view grouped into four octets, which is handy for visualising subnet masks.',
+    a: 'Each of the four octets is written as an 8-bit binary number, giving 192.168.1.10 as 11000000.10101000.00000001.00001010. The converter accepts binary back too — with or without the dot separators — so its own output round-trips, and IPv6 addresses get a colon-grouped 128-bit binary view.',
   },
   {
     q: 'Why does an IP address work as a plain number in a URL?',
@@ -70,6 +74,10 @@ const softwareApp = softwareAppLd({
     'Convert between dotted decimal, integer, hex and binary',
     'Automatic input-format detection',
     'IPv4 and IPv6 (compressed + expanded)',
+    'Address classification — private, loopback, CGNAT and more',
+    'PTR / reverse-DNS names (in-addr.arpa and ip6.arpa)',
+    'Bulk conversion — one address per line',
+    'Shareable links that reopen a conversion',
     '100% client-side, no upload, no signup',
   ],
   keywords: tool?.keywords.join(', '),
@@ -95,17 +103,20 @@ const pipeline = [
   },
 ];
 
-const formatsExample = `192.168.1.10            dotted decimal
-3232235786              integer (decimal)
-0xC0A8010A              hexadecimal
-11000000.10101000.      binary (by octet)
-  00000001.00001010`;
+const formatsExample = `100.64.0.1              dotted decimal
+1681915905              integer (decimal)
+0x64400001              hexadecimal
+01100100.01000000.      binary (by octet)
+  00000000.00000001
+1.0.64.100.in-addr.arpa PTR name
+Carrier-grade NAT       address type (RFC 6598)`;
 
-const ipv6FormsExample = `2001:db8::1             compressed (RFC 5952)
-2001:0db8:0000:0000:    expanded
-  0000:0000:0000:0001
-42540766411282592856…   integer (decimal)
-0x20010db8000000000…    hexadecimal (32 digits)`;
+const ipv6FormsExample = `::ffff:c0a8:10a         compressed (RFC 5952)
+0000:0000:0000:0000:    expanded
+  0000:ffff:c0a8:010a
+192.168.1.10            embedded IPv4
+281473913979146         integer (decimal)
+IPv4-mapped             address type (RFC 4291)`;
 ---
 
 <Shell
@@ -125,11 +136,9 @@ const ipv6FormsExample = `2001:db8::1             compressed (RFC 5952)
   >
     <Fragment slot="headline">See an IP address in every form at once.</Fragment>
     <Fragment slot="lead">
-      Paste an IP in any form —
-      <span class="code-mono text-ink" translate="no">192.168.1.10</span>,
-      <span class="code-mono text-ink" translate="no">3232235786</span> or
-      <span class="code-mono text-ink" translate="no">0xC0A8010A</span> — and get dotted decimal,
-      integer, hex and binary together.
+      Paste an address in whatever form a log, firewall or packet capture handed you and read
+      every other representation back at once — plus what the address is: private, loopback,
+      CGNAT.
     </Fragment>
   </ToolHero>
 
@@ -186,22 +195,23 @@ const ipv6FormsExample = `2001:db8::1             compressed (RFC 5952)
         <h2 class="display-lg mt-3 text-ink">One value, every representation.</h2>
         <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
           Each form is just a different encoding of the same underlying number — 32 bits for IPv4,
-          128 for IPv6.
+          128 for IPv6 — and the range that number falls in tells you what kind of address it is.
         </p>
       </div>
       <div class="mx-auto mt-10 grid max-w-5xl gap-8 lg:grid-cols-2">
         <div class="min-w-0">
           <h3 class="display-sm text-ink">IPv4</h3>
           <p class="body-sm mt-2 mb-4 text-pretty text-body">
-            <span class="code-mono text-ink" translate="no">192.168.1.10</span> in each form:
+            <span class="code-mono text-ink" translate="no">100.64.0.1</span> — carrier-grade NAT
+            space, easily mistaken for a private address — in each form:
           </p>
           <CodeBlock lang="text" filename="ipv4-forms" code={formatsExample} />
         </div>
         <div class="min-w-0">
           <h3 class="display-sm text-ink">IPv6</h3>
           <p class="body-sm mt-2 mb-4 text-pretty text-body">
-            <span class="code-mono text-ink" translate="no">2001:db8::1</span> compressed, expanded,
-            and as a number:
+            <span class="code-mono text-ink" translate="no">::ffff:192.168.1.10</span> — an
+            IPv4-mapped address — in each form:
           </p>
           <CodeBlock lang="text" filename="ipv6-forms" code={ipv6FormsExample} />
         </div>
@@ -248,8 +258,8 @@ const ipv6FormsExample = `2001:db8::1             compressed (RFC 5952)
     </Fragment>
     <Fragment slot="links">
       More networking: the
-      <a class="link-inline" href="/subnet-calculator">Subnet Calculator</a> and the
-      <a class="link-inline" href="/cidr-checker">CIDR / Subnet Checker</a>, or browse the full
+      <a class="link-inline" href="/reverse-dns-ptr">Reverse DNS / PTR Helper</a> and the
+      <a class="link-inline" href="/subnet-splitter">Subnet Splitter</a>, or browse the full
       <a class="link-inline" href={navLinks[0].href}>tools directory</a>.
     </Fragment>
     <Fragment slot="disclaimer">

@@ -24,7 +24,7 @@ const pageUrl = `${site.url}${pagePath}`;
 const faqs = [
   {
     q: 'Que fait le convertisseur d’adresses IP ?',
-    a: 'Collez une adresse IP sous n’importe quelle forme courante — notation décimale pointée (192.168.1.10), entier 32 bits (3232235786), hexadécimal (0xC0A8010A), binaire ou littéral IPv6 (2001:db8::1) — et il affiche instantanément toutes les autres représentations, ainsi que le type de l’adresse. Tout est calculé dans votre navigateur.',
+    a: 'Collez une adresse IP sous n’importe quelle forme courante — notation décimale pointée (192.168.1.10), entier (3232235786), hexadécimal avec ou sans le préfixe 0x, binaire ou littéral IPv6 (2001:db8::1) — et il affiche instantanément toutes les autres représentations, ainsi que le nom PTR et le type de l’adresse. Un mode en masse convertit une liste entière, à raison d’une adresse par ligne. Tout est calculé dans votre navigateur.',
   },
   {
     q: 'Mon adresse quitte-t-elle un jour mon navigateur ?',
@@ -32,7 +32,7 @@ const faqs = [
   },
   {
     q: 'Quels formats d’entrée sont détectés automatiquement ?',
-    a: 'Une valeur contenant des deux-points est lue comme de l’IPv6 ; une valeur préfixée par 0x comme de l’hexadécimal ; une chaîne composée uniquement de 0 et de 1 (de 32 ou 128 caractères) comme du binaire ; une simple suite de chiffres comme un entier ; et une valeur pointée comme de l’IPv4. Vous ne choisissez pas le format — le convertisseur le déduit et vous indique ce qu’il a interprété.',
+    a: 'Une valeur contenant des deux-points est lue comme un littéral IPv6 ; une valeur préfixée par 0x comme de l’hexadécimal (plus de 8 chiffres hexadécimaux signifie IPv6) ; l’hexadécimal nu, sans le 0x, est accepté lorsqu’il compte exactement 8 ou 32 chiffres et contient au moins une lettre ; une chaîne de 0 et de 1 totalisant 32 ou 128 bits est du binaire, les points, deux-points, tirets bas et espaces étant admis comme séparateurs ; une simple suite de chiffres est un entier ; et une valeur pointée est de l’IPv4. Un suffixe %zone est retiré et affiché sur sa propre ligne, et un /préfixe est ignoré avec un avertissement. Vous ne choisissez pas le format — le convertisseur le déduit et vous indique ce qu’il a interprété.',
   },
   {
     q: 'Comment convertir une adresse IP en décimal ?',
@@ -44,15 +44,19 @@ const faqs = [
   },
   {
     q: 'Comment convertir une adresse IP en hexadécimal ?',
-    a: 'Chaque octet devient une valeur hexadécimale à deux chiffres, concaténée et préfixée par 0x, donc 192.168.1.10 s’écrit 0xC0A8010A. L’outil produit toujours un hexadécimal complété par des zéros — 8 chiffres pour l’IPv4 et 32 chiffres pour l’IPv6 — afin que la largeur soit sans ambiguïté.',
+    a: 'Chaque octet devient une valeur hexadécimale à deux chiffres, concaténée et préfixée par 0x, donc 192.168.1.10 s’écrit 0xC0A8010A. L’outil produit toujours un hexadécimal complété par des zéros — 8 chiffres pour l’IPv4 et 32 pour l’IPv6 — et accepte l’hexadécimal nu, sans le 0x, lorsqu’il compte exactement 8 ou 32 chiffres. Pour l’IPv4, il affiche aussi la forme à octets inversés (0x0A01A8C0) qu’impriment les sources petit-boutistes comme /proc/net/tcp.',
   },
   {
     q: 'Gère-t-il l’IPv6 ?',
     a: 'Oui. L’IPv6 est converti avec une précision complète de 128 bits : vous obtenez la forme compressée RFC 5952, la forme entièrement développée, l’entier décimal et l’hexadécimal de 32 chiffres complété par des zéros. L’IPv4 imbriquée (par exemple ::ffff:192.168.1.1) est également analysée.',
   },
   {
+    q: 'Qu’est-ce que la ligne « nom PTR » ?',
+    a: 'Le DNS inverse stocke le nom d’hôte d’une adresse sous un domaine spécial : les octets IPv4 sont inversés sous in-addr.arpa (192.168.1.10 devient 10.1.168.192.in-addr.arpa) et les quartets IPv6 sont inversés sous ip6.arpa. Le convertisseur dérive le nom PTR de chaque adresse ; pour construire l’enregistrement PTR correspondant et la zone inverse, ouvrez le Reverse DNS / PTR Helper.',
+  },
+  {
     q: 'Comment convertir une adresse IP en binaire ?',
-    a: 'Chacun des quatre octets est écrit sous forme de nombre binaire de 8 bits, ce qui donne pour 192.168.1.10 la valeur 11000000.10101000.00000001.00001010. Le convertisseur affiche la vue binaire pointée regroupée en quatre octets, ce qui est pratique pour visualiser les masques de sous-réseau.',
+    a: 'Chacun des quatre octets est écrit sous forme de nombre binaire de 8 bits, ce qui donne pour 192.168.1.10 la valeur 11000000.10101000.00000001.00001010. Le convertisseur accepte aussi le binaire en entrée — avec ou sans les points séparateurs — de sorte que sa propre sortie fait l’aller-retour, et les adresses IPv6 bénéficient d’une vue binaire de 128 bits groupée par deux-points.',
   },
   {
     q: 'Pourquoi une adresse IP fonctionne-t-elle comme un simple nombre dans une URL ?',
@@ -70,6 +74,10 @@ const softwareApp = softwareAppLd({
     'Conversion entre notation décimale pointée, entier, hexadécimal et binaire',
     'Détection automatique du format d’entrée',
     'IPv4 et IPv6 (compressé + développé)',
+    'Classification de l’adresse — privée, bouclage, CGNAT et plus encore',
+    'Noms PTR / DNS inverse (in-addr.arpa et ip6.arpa)',
+    'Conversion en masse — une adresse par ligne',
+    'Liens partageables qui rouvrent une conversion',
     '100 % côté client, aucun téléversement, aucune inscription',
   ],
   keywords: tool?.keywords.join(', '),
@@ -95,17 +103,20 @@ const pipeline = [
   },
 ];
 
-const formatsExample = `192.168.1.10            dotted decimal
-3232235786              integer (decimal)
-0xC0A8010A              hexadecimal
-11000000.10101000.      binary (by octet)
-  00000001.00001010`;
+const formatsExample = `100.64.0.1              décimal pointé
+1681915905              entier (décimal)
+0x64400001              hexadécimal
+01100100.01000000.      binaire (par octet)
+  00000000.00000001
+1.0.64.100.in-addr.arpa nom PTR
+Carrier-grade NAT       type d’adresse (RFC 6598)`;
 
-const ipv6FormsExample = `2001:db8::1             compressed (RFC 5952)
-2001:0db8:0000:0000:    expanded
-  0000:0000:0000:0001
-42540766411282592856…   integer (decimal)
-0x20010db8000000000…    hexadecimal (32 digits)`;
+const ipv6FormsExample = `::ffff:c0a8:10a         compressé (RFC 5952)
+0000:0000:0000:0000:    développé
+  0000:ffff:c0a8:010a
+192.168.1.10            IPv4 imbriquée
+281473913979146         entier (décimal)
+IPv4-mapped             type d’adresse (RFC 4291)`;
 import type { Locale as __Locale } from '../../i18n/config';
 import { localizeKey as __l } from '../../i18n/utils';
 const __lang = (Astro.currentLocale ?? 'en') as __Locale;
@@ -128,11 +139,9 @@ const __lang = (Astro.currentLocale ?? 'en') as __Locale;
   >
     <Fragment slot="headline">Voyez une adresse IP sous toutes ses formes d’un seul coup.</Fragment>
     <Fragment slot="lead">
-      Collez une IP sous n’importe quelle forme —
-      <span class="code-mono text-ink" translate="no">192.168.1.10</span>,
-      <span class="code-mono text-ink" translate="no">3232235786</span> ou
-      <span class="code-mono text-ink" translate="no">0xC0A8010A</span> — et obtenez la notation décimale pointée,
-      l’entier, l’hexadécimal et le binaire ensemble.
+      Collez une adresse sous la forme que vous a livrée un journal, un pare-feu ou une capture de
+      paquets, et lisez d’un seul coup toutes les autres représentations — plus la nature de
+      l’adresse : privée, bouclage, CGNAT.
     </Fragment>
   </ToolHero>
 
@@ -189,22 +198,23 @@ const __lang = (Astro.currentLocale ?? 'en') as __Locale;
         <h2 class="display-lg mt-3 text-ink">Une valeur, chaque représentation.</h2>
         <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
           Chaque forme n’est qu’un encodage différent du même nombre sous-jacent — 32 bits pour l’IPv4,
-          128 pour l’IPv6.
+          128 pour l’IPv6 — et la plage dans laquelle ce nombre tombe vous dit de quel type d’adresse il s’agit.
         </p>
       </div>
       <div class="mx-auto mt-10 grid max-w-5xl gap-8 lg:grid-cols-2">
         <div class="min-w-0">
           <h3 class="display-sm text-ink">IPv4</h3>
           <p class="body-sm mt-2 mb-4 text-pretty text-body">
-            <span class="code-mono text-ink" translate="no">192.168.1.10</span> sous chaque forme :
+            <span class="code-mono text-ink" translate="no">100.64.0.1</span> — l’espace NAT de niveau
+            opérateur, facile à confondre avec une adresse privée — sous chaque forme :
           </p>
           <CodeBlock lang="text" filename="ipv4-forms" code={formatsExample} />
         </div>
         <div class="min-w-0">
           <h3 class="display-sm text-ink">IPv6</h3>
           <p class="body-sm mt-2 mb-4 text-pretty text-body">
-            <span class="code-mono text-ink" translate="no">2001:db8::1</span> compressé, développé,
-            et sous forme de nombre :
+            <span class="code-mono text-ink" translate="no">::ffff:192.168.1.10</span> — une adresse
+            IPv4-mappée — sous chaque forme :
           </p>
           <CodeBlock lang="text" filename="ipv6-forms" code={ipv6FormsExample} />
         </div>
@@ -251,8 +261,10 @@ const __lang = (Astro.currentLocale ?? 'en') as __Locale;
     </Fragment>
     <Fragment slot="links">
       Plus de réseau : le
-      <a class="link-inline" href={__l("/subnet-calculator", __lang)}>Subnet Calculator</a> et le
-      <a class="link-inline" href={__l("/cidr-checker", __lang)}>CIDR / Subnet Checker</a>, ou parcourez l’intégralité du
+      <a class="link-inline" href={__l("/subnet-calculator", __lang)}>Subnet Calculator</a>, le
+      <a class="link-inline" href={__l("/cidr-checker", __lang)}>CIDR / Subnet Checker</a>, le
+      <a class="link-inline" href={__l("/reverse-dns-ptr", __lang)}>Reverse DNS / PTR Helper</a> et le
+      <a class="link-inline" href={__l("/subnet-splitter", __lang)}>Subnet Splitter</a>, ou parcourez l’intégralité du
       <a class="link-inline" href={__l(navLinks[0].href, __lang)}>répertoire des outils</a>.
     </Fragment>
     <Fragment slot="disclaimer">
