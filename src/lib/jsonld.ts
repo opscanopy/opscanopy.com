@@ -86,6 +86,10 @@ export function faqPageLd(faqs: { q: string; a: string }[]): Record<string, unkn
 /**
  * TechArticle object for a Learn guide page. Mirrors the BlogPosting shape used
  * by blog posts but typed as TechArticle (technical how-to/reference content).
+ *
+ * `author` (optional) swaps the default Organization author for a Person —
+ * the publisher stays the site Organization. `isPartOfCourse` (optional)
+ * links the article into a Course via `isPartOf`.
  */
 export function techArticleLd(o: {
   headline: string;
@@ -95,6 +99,8 @@ export function techArticleLd(o: {
   dateModified?: string;
   keywords?: string;
   proficiencyLevel?: 'Beginner' | 'Intermediate' | 'Advanced';
+  author?: { name: string; url?: string };
+  isPartOfCourse?: { name: string; url: string };
 }): Record<string, unknown> {
   return {
     '@context': 'https://schema.org',
@@ -106,7 +112,52 @@ export function techArticleLd(o: {
     dateModified: o.dateModified ?? o.datePublished,
     keywords: o.keywords,
     mainEntityOfPage: { '@type': 'WebPage', '@id': o.url },
-    author: { '@type': 'Organization', name: site.name, url: site.url },
+    author: o.author
+      ? { '@type': 'Person', name: o.author.name, url: o.author.url }
+      : { '@type': 'Organization', name: site.name, url: site.url },
     publisher: { '@type': 'Organization', name: site.name, url: site.url },
+    isPartOf: o.isPartOfCourse
+      ? { '@type': 'Course', name: o.isPartOfCourse.name, '@id': o.isPartOfCourse.url }
+      : undefined,
+  };
+}
+
+/**
+ * Course object for a structured multi-phase program (e.g. Mission 90 Days).
+ * `totalMinutes` is the TOTAL workload across the whole program, emitted as an
+ * ISO-8601 duration rounded to the nearest hour (4740 → "PT79H"). Each phase
+ * becomes a Syllabus section named like "Foundations (Days 1–20)".
+ */
+export function courseLd(
+  o: { name: string; description: string; url: string },
+  phases: { name: string; days: [number, number] }[],
+  totalMinutes: number,
+): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Course',
+    name: o.name,
+    description: o.description,
+    url: o.url,
+    provider: {
+      '@type': 'Organization',
+      name: site.name,
+      url: site.url,
+    },
+    isAccessibleForFree: true,
+    offers: {
+      '@type': 'Offer',
+      price: '0',
+      priceCurrency: 'USD',
+    },
+    hasCourseInstance: {
+      '@type': 'CourseInstance',
+      courseMode: 'Online',
+      courseWorkload: `PT${Math.round(totalMinutes / 60)}H`,
+    },
+    syllabusSections: phases.map((p) => ({
+      '@type': 'Syllabus',
+      name: `${p.name} (Days ${p.days[0]}–${p.days[1]})`,
+    })),
   };
 }
