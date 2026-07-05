@@ -1,0 +1,159 @@
+/**
+ * Mission 90 Days — pure progress/streak helpers.
+ *
+ * This module owns the versioned localStorage schema (key `oc-m90-v1`) and its
+ * defensive parsing, but performs NO I/O itself: no DOM, no localStorage. Page
+ * scripts read/write storage and hand the raw string to `parseProgress`.
+ *
+ * All functions are pure. `streak` works on local calendar dates (`YYYY-MM-DD`
+ * strings) with plain day arithmetic — inputs are already local dates, so no
+ * timezone conversion is ever applied.
+ */
+
+/** Shape stored under the `oc-m90-v1` localStorage key. */
+export interface M90Progress {
+  /** ISO date the user first started the mission. */
+  startedAt?: string;
+  /** Last day page the user visited (1–90). */
+  lastVisitedDay?: number;
+  /** Completed days, keyed by day number as a string (e.g. "1"). */
+  days: Record<string, { completedAt: string }>;
+  /** Completed missions, keyed by mission id. */
+  missions: Record<string, { completedAt: string; commands: number; hints: number; seconds: number }>;
+}
+
+/** True for plain-object JSON values (not null, not arrays). */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Salvage the well-formed `{ completedAt }` day entries; drop the rest. */
+function parseDays(value: unknown): M90Progress['days'] {
+  // Null-prototype accumulator: hostile keys can never reach Object.prototype.
+  const days: M90Progress['days'] = Object.create(null);
+  if (!isRecord(value)) return days;
+  for (const [key, entry] of Object.entries(value)) {
+    if (key === '__proto__') continue; // prototype-shaped key — always malformed, drop it
+    if (isRecord(entry) && typeof entry.completedAt === 'string') {
+      days[key] = { completedAt: entry.completedAt };
+    }
+  }
+  return days;
+}
+
+/** Salvage the well-formed mission entries; drop the rest. */
+function parseMissions(value: unknown): M90Progress['missions'] {
+  // Null-prototype accumulator: hostile keys can never reach Object.prototype.
+  const missions: M90Progress['missions'] = Object.create(null);
+  if (!isRecord(value)) return missions;
+  for (const [key, entry] of Object.entries(value)) {
+    if (key === '__proto__') continue; // prototype-shaped key — always malformed, drop it
+    if (
+      isRecord(entry) &&
+      typeof entry.completedAt === 'string' &&
+      typeof entry.commands === 'number' &&
+      Number.isFinite(entry.commands) &&
+      typeof entry.hints === 'number' &&
+      Number.isFinite(entry.hints) &&
+      typeof entry.seconds === 'number' &&
+      Number.isFinite(entry.seconds)
+    ) {
+      missions[key] = {
+        completedAt: entry.completedAt,
+        commands: entry.commands,
+        hints: entry.hints,
+        seconds: entry.seconds,
+      };
+    }
+  }
+  return missions;
+}
+
+/**
+ * Defensively parse the raw localStorage string. Never throws: null, empty
+ * strings, non-JSON garbage and wrong-shaped JSON all yield a valid empty
+ * progress object; malformed sub-entries are dropped while valid ones are kept.
+ */
+export function parseProgress(raw: string | null): M90Progress {
+  const empty: M90Progress = { days: {}, missions: {} };
+  if (raw === null || raw === '') return empty;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return empty;
+  }
+  if (!isRecord(parsed)) return empty;
+
+  const progress: M90Progress = {
+    days: parseDays(parsed.days),
+    missions: parseMissions(parsed.missions),
+  };
+  if (typeof parsed.startedAt === 'string') progress.startedAt = parsed.startedAt;
+  if (typeof parsed.lastVisitedDay === 'number' && Number.isFinite(parsed.lastVisitedDay)) {
+    progress.lastVisitedDay = parsed.lastVisitedDay;
+  }
+  return progress;
+}
+
+/** Count of completed days. */
+export function doneCount(p: M90Progress): number {
+  return Object.keys(p.days).length;
+}
+
+/**
+ * Lowest live day not yet completed, or null when every live day is done.
+ * `liveDayNumbers` may be unsorted; it is never mutated.
+ */
+export function nextDay(p: M90Progress, liveDayNumbers: number[]): number | null {
+  const sorted = [...liveDayNumbers].sort((a, b) => a - b);
+  for (const n of sorted) {
+    if (!Object.prototype.hasOwnProperty.call(p.days, String(n))) return n;
+  }
+  return null;
+}
+
+/** Completion within an inclusive day range, e.g. [21, 45] → { done: 3, total: 25 }. */
+export function phaseProgress(p: M90Progress, range: [number, number]): { done: number; total: number } {
+  const [lo, hi] = range;
+  let done = 0;
+  for (let n = lo; n <= hi; n++) {
+    if (Object.prototype.hasOwnProperty.call(p.days, String(n))) done++;
+  }
+  return { done, total: hi - lo + 1 };
+}
+
+/** Map a local `YYYY-MM-DD` string to an absolute day index (pure calendar math). */
+function dayIndex(date: string): number {
+  const [y, m, d] = date.split('-').map(Number);
+  // Date.UTC is used purely as calendar arithmetic on the given Y/M/D — the
+  // input is already a local calendar day, so no timezone conversion happens.
+  return Date.UTC(y, m - 1, d) / 86_400_000;
+}
+
+/**
+ * Count of consecutive local calendar days ending at `today` or `yesterday`.
+ * `dates` may be unsorted and may contain duplicates. Returns 0 when neither
+ * today nor yesterday is present (a gap breaks the streak).
+ */
+export function streak(dates: string[], today: string): number {
+  if (dates.length === 0) return 0;
+  const seen = new Set(dates.map(dayIndex));
+  const todayIdx = dayIndex(today);
+  // NaN guard: Set.has(NaN) matches under SameValueZero and NaN-- never
+  // changes, so a malformed `today` would otherwise spin the walk-back forever.
+  if (Number.isNaN(todayIdx)) return 0;
+
+  let cursor: number;
+  if (seen.has(todayIdx)) cursor = todayIdx;
+  else if (seen.has(todayIdx - 1)) cursor = todayIdx - 1;
+  else return 0;
+
+  let count = 0;
+  while (seen.has(cursor)) {
+    count++;
+    cursor--;
+  }
+  return count;
+}
