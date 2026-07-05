@@ -3,44 +3,46 @@
  * SubnetCalculatorPlayground — the interactive Subnet / CIDR Calculator island.
  *
  * A no-framework, server-rendered shell hydrated by a single module <script>.
- * Takes one IPv4/IPv6 address with a prefix in a labeled text input plus an
- * example picker, and lists the network, broadcast/last, masks, host range and
- * counts. Updates live on input — no button — and runs entirely client-side.
+ * One text input accepts an address with a /prefix, an address plus dotted
+ * netmask, or a bare address; example chips (rendered server-side) run on tap.
+ * Results render as answer tiles (usable hosts / range / totals) over grouped
+ * detail rows, with per-row copy, Copy all, and a shareable #ip= deep link.
+ * Evaluation is debounced while typing (Enter commits immediately) and invalid
+ * mid-typing states hold the last card briefly before showing a targeted
+ * diagnostic. Runs entirely client-side.
  *
- * Runtime contract (imported lazily in the script):
+ * Runtime contract (engine lazy-imported for code-splitting):
  *   ../lib/subnet-calculator/engine → calculate(input: string): SubnetResult
- *   ../lib/subnet-calculator/types  → SubnetResult { valid; error?; version?; title?; rows }
- *   ../lib/subnet-calculator/examples → examples: { id; label; input }[]
+ *   ../lib/subnet-calculator/types  → SubnetResult { valid; error?; version?;
+ *     title?; normalized?; summary?; note?; stats; groups }
  */
+import { examples } from '../lib/subnet-calculator/examples';
 ---
 
 <section class="snc-pg" aria-label="Subnet / CIDR Calculator playground">
   <div class="card shadow-float overflow-hidden rounded-lg">
-    {/* ── Toolbar: example picker ──────────────────────────────────────── */}
-    <div class="flex flex-col gap-1 border-b border-hairline px-4 py-3 sm:px-5">
-      <label class="eyebrow shrink-0" for="snc-example">Example</label>
-      <div class="snc-select-wrap relative min-w-0">
-        <select id="snc-example" class="snc-select code-mono" autocomplete="off">
-          <option value="">Loading examples…</option>
-        </select>
-        <svg
-          class="snc-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
-          viewBox="0 0 16 16"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.4"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M4 6l4 4 4-4"></path>
-        </svg>
+    {/* ── Toolbar: example chips ───────────────────────────────────────── */}
+    <div class="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:px-5">
+      <span class="eyebrow">Examples</span>
+      <div id="snc-chips" class="snc-chips" role="group" aria-label="Examples">
+        {
+          examples.map((ex) => (
+            <button
+              type="button"
+              class="snc-chip"
+              data-input={ex.input}
+              aria-label={`${ex.label} — ${ex.input}`}
+            >
+              {ex.label}
+            </button>
+          ))
+        }
       </div>
     </div>
 
     {/* ── Address input ────────────────────────────────────────────────── */}
     <div class="border-b border-hairline px-4 py-4 sm:px-5">
-      <label class="eyebrow mb-2 block" for="snc-input">IP address / CIDR</label>
+      <label class="eyebrow mb-2 block" for="snc-input">IP address / CIDR / netmask</label>
       <div class="snc-input-wrap">
         <svg
           class="snc-input-icon pointer-events-none"
@@ -63,28 +65,118 @@
           autocapitalize="off"
           autocorrect="off"
           autocomplete="off"
+          enterkeyhint="done"
           placeholder="192.168.1.0/24"
-          aria-describedby="snc-input-hint"
+          aria-describedby="snc-input-hint snc-input-live"
         />
       </div>
       <p id="snc-input-hint" class="snc-hint caption text-mute">
-        IPv4 or IPv6 with a prefix — e.g. <span class="code-mono">10.0.0.0/8</span> or
-        <span class="code-mono">2001:db8::/48</span>. A bare address assumes /32 (or /128).
+        IPv4 or IPv6, with or without a prefix — <span class="code-mono">10.0.0.0/8</span>,
+        <span class="code-mono">2001:db8::/48</span>, or a dotted netmask like
+        <span class="code-mono">192.168.1.0 255.255.255.0</span>. A bare address means one host
+        (/32 or /128).
+      </p>
+      <p id="snc-input-live" class="snc-hint snc-hint--live caption text-mute">
+        Results update as you type — press Enter to run now.
       </p>
     </div>
 
     {/* ── Results panel ────────────────────────────────────────────────── */}
     <div class="bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex items-center justify-between gap-3">
-        <span class="eyebrow">Result</span>
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <span class="flex items-center gap-2">
+          <span class="eyebrow">Result</span>
+          <button
+            id="snc-share"
+            type="button"
+            class="snc-copy-btn snc-copy-btn--labeled"
+            data-copy-link
+            data-copy=""
+            data-copy-label="Copy link"
+            hidden
+          >
+            <svg
+              class="snc-copy-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6.75 9.25l2.5-2.5"></path>
+              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
+              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
+            </svg>
+            <svg
+              class="snc-check-icon hidden"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="snc-copy-label">Copy link</span>
+          </button>
+          <button
+            id="snc-copy-all"
+            type="button"
+            class="snc-copy-btn snc-copy-btn--labeled"
+            data-copy-all
+            data-copy=""
+            data-copy-label="Copy all"
+            hidden
+          >
+            <svg
+              class="snc-copy-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="5" y="5" width="9" height="9" rx="1.5"></rect>
+              <path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"></path>
+            </svg>
+            <svg
+              class="snc-check-icon hidden"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="snc-copy-label">Copy all</span>
+          </button>
+        </span>
         <span id="snc-summary" class="snc-summary code-mono text-mute" role="status" aria-live="polite"></span>
       </div>
-      <div id="snc-results" class="snc-results" aria-live="polite" aria-atomic="false">
+      <div id="snc-results" class="snc-results">
         <p class="snc-empty body-sm text-mute">
-          Type an address with a prefix or pick an example to see its network, broadcast, mask and
-          host range here.
+          Type an address — with a prefix or a netmask — or tap an example to see its network,
+          range and host counts here.
         </p>
       </div>
+      <span id="snc-copy-status" class="sr-only" role="status" aria-live="polite"></span>
     </div>
   </div>
 </section>
@@ -92,41 +184,46 @@
 <style>
   @reference "../styles/global.css";
 
-  .snc-select {
-    appearance: none;
-    -webkit-appearance: none;
-    width: 100%;
-    height: 32px;
-    min-width: 0;
-    max-width: 320px;
-    padding: 0 32px 0 12px;
-    border-radius: var(--radius-sm);
+  /* ── Example + cross-tool chips (shared recipe; anchors are injected) ── */
+  .snc-chips,
+  :global(.snc-xchips) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  :global(.snc-xchips) {
+    margin-top: 12px;
+  }
+  :global(.snc-chip) {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border-radius: 9999px;
+    border: none;
     background: var(--color-canvas);
-    color: var(--color-ink);
     box-shadow: var(--shadow-hairline);
-    font-size: 13px;
-    line-height: 20px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-brand-strong);
     cursor: pointer;
-    text-overflow: ellipsis;
-    touch-action: manipulation;
-    transition: box-shadow 0.15s ease;
+    text-decoration: none;
+    transition:
+      background 0.12s ease,
+      box-shadow 0.12s ease;
   }
-  @media (min-width: 640px) {
-    .snc-select {
-      width: auto;
-      min-width: 260px;
+  :global(.snc-chip:hover),
+  :global(.snc-chip.is-active) {
+    background: var(--color-brand-soft);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+  }
+  :global(.snc-chip:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  @media (pointer: coarse) {
+    :global(.snc-chip) {
+      min-height: 44px; /* site touch-target standard */
     }
-  }
-  .snc-select:hover {
-    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
-  }
-  .snc-select:disabled {
-    cursor: not-allowed;
-    color: var(--color-mute);
-    opacity: 0.7;
-  }
-  .snc-select-wrap:hover .snc-select-caret {
-    color: var(--color-body);
   }
 
   .snc-input-wrap {
@@ -176,13 +273,35 @@
   }
   .snc-hint {
     margin-top: 8px;
+    font-size: 12px;
+    line-height: 18px;
     text-wrap: pretty;
   }
-  .snc-summary {
-    white-space: nowrap;
+  .snc-hint .code-mono {
+    font-size: 12px;
   }
+  .snc-hint--live {
+    margin-top: 2px;
+  }
+  .snc-summary {
+    min-width: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+  /* Sized so the seeded /24 card doesn't jump against the empty/error states;
+     smaller content is vertically centered within it. */
   .snc-results {
-    min-height: 44px;
+    min-height: 320px;
+    display: grid;
+    align-content: center;
+  }
+  /* Copy failure message flips from sr-only to a visible caption. */
+  .snc-copy-status--fail {
+    display: block;
+    margin-top: 10px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-error-deep);
   }
 
   /* ── Runtime-injected markup (styled with :global) ──────────────────── */
@@ -213,6 +332,93 @@
     background: var(--color-brand-soft);
     color: var(--color-brand-strong);
   }
+  :global(.snc-title__net) {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  /* ── Answer tiles ─────────────────────────────────────────────────────── */
+  :global(.snc-answer) {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding: 14px;
+    border-bottom: 1px solid var(--color-hairline);
+  }
+  @media (min-width: 640px) {
+    :global(.snc-answer) {
+      grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+      gap: 12px;
+    }
+  }
+  :global(.snc-answer__tile) {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  :global(.snc-answer__k) {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+  :global(.snc-answer__v) {
+    font-size: 20px;
+    line-height: 28px;
+    color: var(--color-ink);
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+  :global(.snc-answer__v.is-hero) {
+    font-size: 26px;
+    line-height: 32px;
+    font-weight: 600;
+    color: var(--color-brand-strong);
+  }
+  :global(.snc-answer__v.is-mono) {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+    padding-top: 4px;
+  }
+  :global(.snc-answer__cap) {
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--color-mute);
+  }
+
+  /* ── Host-inside-block note ───────────────────────────────────────────── */
+  :global(.snc-note) {
+    margin: 0;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+    background: var(--color-warning-soft);
+    color: var(--color-warning-deep);
+    font-size: 13px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+
+  /* ── Grouped rows ─────────────────────────────────────────────────────── */
+  :global(.snc-group__h) {
+    margin: 0;
+    padding: 12px 14px 2px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+  :global(.snc-group__dl) {
+    margin: 0;
+  }
   :global(.snc-row) {
     display: grid;
     grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
@@ -220,21 +426,12 @@
     padding: 9px 14px;
     align-items: baseline;
   }
-  /* Below ~480px: stack label above value so long IPv6 addresses
-     don't wrap mid-hex-group. overflow-wrap:anywhere lets the browser
-     break anywhere (including colons) rather than at nothing. */
+  /* Below ~480px: stack label above value so long IPv6 addresses don't wrap
+     mid-hex-group; the value and its copy button share one flex cell. */
   @media (max-width: 479px) {
     :global(.snc-row) {
-      grid-template-columns: 1fr auto;
-      gap: 2px 8px;
-    }
-    /* Label spans its own full-width row on top; the value and its copy button
-       share the second row (button stays beside the value, not orphaned). */
-    :global(.snc-row__k) {
-      grid-column: 1 / -1;
-    }
-    :global(.snc-row .copy-btn) {
-      align-self: center;
+      grid-template-columns: 1fr;
+      gap: 2px;
     }
   }
   :global(.snc-row + .snc-row) {
@@ -248,7 +445,27 @@
     text-transform: uppercase;
     color: var(--color-mute);
   }
+  :global(.snc-row__gloss) {
+    display: block;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    line-height: 16px;
+    letter-spacing: normal;
+    text-transform: none;
+    color: var(--color-mute);
+    text-wrap: pretty;
+  }
+  /* The <dd> is a flex cell holding value + copy button together, so the
+     button never orphans into its own grid column. */
+  :global(.snc-row__v-wrap) {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    margin: 0;
+  }
   :global(.snc-row__v) {
+    flex: 1 1 auto;
     min-width: 0;
     font-size: 14px;
     line-height: 20px;
@@ -261,6 +478,61 @@
     font-size: 13px;
     font-variant-numeric: tabular-nums;
     font-feature-settings: 'tnum';
+  }
+
+  /* ── Copy buttons ─────────────────────────────────────────────────────── */
+  :global(.snc-copy-btn) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition:
+      color 0.12s ease,
+      background 0.12s ease;
+    padding: 0;
+  }
+  :global(.snc-copy-btn:hover) {
+    color: var(--color-brand-strong);
+    background: var(--color-hairline);
+  }
+  :global(.snc-copy-btn:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  :global(.snc-copy-btn--labeled) {
+    width: auto;
+    height: 26px;
+    gap: 6px;
+    padding: 0 10px;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  :global(.snc-copy-btn--copied) {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+  @media (pointer: coarse) {
+    :global(.snc-copy-btn) {
+      width: 44px;
+      height: 44px;
+    }
+    :global(.snc-copy-btn--labeled) {
+      width: auto;
+      height: auto;
+      min-height: 36px;
+    }
   }
 
   @keyframes snc-rise {
@@ -321,19 +593,28 @@
 
 <script>
   import { escapeHtml } from '../lib/escape-html';
-  import { readIpHash } from '../lib/ip-hash';
+  import { readIpHash, buildIpHash } from '../lib/ip-hash';
 
-  type Row = { label: string; value: string; mono?: boolean };
-  type Result = { valid: boolean; error?: string; version?: 4 | 6; title?: string; rows: Row[] };
-  type Example = { id: string; label: string; input: string };
+  type Stat = { label: string; value: string; display?: string; caption?: string; mono?: boolean };
+  type Row = { label: string; value: string; display?: string; gloss?: string; mono?: boolean };
+  type Group = { heading: string; rows: Row[] };
+  type Result = {
+    valid: boolean;
+    error?: string;
+    version?: 4 | 6;
+    title?: string;
+    normalized?: string;
+    summary?: string;
+    note?: string;
+    stats: Stat[];
+    groups: Group[];
+  };
   type EngineModule = { calculate: (input: string) => Result };
 
-  declare global {
-    interface Window { _scDebounce: ReturnType<typeof setTimeout> | undefined; }
-  }
-
   const ROOT_SEL = '.snc-pg';
-  const DEBOUNCE_MS = 140;
+  const DEBOUNCE_MS = 130;
+  const ERROR_HOLD_MS = 600;
+  const RESET_MS = 1800;
 
   function boot(): void {
     document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
@@ -347,223 +628,413 @@
     return root.querySelector<T>(sel);
   }
 
-  function normaliseExamples(raw: unknown): Example[] {
-    if (!Array.isArray(raw)) return [];
-    return raw
-      .map((item, i) => {
-        const o = (item ?? {}) as Record<string, unknown>;
-        return {
-          id: typeof o.id === 'string' && o.id ? o.id : `example-${i + 1}`,
-          label: typeof o.label === 'string' && o.label ? o.label : `Example ${i + 1}`,
-          input: typeof o.input === 'string' ? o.input : '',
-        } satisfies Example;
-      })
-      .filter((e) => e.input.length > 0);
-  }
-
   const ALERT_SVG =
     '<svg class="snc-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const COPY_ICON_SVG =
+    '<svg class="snc-copy-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"/></svg>';
+  const CHECK_ICON_SVG =
+    '<svg class="snc-check-icon hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
 
-  // Copy-button glyphs: the default clipboard icon and a transient checkmark.
-  const COPY_SVG =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>';
-  const CHECK_SVG =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>';
+  /** Prefix tool paths with the current locale (e.g. /de) so deep links stay in-locale. */
+  function localePath(p: string): string {
+    const m = window.location.pathname.match(/^\/(de|es|fr|pt-br)\//);
+    return m ? `/${m[1]}${p}` : p;
+  }
 
-  /** Copy text to the clipboard with a legacy fallback; resolves to success. */
-  async function copyText(text: string): Promise<boolean> {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-        return true;
-      }
-    } catch {
-      /* fall through to legacy path */
-    }
-    try {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      ta.setAttribute('readonly', '');
-      ta.style.position = 'absolute';
-      ta.style.left = '-9999px';
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-      return true;
-    } catch {
-      return false;
-    }
+  /** Escape, then allow soft breaks after separators so long mono values wrap cleanly. */
+  function monoHtml(s: string): string {
+    return escapeHtml(s).replace(/([.:])/g, '$1<wbr>');
+  }
+
+  function copyBtnHtml(label: string, value: string): string {
+    return (
+      `<button class="snc-copy-btn" type="button" aria-label="Copy ${escapeHtml(label)}" data-copy="${escapeHtml(value)}">` +
+      COPY_ICON_SVG +
+      CHECK_ICON_SVG +
+      '</button>'
+    );
+  }
+
+  function setSummary(summary: HTMLElement, text: string, isError: boolean): void {
+    summary.textContent = text;
+    summary.classList.toggle('text-error-deep', isError);
+    summary.classList.toggle('text-mute', !isError);
   }
 
   function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
-    summary.textContent = '';
-    summary.classList.remove('text-error');
-    summary.classList.add('text-mute');
+    setSummary(summary, '', false);
     container.innerHTML =
-      '<p class="snc-empty body-sm text-mute">Type an address with a prefix or pick an example to see its network, broadcast, mask and host range here.</p>';
+      '<p class="snc-empty body-sm text-mute">Type an address — with a prefix or a netmask — or tap an example to see its network, range and host counts here.</p>';
   }
 
-  function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
-    summary.textContent = 'Invalid';
-    summary.classList.remove('text-mute');
-    summary.classList.add('text-error');
+  function renderError(
+    container: HTMLElement,
+    summary: HTMLElement,
+    message: string,
+    isAlert = false
+  ): void {
+    setSummary(summary, `Invalid — ${message}`, true);
     container.innerHTML =
-      '<div class="snc-error" role="alert">' +
+      `<div class="snc-error"${isAlert ? ' role="alert"' : ''}>` +
       ALERT_SVG +
       '<div><p class="snc-error__title">Could not calculate this subnet</p>' +
-      `<p class="snc-error__detail">${escapeHtml(message)}</p></div></div>`;
+      `<p id="snc-error-detail" class="snc-error__detail">${escapeHtml(message)}</p></div></div>`;
   }
 
-  function renderResult(container: HTMLElement, summary: HTMLElement, result: Result): void {
+  function renderResult(container: HTMLElement, result: Result): void {
     const version = result.version === 6 ? 'IPv6' : 'IPv4';
-    summary.textContent = version;
-    summary.classList.remove('text-error');
-    summary.classList.add('text-mute');
-    const rows = Array.isArray(result.rows) ? result.rows : [];
-    const rowsHtml = rows
-      .map((r) => {
-        const v = typeof r.value === 'string' ? r.value : '';
-        const cls = r.mono ? 'snc-row__v is-mono' : 'snc-row__v';
-        const label = r.label ?? '';
-        const copyBtn =
-          `<button type="button" class="copy-btn ml-2 text-mute hover:text-brand transition-colors" title="Copy to clipboard" aria-label="Copy ${escapeHtml(label)}" data-copy-value="${escapeHtml(v)}">${COPY_SVG}</button>`;
+
+    const stats = Array.isArray(result.stats) ? result.stats : [];
+    const statsHtml = stats
+      .map((s, i) => {
+        const value = typeof s.value === 'string' ? s.value : '';
+        const shown = typeof s.display === 'string' && s.display ? s.display : value;
+        const cls =
+          'snc-answer__v' + (i === 0 ? ' is-hero' : '') + (s.mono ? ' is-mono' : '');
+        const shownHtml = s.mono ? monoHtml(shown) : escapeHtml(shown);
+        const caption = s.caption
+          ? `<span class="snc-answer__cap">${escapeHtml(s.caption)}</span>`
+          : '';
         return (
-          '<div class="snc-row">' +
-          `<span class="snc-row__k">${escapeHtml(label)}</span>` +
-          `<span class="${cls}">${escapeHtml(v)}</span>${copyBtn}</div>`
+          '<div class="snc-answer__tile">' +
+          `<span class="snc-answer__k">${escapeHtml(s.label ?? '')}</span>` +
+          `<span class="${cls}">${shownHtml}</span>${caption}</div>`
         );
       })
       .join('');
-    const title = result.title ?? '';
+
+    const noteHtml = result.note
+      ? `<p class="snc-note">${escapeHtml(result.note)}</p>`
+      : '';
+
+    const groups = Array.isArray(result.groups) ? result.groups : [];
+    const groupsHtml = groups
+      .map((g) => {
+        const rowsHtml = (Array.isArray(g.rows) ? g.rows : [])
+          .map((r) => {
+            const value = typeof r.value === 'string' ? r.value : '';
+            const shown = typeof r.display === 'string' && r.display ? r.display : value;
+            const cls = r.mono ? 'snc-row__v is-mono' : 'snc-row__v';
+            const shownHtml = r.mono ? monoHtml(shown) : escapeHtml(shown);
+            const label = r.label ?? '';
+            const gloss = r.gloss
+              ? `<span class="snc-row__gloss">${escapeHtml(r.gloss)}</span>`
+              : '';
+            return (
+              '<div class="snc-row">' +
+              `<dt class="snc-row__k">${escapeHtml(label)}${gloss}</dt>` +
+              `<dd class="snc-row__v-wrap"><span class="${cls}">${shownHtml}</span>${copyBtnHtml(label, value)}</dd>` +
+              '</div>'
+            );
+          })
+          .join('');
+        return (
+          '<section class="snc-group">' +
+          `<h3 class="snc-group__h">${escapeHtml(g.heading ?? '')}</h3>` +
+          `<dl class="snc-group__dl">${rowsHtml}</dl></section>`
+        );
+      })
+      .join('');
+
+    let chipsHtml = '';
+    if (result.normalized) {
+      const hash = buildIpHash(result.normalized);
+      const chip = (href: string, text: string): string =>
+        `<a class="snc-chip" href="${escapeHtml(href)}">${text}</a>`;
+      chipsHtml =
+        '<div class="snc-xchips">' +
+        chip(localePath('/cidr-checker') + hash, 'Check against CIDRs') +
+        chip(localePath('/subnet-splitter') + hash, 'Split this subnet') +
+        chip(localePath('/ip-address-converter') + hash, 'Convert this address') +
+        '</div>';
+    }
+
     container.innerHTML =
+      '<div>' +
       '<div class="snc-card">' +
-      `<div class="snc-title"><span class="snc-title__badge">${version}</span><span>${escapeHtml(title)}</span></div>` +
-      rowsHtml +
+      `<div class="snc-title"><span class="snc-title__badge">${version}</span><span class="snc-title__net">${monoHtml(result.title ?? '')}</span></div>` +
+      `<div class="snc-answer">${statsHtml}</div>` +
+      noteHtml +
+      groupsHtml +
+      '</div>' +
+      chipsHtml +
       '</div>';
+  }
+
+  /** "Label: value" lines for the Copy all button. */
+  function buildCopyAll(result: Result): string {
+    const lines: string[] = [`Network: ${result.title ?? ''}`];
+    for (const s of result.stats) lines.push(`${s.label}: ${s.value}`);
+    for (const g of result.groups) for (const r of g.rows) lines.push(`${r.label}: ${r.value}`);
+    return lines.join('\n');
   }
 
   async function init(root: HTMLElement): Promise<void> {
     const input = el<HTMLInputElement>(root, '#snc-input');
-    const exampleSel = el<HTMLSelectElement>(root, '#snc-example');
     const resultsBox = el<HTMLElement>(root, '#snc-results');
     const summaryEl = el<HTMLElement>(root, '#snc-summary');
-    if (!input || !exampleSel || !resultsBox || !summaryEl) return;
+    const shareBtn = el<HTMLButtonElement>(root, '#snc-share');
+    const copyAllBtn = el<HTMLButtonElement>(root, '#snc-copy-all');
+    const copyStatus = el<HTMLElement>(root, '#snc-copy-status');
+    const chips = Array.from(root.querySelectorAll<HTMLButtonElement>('#snc-chips .snc-chip'));
+    if (!input || !resultsBox || !summaryEl || !shareBtn || !copyAllBtn || !copyStatus) return;
 
-    // Copy-to-clipboard via event delegation: one listener on the results
-    // container reads `data-copy-value` off the clicked button. Wired once here
-    // so it survives the innerHTML swaps in renderResult().
-    let copyResetTimer: number | undefined;
-    let lastCopiedBtn: HTMLButtonElement | null = null;
-    resultsBox.addEventListener('click', (event) => {
-      const target = event.target as HTMLElement | null;
-      const btn = target?.closest<HTMLButtonElement>('.copy-btn');
-      if (!btn || !resultsBox.contains(btn)) return;
-      const value = btn.dataset.copyValue ?? '';
-      void copyText(value).then((ok) => {
-        if (!ok) return;
-        // Restore any previously-copied button before showing the new state.
-        // Guard isConnected: a re-render (renderResult swaps the container's
-        // innerHTML) can detach a button while its reset is still pending, which
-        // would leave a stale reference / mutate a dead node.
-        window.clearTimeout(copyResetTimer);
-        if (lastCopiedBtn && lastCopiedBtn !== btn && lastCopiedBtn.isConnected) {
-          lastCopiedBtn.innerHTML = COPY_SVG;
+    /* ------------------------------------------------------------------ */
+    /* Copy plumbing (row buttons, Copy link, Copy all)                    */
+    /* ------------------------------------------------------------------ */
+
+    function setCopyStatus(message: string, failed: boolean): void {
+      copyStatus!.textContent = message;
+      copyStatus!.classList.toggle('sr-only', !failed);
+      copyStatus!.classList.toggle('snc-copy-status--fail', failed);
+    }
+
+    function setCopied(btn: HTMLButtonElement, copied: boolean): void {
+      btn.classList.toggle('snc-copy-btn--copied', copied);
+      btn.querySelector('.snc-copy-icon')?.classList.toggle('hidden', copied);
+      btn.querySelector('.snc-check-icon')?.classList.toggle('hidden', !copied);
+      const label = btn.querySelector<HTMLElement>('.snc-copy-label');
+      if (label) {
+        label.textContent = copied ? 'Copied' : (btn.dataset.copyLabel ?? 'Copy');
+      } else if (copied) {
+        btn.dataset.prevAriaLabel = btn.getAttribute('aria-label') ?? '';
+        btn.setAttribute('aria-label', 'Copied');
+      } else if (btn.dataset.prevAriaLabel) {
+        btn.setAttribute('aria-label', btn.dataset.prevAriaLabel);
+        delete btn.dataset.prevAriaLabel;
+      }
+    }
+
+    async function handleCopy(btn: HTMLButtonElement): Promise<void> {
+      const text = btn.dataset.copy ?? '';
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          // Legacy fallback for non-secure contexts.
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.setAttribute('readonly', '');
+          ta.style.position = 'absolute';
+          ta.style.left = '-9999px';
+          document.body.appendChild(ta);
+          ta.select();
+          const ok = document.execCommand('copy');
+          document.body.removeChild(ta);
+          if (!ok) throw new Error('execCommand copy failed');
         }
-        btn.innerHTML = CHECK_SVG;
-        lastCopiedBtn = btn;
-        copyResetTimer = window.setTimeout(() => {
-          if (btn.isConnected) btn.innerHTML = COPY_SVG;
-          lastCopiedBtn = null;
-        }, 1500);
-      });
+        setCopied(btn, true);
+        setCopyStatus('Copied to clipboard.', false);
+        window.clearTimeout(Number(btn.dataset.copyTimer));
+        btn.dataset.copyTimer = String(
+          window.setTimeout(() => {
+            setCopied(btn, false);
+            if (copyStatus!.textContent === 'Copied to clipboard.') setCopyStatus('', false);
+          }, RESET_MS)
+        );
+      } catch {
+        setCopyStatus('Copy failed — select the value manually.', true);
+      }
+    }
+
+    root.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.snc-copy-btn');
+      if (!btn) return;
+      void handleCopy(btn);
     });
 
+    /* ------------------------------------------------------------------ */
+    /* Engine                                                              */
+    /* ------------------------------------------------------------------ */
+
     let engine: EngineModule;
-    let examples: Example[] = [];
     try {
-      const [engineMod, examplesMod] = await Promise.all([
-        import('../lib/subnet-calculator/engine'),
-        import('../lib/subnet-calculator/examples'),
-      ]);
-      engine = engineMod as unknown as EngineModule;
-      examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+      engine = (await import('../lib/subnet-calculator/engine')) as unknown as EngineModule;
     } catch (err) {
-      renderError(resultsBox, summaryEl, 'The calculator engine failed to load. Reload the page to try again.');
+      renderError(
+        resultsBox,
+        summaryEl,
+        'The calculator engine failed to load. Reload the page to try again.',
+        true
+      );
       console.error('[SubnetCalculator] engine import failed:', err);
       return;
     }
 
-    exampleSel.innerHTML = '';
-    const customOpt = document.createElement('option');
-    customOpt.value = '-1';
-    customOpt.textContent = examples.length ? 'Custom input' : 'No examples';
-    exampleSel.appendChild(customOpt);
-    examples.forEach((ex, i) => {
-      const opt = document.createElement('option');
-      opt.value = String(i);
-      opt.textContent = ex.label;
-      exampleSel.appendChild(opt);
-    });
-    if (!examples.length) exampleSel.disabled = true;
+    /* ------------------------------------------------------------------ */
+    /* State machine: EMPTY | VALID | PENDING | INVALID                    */
+    /* ------------------------------------------------------------------ */
 
-    function evaluate(): void {
+    type State = 'empty' | 'valid' | 'pending' | 'invalid';
+    let state: State = 'empty';
+    let evalTimer: number | undefined;
+    let errTimer: number | undefined;
+    let lastWrittenHash: string | null = null;
+
+    function clearTimers(): void {
+      window.clearTimeout(evalTimer);
+      window.clearTimeout(errTimer);
+    }
+
+    function writeHash(value: string | null): void {
+      const target = value ? buildIpHash(value) : '';
+      if (target === lastWrittenHash) return;
+      // Safari throttles replaceState (~100/30s) and throws — never let that break input.
+      try {
+        if (value) {
+          history.replaceState(null, '', target);
+        } else {
+          history.replaceState(null, '', location.pathname + location.search);
+        }
+        lastWrittenHash = target;
+      } catch {
+        /* ignore */
+      }
+    }
+
+    function setErrorState(on: boolean): void {
+      input!.classList.toggle('snc-input--error', on);
+      if (on) {
+        input!.setAttribute('aria-invalid', 'true');
+        input!.setAttribute('aria-describedby', 'snc-input-hint snc-input-live snc-error-detail');
+      } else {
+        input!.removeAttribute('aria-invalid');
+        input!.setAttribute('aria-describedby', 'snc-input-hint snc-input-live');
+      }
+    }
+
+    function hideActions(): void {
+      shareBtn!.hidden = true;
+      shareBtn!.dataset.copy = '';
+      copyAllBtn!.hidden = true;
+      copyAllBtn!.dataset.copy = '';
+    }
+
+    function syncChips(value: string): void {
+      chips.forEach((chip) => {
+        chip.classList.toggle('is-active', (chip.dataset.input ?? '') === value);
+      });
+    }
+
+    function clearChips(): void {
+      chips.forEach((chip) => chip.classList.remove('is-active'));
+    }
+
+    function toEmpty(): void {
+      state = 'empty';
+      setErrorState(false);
+      hideActions();
+      renderEmpty(resultsBox!, summaryEl!);
+      clearChips();
+      writeHash(null);
+    }
+
+    function showError(message: string): void {
+      state = 'invalid';
+      clearTimers();
+      setErrorState(true);
+      hideActions();
+      renderError(resultsBox!, summaryEl!, message);
+      clearChips();
+      writeHash(null);
+    }
+
+    function evaluate(source: 'type' | 'commit' | 'seed'): void {
+      clearTimers();
       const value = input!.value.trim();
       if (value.length === 0) {
-        input!.classList.remove('snc-input--error');
-        renderEmpty(resultsBox!, summaryEl!);
+        toEmpty();
         return;
       }
+
       let result: Result | null = null;
       try {
         result = engine.calculate(value);
       } catch {
-        input!.classList.add('snc-input--error');
-        renderError(resultsBox!, summaryEl!, 'Unexpected error while calculating.');
+        result = null;
+      }
+
+      if (result && result.valid !== false) {
+        state = 'valid';
+        setErrorState(false);
+        renderResult(resultsBox!, result);
+        setSummary(summaryEl!, result.summary ?? '', false);
+        const normalized = result.normalized ?? value;
+        shareBtn!.hidden = false;
+        shareBtn!.dataset.copy =
+          location.origin + location.pathname + location.search + buildIpHash(normalized);
+        copyAllBtn!.hidden = false;
+        copyAllBtn!.dataset.copy = buildCopyAll(result);
+        syncChips(value);
+        if (source !== 'seed') writeHash(normalized);
         return;
       }
-      if (!result || result.valid === false) {
-        input!.classList.add('snc-input--error');
-        renderError(resultsBox!, summaryEl!, result?.error ?? 'This is not a valid address or CIDR.');
+
+      const message = result?.error ?? 'Unexpected error while calculating.';
+      if (source !== 'type') {
+        showError(message);
         return;
       }
-      input!.classList.remove('snc-input--error');
-      renderResult(resultsBox!, summaryEl!, result);
+
+      // Mid-typing: hold the last card, no red yet. Only surface the error
+      // after a pause — and not while the value still looks unfinished.
+      state = 'pending';
+      setErrorState(false);
+      hideActions();
+      setSummary(summaryEl!, '', false);
+      if (!/[.:\s]$/.test(input!.value)) {
+        errTimer = window.setTimeout(() => showError(message), ERROR_HOLD_MS);
+      }
     }
 
-    let timer: number | undefined;
-    function scheduleEvaluate(): void {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(evaluate, DEBOUNCE_MS);
-    }
+    /* ------------------------------------------------------------------ */
+    /* Events                                                              */
+    /* ------------------------------------------------------------------ */
 
     input.addEventListener('input', () => {
-      clearTimeout(window._scDebounce);
-      window._scDebounce = setTimeout(function() {
-        if (exampleSel.value !== '-1') exampleSel.value = '-1';
-        scheduleEvaluate();
-      }, 300);
-    });
-    exampleSel.addEventListener('change', () => {
-      const idx = Number(exampleSel.value);
-      if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
-      input.value = examples[idx].input;
-      window.clearTimeout(timer);
-      evaluate();
+      clearTimers();
+      if (input.value.trim().length === 0) {
+        toEmpty();
+        return;
+      }
+      evalTimer = window.setTimeout(() => evaluate('type'), DEBOUNCE_MS);
     });
 
-    // Deep link: #ip=<address> (written by the IP Address Converter) prefills
-    // the input and replaces the default seeded example.
-    const shared = readIpHash();
-    const seed = examples[0];
-    if (shared) {
-      input.value = shared;
-      exampleSel.value = '-1';
-      evaluate();
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      evaluate('commit');
+      // Dismiss the on-screen keyboard so the result card is visible.
+      if (window.matchMedia?.('(pointer: coarse)').matches) input.blur();
+    });
+
+    input.addEventListener('blur', () => {
+      if (state === 'pending') evaluate('commit');
+    });
+
+    chips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        input.value = chip.dataset.input ?? '';
+        evaluate('commit');
+      });
+    });
+
+    /* ------------------------------------------------------------------ */
+    /* First load: existing value → #ip= deep link → seeded first chip.    */
+    /* Seeding never writes the hash — only user actions do.               */
+    /* ------------------------------------------------------------------ */
+
+    const hashValue = readIpHash();
+    const seed = chips[0]?.dataset.input ?? '';
+
+    if (input.value.trim()) {
+      evaluate('seed');
+    } else if (hashValue) {
+      input.value = hashValue;
+      evaluate('seed');
     } else if (seed) {
-      input.value = seed.input;
-      exampleSel.value = '0';
-      evaluate();
+      input.value = seed;
+      evaluate('seed');
     } else {
       renderEmpty(resultsBox, summaryEl);
     }

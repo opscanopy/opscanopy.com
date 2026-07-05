@@ -257,12 +257,16 @@ export const tools: Tool[] = [
   {
     slug: 'cidr-checker',
     name: 'CIDR / Subnet Checker',
-    tagline: 'Aggregate CIDRs and find overlaps or containment in a list.',
+    tagline: 'Check an IP against CIDR ranges, find overlaps, and merge lists.',
     description:
-      'Paste a list of IPs/CIDRs to find the minimal covering set, spot overlapping or contained ranges, and normalise each entry. Pure client-side.',
+      'Paste an IP plus CIDRs — or a whole list — to check membership, spot overlapping or contained ranges, and get the minimal covering set. Pure client-side.',
     status: 'live',
     category: 'Networking',
     keywords: [
+      'ip in cidr range checker',
+      'is ip in subnet',
+      'check ip against cidr list',
+      'cidr membership check',
       'cidr aggregator',
       'cidr overlap checker',
       'subnet overlap checker',

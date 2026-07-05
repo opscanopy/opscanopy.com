@@ -2,10 +2,11 @@
 /**
  * CidrCheckerPlayground — the interactive CIDR / Subnet Checker island.
  *
- * Multi-line tool: paste one IP/CIDR per line and it reports the minimal
- * covering CIDR set (aggregation), every overlap / containment between the
- * inputs, and a parsed breakdown of each line. Updates live (debounced), fully
- * client-side.
+ * Multi-line tool: paste an IP plus the CIDRs to check it against — or any
+ * list of IPs/CIDRs. Bare IPs (no /prefix) get an in-range verdict against
+ * every listed range; range entries are checked pairwise for overlap /
+ * containment; and everything is aggregated into the minimal covering CIDR
+ * set. Updates live (debounced), fully client-side, shareable via `#list=`.
  *
  * Runtime contract (lazy-imported):
  *   ../lib/cidr-checker/engine   → check(input: string): CheckResult
@@ -16,24 +17,8 @@
 <section class="cdc-pg" aria-label="CIDR / Subnet Checker playground">
   <div class="card shadow-float overflow-hidden rounded-lg">
     <div class="flex flex-col gap-1 border-b border-hairline px-4 py-3 sm:px-5">
-      <label class="eyebrow shrink-0" for="cdc-example">Example</label>
-      <div class="cdc-select-wrap relative min-w-0">
-        <select id="cdc-example" class="cdc-select code-mono" autocomplete="off">
-          <option value="">Loading examples…</option>
-        </select>
-        <svg
-          class="cdc-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
-          viewBox="0 0 16 16"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.4"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M4 6l4 4 4-4"></path>
-        </svg>
-      </div>
+      <span class="eyebrow shrink-0">Examples</span>
+      <div id="cdc-chips" class="cdc-chips" role="group" aria-label="Examples"></div>
     </div>
 
     <div class="border-b border-hairline px-4 py-4 sm:px-5">
@@ -46,25 +31,69 @@
         autocorrect="off"
         autocomplete="off"
         rows="6"
-        placeholder="10.0.0.0/24&#10;10.0.1.0/24&#10;2001:db8::/48"
+        placeholder="10.0.0.5&#10;10.0.0.0/24&#10;10.10.0.0/16"
         aria-describedby="cdc-input-hint"></textarea>
       <p id="cdc-input-hint" class="cdc-hint caption text-mute">
-        One IP or CIDR per line. Blank lines and <span class="code-mono">#</span> comments are
-        ignored. IPv4 and IPv6 are aggregated separately.
+        One IP or CIDR per line. A bare IP (no /prefix) is checked against every CIDR in the list.
+        Blank lines and <span class="code-mono">#</span> comments are ignored.
       </p>
+      <p id="cdc-run-hint" class="cdc-hint caption text-mute">Results update as you type — press Enter to run now.</p>
     </div>
 
     <div class="bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex items-center justify-between gap-3">
-        <span class="eyebrow">Result</span>
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <span class="flex items-center gap-2">
+          <span class="eyebrow">Result</span>
+          <button
+            id="cdc-share"
+            type="button"
+            class="cdc-copy cdc-copy--labeled"
+            data-copy=""
+            data-copy-label="Copy link"
+            hidden
+          >
+            <svg
+              class="cdc-copy-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6.75 9.25l2.5-2.5"></path>
+              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
+              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
+            </svg>
+            <svg
+              class="cdc-check-icon hidden"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="cdc-copy-label">Copy link</span>
+          </button>
+        </span>
         <span id="cdc-summary" class="cdc-summary code-mono text-mute" role="status" aria-live="polite"></span>
       </div>
-      <div id="cdc-results" class="cdc-results" aria-live="polite" aria-atomic="false">
+      <div id="cdc-results" class="cdc-results">
         <p class="cdc-empty body-sm text-mute">
-          Paste a list of IPs/CIDRs or pick an example to see the minimal covering set, any overlaps,
-          and a parsed breakdown here.
+          Paste an IP plus the CIDRs to check it against — or any list of IPs/CIDRs — to see an
+          in-range verdict, overlaps, and the merged minimal set here.
         </p>
       </div>
+      <span id="cdc-copy-status" class="sr-only" role="status" aria-live="polite"></span>
     </div>
   </div>
 </section>
@@ -72,41 +101,35 @@
 <style>
   @reference "../styles/global.css";
 
-  .cdc-select {
-    appearance: none;
-    -webkit-appearance: none;
-    width: 100%;
-    height: 32px;
-    min-width: 0;
-    max-width: 320px;
-    padding: 0 32px 0 12px;
-    border-radius: var(--radius-sm);
+  /* ── Example chips (buttons injected at runtime) ─────────────────────── */
+  .cdc-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 26px;
+  }
+  :global(.cdc-chip) {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border: none;
+    border-radius: 9999px;
     background: var(--color-canvas);
-    color: var(--color-ink);
     box-shadow: var(--shadow-hairline);
-    font-size: 13px;
-    line-height: 20px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-brand-strong);
     cursor: pointer;
-    text-overflow: ellipsis;
-    touch-action: manipulation;
-    transition: box-shadow 0.15s ease;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
   }
-  @media (min-width: 640px) {
-    .cdc-select {
-      width: auto;
-      min-width: 260px;
-    }
+  :global(.cdc-chip:hover),
+  :global(.cdc-chip[aria-pressed='true']) {
+    background: var(--color-brand-soft);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
   }
-  .cdc-select:hover {
-    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
-  }
-  .cdc-select:disabled {
-    cursor: not-allowed;
-    color: var(--color-mute);
-    opacity: 0.7;
-  }
-  .cdc-select-wrap:hover .cdc-select-caret {
-    color: var(--color-body);
+  :global(.cdc-chip:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
   }
 
   .cdc-input {
@@ -137,13 +160,31 @@
   }
   .cdc-hint {
     margin-top: 8px;
+    font-size: 12px;
+    line-height: 18px;
     text-wrap: pretty;
   }
+  .cdc-hint + .cdc-hint {
+    margin-top: 2px;
+  }
+  .cdc-hint .code-mono {
+    font-size: 12px;
+  }
   .cdc-summary {
-    white-space: nowrap;
+    min-width: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
   }
   .cdc-results {
     min-height: 44px;
+  }
+  /* Copy failure message flips from sr-only to a visible caption. */
+  .cdc-copy-status--fail {
+    display: block;
+    margin-top: 10px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-error-deep);
   }
 
   /* ── Runtime-injected markup ─────────────────────────────────────────── */
@@ -171,9 +212,26 @@
     text-transform: uppercase;
     color: var(--color-mute);
   }
+  :global(.cdc-block__actions) {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+  :global(.cdc-block__sub) {
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    line-height: 18px;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--color-mute);
+    text-wrap: pretty;
+  }
   :global(.cdc-line) {
     display: flex;
-    align-items: baseline;
+    align-items: flex-start;
     gap: 10px;
     padding: 8px 14px;
     font-family: var(--font-mono);
@@ -185,19 +243,17 @@
   :global(.cdc-line + .cdc-line) {
     border-top: 1px solid var(--color-hairline);
   }
-  :global(.cdc-dot) {
+  :global(.cdc-line__icon) {
     flex: 0 0 auto;
-    width: 7px;
-    height: 7px;
-    margin-top: 7px;
-    border-radius: 9999px;
-    background: var(--color-brand);
+    width: 14px;
+    height: 14px;
+    margin-top: 3px;
   }
-  :global(.cdc-dot--ok) {
-    background: var(--color-success);
+  :global(.cdc-line__icon--ok) {
+    color: var(--color-success);
   }
-  :global(.cdc-dot--bad) {
-    background: var(--color-error);
+  :global(.cdc-line__icon--bad) {
+    color: var(--color-error);
   }
   :global(.cdc-line__meta) {
     margin-left: auto;
@@ -210,6 +266,12 @@
   :global(.cdc-line--bad) {
     color: var(--color-error-deep);
   }
+  /* Diagnostics are sentences — let them wrap instead of overflowing. */
+  :global(.cdc-line--bad .cdc-line__meta) {
+    white-space: normal;
+    text-align: right;
+    max-width: 60%;
+  }
   :global(.cdc-rel) {
     padding: 8px 14px;
     font-size: 13px;
@@ -219,15 +281,65 @@
   :global(.cdc-rel + .cdc-rel) {
     border-top: 1px solid var(--color-hairline);
   }
-  :global(.cdc-rel code) {
-    font-family: var(--font-mono);
-    font-size: 12px;
-  }
   :global(.cdc-none) {
     padding: 10px 14px;
     font-size: 13px;
     line-height: 20px;
     color: var(--color-mute);
+  }
+
+  /* ── Verdict card (IP in range?) ─────────────────────────────────────── */
+  :global(.cdc-verdict__row) {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 14px;
+  }
+  :global(.cdc-verdict__row + .cdc-verdict__row) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.cdc-verdict__row--in) {
+    background: var(--color-brand-soft);
+    color: var(--color-brand-strong);
+  }
+  :global(.cdc-verdict__row--out) {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
+  :global(.cdc-verdict__row--none) {
+    background: var(--color-warning-soft);
+    color: var(--color-warning-deep);
+  }
+  :global(.cdc-verdict__icon) {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    margin-top: 2px;
+  }
+  :global(.cdc-verdict__text) {
+    min-width: 0;
+  }
+  :global(.cdc-verdict__main) {
+    font-size: 14px;
+    line-height: 20px;
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+  }
+  :global(.cdc-verdict__ip) {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 600;
+  }
+  :global(.cdc-verdict__cidr) {
+    font-family: var(--font-mono);
+    font-size: 13px;
+  }
+  :global(.cdc-verdict__extra) {
+    margin-top: 2px;
+    font-size: 12px;
+    line-height: 18px;
+    opacity: 0.9;
+    overflow-wrap: anywhere;
   }
 
   @keyframes cdc-rise {
@@ -254,6 +366,9 @@
     background: var(--color-error-soft);
     box-shadow: inset 0 0 0 1px var(--color-error);
     color: var(--color-error-deep);
+  }
+  :global(.cdc-error + .cdc-block) {
+    margin-top: 12px;
   }
   :global(.cdc-error__icon) {
     flex: 0 0 auto;
@@ -285,34 +400,70 @@
     box-shadow: var(--shadow-hairline);
   }
 
-  /* Copy button on aggregated CIDR rows */
+  /* ── Copy buttons: per-row icon, labeled (share / Copy all) variants ─── */
   :global(.cdc-copy) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex: 0 0 auto;
+    width: 24px;
+    height: 24px;
     margin-left: auto;
-    padding: 2px 4px;
+    padding: 0;
+    border: none;
     border-radius: var(--radius-sm);
     background: transparent;
     color: var(--color-mute);
-    border: none;
     cursor: pointer;
     transition: color 0.12s ease, background 0.12s ease;
-    line-height: 1;
   }
   :global(.cdc-copy:hover) {
-    color: var(--color-ink);
+    color: var(--color-brand-strong);
     background: var(--color-hairline);
   }
+  :global(.cdc-copy:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  :global(.cdc-copy--labeled),
+  :global(.cdc-copy--all) {
+    width: auto;
+    height: 26px;
+    gap: 6px;
+    padding: 0 10px;
+    margin-left: 0;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
   :global(.cdc-copy--copied) {
-    color: var(--color-success);
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+  @media (pointer: coarse) {
+    :global(.cdc-copy) {
+      width: 44px;
+      height: 44px;
+    }
+    :global(.cdc-copy--labeled),
+    :global(.cdc-copy--all) {
+      width: auto;
+      height: auto;
+      min-height: 44px;
+    }
+    :global(.cdc-chip) {
+      min-height: 44px;
+    }
   }
 
   /* Normalisation note: host bits stripped warning */
   :global(.cdc-norm-note) {
-    font-size: 11px;
-    color: var(--color-mute);
+    font-size: 12px;
+    color: var(--color-warning-deep);
     letter-spacing: 0;
     text-transform: none;
     white-space: normal;
@@ -321,24 +472,47 @@
 
 <script>
   import { escapeHtml } from '../lib/escape-html';
-  import { readIpHash } from '../lib/ip-hash';
+  import { readIpHash, readListHash, buildListHash } from '../lib/ip-hash';
 
-  type Entry = { line: string; ok: boolean; version?: 4 | 6; cidr?: string; type?: string; error?: string; normalizedFrom?: string };
+  type Entry = {
+    line: string;
+    ok: boolean;
+    version?: 4 | 6;
+    cidr?: string;
+    role?: 'ip' | 'range';
+    display?: string;
+    type?: string;
+    error?: string;
+    normalizedFrom?: string;
+  };
+  type Membership = {
+    ip: string;
+    version: 4 | 6;
+    status: 'in' | 'not-in' | 'no-ranges';
+    matches: string[];
+    rangeCount: number;
+  };
   type Overlap = { relation: string; kind: string };
   type AggGroup = { version: 4 | 6; label: string; cidrs: string[] };
   type Result = {
     valid: boolean;
     error?: string;
     entries: Entry[];
+    membership: Membership[];
     overlaps: Overlap[];
     aggregated: AggGroup[];
-    stats: { ok: number; invalid: number };
+    stats: { ok: number; invalid: number; overlaps: number; blocks: number };
   };
   type Example = { id: string; label: string; input: string };
   type EngineModule = { check: (input: string) => Result };
 
   const ROOT_SEL = '.cdc-pg';
   const DEBOUNCE_MS = 220;
+  const RESET_MS = 1800;
+  // Fragments beyond ~2000 chars stop being reliable URLs (browser / proxy /
+  // chat-client limits), so past that we neither write the hash nor offer the
+  // share link — the tool itself keeps working on lists of any size.
+  const MAX_HASH_LEN = 2000;
 
   function boot(): void {
     document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
@@ -368,62 +542,131 @@
 
   const ALERT_SVG =
     '<svg class="cdc-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const COPY_ICON_SVG =
+    '<svg class="cdc-copy-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"/></svg>';
+  const CHECK_ICON_SVG =
+    '<svg class="cdc-check-icon hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
+  const OK_ICON_SVG =
+    '<svg class="cdc-line__icon cdc-line__icon--ok" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
+  const BAD_ICON_SVG =
+    '<svg class="cdc-line__icon cdc-line__icon--bad" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
+  const VERDICT_IN_SVG =
+    '<svg class="cdc-verdict__icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M5.2 8.3l2 2 3.6-4.2"/></svg>';
+  const VERDICT_OUT_SVG =
+    '<svg class="cdc-verdict__icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4"/></svg>';
+  const VERDICT_NONE_SVG =
+    '<svg class="cdc-verdict__icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.25" stroke-dasharray="2.4 2.2"/><path d="M6.4 6.3a1.6 1.6 0 1 1 2.3 1.7c-.45.25-.7.55-.7 1.05"/><path d="M8 11.2v.01"/></svg>';
 
-  function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
-    summary.textContent = '';
-    container.innerHTML =
-      '<p class="cdc-empty body-sm text-mute">Paste a list of IPs/CIDRs or pick an example to see the minimal covering set, any overlaps, and a parsed breakdown here.</p>';
+  function setSummary(summary: HTMLElement, text: string, isError: boolean): void {
+    summary.textContent = text;
+    summary.classList.toggle('text-error-deep', isError);
+    summary.classList.toggle('text-mute', !isError);
   }
 
-  function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
-    summary.textContent = '';
+  function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
+    setSummary(summary, '', false);
     container.innerHTML =
-      '<div class="cdc-error" role="alert">' +
-      ALERT_SVG +
-      '<div><p class="cdc-error__title">Nothing to check</p>' +
-      `<p class="cdc-error__detail">${escapeHtml(message)}</p></div></div>`;
+      '<p class="cdc-empty body-sm text-mute">Paste an IP plus the CIDRs to check it against — or any list of IPs/CIDRs — to see an in-range verdict, overlaps, and the merged minimal set here.</p>';
+  }
+
+  function familyLabel(version: 4 | 6): string {
+    return version === 6 ? 'IPv6' : 'IPv4';
+  }
+
+  /** The prominent per-IP verdict card — rendered first when bare IPs exist. */
+  function verdictHtml(membership: Membership[]): string {
+    if (membership.length === 0) return '';
+    const rows = membership
+      .map((m) => {
+        const family = familyLabel(m.version);
+        let cls = '';
+        let icon = '';
+        let main = '';
+        let extra = '';
+        if (m.status === 'in') {
+          cls = 'cdc-verdict__row--in';
+          icon = VERDICT_IN_SVG;
+          main = `<span class="cdc-verdict__ip">${escapeHtml(m.ip)}</span> is inside <span class="cdc-verdict__cidr">${escapeHtml(m.matches[0] ?? '')}</span>`;
+          if (m.matches.length > 1) {
+            extra = `also inside ${m.matches.slice(1).map((c) => escapeHtml(c)).join(', ')}`;
+          }
+        } else if (m.status === 'not-in') {
+          cls = 'cdc-verdict__row--out';
+          icon = VERDICT_OUT_SVG;
+          main = `<span class="cdc-verdict__ip">${escapeHtml(m.ip)}</span> is not in any listed range`;
+          extra = `checked against ${m.rangeCount} ${family} range${m.rangeCount === 1 ? '' : 's'}`;
+        } else {
+          cls = 'cdc-verdict__row--none';
+          icon = VERDICT_NONE_SVG;
+          main = `<span class="cdc-verdict__ip">${escapeHtml(m.ip)}</span> has no ${family} ranges to check against — add some below it`;
+        }
+        return (
+          `<div class="cdc-verdict__row ${cls}">` +
+          icon +
+          `<div class="cdc-verdict__text"><p class="cdc-verdict__main">${main}</p>` +
+          (extra ? `<p class="cdc-verdict__extra">${extra}</p>` : '') +
+          '</div></div>'
+        );
+      })
+      .join('');
+    return (
+      '<div class="cdc-block cdc-verdict">' +
+      '<div class="cdc-block__head"><span>IP in range?</span></div>' +
+      '<p class="cdc-block__sub">Each bare IP in your list, checked against every CIDR range listed with it.</p>' +
+      rows +
+      '</div>'
+    );
   }
 
   function aggHtml(groups: AggGroup[]): string {
-    const cards = groups
+    return groups
       .map((g) => {
         const lines = g.cidrs
           .map(
             (c) =>
               `<div class="cdc-line">` +
-              `<span class="cdc-dot"></span>` +
               `<span>${escapeHtml(c)}</span>` +
               `<button class="cdc-copy" type="button" data-copy="${escapeHtml(c)}" aria-label="Copy ${escapeHtml(c)} to clipboard" title="Copy">` +
-              `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2H3.5A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"/></svg>` +
+              COPY_ICON_SVG +
+              CHECK_ICON_SVG +
               `</button>` +
               `</div>`,
           )
           .join('');
+        const n = g.cidrs.length;
         return (
           '<div class="cdc-block">' +
-          `<div class="cdc-block__head"><span>Minimal covering set — ${escapeHtml(g.label)}</span><span class="cdc-line__meta">${g.cidrs.length} block${g.cidrs.length === 1 ? '' : 's'}</span></div>` +
+          '<div class="cdc-block__head">' +
+          `<span>Merged ranges — ${escapeHtml(g.label)}</span>` +
+          `<span class="cdc-block__actions"><span class="cdc-line__meta">${n} block${n === 1 ? '' : 's'}</span>` +
+          `<button class="cdc-copy cdc-copy--all" type="button" data-copy-all data-version="${g.version}" data-copy-label="Copy all" aria-label="Copy all ${escapeHtml(g.label)} blocks">` +
+          COPY_ICON_SVG +
+          CHECK_ICON_SVG +
+          '<span class="cdc-copy-label">Copy all</span></button></span>' +
+          '</div>' +
+          '<p class="cdc-block__sub">The fewest CIDR blocks that cover exactly the same addresses — the minimal covering set (supernetting).</p>' +
           lines +
           '</div>'
         );
       })
       .join('');
-    return cards;
   }
 
   function overlapsHtml(overlaps: Overlap[]): string {
+    const head =
+      '<div class="cdc-block__head"><span>Overlaps &amp; containment</span>' +
+      (overlaps.length ? `<span class="cdc-line__meta">${overlaps.length} found</span>` : '') +
+      '</div>' +
+      '<p class="cdc-block__sub">Entries that collide: duplicates, one block inside another, or partial overlaps.</p>';
     if (overlaps.length === 0) {
       return (
-        '<div class="cdc-block"><div class="cdc-block__head"><span>Overlaps &amp; containment</span></div>' +
-        '<p class="cdc-none">None — every block is disjoint.</p></div>'
+        '<div class="cdc-block">' +
+        head +
+        '<p class="cdc-none">No conflicts — no entry overlaps, duplicates, or contains another.</p></div>'
       );
     }
     const rows = overlaps.map((o) => `<p class="cdc-rel">${escapeHtml(o.relation)}</p>`).join('');
-    return (
-      '<div class="cdc-block">' +
-      `<div class="cdc-block__head"><span>Overlaps &amp; containment</span><span class="cdc-line__meta">${overlaps.length} found</span></div>` +
-      rows +
-      '</div>'
-    );
+    return '<div class="cdc-block">' + head + rows + '</div>';
   }
 
   function entriesHtml(entries: Entry[]): string {
@@ -431,45 +674,91 @@
       .map((e) => {
         if (!e.ok) {
           return (
-            '<div class="cdc-line cdc-line--bad"><span class="cdc-dot cdc-dot--bad"></span>' +
+            '<div class="cdc-line cdc-line--bad">' +
+            BAD_ICON_SVG +
             `<span>${escapeHtml(e.line)}</span>` +
             `<span class="cdc-line__meta">${escapeHtml(e.error ?? 'invalid')}</span></div>`
           );
         }
+        const shown = e.display ?? e.cidr ?? e.line;
         const normNote = e.normalizedFrom
-          ? `<span class="cdc-norm-note">(host bits stripped: ${escapeHtml(e.normalizedFrom)} → ${escapeHtml(e.cidr ?? '')})</span>`
+          ? ` <span class="cdc-norm-note">host bits stripped: ${escapeHtml(e.normalizedFrom)} → ${escapeHtml(e.cidr ?? '')}</span>`
           : '';
+        const meta = e.role === 'ip' ? `IP · ${e.type ?? ''}` : (e.type ?? '');
         return (
-          '<div class="cdc-line"><span class="cdc-dot cdc-dot--ok"></span>' +
-          `<span>${escapeHtml(e.cidr ?? e.line)}${normNote ? ' ' + normNote : ''}</span>` +
-          `<span class="cdc-line__meta">${escapeHtml(e.type ?? '')}</span></div>`
+          '<div class="cdc-line">' +
+          OK_ICON_SVG +
+          `<span>${escapeHtml(shown)}${normNote}</span>` +
+          `<span class="cdc-line__meta">${escapeHtml(meta)}</span></div>`
         );
       })
       .join('');
     return (
       '<div class="cdc-block"><div class="cdc-block__head"><span>Parsed input</span>' +
       `<span class="cdc-line__meta">${entries.length} line${entries.length === 1 ? '' : 's'}</span></div>` +
+      '<p class="cdc-block__sub">How each line was read. A bare IP counts as one address; host bits in a CIDR are stripped to its network.</p>' +
       rows +
       '</div>'
     );
   }
 
-  function renderResult(container: HTMLElement, summary: HTMLElement, result: Result): void {
-    const ok = result.stats?.ok ?? 0;
-    const invalid = result.stats?.invalid ?? 0;
-    summary.textContent = `${ok} valid${invalid ? ` · ${invalid} invalid` : ''}`;
+  function renderError(
+    container: HTMLElement,
+    title: string,
+    detail: string,
+    entries: Entry[],
+  ): void {
     container.innerHTML =
+      '<div class="cdc-error" role="alert">' +
+      ALERT_SVG +
+      `<div><p class="cdc-error__title">${escapeHtml(title)}</p>` +
+      `<p class="cdc-error__detail">${escapeHtml(detail)}</p></div></div>` +
+      (entries.length ? entriesHtml(entries) : '');
+  }
+
+  function summaryText(result: Result): string {
+    const { ok, invalid, overlaps, blocks } = result.stats;
+    const membership = result.membership ?? [];
+    let verdict = '';
+    if (membership.length === 1) {
+      const status = membership[0].status;
+      verdict =
+        status === 'in' ? 'in range' : status === 'not-in' ? 'not in range' : 'nothing to check against';
+    } else if (membership.length > 1) {
+      const inCount = membership.filter((m) => m.status === 'in').length;
+      verdict = `${inCount}/${membership.length} in range`;
+    }
+    let text = verdict ? `${verdict} — ` : '';
+    text += `${ok} valid`;
+    if (invalid) text += ` · ${invalid} invalid`;
+    if (overlaps) text += ` · ${overlaps} overlap${overlaps === 1 ? '' : 's'}`;
+    text += ` · ${blocks} block${blocks === 1 ? '' : 's'}`;
+    return text;
+  }
+
+  function renderResult(container: HTMLElement, summary: HTMLElement, result: Result): void {
+    setSummary(summary, summaryText(result), false);
+    container.innerHTML =
+      verdictHtml(result.membership ?? []) +
       aggHtml(result.aggregated ?? []) +
       overlapsHtml(result.overlaps ?? []) +
       entriesHtml(result.entries ?? []);
+    // Newlines round-trip badly through HTML attributes — set the multi-line
+    // Copy-all payload on the live element instead.
+    container.querySelectorAll<HTMLButtonElement>('.cdc-copy--all').forEach((btn) => {
+      const group = (result.aggregated ?? []).find((g) => String(g.version) === btn.dataset.version);
+      if (group) btn.dataset.copy = group.cidrs.join('\n');
+    });
   }
 
   async function init(root: HTMLElement): Promise<void> {
     const input = el<HTMLTextAreaElement>(root, '#cdc-input');
-    const exampleSel = el<HTMLSelectElement>(root, '#cdc-example');
+    const chipsWrap = el<HTMLElement>(root, '#cdc-chips');
     const resultsBox = el<HTMLElement>(root, '#cdc-results');
     const summaryEl = el<HTMLElement>(root, '#cdc-summary');
-    if (!input || !exampleSel || !resultsBox || !summaryEl) return;
+    const shareBtn = el<HTMLButtonElement>(root, '#cdc-share');
+    const copyStatus = el<HTMLElement>(root, '#cdc-copy-status');
+    if (!input || !chipsWrap || !resultsBox || !summaryEl || !shareBtn || !copyStatus) return;
 
     let engine: EngineModule;
     let examples: Example[] = [];
@@ -481,86 +770,232 @@
       engine = engineMod as unknown as EngineModule;
       examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
     } catch (err) {
-      renderError(resultsBox, summaryEl, 'The checker engine failed to load. Reload the page to try again.');
+      setSummary(summaryEl, '', false);
+      renderError(
+        resultsBox,
+        'Checker unavailable',
+        'The checker engine failed to load. Reload the page to try again.',
+        [],
+      );
       console.error('[CidrChecker] engine import failed:', err);
       return;
     }
 
-    exampleSel.innerHTML = '';
-    const customOpt = document.createElement('option');
-    customOpt.value = '-1';
-    customOpt.textContent = examples.length ? 'Custom list' : 'No examples';
-    exampleSel.appendChild(customOpt);
+    chipsWrap.innerHTML = '';
     examples.forEach((ex, i) => {
-      const opt = document.createElement('option');
-      opt.value = String(i);
-      opt.textContent = ex.label;
-      exampleSel.appendChild(opt);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'cdc-chip';
+      btn.dataset.exampleIdx = String(i);
+      btn.setAttribute('aria-pressed', 'false');
+      btn.textContent = ex.label;
+      chipsWrap.appendChild(btn);
     });
-    if (!examples.length) exampleSel.disabled = true;
 
-    function evaluate(): void {
+    function setActiveChip(idx: number | null): void {
+      chipsWrap!.querySelectorAll<HTMLButtonElement>('.cdc-chip').forEach((b) => {
+        b.setAttribute('aria-pressed', idx !== null && b.dataset.exampleIdx === String(idx) ? 'true' : 'false');
+      });
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Copy plumbing (row buttons, Copy all, Copy link)                     */
+    /* ------------------------------------------------------------------ */
+
+    function setCopyStatus(message: string, failed: boolean): void {
+      copyStatus!.textContent = message;
+      copyStatus!.classList.toggle('sr-only', !failed);
+      copyStatus!.classList.toggle('cdc-copy-status--fail', failed);
+    }
+
+    function setCopied(btn: HTMLButtonElement, copied: boolean): void {
+      btn.classList.toggle('cdc-copy--copied', copied);
+      btn.querySelector('.cdc-copy-icon')?.classList.toggle('hidden', copied);
+      btn.querySelector('.cdc-check-icon')?.classList.toggle('hidden', !copied);
+      const label = btn.querySelector<HTMLElement>('.cdc-copy-label');
+      if (label) {
+        label.textContent = copied ? 'Copied' : (btn.dataset.copyLabel ?? 'Copy');
+      } else if (copied) {
+        btn.dataset.prevAriaLabel = btn.getAttribute('aria-label') ?? '';
+        btn.setAttribute('aria-label', 'Copied');
+      } else if (btn.dataset.prevAriaLabel) {
+        btn.setAttribute('aria-label', btn.dataset.prevAriaLabel);
+        delete btn.dataset.prevAriaLabel;
+      }
+    }
+
+    async function handleCopy(btn: HTMLButtonElement): Promise<void> {
+      const text = btn.dataset.copy ?? '';
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          // Legacy fallback for non-secure contexts.
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.setAttribute('readonly', '');
+          ta.style.position = 'absolute';
+          ta.style.left = '-9999px';
+          document.body.appendChild(ta);
+          ta.select();
+          const ok = document.execCommand('copy');
+          document.body.removeChild(ta);
+          if (!ok) throw new Error('execCommand copy failed');
+        }
+        setCopied(btn, true);
+        setCopyStatus('Copied to clipboard.', false);
+        window.clearTimeout(Number(btn.dataset.copyTimer));
+        btn.dataset.copyTimer = String(
+          window.setTimeout(() => {
+            setCopied(btn, false);
+            if (copyStatus!.textContent === 'Copied to clipboard.') setCopyStatus('', false);
+          }, RESET_MS),
+        );
+      } catch {
+        setCopyStatus('Copy failed — select the value manually.', true);
+      }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Evaluation + share link / #list= deep-link plumbing                  */
+    /* ------------------------------------------------------------------ */
+
+    let lastWrittenHash: string | null = null;
+
+    function writeHash(value: string | null): void {
+      const target = value ? buildListHash(value) : '';
+      if (target === lastWrittenHash) return;
+      // Safari throttles replaceState (~100/30s) and throws — never let that break input.
+      try {
+        if (value) {
+          history.replaceState(null, '', target);
+        } else {
+          history.replaceState(null, '', location.pathname + location.search);
+        }
+        lastWrittenHash = target;
+      } catch {
+        /* ignore */
+      }
+    }
+
+    function hideShare(): void {
+      shareBtn!.hidden = true;
+      shareBtn!.dataset.copy = '';
+    }
+
+    function evaluate(userInitiated: boolean): void {
       const value = input!.value;
       if (value.trim().length === 0) {
+        hideShare();
         renderEmpty(resultsBox!, summaryEl!);
+        if (userInitiated) writeHash(null);
         return;
       }
       let result: Result | null = null;
       try {
         result = engine.check(value);
       } catch {
-        renderError(resultsBox!, summaryEl!, 'Unexpected error while checking the list.');
+        hideShare();
+        setSummary(summaryEl!, '', false);
+        renderError(resultsBox!, 'Checker unavailable', 'Unexpected error while checking the list.', []);
+        if (userInitiated) writeHash(null);
         return;
       }
       if (!result || result.valid === false) {
-        renderError(resultsBox!, summaryEl!, result?.error ?? 'No valid IPs or CIDRs found.');
+        hideShare();
+        const entries = result?.entries ?? [];
+        // Zero parsed lines = nothing but blanks/comments; otherwise every line failed.
+        const nothingToCheck = entries.length === 0;
+        const invalid = result?.stats?.invalid ?? entries.filter((e) => !e.ok).length;
+        setSummary(summaryEl!, `0 valid${invalid ? ` · ${invalid} invalid` : ''}`, true);
+        renderError(
+          resultsBox!,
+          nothingToCheck ? 'Nothing to check yet' : 'No valid entries',
+          result?.error ?? 'Enter one IP or CIDR per line, e.g. 10.0.0.0/24.',
+          entries,
+        );
+        if (userInitiated) writeHash(null);
         return;
       }
       renderResult(resultsBox!, summaryEl!, result);
+      const hash = buildListHash(value);
+      if (hash.length > MAX_HASH_LEN) {
+        // Too long to be a dependable link — skip the hash write, hide the share button.
+        hideShare();
+      } else {
+        shareBtn!.hidden = false;
+        shareBtn!.dataset.copy = location.origin + location.pathname + location.search + hash;
+        if (userInitiated) writeHash(value);
+      }
     }
 
     let timer: number | undefined;
-    function scheduleEvaluate(): void {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(evaluate, DEBOUNCE_MS);
-    }
 
-    // Copy-to-clipboard: delegate from the results container so new DOM nodes work.
-    resultsBox.addEventListener('click', (evt) => {
-      const btn = (evt.target as Element).closest<HTMLButtonElement>('.cdc-copy');
-      if (!btn) return;
-      const text = btn.dataset.copy ?? '';
-      void navigator.clipboard.writeText(text).then(() => {
-        btn.classList.add('cdc-copy--copied');
-        window.setTimeout(() => btn.classList.remove('cdc-copy--copied'), 1500);
-      });
+    /* ------------------------------------------------------------------ */
+    /* Events (chips + copy delegated from the root)                        */
+    /* ------------------------------------------------------------------ */
+
+    root.addEventListener('click', (evt) => {
+      const target = evt.target as HTMLElement;
+      const chip = target.closest<HTMLButtonElement>('.cdc-chip');
+      if (chip && chipsWrap!.contains(chip)) {
+        const idx = Number(chip.dataset.exampleIdx);
+        if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+        input!.value = examples[idx].input;
+        setActiveChip(idx);
+        window.clearTimeout(timer);
+        evaluate(true);
+        return;
+      }
+      const btn = target.closest<HTMLButtonElement>('.cdc-copy');
+      if (btn) void handleCopy(btn);
     });
 
     input.addEventListener('input', () => {
-      if (exampleSel.value !== '-1') exampleSel.value = '-1';
-      scheduleEvaluate();
-    });
-    exampleSel.addEventListener('change', () => {
-      const idx = Number(exampleSel.value);
-      if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
-      input.value = examples[idx].input;
+      setActiveChip(null);
       window.clearTimeout(timer);
-      evaluate();
+      timer = window.setTimeout(() => evaluate(true), DEBOUNCE_MS);
     });
 
-    // Deep link: #ip=<address> (written by the IP Address Converter) prefills
-    // the list and replaces the default seeded example.
-    const shared = readIpHash();
-    const seed = examples[0];
-    if (shared) {
-      // The engine skips '#' comment lines, so the hint is inert.
-      input.value = shared + '\n# paste the CIDRs to check this address against below';
-      exampleSel.value = '-1';
-      evaluate();
-    } else if (seed) {
-      input.value = seed.input;
-      exampleSel.value = '0';
-      evaluate();
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        window.clearTimeout(timer);
+        evaluate(true);
+        // Dismiss the on-screen keyboard so the verdict is visible.
+        if (window.matchMedia?.('(pointer: coarse)').matches) input.blur();
+        return;
+      }
+      // Plain Enter must still insert the newline (no preventDefault) — flush
+      // the evaluation on the next tick, once the textarea value includes it.
+      window.setTimeout(() => {
+        window.clearTimeout(timer);
+        evaluate(true);
+      }, 0);
+    });
+
+    /* ------------------------------------------------------------------ */
+    /* First load: typed value → #list= → #ip= (seeded) → first example.    */
+    /* None of these write the hash — only user-initiated evaluations do.   */
+    /* ------------------------------------------------------------------ */
+
+    const listShared = readListHash();
+    const ipShared = readIpHash();
+
+    if (input.value.trim()) {
+      evaluate(false);
+    } else if (listShared) {
+      input.value = listShared;
+      evaluate(false);
+    } else if (ipShared) {
+      // Deep link from the IP Address Converter — the '#' hint line is inert.
+      input.value = ipShared + '\n# add the CIDR ranges to check this IP against';
+      evaluate(false);
+    } else if (examples[0]) {
+      input.value = examples[0].input;
+      setActiveChip(0);
+      evaluate(false);
     } else {
       renderEmpty(resultsBox, summaryEl);
     }
