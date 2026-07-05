@@ -1,0 +1,140 @@
+import { describe, it, expect } from 'vitest';
+import {
+  program,
+  phases,
+  days,
+  missions,
+  liveDays,
+  getDay,
+  phaseForDay,
+  totalCoreMinutes,
+} from '../../data/mission90';
+
+/** Canonical phase day-ranges from the curriculum table. */
+const PHASE_RANGES: Record<number, [number, number]> = {
+  1: [1, 20],
+  2: [21, 45],
+  3: [46, 65],
+  4: [66, 85],
+  5: [86, 90],
+};
+
+/** Project blocks: 41–45 (Project 1), 62–65 (Project 2), 81–85 (Project 3). */
+const PROJECT_DAYS = [41, 42, 43, 44, 45, 62, 63, 64, 65, 81, 82, 83, 84, 85];
+
+/**
+ * Mission days — a deliberate deviation from strict every-7th cadence so
+ * missions never land inside a project block.
+ */
+const MISSION_DAYS = [7, 14, 21, 28, 40, 49, 56, 73, 80, 90];
+
+describe('mission90 registry integrity', () => {
+  it('program metadata is canonical', () => {
+    expect(program.name).toBe('Mission 90 Days DevOps');
+    expect(program.route).toBe('/mission-90/');
+    expect(program.totalDays).toBe(90);
+    expect(program.description.length).toBeGreaterThan(0);
+  });
+
+  it('has exactly 90 days with unique, contiguous day numbers 1..90', () => {
+    expect(days).toHaveLength(90);
+    const nums = [...days.map((d) => d.day)].sort((a, b) => a - b);
+    nums.forEach((n, i) => {
+      expect(n, `day numbers must be contiguous at position ${i}`).toBe(i + 1);
+    });
+  });
+
+  it('all day slugs are unique', () => {
+    const slugs = new Set(days.map((d) => d.slug));
+    expect(slugs.size).toBe(days.length);
+  });
+
+  it('has exactly 5 phases whose day-ranges match the curriculum table', () => {
+    expect(phases).toHaveLength(5);
+    for (const p of phases) {
+      expect(p.days, `phase ${p.id} ("${p.slug}") day-range`).toEqual(PHASE_RANGES[p.id]);
+    }
+  });
+
+  it("every day's phase matches phaseForDay(day)", () => {
+    for (const d of days) {
+      expect(phaseForDay(d.day)?.id, `day ${d.day} phase`).toBe(d.phase);
+    }
+  });
+
+  it('getDay(n) resolves days and returns undefined out of range', () => {
+    expect(getDay(1)?.day).toBe(1);
+    expect(getDay(90)?.day).toBe(90);
+    expect(getDay(0)).toBeUndefined();
+    expect(getDay(91)).toBeUndefined();
+  });
+
+  it('project days are exactly 41–45, 62–65, 81–85', () => {
+    const projectDays = days
+      .filter((d) => d.isProjectDay)
+      .map((d) => d.day)
+      .sort((a, b) => a - b);
+    expect(projectDays).toEqual(PROJECT_DAYS);
+    for (const d of days) {
+      expect(d.isProjectDay, `day ${d.day} isProjectDay`).toBe(PROJECT_DAYS.includes(d.day));
+    }
+  });
+
+  it('mission days (hasMission) are exactly [7,14,21,28,40,49,56,73,80,90]', () => {
+    const missionDays = days
+      .filter((d) => d.hasMission)
+      .map((d) => d.day)
+      .sort((a, b) => a - b);
+    expect(missionDays).toEqual(MISSION_DAYS);
+  });
+
+  it('hasMission days ↔ mission ids form a bijection', () => {
+    expect(missions).toHaveLength(10);
+    const missionIds = new Set(missions.map((m) => m.id));
+    expect(missionIds.size, 'mission ids must be unique').toBe(missions.length);
+
+    const dayByNumber = new Map(days.map((d) => [d.day, d]));
+    for (const m of missions) {
+      const d = dayByNumber.get(m.unlockAfterDay);
+      expect(d?.hasMission, `mission "${m.id}" → day ${m.unlockAfterDay} must be a mission day`).toBe(true);
+      expect(d?.missionId, `day ${m.unlockAfterDay} must carry missionId "${m.id}"`).toBe(m.id);
+    }
+
+    for (const d of days) {
+      if (d.hasMission) {
+        expect(
+          d.missionId !== undefined && missionIds.has(d.missionId),
+          `day ${d.day} → unknown mission "${d.missionId}"`,
+        ).toBe(true);
+      } else {
+        expect(d.missionId, `day ${d.day} has no mission but carries a missionId`).toBeUndefined();
+      }
+    }
+  });
+
+  it("every mission's week agrees with its unlockAfterDay", () => {
+    for (const m of missions) {
+      expect(m.week, `mission "${m.id}" week must be ceil(${m.unlockAfterDay}/7)`).toBe(
+        Math.ceil(m.unlockAfterDay / 7),
+      );
+    }
+  });
+
+  it('exactly one live day (day 1) and liveDays reflects status filtering', () => {
+    const live = days.filter((d) => d.status === 'live');
+    expect(live.map((d) => d.day)).toEqual([1]);
+    expect(liveDays).toEqual(live);
+  });
+
+  it('exactly one live mission (week1-server-down)', () => {
+    const live = missions.filter((m) => m.status === 'live');
+    expect(live.map((m) => m.id)).toEqual(['week1-server-down']);
+  });
+
+  it('totalCoreMinutes sums all 90 day minutes and lands near 80 hours', () => {
+    const sum = days.reduce((acc, d) => acc + d.minutes, 0);
+    expect(totalCoreMinutes).toBe(sum);
+    expect(totalCoreMinutes).toBeGreaterThanOrEqual(4600);
+    expect(totalCoreMinutes).toBeLessThanOrEqual(4900);
+  });
+});
