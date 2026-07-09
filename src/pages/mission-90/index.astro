@@ -1,0 +1,647 @@
+---
+/**
+ * Mission 90 Days DevOps — the program hub at /mission-90/.
+ *
+ * Conversion order (do NOT reorder): resume card (returning only) → hero →
+ * 3-layer time model → 5-phase journey → missions teaser → the 90-day table →
+ * FAQ → final CTA + founding note.
+ *
+ * Everything renders perfectly with JavaScript or storage blocked: the static
+ * markup IS the cold-start / first-visit state. A single boot script reads the
+ * `oc-m90-v1` progress and (a) flips the hero CTA between its three states,
+ * (b) reveals + fills the resume card for returning learners, and (c) fills the
+ * per-phase counts in the journey. The 90-day table owns its own progress logic
+ * and dispatches `m90:progress` so this script re-syncs after a day is ticked.
+ */
+import Shell from '../../components/Shell.astro';
+import MeshGradient from '../../components/MeshGradient.astro';
+import Button from '../../components/Button.astro';
+import Card from '../../components/Card.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import FaqList from '../../components/FaqList.astro';
+import Badge from '../../components/Badge.astro';
+import M90ProgressCard from '../../components/mission90/M90ProgressCard.astro';
+import M90StateCta from '../../components/mission90/M90StateCta.astro';
+import M90DayTable from '../../components/mission90/M90DayTable.astro';
+import { site } from '../../data/site';
+import {
+  program,
+  phases,
+  days,
+  missions,
+  liveDays,
+  phaseForDay,
+  totalCoreMinutes,
+} from '../../data/mission90';
+import { courseLd, faqPageLd, breadcrumbLd } from '../../lib/jsonld';
+
+// Trust caption — ALWAYS derived from the registry, never hand-written.
+const hours = Math.round(totalCoreMinutes / 60 / 10) * 10;
+
+// The next day that will drop (first still-draft day) — for the all-done CTA.
+const firstDraftDay = days.find((d) => d.status === 'draft')?.day ?? program.totalDays;
+
+// Minimal live-day metadata handed to the client so the CTA / resume card can
+// name the day the learner should continue with.
+const liveDayInfo = liveDays.map((d) => ({
+  day: d.day,
+  title: d.title,
+  minutes: d.minutes,
+  phase: phaseForDay(d.day)?.name ?? '',
+}));
+const liveDayNumbers = liveDays.map((d) => d.day);
+
+// 5-phase journey cards.
+const phaseCards = phases.map((p) => ({
+  id: p.id,
+  name: p.name,
+  tagline: p.tagline,
+  range: p.days,
+  total: p.days[1] - p.days[0] + 1,
+}));
+
+// Missions teaser — independent, compact markup (NOT a MissionCard component).
+const heroMission = missions[0]; // week1-server-down (playable)
+const nextMissions = missions.slice(1, 3); // the next two, in production
+const roadAheadMissions = missions.slice(3); // the remaining seven
+const missionFeatures = ['No setup', 'Runs in your browser', 'No programming required'];
+
+// Hero play transcript — sells the game with zero JS.
+const heroTranscript = `student@prod-web-01:~$ ps aux --sort=-%cpu | head -3
+USER    PID  %CPU  COMMAND
+root   4521  94.0  /opt/scripts/nightly-backup.sh
+student@prod-web-01:~$ kill 4521
+student@prod-web-01:~$ systemctl restart nginx
+student@prod-web-01:~$ curl -so /dev/null -w '%{http_code}\\n' localhost
+200
+# 02:07 — the site is back. You did that.`;
+
+// 3-layer time model.
+const timeModel = [
+  {
+    eyebrow: 'Every day',
+    title: 'Core lesson',
+    time: '45–60 min',
+    body: 'One focused lesson a day — read it, run the commands, understand the why. This is the spine of the whole program.',
+    icon: '<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>',
+  },
+  {
+    eyebrow: 'Optional',
+    title: 'Go Deeper',
+    time: '+30–60 min',
+    body: 'Extra rabbit-holes for the days you have the time and the appetite — always optional, never assumed by the next lesson.',
+    icon: '<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>',
+  },
+  {
+    eyebrow: 'Weekly',
+    title: 'Mission game',
+    time: '15–20 min',
+    body: 'End the week inside a broken system and fix it live in your browser — a story-driven mission, no setup, no code required.',
+    icon: '<line x1="6" y1="11" x2="10" y2="11"/><line x1="8" y1="9" x2="8" y2="13"/><line x1="15" y1="12" x2="15.01" y2="12"/><line x1="18" y1="10" x2="18.01" y2="10"/><path d="M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.544-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z"/>',
+  },
+];
+
+const faqs = [
+  {
+    q: 'Is it really free?',
+    a: 'Yes — completely. All 90 days and every mission, with no account, no email capture, no paywall and no upsell. It runs as static pages in your browser, so there is nothing to bill you for, and your progress is saved locally in your own browser.',
+  },
+  {
+    q: 'I only have 30 minutes some days — will I fall behind?',
+    a: 'No. The core lesson is built to fit in 45–60 minutes, and on a tight day you can do just the essentials and skip the optional "Go Deeper" section entirely. Nothing in the next day assumes you did the optional depth, so a short day never leaves a hole. Go at the pace your life allows.',
+  },
+  {
+    q: 'Do I need a Linux machine?',
+    a: 'No. On Windows you will use WSL2 (the Windows Subsystem for Linux), which gives you a real Linux environment in a few minutes; macOS and Linux work directly. The Day 0 setup at /mission-90/setup/ walks you through it step by step before Day 1.',
+  },
+  {
+    q: 'What if I miss days?',
+    a: 'Nothing breaks. The program is a sequence, not a calendar — Day 12 always comes after Day 11, whenever you get to it. There is no streak to lose and no shame screen for a gap. Pick up exactly where you left off; the plan remembers your place in this browser.',
+  },
+  {
+    q: 'Will this actually get me a DevOps job?',
+    a: 'Honestly: it gives you the skills, the projects and the vocabulary, but no curriculum can guarantee a job. What you get here is a genuine foundation across Linux, containers, CI/CD, cloud, Kubernetes and Terraform, plus a portfolio of real projects and interview practice. The rest depends on you, your applications and the market you are in.',
+  },
+];
+
+const canonical = '/mission-90/';
+const jsonLd = [
+  courseLd(
+    { name: program.name, description: program.description, url: `${site.url}/mission-90/` },
+    phases.map((p) => ({ name: p.name, days: p.days })),
+    totalCoreMinutes,
+  ),
+  faqPageLd(faqs),
+  breadcrumbLd([
+    { name: 'Home', item: `${site.url}/` },
+    { name: '90 Days DevOps', item: `${site.url}/mission-90/` },
+  ]),
+];
+
+const gamepadPath =
+  '<line x1="6" y1="11" x2="10" y2="11"/><line x1="8" y1="9" x2="8" y2="13"/><line x1="15" y1="12" x2="15.01" y2="12"/><line x1="18" y1="10" x2="18.01" y2="10"/><path d="M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.544-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z"/>';
+const constructionPath =
+  '<rect x="2" y="6" width="20" height="8" rx="1"/><path d="M17 14v7"/><path d="M7 14v7"/><path d="M17 3v3"/><path d="M7 3v3"/><path d="m10 14-7.7-7.7"/><path d="m14 6 7.7 7.7"/><path d="m8 6 8 8"/>';
+---
+
+<Shell
+  title="Free 90-Day DevOps Roadmap & Missions — OpsCanopy"
+  description="A free, hands-on 90-day DevOps roadmap — Linux to Kubernetes and cloud, with story-driven missions you play in your browser. No signup; progress saved locally."
+  canonical={canonical}
+  jsonLd={jsonLd}
+  noAlternates
+>
+  {/* ───── 1 · RESUME CARD (returning learners only; hidden until confirmed) ───── */}
+  <section class="bg-canvas-soft" data-m90-resume hidden>
+    <div class="container-page py-4 sm:py-5">
+      <div
+        class="mx-auto flex max-w-4xl flex-col gap-3 rounded-lg border border-hairline bg-canvas p-4 shadow-soft sm:flex-row sm:items-center sm:justify-between"
+      >
+        <a
+          href="/mission-90/day/1/"
+          class="link-inline group inline-flex items-center gap-2 font-medium"
+          data-m90-resume-link
+        >
+          <span class="text-mute">Continue</span>
+          <span aria-hidden="true" class="transition-transform duration-150 ease-out group-hover:translate-x-0.5">&rarr;</span>
+          <span class="text-ink" data-m90-resume-text>Day 1</span>
+        </a>
+        <M90ProgressCard total={program.totalDays} />
+      </div>
+    </div>
+  </section>
+
+  {/* ─────────────────────────────── 2 · HERO ─────────────────────────────── */}
+  <section class="section-pad relative isolate overflow-hidden bg-canvas-soft">
+    <MeshGradient class="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[90%] opacity-90" />
+    <div
+      class="pointer-events-none absolute inset-x-0 top-0 -z-10 h-32 bg-gradient-to-b from-canvas-soft to-transparent"
+      aria-hidden="true"
+    >
+    </div>
+    <div
+      class="pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-48 bg-gradient-to-b from-transparent to-canvas-soft"
+      aria-hidden="true"
+    >
+    </div>
+
+    <div class="container-page relative z-10 flex flex-col items-center text-center">
+      <p class="eyebrow text-mute">MISSION: 90 DAYS · DEVOPS</p>
+
+      <h1 class="display-xl mt-4 max-w-3xl text-balance text-ink">
+        From developer to DevOps engineer in 90 days.
+      </h1>
+
+      <p class="body-lg mx-auto mt-4 max-w-2xl text-pretty text-body">
+        A free, hands-on curriculum that takes you from your first terminal command to job-ready —
+        one focused lesson a day, with a story-driven mission to fix a broken system at the end of
+        every week.
+      </p>
+
+      <p class="caption mt-4 text-mute">
+        ~{hours} hrs core · free, no signup · progress saved in your browser
+      </p>
+
+      <div class="mt-8">
+        <M90StateCta firstDraftDay={firstDraftDay} />
+      </div>
+
+      <div class="mt-12 w-full max-w-2xl text-left">
+        <CodeBlock code={heroTranscript} filename="mission: server-down" />
+      </div>
+    </div>
+  </section>
+
+  {/* ─────────────────────── 3 · THREE-LAYER TIME MODEL ─────────────────────── */}
+  <section id="how" class="section-pad scroll-mt-24 bg-canvas">
+    <div class="container-page">
+      <div class="mx-auto max-w-2xl text-center">
+        <span class="eyebrow">How it works</span>
+        <h2 class="display-lg mt-3 text-balance text-ink">Three layers. Forty-five minutes a day.</h2>
+        <p class="body-md mt-3 text-pretty text-body">
+          Every day has the same shape, so you always know what "done" looks like — and the optional
+          depth is there on the days you want more.
+        </p>
+      </div>
+
+      <div class="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-3">
+        {
+          timeModel.map((c) => (
+            <Card variant="soft" class="flex h-full flex-col">
+              <span class="mb-4 inline-flex size-10 items-center justify-center rounded-lg bg-brand/10 text-brand-strong">
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                  set:html={c.icon}
+                />
+              </span>
+              <span class="eyebrow">{c.eyebrow}</span>
+              <div class="mt-2 flex items-baseline justify-between gap-2">
+                <h3 class="display-sm text-ink">{c.title}</h3>
+                <span class="code-mono text-[13px] text-brand-strong">{c.time}</span>
+              </div>
+              <p class="body-sm mt-3 flex-1 text-pretty text-body">{c.body}</p>
+            </Card>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  {/* ───────────────────────── 4 · FIVE-PHASE JOURNEY ───────────────────────── */}
+  <section class="section-pad bg-canvas-soft">
+    <div class="container-page">
+      <div class="mx-auto max-w-2xl text-center">
+        <span class="eyebrow">The Journey</span>
+        <h2 class="display-lg mt-3 text-balance text-ink">Five phases, ninety days.</h2>
+        <p class="body-md mt-3 text-pretty text-body">
+          From your first terminal session to a portfolio and interview answers. Jump straight to
+          any phase in the full plan below.
+        </p>
+      </div>
+
+      <ol data-m90-journey role="list" class="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-5">
+        {
+          phaseCards.map((p) => (
+            <li class="h-full">
+              <Card variant="soft" href={`#phase-${p.id}`} class="h-full">
+                <div
+                  class="flex h-full flex-col"
+                  data-phase-card
+                  data-phase-range={`${p.range[0]}-${p.range[1]}`}
+                >
+                  <span class="m90-journey-num" aria-hidden="true">
+                    {String(p.id).padStart(2, '0')}
+                  </span>
+                  <h3 class="display-sm mt-3 text-ink">{p.name}</h3>
+                  <p class="body-sm mt-1 flex-1 text-pretty text-mute">{p.tagline}</p>
+                  <div class="mt-3 flex items-center justify-between gap-2">
+                    <span class="caption text-mute">
+                      Days {p.range[0]}–{p.range[1]}
+                    </span>
+                    <span class="m90-journey-count" data-phase-count>
+                      0/{p.total}
+                    </span>
+                  </div>
+                </div>
+              </Card>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+  </section>
+
+  {/* ─────────────────────────── 5 · MISSIONS TEASER ─────────────────────────── */}
+  <section class="section-pad bg-canvas">
+    <div class="container-page">
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div class="max-w-2xl">
+          <span class="eyebrow">Missions</span>
+          <h2 class="display-lg mt-3 text-balance text-ink">Every week ends in a broken system.</h2>
+          <p class="body-md mt-3 text-pretty text-body">
+            The theory sticks when you use it under pressure. Each mission drops you into a failing
+            system with a terminal and a goal — no slides, no multiple choice.
+          </p>
+        </div>
+        <a
+          href="/mission-90/missions/"
+          class="link-inline group body-md inline-flex shrink-0 items-center gap-1 whitespace-nowrap font-medium"
+        >
+          All missions
+          <span aria-hidden="true" class="transition-transform duration-150 ease-out group-hover:translate-x-0.5">&rarr;</span>
+        </a>
+      </div>
+
+      {/* Playable mission — dark inverse mini-header, light body. */}
+      <div class="mt-8 overflow-hidden rounded-xl border border-hairline bg-canvas shadow-soft">
+        <div class="flex items-center gap-2 bg-inverse px-4 py-2.5">
+          <span class="size-3 rounded-full bg-white/15" aria-hidden="true"></span>
+          <span class="size-3 rounded-full bg-white/15" aria-hidden="true"></span>
+          <span class="size-3 rounded-full bg-white/15" aria-hidden="true"></span>
+          <span class="code-mono ml-2 truncate text-white/55">mission-01 · server-down</span>
+        </div>
+        <div class="p-6 sm:p-8">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="eyebrow text-brand-strong">Week {heroMission.week} · Playable now</p>
+              <h3 class="display-md mt-1 text-balance text-ink">{heroMission.title}</h3>
+            </div>
+            <Badge variant="live" class="shrink-0">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                set:html={gamepadPath}
+              />
+              Playable
+            </Badge>
+          </div>
+
+          <p class="body-md mt-3 max-w-2xl text-pretty text-body">{heroMission.blurb}</p>
+
+          <ul class="mt-5 flex flex-wrap gap-2">
+            {
+              missionFeatures.map((f) => (
+                <li class="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-canvas-soft px-3 py-1 text-[12px] font-medium text-body">
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                    class="text-brand-strong"
+                  >
+                    <path d="M3 8.5l3.5 3.5L13 4.5" />
+                  </svg>
+                  {f}
+                </li>
+              ))
+            }
+          </ul>
+
+          <p class="caption mt-4 text-mute">Skills: {heroMission.skills.join(' · ')}</p>
+
+          <div class="mt-6">
+            <Button href="/mission-90/missions/week1-server-down/" variant="secondary">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                set:html={gamepadPath}
+              />
+              Play {heroMission.title}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Next two missions — in production, never claiming free-play. */}
+      <p class="caption mt-8 text-mute">Next up</p>
+      <ul class="mt-3 flex flex-wrap gap-3">
+        {
+          nextMissions.map((m) => (
+            <li class="inline-flex items-center gap-2.5 rounded-lg border border-hairline bg-canvas px-4 py-2.5 shadow-soft">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                class="shrink-0 text-mute"
+                set:html={constructionPath}
+              />
+              <span class="body-sm font-medium text-ink">{m.title}</span>
+              <Badge variant="planned">In production</Badge>
+            </li>
+          ))
+        }
+      </ul>
+
+      <p class="body-sm mt-6 text-pretty text-mute">
+        {roadAheadMissions.length} more missions wait on the road ahead — {roadAheadMissions.map((m) => m.title).join(', ')}.
+      </p>
+    </div>
+  </section>
+
+  {/* ───────────────────────── 6 · THE 90-DAY TABLE ───────────────────────── */}
+  <section class="section-pad bg-canvas-soft">
+    <div class="container-page">
+      <div class="mx-auto max-w-2xl text-center">
+        <span class="eyebrow">The Plan</span>
+        <h2 class="display-lg mt-3 text-balance text-ink">All 90 days, in order.</h2>
+        <p class="body-md mt-3 text-pretty text-body">
+          Tick a day as you finish it — saved in this browser only, no account. Days still being
+          written are marked "Drops soon".
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 max-w-3xl">
+        <M90DayTable total={program.totalDays} />
+      </div>
+    </div>
+  </section>
+
+  {/* ─────────────────────────────── 7 · FAQ ─────────────────────────────── */}
+  <FaqList faqs={faqs} heading="Before you start." />
+
+  {/* ─────────────────── 8 · FINAL CTA + FOUNDING-LEARNER NOTE ─────────────────── */}
+  <section class="section-pad bg-canvas-soft" aria-labelledby="m90-final">
+    <div class="container-page">
+      <div class="flex flex-col items-center gap-6 text-center">
+        <h2 id="m90-final" class="display-xl max-w-2xl text-balance text-ink">
+          Day 1 is a terminal and a problem to solve.
+        </h2>
+        <p class="body-lg max-w-xl text-pretty text-body">
+          Ninety days from now, debugging a full-stack outage will feel routine. It starts with a
+          20-minute setup — free, no signup, and your progress stays in your browser.
+        </p>
+        <div class="mt-2">
+          <Button href="/mission-90/setup/" variant="primary">Start Day 0 · 20-min setup</Button>
+        </div>
+        <p class="body-sm mt-6 max-w-2xl text-pretty text-mute">
+          Founding note: I'm writing this live. Before Day 30 ships, email your Day-7 debrief to{' '}
+          <a href="mailto:hello@opscanopy.com" class="link-inline font-medium">hello@opscanopy.com</a>{' '}
+          and you'll be credited on the founding wall when we reach 100 learners. Follow the build on{' '}
+          <a href={site.github} class="link-inline font-medium" target="_blank" rel="noopener noreferrer">GitHub</a>{' '}
+          or{' '}
+          <a
+            href={`https://x.com/${site.twitter.replace('@', '')}`}
+            class="link-inline font-medium"
+            target="_blank"
+            rel="noopener noreferrer"
+          >X</a>.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  {/* Live-day metadata for the boot script (CTA + resume day naming). */}
+  <script
+    type="application/json"
+    id="m90-data"
+    set:html={JSON.stringify({ liveDays: liveDayInfo, liveDayNumbers, programTotal: program.totalDays })}
+  />
+</Shell>
+
+<style>
+  .m90-journey-num {
+    display: inline-grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 9999px;
+    background: color-mix(in srgb, var(--color-brand) 16%, var(--color-canvas));
+    color: var(--color-ink);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .m90-journey-count {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-brand-strong);
+  }
+</style>
+
+<script>
+  import { parseProgress, doneCount, nextDay, phaseProgress } from '../../lib/mission90/progress';
+
+  const KEY = 'oc-m90-v1';
+
+  interface LiveDay {
+    day: number;
+    title: string;
+    minutes: number;
+    phase: string;
+  }
+
+  function readProgress() {
+    let raw: string | null = null;
+    try {
+      raw = localStorage.getItem(KEY);
+    } catch {
+      /* storage blocked — cold start */
+    }
+    return parseProgress(raw);
+  }
+
+  function getData(): { liveDays: LiveDay[]; liveDayNumbers: number[]; programTotal: number } {
+    const empty = { liveDays: [], liveDayNumbers: [], programTotal: 0 };
+    const el = document.getElementById('m90-data');
+    if (!el || !el.textContent) return empty;
+    try {
+      return JSON.parse(el.textContent);
+    } catch {
+      return empty;
+    }
+  }
+
+  function render(): void {
+    const cta = document.querySelector('[data-m90-cta]');
+    if (!cta) return; // not on the hub
+
+    const p = readProgress();
+
+    // 5-phase journey counts (independent of live-day state).
+    document
+      .querySelectorAll<HTMLElement>('[data-m90-journey] [data-phase-card]')
+      .forEach((card) => {
+        const range = (card.dataset.phaseRange ?? '').split('-').map(Number);
+        const [lo, hi] = range;
+        if (!Number.isFinite(lo) || !Number.isFinite(hi)) return;
+        const { done: pd, total } = phaseProgress(p, [lo, hi]);
+        const c = card.querySelector<HTMLElement>('[data-phase-count]');
+        if (c) c.textContent = `${pd}/${total}`;
+      });
+
+    const first = document.querySelector<HTMLElement>('[data-m90-cta-first]');
+    const returning = document.querySelector<HTMLElement>('[data-m90-cta-returning]');
+    const doneBlock = document.querySelector<HTMLElement>('[data-m90-cta-done]');
+    const resume = document.querySelector<HTMLElement>('[data-m90-resume]');
+
+    const show = (state: 'first' | 'returning' | 'done') => {
+      if (first) first.hidden = state !== 'first';
+      if (returning) returning.hidden = state !== 'returning';
+      if (doneBlock) doneBlock.hidden = state !== 'done';
+    };
+
+    const { liveDays, liveDayNumbers, programTotal } = getData();
+
+    // Without live-day data we cannot resolve the CTA state — keep the
+    // static first-visit default and hide the resume card.
+    if (liveDayNumbers.length === 0) {
+      show('first');
+      if (resume) resume.hidden = true;
+      return;
+    }
+
+    const infoByDay = new Map<number, LiveDay>(liveDays.map((d) => [d.day, d]));
+    const done = doneCount(p);
+    const n = nextDay(p, liveDayNumbers);
+    const hasProgress =
+      done > 0 || p.startedAt !== undefined || p.lastVisitedDay !== undefined;
+
+    if (n === null) {
+      // Every shipped day complete.
+      show('done');
+      if (resume) resume.hidden = true;
+      return;
+    }
+
+    if (!hasProgress) {
+      show('first');
+      if (resume) resume.hidden = true;
+      return;
+    }
+
+    // Returning learner with a day still to do.
+    show('returning');
+    const info = infoByDay.get(n);
+    const link = returning?.querySelector<HTMLAnchorElement>('[data-m90-continue]');
+    const label = returning?.querySelector<HTMLElement>('[data-m90-continue-label]');
+    const caption = returning?.querySelector<HTMLElement>('[data-m90-continue-caption]');
+    if (link) link.href = `/mission-90/day/${n}/`;
+    if (label) label.textContent = info ? `Continue Day ${n}: ${info.title}` : `Continue Day ${n}`;
+    if (caption) {
+      caption.textContent = `${done} of ${programTotal} done — picking up where you left off.`;
+    }
+
+    if (resume) {
+      const rLink = resume.querySelector<HTMLAnchorElement>('[data-m90-resume-link]');
+      const rText = resume.querySelector<HTMLElement>('[data-m90-resume-text]');
+      const pcCount = resume.querySelector<HTMLElement>('[data-m90-progress-count]');
+      const pcFill = resume.querySelector<HTMLElement>('[data-m90-bar]');
+      const pcWrap = resume.querySelector<HTMLElement>('[data-m90-barwrap]');
+      if (rLink) rLink.href = `/mission-90/day/${n}/`;
+      if (rText) {
+        rText.textContent = info ? `Day ${n} · ${info.phase} · ~${info.minutes} min` : `Day ${n}`;
+      }
+      if (pcCount) pcCount.textContent = `${done} of ${programTotal} days`;
+      if (pcFill) pcFill.style.width = `${Math.round((done / programTotal) * 100)}%`;
+      if (pcWrap) pcWrap.setAttribute('aria-valuenow', String(done));
+      resume.hidden = false;
+    }
+  }
+
+  let bound = false;
+  function boot(): void {
+    render();
+    if (!bound) {
+      bound = true;
+      // The table re-fires this after a day is ticked so the hub re-syncs.
+      document.addEventListener('m90:progress', render);
+    }
+  }
+
+  document.addEventListener('astro:page-load', boot);
+</script>

@@ -1,0 +1,585 @@
+---
+/**
+ * M90DayTable — the 90-day plan as five phase accordions (NOT one flat table).
+ *
+ * Idioms are lifted wholesale from Roadmap.astro: an sr-only real checkbox drives
+ * a `.rm-dot`-style marker (with the reduced-motion-guarded pop), progress lives
+ * in localStorage under the versioned `oc-m90-v1` key, and every storage access is
+ * wrapped in try/catch so the table renders perfectly with storage blocked (the
+ * static default IS the cold-start state).
+ *
+ * Only LIVE days are interactive — they get a checkbox and a link to the day page.
+ * DRAFT days render as plain, unchecked, UN-LINKED rows with a "Drops soon" badge
+ * (never a link, for SEO hygiene). Phase 1 is statically open; the boot script
+ * additionally opens the phase holding the current (next un-done live) day and
+ * highlights that row. Checkbox writes go straight through the progress schema:
+ * read → parseProgress → set/delete `days[n].completedAt` → write JSON.
+ */
+import Badge from '../Badge.astro';
+import { phases, days, missions } from '../../data/mission90';
+
+export interface Props {
+  /** Total days in the program. Drives the overall progressbar + "n of {total}" copy.
+   *  Always pass `program.totalDays` — the documented single source of truth. */
+  total: number;
+}
+
+const { total } = Astro.props;
+
+const missionById = new Map(missions.map((m) => [m.id, m]));
+
+/** Days grouped by phase id, in day order (the source array is already ordered). */
+const daysByPhase = (id: number) => days.filter((d) => d.phase === id);
+
+// 14px inline glyphs (aria-hidden): a gamepad marks a playable mission, a crane /
+// construction glyph marks a mission still in production (never claims free-play).
+const gamepadPath =
+  '<line x1="6" y1="11" x2="10" y2="11" /><line x1="8" y1="9" x2="8" y2="13" /><line x1="15" y1="12" x2="15.01" y2="12" /><line x1="18" y1="10" x2="18.01" y2="10" /><path d="M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.544-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z" />';
+const constructionPath =
+  '<rect x="2" y="6" width="20" height="8" rx="1" /><path d="M17 14v7" /><path d="M7 14v7" /><path d="M17 3v3" /><path d="M7 3v3" /><path d="m10 14-7.7-7.7" /><path d="m14 6 7.7 7.7" /><path d="m8 6 8 8" />';
+---
+
+<section class="m90-table" aria-label="The full 90-day plan" data-m90-table data-total={total}>
+  {/* Overall progress — the single role="progressbar" for the whole plan. */}
+  <div class="m90-tprogress">
+    <p class="m90-tprogress-count" data-m90-total-count>0 of {total} days complete</p>
+    <div
+      class="m90-tbar"
+      role="progressbar"
+      aria-label="Days completed"
+      aria-valuemin="0"
+      aria-valuemax={String(total)}
+      aria-valuenow="0"
+      data-m90-total-bar
+    >
+      <span class="m90-tbar-fill" data-m90-total-fill style="width:0%"></span>
+    </div>
+  </div>
+
+  {
+    phases.map((phase) => {
+      const phaseDays = daysByPhase(phase.id);
+      const total = phaseDays.length;
+      return (
+        <details
+          class="m90-phase"
+          id={`phase-${phase.id}`}
+          open={phase.id === 1}
+          data-phase-range={`${phase.days[0]}-${phase.days[1]}`}
+        >
+          <summary class="m90-phase-summary">
+            <span class="m90-phase-num" aria-hidden="true">
+              {String(phase.id).padStart(2, '0')}
+            </span>
+            <div class="min-w-0 flex-1">
+              <h3 class="display-sm text-ink">{phase.name}</h3>
+              <p class="body-sm mt-0.5 text-mute">
+                {phase.tagline} · Days {phase.days[0]}–{phase.days[1]}
+              </p>
+            </div>
+            <span class="m90-phase-count" data-phase-count aria-live="polite">0/{total}</span>
+            <span class="m90-chevron-wrap" aria-hidden="true">
+              <svg
+                class="m90-chevron"
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </span>
+          </summary>
+
+          <ol role="list" class="m90-rows">
+            {phaseDays.map((day) => {
+              const isLive = day.status === 'live';
+              const mission = day.missionId ? missionById.get(day.missionId) : undefined;
+              return (
+                <li
+                  class:list={[
+                    'm90-node',
+                    day.isProjectDay && 'm90-node-project',
+                    !isLive && 'm90-node-draft',
+                  ]}
+                  data-day={day.day}
+                  data-live={String(isLive)}
+                >
+                  {isLive ? (
+                    <label class="m90-check">
+                      <input
+                        type="checkbox"
+                        class="sr-only"
+                        data-day-check
+                        aria-label={`Mark Day ${day.day} as complete`}
+                      />
+                      <span class="m90-dot" data-day-dot aria-hidden="true">
+                        <svg
+                          class="m90-tick"
+                          viewBox="0 0 16 16"
+                          fill="none"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path d="M4 8.4 6.8 11.2 12 5" />
+                        </svg>
+                      </span>
+                    </label>
+                  ) : (
+                    <span class="m90-check m90-check-static" aria-hidden="true">
+                      <span class="m90-dot m90-dot-draft" />
+                    </span>
+                  )}
+
+                  <span class="m90-daynum" aria-hidden="true">
+                    {String(day.day).padStart(2, '0')}
+                  </span>
+
+                  <div class="m90-node-body min-w-0">
+                    <div class="m90-label-row">
+                      {isLive ? (
+                        <a href={`/mission-90/day/${day.day}/`} class="m90-label" data-day-label>
+                          {day.title}
+                        </a>
+                      ) : (
+                        <span class="m90-label m90-label-draft">{day.title}</span>
+                      )}
+
+                      <span class="m90-min">~{day.minutes}m</span>
+
+                      {mission && (
+                        <Badge variant={mission.status === 'live' ? 'live' : 'planned'}>
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
+                            set:html={mission.status === 'live' ? gamepadPath : constructionPath}
+                          />
+                          {mission.status === 'live' ? 'Playable' : 'Mission'}
+                        </Badge>
+                      )}
+
+                      {day.isProjectDay && (
+                        <Badge variant="medium">
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
+                          >
+                            <rect x="2" y="6" width="20" height="8" rx="1" />
+                            <path d="M17 14v7" />
+                            <path d="M7 14v7" />
+                            <path d="M17 3v3" />
+                            <path d="M7 3v3" />
+                            <path d="m10 14-7.7-7.7" />
+                            <path d="m14 6 7.7 7.7" />
+                            <path d="m8 6 8 8" />
+                          </svg>
+                          Project
+                        </Badge>
+                      )}
+
+                      {isLive ? (
+                        <span class="m90-upnext" data-upnext hidden>Up next</span>
+                      ) : (
+                        <Badge variant="planned">Drops soon</Badge>
+                      )}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </details>
+      );
+    })
+  }
+</section>
+
+<style>
+  .m90-table {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  /* --- Overall progress header --- */
+  .m90-tprogress {
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-lg);
+    background: var(--color-canvas);
+    padding: 1rem 1.25rem;
+    box-shadow: var(--shadow-subtle);
+  }
+  .m90-tprogress-count {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--color-body);
+    font-variant-numeric: tabular-nums;
+  }
+  .m90-tbar {
+    margin-top: 0.5rem;
+    height: 8px;
+    border-radius: 9999px;
+    background: var(--color-canvas-soft-2);
+    overflow: hidden;
+  }
+  .m90-tbar-fill {
+    display: block;
+    height: 100%;
+    border-radius: 9999px;
+    background: linear-gradient(90deg, var(--color-brand), var(--color-brand-strong));
+    transition: width 0.4s ease;
+  }
+
+  /* --- Phase accordions --- */
+  .m90-phase {
+    border: 1px solid var(--color-hairline);
+    border-left: 3px solid color-mix(in srgb, var(--color-brand) 45%, var(--color-hairline));
+    border-radius: var(--radius-lg);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-subtle);
+    scroll-margin-top: 6rem;
+  }
+  .m90-phase-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1.1rem 1.25rem;
+    cursor: pointer;
+    list-style: none;
+  }
+  .m90-phase-summary::-webkit-details-marker {
+    display: none;
+  }
+  .m90-phase-summary:focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: -2px;
+    border-radius: var(--radius-lg);
+  }
+  .m90-phase-num {
+    flex-shrink: 0;
+    display: inline-grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 9999px;
+    background: color-mix(in srgb, var(--color-brand) 16%, var(--color-canvas));
+    color: var(--color-ink);
+    font-size: 12px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    letter-spacing: -0.02em;
+  }
+  .m90-phase-count {
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-mute);
+  }
+  .m90-chevron-wrap {
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    color: var(--color-mute);
+  }
+  .m90-chevron {
+    transition: transform 0.2s ease;
+  }
+  .m90-phase[open] .m90-chevron {
+    transform: rotate(180deg);
+  }
+
+  /* --- Rows --- */
+  .m90-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    padding: 0 0.75rem 0.75rem;
+  }
+  .m90-node {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    min-height: 2.75rem;
+    padding: 0.5rem;
+    border-radius: var(--radius-sm);
+    border-left: 2px solid transparent;
+    transition: background-color 0.15s ease;
+  }
+  .m90-node:hover {
+    background: var(--color-canvas-soft-2);
+  }
+  .m90-node-project {
+    border-left-color: color-mix(in srgb, var(--color-warning) 55%, transparent);
+  }
+  /* Current day wins the left border + gets a soft brand wash. */
+  .m90-node-current {
+    background: color-mix(in srgb, var(--color-brand) 6%, transparent);
+    border-left-color: var(--color-brand);
+  }
+
+  .m90-check {
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    margin-top: -1px;
+    cursor: pointer;
+  }
+  .m90-check-static {
+    cursor: default;
+  }
+  .m90-check:not(.m90-check-static):focus-within .m90-dot {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
+  .m90-dot {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 9999px;
+    border: 2px solid var(--color-mute);
+    background: var(--color-canvas);
+    transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+  }
+  .m90-check:not(.m90-check-static):hover .m90-dot {
+    border-color: var(--color-brand);
+    background: color-mix(in srgb, var(--color-brand) 14%, transparent);
+  }
+  .m90-dot-draft {
+    border-color: var(--color-hairline-strong);
+    border-style: dashed;
+    background: transparent;
+  }
+  .m90-tick {
+    width: 11px;
+    height: 11px;
+    stroke: #fff;
+    stroke-width: 2.5;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+  .m90-dot.m90-pop {
+    animation: m90-pop 0.22s ease;
+  }
+  @keyframes m90-pop {
+    0% { transform: scale(0.8); }
+    60% { transform: scale(1.12); }
+    100% { transform: scale(1); }
+  }
+
+  .m90-node[data-done='true'] .m90-dot {
+    background: var(--color-brand);
+    border-color: var(--color-brand);
+  }
+  .m90-node[data-done='true'] .m90-tick {
+    opacity: 1;
+  }
+  .m90-node[data-done='true'] .m90-label {
+    color: var(--color-mute);
+    text-decoration: line-through;
+  }
+
+  .m90-daynum {
+    flex-shrink: 0;
+    padding-top: 5px;
+    width: 1.75rem;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-mute);
+  }
+
+  .m90-node-body {
+    padding-top: 3px;
+    flex: 1;
+  }
+  .m90-label-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem 0.5rem;
+  }
+  .m90-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-ink);
+    transition: color 0.15s ease;
+  }
+  a.m90-label:hover {
+    color: var(--color-brand-strong);
+  }
+  .m90-label-draft {
+    color: var(--color-mute);
+  }
+  .m90-min {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-mute);
+    border: 1px solid var(--color-hairline);
+    border-radius: 9999px;
+    padding: 1px 6px;
+  }
+  .m90-upnext {
+    font-size: 10px;
+    line-height: 1;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+    color: var(--color-brand-strong);
+    background: color-mix(in srgb, var(--color-brand) 12%, transparent);
+    border-radius: 9999px;
+    padding: 3px 7px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .m90-dot,
+    .m90-tbar-fill,
+    .m90-node,
+    .m90-label,
+    .m90-chevron {
+      transition: none;
+    }
+    .m90-dot.m90-pop {
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  import { parseProgress, doneCount, nextDay, phaseProgress } from '../../lib/mission90/progress';
+
+  const KEY = 'oc-m90-v1';
+
+  function readProgress() {
+    let raw: string | null = null;
+    try {
+      raw = localStorage.getItem(KEY);
+    } catch {
+      /* storage blocked — treat as cold start */
+    }
+    return parseProgress(raw);
+  }
+
+  function initM90Table(): void {
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    document.querySelectorAll<HTMLElement>('[data-m90-table]').forEach((root) => {
+      const liveNodes = Array.from(
+        root.querySelectorAll<HTMLElement>('.m90-node[data-live="true"]'),
+      );
+      const liveDayNumbers = liveNodes.map((n) => Number(n.dataset.day));
+      const phaseEls = Array.from(root.querySelectorAll<HTMLDetailsElement>('.m90-phase'));
+      const totalCount = root.querySelector<HTMLElement>('[data-m90-total-count]');
+      const totalFill = root.querySelector<HTMLElement>('[data-m90-total-fill]');
+      const totalBar = root.querySelector<HTMLElement>('[data-m90-total-bar]');
+      // Program length comes from the `total` prop (program.totalDays), never a literal.
+      const programTotal = Number(root.dataset.total);
+
+      const render = (): void => {
+        const p = readProgress();
+
+        // Per-row done state + current-day highlight.
+        const current = nextDay(p, liveDayNumbers);
+        liveNodes.forEach((n) => {
+          const dayStr = n.dataset.day ?? '';
+          const isDone = Object.prototype.hasOwnProperty.call(p.days, dayStr);
+          n.dataset.done = String(isDone);
+          const cb = n.querySelector<HTMLInputElement>('input[type=checkbox]');
+          if (cb) cb.checked = isDone;
+
+          const isCurrent = current !== null && Number(n.dataset.day) === current;
+          n.classList.toggle('m90-node-current', isCurrent);
+          const chip = n.querySelector<HTMLElement>('[data-upnext]');
+          if (chip) chip.hidden = !isCurrent;
+        });
+
+        // Per-phase counts.
+        phaseEls.forEach((d) => {
+          const range = (d.dataset.phaseRange ?? '').split('-').map(Number);
+          const [lo, hi] = range;
+          if (!Number.isFinite(lo) || !Number.isFinite(hi)) return;
+          const { done, total } = phaseProgress(p, [lo, hi]);
+          const c = d.querySelector<HTMLElement>('[data-phase-count]');
+          if (c) c.textContent = `${done}/${total}`;
+        });
+
+        // Overall progressbar (out of the full program length).
+        const done = doneCount(p);
+        if (Number.isFinite(programTotal) && programTotal > 0) {
+          const pct = Math.round((done / programTotal) * 100);
+          if (totalCount) totalCount.textContent = `${done} of ${programTotal} days complete`;
+          if (totalFill) totalFill.style.width = `${pct}%`;
+          if (totalBar) totalBar.setAttribute('aria-valuenow', String(done));
+        }
+      };
+
+      if (!root.dataset.bound) {
+        root.dataset.bound = 'true';
+
+        // Open the phase holding the current (next un-done live) day.
+        const current = nextDay(readProgress(), liveDayNumbers);
+        if (current !== null) {
+          const curNode = liveNodes.find((n) => Number(n.dataset.day) === current);
+          const det = curNode?.closest<HTMLDetailsElement>('.m90-phase');
+          if (det) det.open = true;
+        }
+
+        liveNodes.forEach((n) => {
+          const cb = n.querySelector<HTMLInputElement>('input[type=checkbox]');
+          cb?.addEventListener('change', () => {
+            const p = readProgress();
+            const dayStr = n.dataset.day ?? '';
+            if (cb.checked) {
+              p.days[dayStr] = { completedAt: new Date().toISOString() };
+            } else {
+              delete p.days[dayStr];
+            }
+            try {
+              localStorage.setItem(KEY, JSON.stringify(p));
+            } catch {
+              /* storage blocked — UI still updates for this session */
+            }
+            if (cb.checked && !reduceMotion) {
+              const dot = n.querySelector<HTMLElement>('[data-day-dot]');
+              if (dot) {
+                dot.classList.remove('m90-pop');
+                void dot.offsetWidth;
+                dot.classList.add('m90-pop');
+              }
+            }
+            render();
+            // Let the hub's CTA / resume / phase-journey re-sync.
+            document.dispatchEvent(new CustomEvent('m90:progress'));
+          });
+        });
+      }
+
+      render();
+    });
+  }
+
+  document.addEventListener('astro:page-load', initM90Table);
+</script>
