@@ -2063,3 +2063,5 @@ You've now built the full stack of a small production system by hand. These are 
 > **Note:** When asked any "how would you…" question, answer with "In my project I did X because Y, and in production I'd extend it with Z." That structure shows hands-on experience *and* awareness of the next step — exactly what hiring managers want from a career-switcher.
 
 > **Tip:** Across all four projects, five habits repeat: least-privilege IAM, never bake secrets into images, tag every resource (Name/Environment/Owner), make scripts idempotent, and gate deploys on health checks. Mention these unprompted and you'll stand out.
+
+> **Note:** Prefer a day-by-day path? This is covered in [**Mission 90 Days 41–45**](/mission-90/) — a free 90-day guided DevOps program with browser terminal missions.

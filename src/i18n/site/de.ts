@@ -9,6 +9,7 @@ const de: Partial<SiteContent> = {
   nav: [
     { href: '/tools', label: 'Tools' },
     { href: '/learn', label: 'Learn' },
+    { href: '/mission-90/', label: '90 Days DevOps' },
     { href: '/blog', label: 'Blog' },
   ],
   footer: [
@@ -23,6 +24,7 @@ const de: Partial<SiteContent> = {
       title: 'Learn',
       links: [
         { href: '/learn', label: 'All guides' },
+        { href: '/mission-90/', label: '90 Days DevOps' },
         { href: '/learn/roadmaps/devops', label: 'DevOps roadmap' },
         { href: '/learn/guides/linux-for-devops', label: 'Linux for DevOps' },
         { href: '/learn/guides/docker-for-devops', label: 'Docker for DevOps' },

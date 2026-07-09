@@ -1234,4 +1234,6 @@ docker system prune -af --volumes
 
 > **Tip:** Run `docker system df` *before* you blindly prune — it tells you whether the space is in images, volumes, or build cache, so you can reclaim surgically. Also, `docker logs` only works if the app writes to `stdout`/`stderr`; apps that log to a file inside the container will show nothing, so always configure your app to log to the console in containers.
 
+> **Note:** Prefer a day-by-day path? This is covered in [**Mission 90 Days 22–30**](/mission-90/) — a free 90-day guided DevOps program with browser terminal missions.
+
 > **Note:** A team's CI runner kept failing builds with `no space left on device` every Friday. `docker system df` revealed 40 GB of build cache. They added `docker builder prune -af --filter "until=168h"` (clear cache older than 7 days) to a nightly cron job. Builds stopped failing, and they never touched volumes, so no data was at risk. Diagnose with `system df` first, then prune the specific thing that grew.

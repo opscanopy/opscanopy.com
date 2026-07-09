@@ -6295,6 +6295,8 @@ Ready to apply what you've learned? Work through the [Hands-on DevOps Projects](
 - **Day 90 — K8s + CI/CD interview-ready.** You've passed (or can pass) CKAD-style scenarios, you have a working GitHub Actions pipeline in a public repo, and you've cleared 3-5 mock interviews. **Target: junior/mid DevOps roles at strong product companies.** With your background, recruiters will fast-track you because you bring product sense most freshers lack.
 - **Month 6 — Mid-level inflection.** One real production system on your resume, SAA-C03 passed, CKAD passed, contributing to an open-source DevOps tool. **Target: mid-level DevOps / SRE / Platform Engineer roles.** The frontend-to-DevOps story becomes your superpower — you understand what developers actually need from a platform, which most pure-ops engineers don't.
 
+> **Note:** Prefer a day-by-day path? This is covered in [**Mission 90 Days 1–20**](/mission-90/) — a free 90-day guided DevOps program with browser terminal missions.
+
 > **Real world:** The pep talk you came here for. You are not late. The global DevOps market in 2026 is desperate for engineers who can talk to developers *and* ops — because most candidates can only do one. Your years of shipping real features is not a liability; it is a wedge. Recruiters will pay a premium for someone who has actually pushed code to production and now understands the pipeline that delivers it.
 >
 > Six months from now, a hiring manager is going to look at your GitHub, see 180 days of consistent commits, see one solid end-to-end project, see SAA-C03 and maybe CKAD on the resume, and make you a strong offer without blinking. The only thing standing between you and that offer is showing up to the terminal every day between now and then.

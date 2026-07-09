@@ -1312,6 +1312,8 @@ A: `create` is imperative — it fails if the object already exists. `apply` is 
 **Q: What is a Kubernetes Job vs a CronJob?**
 A: A Job creates one or more Pods and tracks their completion. It retries failed Pods until the desired completions count is reached, then the Job is marked complete. A CronJob schedules Jobs on a cron expression, creating a new Job object on each trigger.
 
+> **Note:** Prefer a day-by-day path? This is covered in [**Mission 90 Days 66–74**](/mission-90/) — a free 90-day guided DevOps program with browser terminal missions.
+
 ## What's Next
 
 Coming from containers? See [Docker for DevOps](/learn/guides/docker-for-devops).

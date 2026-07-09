@@ -91,6 +91,20 @@ All 6 networking tools (`subnet-calculator`, `ip-address-converter`, `cidr-check
 
 **Deep-link hashes** (`src/lib/ip-hash.ts`): `#ip=<value>` carries a single address/CIDR between tools (read by the ip-converter, PTR helper, cidr-checker, subnet-calculator and subnet-splitter playgrounds); `#list=<encoded>` carries the cidr-checker's multi-line list. Playgrounds write the hash only on valid, user-initiated evals (never on boot-seed), via a Safari-guarded `replaceState` with a last-value memo, and skip writes past ~2000 encoded chars. Cross-tool chips under each result card build these links with `buildIpHash`/`buildListHash` + the playground's `localePath()` helper.
 
+### Mission 90 Days DevOps (`/mission-90/`)
+
+A standalone top-level section (peer to Tools/Learn/Blog with its own nav item — Learn only cross-promotes it), not a tool. A 90-day "developer → DevOps engineer" program built on a registry/collection/engine trio:
+
+- **`src/data/mission90.ts`** — the typed curriculum registry: `program`, `phases`, `days`, `missions`, plus derived `liveDays`, `getDay`, `phaseForDay`, and `totalCoreMinutes`. This is the source of truth for structure.
+- **`mission90Days` content collection** — day bodies live at `src/content/mission90/day-NNN.md` (schema in `src/content.config.ts`, authoring rules in `docs/mission90-authoring.md`).
+- **`src/lib/mission-sim/`** — a pure-TS terminal game engine, multiple modules behind an `engine.ts` façade, dynamically imported by the `MissionTerminal` island (never statically — it code-splits away from the page shell).
+
+Progress lives in **one** versioned localStorage blob `oc-m90-v1`, read/written only through the pure **`src/lib/mission90/progress.ts`** (schema owner; page scripts do the actual I/O). It binds roadmap ↔ days ↔ missions.
+
+Only registry days with `status:'live'` build day pages, and only `status:'live'` missions build play pages — `getStaticPaths` throws on any registry↔collection mismatch. Draft days render as non-link "Drops soon" text.
+
+Components live in **`src/components/mission90/`**. JSON-LD uses the new `courseLd` helper in `src/lib/jsonld.ts`; `techArticleLd` gained an optional Person `author` and `isPartOfCourse`. The `/mission-90/` OG card rasterizes from `public/mission-90/mission-90-hero.svg` via `scripts/gen-og-images.mjs` (same pipeline as blog heroes).
+
 ### Localized pages
 
 Tool and blog pages have hand-translated copies under `src/pages/{de,es,fr,pt-br}/` that import the **same** playground components (playground UI strings are English in every locale — that's intentional). Any page-copy change (H1, lead, FAQ, JSON-LD) must ship to all 5 locales in the same commit, translated in each file's existing register, or the localized pages contradict the tool.

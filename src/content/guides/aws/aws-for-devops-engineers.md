@@ -1095,6 +1095,8 @@ aws s3control put-public-access-block \
 
 > **Tip:** A simple priority order for any new account: (1) MFA on root, (2) a Budget alert, (3) CloudTrail on, (4) S3 Block Public Access on, (5) IAM roles instead of keys. Five steps, fifteen minutes, and you've dodged the most common cost and security incidents.
 
+> **Note:** Prefer a day-by-day path? This is covered in [**Mission 90 Days 46–65**](/mission-90/) — a free 90-day guided DevOps program with browser terminal missions.
+
 ---
 
 Running containers on AWS? Continue with [Kubernetes for DevOps](/learn/guides/kubernetes-for-devops).

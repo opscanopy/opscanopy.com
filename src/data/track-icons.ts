@@ -18,6 +18,8 @@ export const trackIcons: Record<string, string> = {
   projects: '<path d="M24 6c5 4.5 8 10.5 8 17.5 0 3-.7 5.8-1.8 8.2H17.8A19 19 0 0 1 16 23.5C16 16.5 19 10.5 24 6z"/><circle cx="24" cy="19" r="3"/><path d="M16.2 31.5 11.5 35l1-6.4M31.8 31.5 36.5 35l-1-6.4M20.5 38.5 24 43l3.5-4.5"/>',
   // Layered path (master DevOps roadmap)
   devops: '<path d="M24 6 8 14l16 8 16-8-16-8z"/><path d="M8 24l16 8 16-8"/><path d="M8 34l16 8 16-8"/>',
+  // Planted mission flag (guided 90-day program)
+  'mission-90': '<path d="M15 42V7"/><path d="M15 9h19l-5 6 5 6H15z"/>',
 };
 
 export function trackIcon(slug: string): string {

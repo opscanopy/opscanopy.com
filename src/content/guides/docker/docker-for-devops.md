@@ -10446,4 +10446,6 @@ Completing this guide means you can confidently write production-grade Dockerfil
 
 Your Docker knowledge is the foundation for everything in modern DevOps. The concepts of containers, immutable images, service isolation, and declarative configuration carry directly into the Kubernetes ecosystem.
 
+> **Note:** Prefer a day-by-day path? This is covered in [**Mission 90 Days 22–30**](/mission-90/) — a free 90-day guided DevOps program with browser terminal missions.
+
 Ready to orchestrate at scale? Continue with [Kubernetes for DevOps](/learn/guides/kubernetes-for-devops).

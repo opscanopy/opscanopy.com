@@ -1159,6 +1159,8 @@ A: A VLAN (Virtual LAN) logically segments a physical L2 network into isolated b
 **Q: What is BGP and where do DevOps engineers encounter it?**
 A: BGP (Border Gateway Protocol) is the routing protocol that exchanges routes between autonomous systems on the internet. DevOps engineers encounter it in AWS Direct Connect (BGP advertises your on-premises routes to AWS), Transit Gateway, and in tools like MetalLB (which uses BGP to advertise Kubernetes service IPs to upstream routers in bare-metal clusters).
 
+> **Note:** Prefer a day-by-day path? This is covered in [**Mission 90 Days 11–13**](/mission-90/) — a free 90-day guided DevOps program with browser terminal missions.
+
 ## What's Next
 
 Networking knowledge is most powerful when combined with hands-on command-line proficiency. Pair this with the command-line side in [Linux for DevOps](/learn/guides/linux-for-devops), where you'll see how the same `ss`, `ip`, and `tcpdump` commands fit into a broader systems administration workflow.
