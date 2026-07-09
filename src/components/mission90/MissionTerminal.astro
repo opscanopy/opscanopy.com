@@ -1,0 +1,956 @@
+---
+/**
+ * MissionTerminal — the interactive browser-terminal mission island.
+ *
+ * A dark, CodeBlock-style terminal (left / main) paired with an OBJECTIVES HUD
+ * (right on desktop, a collapsible drawer above on mobile). The player types
+ * real shell-ish commands; the mission-sim engine (dynamically imported at boot,
+ * code-split away from the page shell) returns output + objective progress and
+ * eventually `victory`.
+ *
+ * Data flow:
+ *   - Build time (this frontmatter): mission METADATA from the registry only
+ *     (`src/data/mission90.ts`) — never engine code. Drives the victory CTA.
+ *   - Runtime (boot): the engine façade + the mission CONFIG are dynamically
+ *     imported via a static literal map (Vite needs literal specifiers). The
+ *     HUD objective rows, hints, briefing and prompt are all built from that
+ *     config on the client.
+ *
+ * Colors are LITERAL on the always-dark inverse surface (theme tokens fail AA
+ * there). Every rendered value passes through escapeHtml — the parser accepts
+ * arbitrary user input.
+ */
+import { missions, getDay } from '../../data/mission90';
+
+export interface Props {
+  /** Mission id — matches a `MissionConfig.id` and a registry `missions[].id`. */
+  missionId: string;
+}
+
+const { missionId } = Astro.props;
+
+/* ── Build-time victory CTA (registry metadata only) ─────────────────────── */
+const meta = missions.find((m) => m.id === missionId);
+const title = meta?.title ?? missionId;
+const unlockAfterDay = meta?.unlockAfterDay ?? 0;
+// The day that immediately follows this mission's review day.
+const nextDayNum = unlockAfterDay + 1;
+const nextDay = getDay(nextDayNum);
+// Only route to a day page when that day has actually shipped; otherwise the
+// primary CTA must fall back to the roadmap so victory is NEVER a dead end.
+const nextDayLive = nextDay?.status === 'live';
+const nextDayHref = `/mission-90/day/${nextDayNum}/`;
+---
+
+<section
+  class="mt-root flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start"
+  role="group"
+  aria-label={`${title} terminal mission`}
+  data-mission-terminal
+  data-mission-id={missionId}
+>
+  {/* ── HUD — mobile: collapsible drawer above; desktop: sticky right panel ── */}
+  <details
+    class="mt-hud card-soft order-1 p-6 sticky top-16 z-30 lg:order-2 lg:top-24"
+    open
+  >
+    <summary class="mt-hud-summary flex cursor-pointer items-center gap-3">
+      <span class="eyebrow">Objectives</span>
+      <span class="ml-auto code-mono text-mute" data-mt-count>0/0</span>
+      <svg
+        class="mt-chevron h-4 w-4 text-mute lg:hidden"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.6"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M4 6l4 4 4-4"></path>
+      </svg>
+    </summary>
+
+    <div class="mt-4">
+      <div
+        class="mt-bar"
+        role="progressbar"
+        aria-label="Objectives complete"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow="0"
+        data-mt-barwrap
+      >
+        <span class="mt-bar-fill" data-mt-bar></span>
+      </div>
+
+      <ul class="mt-obj-list mt-4" role="list" data-mt-objectives></ul>
+
+      <div class="mt-6">
+        <button
+          type="button"
+          class="btn-nav mt-hint-btn w-full justify-center bg-canvas text-ink shadow-hairline disabled:cursor-not-allowed disabled:opacity-50"
+          data-mt-hint-btn
+          style="touch-action: manipulation;"
+        >
+          <svg
+            class="h-4 w-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M9 18h6"></path>
+            <path d="M10 21h4"></path>
+            <path d="M12 3a6 6 0 0 0-4 10.5c.6.6 1 1.4 1 2.5h6c0-1.1.4-1.9 1-2.5A6 6 0 0 0 12 3z"></path>
+          </svg>
+          <span data-mt-hint-label>Reveal a hint — costs your rank</span>
+        </button>
+        <p class="caption mt-2 text-mute">Stuck is normal. Hints cost rank; finishing doesn&rsquo;t.</p>
+      </div>
+    </div>
+  </details>
+
+  {/* ── Terminal chassis ─────────────────────────────────────────────────── */}
+  <div
+    class="mt-term relative order-2 overflow-hidden rounded-md bg-inverse text-inverse-fg shadow-float lg:order-1"
+  >
+    {/* Top bar — traffic-light dots + mission label + Restart */}
+    <div class="flex items-center gap-3 border-b border-white/10 px-4 py-2.5">
+      <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+        <span class="h-3 w-3 rounded-full bg-white/15"></span>
+        <span class="h-3 w-3 rounded-full bg-white/15"></span>
+        <span class="h-3 w-3 rounded-full bg-white/15"></span>
+      </span>
+      <span class="code-mono truncate text-white/55">mission: {missionId}</span>
+      <button
+        type="button"
+        class="mt-restart code-mono ml-auto inline-flex h-8 items-center gap-1.5 rounded-sm border border-white/10 bg-white/5 px-2.5 text-white/70 hover:border-white/20 hover:bg-white/10 hover:text-inverse-fg"
+        data-mt-restart
+        style="touch-action: manipulation;"
+      >
+        <svg
+          class="h-4 w-4"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"></path>
+          <path d="M13.5 2.5V5H11"></path>
+        </svg>
+        Restart
+      </button>
+    </div>
+
+    {/* Output transcript — implicit polite live region */}
+    <div
+      class="code-mono min-h-[420px] max-h-[62vh] overflow-y-auto overscroll-contain px-4 py-3 sm:px-5"
+      role="log"
+      aria-label="Terminal output"
+      data-mt-output
+    >
+      <div class="mt-line mt-l-sys" data-mt-boot>Booting mission&hellip;</div>
+      <noscript>
+        <div class="mt-line mt-l-sys">
+          This mission runs entirely in your browser — enable JavaScript to play.
+        </div>
+      </noscript>
+    </div>
+
+    {/* Input row — replaced by the victory panel on completion */}
+    <form class="mt-input-row flex items-center gap-2 border-t border-white/10 px-4 py-3 sm:px-5" data-mt-form>
+      <span class="mt-prompt code-mono shrink-0" aria-hidden="true" data-mt-prompt></span>
+      <input
+        class="mt-cmd code-mono"
+        type="text"
+        aria-label="Terminal command input"
+        autocapitalize="none"
+        autocorrect="off"
+        spellcheck="false"
+        autocomplete="off"
+        enterkeyhint="send"
+        data-mt-input
+      />
+    </form>
+
+    {/* Victory panel — inline, replaces the input row (no modal) */}
+    <div class="mt-victory px-4 py-6 sm:px-5" hidden data-mt-victory>
+      <h2 class="display-md text-inverse-fg" tabindex="-1" data-mt-victory-title>Mission complete.</h2>
+      <p class="mt-victory-stats code-mono mt-2 text-white/70" data-mt-victory-stats></p>
+      <div class="mt-5 flex flex-wrap items-center gap-3">
+        {
+          nextDayLive ? (
+            <a class="mt-cta-primary" href={nextDayHref} data-mt-victory-primary>
+              Continue to Day {nextDayNum}
+              <span aria-hidden="true">&rarr;</span>
+            </a>
+          ) : (
+            <a class="mt-cta-primary" href="/mission-90/" data-mt-victory-primary>
+              Back to the roadmap
+              <span aria-hidden="true">&rarr;</span>
+            </a>
+          )
+        }
+        <button type="button" class="mt-cta-ghost" data-mt-replay style="touch-action: manipulation;">
+          Replay
+        </button>
+        <button
+          type="button"
+          class="mt-cta-share"
+          data-mt-share
+          data-copy=""
+          style="touch-action: manipulation;"
+        >
+          <svg
+            class="mt-share-copy h-4 w-4"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <rect x="5.5" y="5.5" width="8" height="8" rx="1.5"></rect>
+            <path d="M10.5 2.5h-7A1.5 1.5 0 0 0 2 4v7"></path>
+          </svg>
+          <svg
+            class="mt-share-check hidden h-4 w-4"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+          </svg>
+          <span data-mt-share-label>Copy result</span>
+        </button>
+      </div>
+      {
+        !nextDayLive && (
+          <p class="caption mt-3 text-white/50">Day {nextDayNum} drops soon.</p>
+        )
+      }
+      <span class="sr-only" role="status" aria-live="polite" data-mt-share-status></span>
+    </div>
+  </div>
+
+  {/* Single polite live region mirroring objective / hint changes */}
+  <span class="sr-only" role="status" aria-live="polite" data-mt-sr></span>
+</section>
+
+<style>
+  @reference "../../styles/global.css";
+
+  /* Prefixed + globalized: the transcript lines, prompt spans and objective
+     rows are injected by the boot script and never receive Astro's scope
+     attribute, so their selectors must be :global (same pattern as the
+     playground result cards). */
+
+  :global(.mt-hud-summary) {
+    list-style: none;
+  }
+  :global(.mt-hud-summary::-webkit-details-marker) {
+    display: none;
+  }
+  :global(.mt-chevron) {
+    transition: transform 0.2s ease;
+  }
+  :global(details[open] .mt-chevron) {
+    transform: rotate(180deg);
+  }
+
+  /* Progress bar — mirrors the roadmap .rm-bar. */
+  :global(.mt-bar) {
+    height: 8px;
+    border-radius: 9999px;
+    background: var(--color-canvas-soft-2);
+    overflow: hidden;
+  }
+  :global(.mt-bar-fill) {
+    display: block;
+    height: 100%;
+    width: 0;
+    border-radius: 9999px;
+    background: linear-gradient(90deg, var(--color-brand), var(--color-brand-strong));
+    transition: width 0.4s ease;
+  }
+
+  /* Objective rows — mirror the roadmap .rm-node dot/tick. */
+  :global(.mt-obj) {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.375rem 0;
+  }
+  :global(.mt-obj + .mt-obj) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.mt-obj-dot) {
+    position: relative;
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+    border-radius: 9999px;
+    border: 2px solid var(--color-mute);
+    background: var(--color-canvas);
+    transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+  }
+  :global(.mt-obj-tick) {
+    width: 11px;
+    height: 11px;
+    stroke: #fff;
+    stroke-width: 2.5;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+  :global(.mt-obj[data-done='true'] .mt-obj-dot) {
+    background: var(--color-brand);
+    border-color: var(--color-brand);
+  }
+  :global(.mt-obj[data-done='true'] .mt-obj-tick) {
+    opacity: 1;
+  }
+  :global(.mt-obj-text) {
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--color-ink);
+    transition: color 0.15s ease;
+  }
+  :global(.mt-obj[data-done='true'] .mt-obj-text) {
+    color: var(--color-mute);
+    text-decoration: line-through;
+  }
+  :global(.mt-pop) {
+    animation: mt-pop 0.22s ease;
+  }
+  @keyframes mt-pop {
+    0% {
+      transform: scale(0.8);
+    }
+    60% {
+      transform: scale(1.12);
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+
+  /* Transcript lines — LITERAL colors on the always-dark inverse surface. */
+  :global(.mt-line) {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    min-height: 20px;
+    tab-size: 2;
+    font-variant-ligatures: none;
+  }
+  :global(.mt-l-echo) {
+    color: #ffffff;
+  }
+  :global(.mt-l-out) {
+    color: rgba(255, 255, 255, 0.8);
+  }
+  :global(.mt-l-err) {
+    color: #ff6166;
+  }
+  :global(.mt-l-sys) {
+    color: rgba(255, 255, 255, 0.6);
+    font-style: italic;
+  }
+  :global(.mt-l-ok) {
+    color: #34d399;
+  }
+  :global(.mt-l-hint) {
+    color: #f5a623;
+  }
+
+  /* Live prompt — green user@host, blue path. */
+  :global(.mt-p-uh) {
+    color: #34d399;
+  }
+  :global(.mt-p-path) {
+    color: #60a5fa;
+  }
+  :global(.mt-p-sep) {
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  /* Command input — transparent field, native emerald caret. */
+  :global(.mt-cmd) {
+    flex: 1 1 auto;
+    min-width: 0;
+    background: transparent;
+    border: none;
+    outline: none;
+    padding: 0;
+    color: #ffffff;
+    caret-color: #34d399;
+  }
+  :global(.mt-cmd::placeholder) {
+    color: rgba(255, 255, 255, 0.35);
+  }
+  :global(.mt-cmd:focus),
+  :global(.mt-cmd:focus-visible) {
+    outline: none;
+  }
+  /* Visible focus indicator for keyboard users lands on the whole input row. */
+  :global(.mt-input-row:focus-within) {
+    box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.55);
+  }
+
+  /* Victory CTAs — literal styling (theme-token buttons fail on dark). */
+  :global(.mt-cta-primary) {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: var(--radius-pill);
+    background: #10b981;
+    color: #05140d;
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: 16px;
+    line-height: 24px;
+    padding: 12px 20px;
+    text-decoration: none;
+    transition: background-color 0.15s ease, transform 0.15s ease;
+  }
+  :global(.mt-cta-primary:hover) {
+    background: #34d399;
+  }
+  :global(.mt-cta-ghost),
+  :global(.mt-cta-share) {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: var(--radius-pill);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    font-family: var(--font-sans);
+    font-weight: 500;
+    font-size: 15px;
+    line-height: 24px;
+    padding: 11px 18px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  }
+  :global(.mt-cta-ghost) {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+  }
+  :global(.mt-cta-ghost:hover) {
+    background: rgba(255, 255, 255, 0.16);
+    border-color: rgba(255, 255, 255, 0.28);
+  }
+  :global(.mt-cta-share) {
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.75);
+  }
+  :global(.mt-cta-share:hover) {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.25);
+    color: #ffffff;
+  }
+  :global(.mt-cta-primary:active),
+  :global(.mt-cta-ghost:active),
+  :global(.mt-cta-share:active) {
+    transform: translateY(1px) scale(0.99);
+  }
+
+  @media (pointer: coarse) {
+    :global(.mt-restart),
+    :global(.mt-cta-primary),
+    :global(.mt-cta-ghost),
+    :global(.mt-cta-share) {
+      min-height: 44px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :global(.mt-chevron),
+    :global(.mt-obj-dot),
+    :global(.mt-obj-text),
+    :global(.mt-bar-fill),
+    :global(.mt-cta-primary),
+    :global(.mt-cta-ghost),
+    :global(.mt-cta-share) {
+      transition: none;
+    }
+    :global(.mt-pop) {
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  import { escapeHtml } from '../../lib/escape-html';
+  import { parseProgress } from '../../lib/mission90/progress';
+
+  /* ── Local mirrors of the engine's public shapes (kept in-file so the engine
+        is only ever pulled in via the dynamic import() below — the code-split
+        contract). ─────────────────────────────────────────────────────────── */
+  type OutputKind = 'echo' | 'out' | 'err' | 'sys' | 'ok' | 'hint';
+  interface OutputLine {
+    text: string;
+    kind: OutputKind;
+  }
+  interface ObjectiveLite {
+    id: number;
+    text: string;
+  }
+  interface MissionConfigLite {
+    id: string;
+    title: string;
+    story: string[];
+    promptUser: string;
+    promptHost: string;
+    hints: string[];
+    objectives: ObjectiveLite[];
+    optimalCommands: number;
+    [k: string]: unknown;
+  }
+  interface MissionStateLite {
+    cwd: string;
+    objectivesDone: boolean[];
+    hintsUsed: number;
+    commandsRun: number;
+    startedAtMs: number | null;
+    victory: boolean;
+    [k: string]: unknown;
+  }
+  interface RunResultLite {
+    state: MissionStateLite;
+    output: OutputLine[];
+    completed: number[];
+    victory: boolean;
+  }
+  interface Stats {
+    commandsRun: number;
+    hintsUsed: number;
+  }
+  interface Engine {
+    createMission(config: MissionConfigLite): MissionStateLite;
+    runCommand(state: MissionStateLite, input: string): RunResultLite;
+    getStats(state: MissionStateLite): Stats;
+    rankFor(stats: Stats, config: MissionConfigLite): string;
+  }
+
+  const PROGRESS_KEY = 'oc-m90-v1';
+  const RESET_MS = 1800;
+
+  /* Vite needs literal import specifiers — one thunk per LIVE mission. Add the
+     next mission's line here when its config module lands + it flips to live. */
+  const missionModules: Record<string, () => Promise<Record<string, unknown>>> = {
+    'week1-server-down': () => import('../../lib/mission-sim/missions/week1-server-down'),
+  };
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>('[data-mission-terminal]').forEach((root) => {
+      if (root.dataset.mtWired === 'true') return;
+      root.dataset.mtWired = 'true';
+      void init(root);
+    });
+  }
+
+  function q<T extends HTMLElement>(root: ParentNode, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  async function init(root: HTMLElement): Promise<void> {
+    const missionId = root.dataset.missionId ?? '';
+
+    const outEl = q<HTMLElement>(root, '[data-mt-output]');
+    const formEl = q<HTMLFormElement>(root, '[data-mt-form]');
+    const inputEl = q<HTMLInputElement>(root, '[data-mt-input]');
+    const promptEl = q<HTMLElement>(root, '[data-mt-prompt]');
+    const restartBtn = q<HTMLButtonElement>(root, '[data-mt-restart]');
+    const objectivesEl = q<HTMLElement>(root, '[data-mt-objectives]');
+    const countEl = q<HTMLElement>(root, '[data-mt-count]');
+    const barFill = q<HTMLElement>(root, '[data-mt-bar]');
+    const barWrap = q<HTMLElement>(root, '[data-mt-barwrap]');
+    const hintBtn = q<HTMLButtonElement>(root, '[data-mt-hint-btn]');
+    const hintLabel = q<HTMLElement>(root, '[data-mt-hint-label]');
+    const victoryEl = q<HTMLElement>(root, '[data-mt-victory]');
+    const victoryTitleEl = q<HTMLElement>(root, '[data-mt-victory-title]');
+    const victoryStatsEl = q<HTMLElement>(root, '[data-mt-victory-stats]');
+    const replayBtn = q<HTMLButtonElement>(root, '[data-mt-replay]');
+    const shareBtn = q<HTMLButtonElement>(root, '[data-mt-share]');
+    const shareLabel = q<HTMLElement>(root, '[data-mt-share-label]');
+    const shareStatus = q<HTMLElement>(root, '[data-mt-share-status]');
+    const srEl = q<HTMLElement>(root, '[data-mt-sr]');
+
+    if (
+      !outEl || !formEl || !inputEl || !promptEl || !restartBtn || !objectivesEl ||
+      !countEl || !barFill || !barWrap || !hintBtn || !hintLabel || !victoryEl ||
+      !victoryTitleEl || !victoryStatsEl || !replayBtn || !shareBtn || !shareLabel ||
+      !shareStatus || !srEl
+    ) {
+      return;
+    }
+
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    /* ── Load the engine + mission config (code-split off the page shell). ── */
+    let eng: Engine;
+    let config: MissionConfigLite;
+    try {
+      const loader = missionModules[missionId];
+      if (!loader) throw new Error(`Unknown mission "${missionId}"`);
+      const [engMod, configMod] = await Promise.all([
+        import('../../lib/mission-sim/engine'),
+        loader(),
+      ]);
+      eng = engMod as unknown as Engine;
+      const cfg = (configMod.default ?? Object.values(configMod)[0]) as MissionConfigLite;
+      if (!cfg || !Array.isArray(cfg.objectives)) throw new Error('Bad mission config');
+      config = cfg;
+    } catch (err) {
+      outEl.innerHTML =
+        '<div class="mt-line mt-l-err">Failed to load this mission. Reload the page to try again.</div>';
+      console.error('[MissionTerminal] load failed:', err);
+      return;
+    }
+
+    /* ── Mutable run state (island owns the elapsed timer + history). ─────── */
+    let state: MissionStateLite = eng.createMission(config);
+    let objectiveRows: HTMLElement[] = [];
+    let startedAtMs: number | null = null;
+    let won = false;
+    let cmdHistory: string[] = [];
+    let histIdx = 0;
+    let shareTimer: number | undefined;
+
+    /* ── Rendering helpers ────────────────────────────────────────────────── */
+    function isAtBottom(): boolean {
+      return outEl!.scrollHeight - outEl!.scrollTop - outEl!.clientHeight < 24;
+    }
+    function scrollToBottom(): void {
+      outEl!.scrollTop = outEl!.scrollHeight;
+    }
+    function appendLine(line: OutputLine): void {
+      const div = document.createElement('div');
+      const kind = ['echo', 'out', 'err', 'sys', 'ok', 'hint'].includes(line.kind)
+        ? line.kind
+        : 'out';
+      div.className = `mt-line mt-l-${kind}`;
+      // escapeHtml on every value — the parser accepts arbitrary user input.
+      div.innerHTML = escapeHtml(line.text);
+      outEl!.appendChild(div);
+    }
+    function renderPrompt(): void {
+      const u = escapeHtml(config.promptUser);
+      const h = escapeHtml(config.promptHost);
+      const path = escapeHtml(state.cwd);
+      promptEl!.innerHTML =
+        `<span class="mt-p-uh">${u}@${h}</span>` +
+        `<span class="mt-p-sep">:</span>` +
+        `<span class="mt-p-path">${path}</span>` +
+        `<span class="mt-p-sep">$</span>`;
+    }
+    function printBriefing(): void {
+      for (const para of config.story) appendLine({ text: para, kind: 'sys' });
+      appendLine({ text: '', kind: 'sys' });
+      appendLine({ text: 'Type `help` to see your commands.', kind: 'sys' });
+    }
+    function srSay(msg: string): void {
+      srEl!.textContent = msg;
+    }
+
+    /* ── HUD ──────────────────────────────────────────────────────────────── */
+    function buildHud(): void {
+      const total = config.objectives.length;
+      objectivesEl!.innerHTML = config.objectives
+        .map(
+          (o) =>
+            '<li class="mt-obj" data-done="false">' +
+            '<span class="mt-obj-dot" aria-hidden="true">' +
+            '<svg class="mt-obj-tick" viewBox="0 0 16 16" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.4 6.8 11.2 12 5"/></svg>' +
+            '</span>' +
+            `<span class="mt-obj-text">${escapeHtml(o.text)}</span>` +
+            '</li>'
+        )
+        .join('');
+      objectiveRows = Array.from(objectivesEl!.querySelectorAll<HTMLElement>('.mt-obj'));
+      countEl!.textContent = `0/${total}`;
+      barFill!.style.width = '0%';
+      barWrap!.setAttribute('aria-valuenow', '0');
+    }
+    function popDot(dot: Element | null): void {
+      if (!dot || reduceMotion) return;
+      dot.classList.remove('mt-pop');
+      void (dot as HTMLElement).offsetWidth; // reflow to restart the animation
+      dot.classList.add('mt-pop');
+    }
+    function syncHud(completed: number[]): void {
+      const total = config.objectives.length;
+      let done = 0;
+      objectiveRows.forEach((row, i) => {
+        const isDone = state.objectivesDone[i] === true;
+        if (isDone) done++;
+        const was = row.dataset.done === 'true';
+        row.dataset.done = String(isDone);
+        if (isDone && !was) popDot(row.querySelector('.mt-obj-dot'));
+      });
+      countEl!.textContent = `${done}/${total}`;
+      const pct = total ? Math.round((done / total) * 100) : 0;
+      barFill!.style.width = `${pct}%`;
+      barWrap!.setAttribute('aria-valuenow', String(pct));
+      if (completed.length) {
+        const names = completed
+          .map((id) => config.objectives.find((o) => o.id === id)?.text)
+          .filter((t): t is string => Boolean(t));
+        srSay(`Objective complete: ${names.join(', ')}. ${done} of ${total} done.`);
+      }
+    }
+    function syncHintButton(): void {
+      const total = config.hints.length;
+      const idx = state.hintsUsed;
+      if (idx >= total) {
+        hintBtn!.disabled = true;
+        hintLabel!.textContent = 'No hints left — re-read the log.';
+      } else {
+        hintBtn!.disabled = false;
+        hintLabel!.textContent = `Reveal hint ${idx + 1} of ${total} — costs your rank`;
+      }
+    }
+    function revealHint(): void {
+      if (won) return;
+      const total = config.hints.length;
+      const idx = state.hintsUsed;
+      if (idx >= total) return;
+      const text = config.hints[idx];
+      // The HUD reveal costs a rank tier (hintsUsed) but is not a command run.
+      state = { ...state, hintsUsed: idx + 1 };
+      const atBottom = isAtBottom();
+      appendLine({ text: `hint: ${text}`, kind: 'hint' });
+      if (atBottom) scrollToBottom();
+      syncHintButton();
+      srSay(`Hint ${idx + 1} of ${total} revealed. Hints cost rank.`);
+    }
+
+    /* ── Command loop ─────────────────────────────────────────────────────── */
+    function clearScreen(): void {
+      outEl!.innerHTML = '';
+    }
+    function submitCommand(): void {
+      if (won) return;
+      const raw = inputEl!.value;
+      inputEl!.value = '';
+      const trimmed = raw.trim();
+
+      if (trimmed !== '') {
+        cmdHistory.push(raw);
+      }
+      histIdx = cmdHistory.length;
+
+      // `clear` is the island's screen to own — never counted, never echoed.
+      if (trimmed === 'clear') {
+        clearScreen();
+        return;
+      }
+
+      if (trimmed !== '' && startedAtMs === null) startedAtMs = Date.now();
+
+      const atBottom = isAtBottom();
+      const result = eng.runCommand(state, raw);
+      state = result.state;
+      for (const line of result.output) appendLine(line);
+      syncHud(result.completed);
+      syncHintButton();
+      renderPrompt();
+      if (atBottom) scrollToBottom();
+
+      if (result.victory && !won) triggerVictory();
+    }
+
+    /* ── Victory ──────────────────────────────────────────────────────────── */
+    function formatDuration(seconds: number): string {
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      return `${m}:${String(s).padStart(2, '0')}`;
+    }
+    function persistVictory(commands: number, hints: number, seconds: number): void {
+      try {
+        const progress = parseProgress(localStorage.getItem(PROGRESS_KEY));
+        const existing = progress.missions[missionId];
+        const fresh = { completedAt: new Date().toISOString(), commands, hints, seconds };
+        // Keep the best run: fewer commands, then fewer hints. A worse replay
+        // never overwrites the stored best.
+        const keepExisting =
+          existing !== undefined &&
+          (existing.commands < commands ||
+            (existing.commands === commands && existing.hints <= hints));
+        progress.missions[missionId] = keepExisting ? existing : fresh;
+        localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
+      } catch {
+        /* private mode / storage disabled — the mission still plays. */
+      }
+    }
+    function celebrate(): void {
+      if (reduceMotion) return;
+      objectiveRows.forEach((row, i) => {
+        window.setTimeout(() => popDot(row.querySelector('.mt-obj-dot')), i * 90);
+      });
+    }
+    function triggerVictory(): void {
+      won = true;
+      const stats = eng.getStats(state);
+      const rank = eng.rankFor(stats, config);
+      const seconds =
+        startedAtMs === null ? 0 : Math.max(0, Math.round((Date.now() - startedAtMs) / 1000));
+      const cmds = stats.commandsRun;
+      const hints = stats.hintsUsed;
+      const statsLine =
+        `${cmds} command${cmds === 1 ? '' : 's'} · ` +
+        `${hints} hint${hints === 1 ? '' : 's'} · ` +
+        `${formatDuration(seconds)} · ${rank}`;
+      victoryStatsEl!.textContent = statsLine;
+
+      const shareUrl = `${location.origin}${location.pathname}?utm_source=share&utm_medium=victory&utm_campaign=m90`;
+      shareBtn!.dataset.copy = `I cleared "${config.title}" on OpsCanopy — ${statsLine}. Try it: ${shareUrl}`;
+
+      formEl!.hidden = true;
+      victoryEl!.hidden = false;
+      // The mission is won — the hint affordance is no longer live. Disable it so
+      // it doesn't silently no-op (revealHint already guards on `won`). restart()
+      // re-enables via syncHintButton().
+      hintBtn!.disabled = true;
+      hintLabel!.textContent = 'Mission complete.';
+      // Move focus to the completion heading for keyboard + SR users.
+      victoryTitleEl!.focus();
+      srSay(`Mission complete. ${statsLine}.`);
+
+      persistVictory(cmds, hints, seconds);
+      celebrate();
+    }
+
+    /* ── Share copy (CodeBlock pattern) ───────────────────────────────────── */
+    function setShareCopied(copied: boolean): void {
+      shareBtn!.querySelector('.mt-share-copy')?.classList.toggle('hidden', copied);
+      shareBtn!.querySelector('.mt-share-check')?.classList.toggle('hidden', !copied);
+      shareLabel!.textContent = copied ? 'Copied' : 'Copy result';
+    }
+    async function copyShare(): Promise<void> {
+      const text = shareBtn!.dataset.copy ?? '';
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.setAttribute('readonly', '');
+          ta.style.position = 'absolute';
+          ta.style.left = '-9999px';
+          document.body.appendChild(ta);
+          ta.select();
+          const ok = document.execCommand('copy');
+          document.body.removeChild(ta);
+          if (!ok) throw new Error('copy failed');
+        }
+        setShareCopied(true);
+        shareStatus!.textContent = 'Result copied to clipboard.';
+        window.clearTimeout(shareTimer);
+        shareTimer = window.setTimeout(() => {
+          setShareCopied(false);
+          shareStatus!.textContent = '';
+        }, RESET_MS);
+      } catch {
+        shareStatus!.textContent = 'Copy failed — select the text manually.';
+      }
+    }
+
+    /* ── Restart ──────────────────────────────────────────────────────────── */
+    function restart(): void {
+      state = eng.createMission(config);
+      won = false;
+      startedAtMs = null;
+      cmdHistory = [];
+      histIdx = 0;
+      window.clearTimeout(shareTimer);
+      setShareCopied(false);
+      shareStatus!.textContent = '';
+      shareBtn!.dataset.copy = '';
+      clearScreen();
+      victoryEl!.hidden = true;
+      formEl!.hidden = false;
+      buildHud();
+      printBriefing();
+      renderPrompt();
+      syncHintButton();
+      inputEl!.value = '';
+      inputEl!.focus(); // user-initiated (not boot autofocus) — safe + helpful
+      scrollToBottom();
+    }
+
+    /* ── History navigation ───────────────────────────────────────────────── */
+    function histPrev(): void {
+      if (cmdHistory.length === 0) return;
+      histIdx = Math.max(0, histIdx - 1);
+      inputEl!.value = cmdHistory[histIdx] ?? '';
+      const end = inputEl!.value.length;
+      inputEl!.setSelectionRange(end, end);
+    }
+    function histNext(): void {
+      if (cmdHistory.length === 0) return;
+      histIdx = Math.min(cmdHistory.length, histIdx + 1);
+      inputEl!.value = histIdx >= cmdHistory.length ? '' : cmdHistory[histIdx];
+      const end = inputEl!.value.length;
+      inputEl!.setSelectionRange(end, end);
+    }
+
+    /* ── Wire events ──────────────────────────────────────────────────────── */
+    formEl.addEventListener('submit', (e) => {
+      e.preventDefault();
+      submitCommand();
+    });
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        submitCommand();
+        inputEl.blur();
+        return;
+      }
+      if (e.key === 'Escape') {
+        inputEl.blur();
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        histPrev();
+        return;
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        histNext();
+        return;
+      }
+    });
+    hintBtn.addEventListener('click', revealHint);
+    restartBtn.addEventListener('click', restart);
+    replayBtn.addEventListener('click', restart);
+    shareBtn.addEventListener('click', () => void copyShare());
+
+    /* ── First paint (NO autofocus) ───────────────────────────────────────── */
+    clearScreen();
+    buildHud();
+    printBriefing();
+    renderPrompt();
+    syncHintButton();
+    scrollToBottom();
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>
