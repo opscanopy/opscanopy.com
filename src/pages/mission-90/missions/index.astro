@@ -1,0 +1,187 @@
+---
+/**
+ * Mission 90 — the missions list at /mission-90/missions/.
+ *
+ * A card-grid listing page (Shell + section rhythm mirroring /tools) over ALL
+ * ten missions in `unlockAfterDay` order. Live missions render `playable`,
+ * planned missions render `planned` — the state each is derivable in at build
+ * time from the registry `status`. The `completed` swap for finished live
+ * missions is progressive enhancement layered on client-side; the static
+ * `playable`/`planned` markup IS the correct storage-blocked / cold-start view.
+ *
+ * The counts line is ALWAYS computed from the registry, never hand-written, so
+ * it can't drift as missions flip from planned → live.
+ */
+import Shell from '../../../components/Shell.astro';
+import MissionCard from '../../../components/mission90/MissionCard.astro';
+import { missions } from '../../../data/mission90';
+import { breadcrumbLd } from '../../../lib/jsonld';
+import { site } from '../../../data/site';
+
+// Registry-derived counts — the source of truth for the "N playable · M in
+// production" line and the ItemList below.
+const liveMissions = missions.filter((m) => m.status === 'live');
+const plannedMissions = missions.filter((m) => m.status === 'planned');
+const playableCount = liveMissions.length;
+const productionCount = plannedMissions.length;
+
+// Every mission, in the order players reach them.
+const ordered = [...missions].sort((a, b) => a.unlockAfterDay - b.unlockAfterDay);
+
+const canonical = '/mission-90/missions/';
+const pageUrl = `${site.url}${canonical}`;
+
+// ItemList over the missions that actually have a play page (live only) — never
+// fabricate URLs for planned missions. Mirrors the /tools catalog's ItemList.
+const itemList = {
+  '@context': 'https://schema.org',
+  '@type': 'ItemList',
+  name: 'Mission 90 Days DevOps — missions',
+  description:
+    'Story-driven DevOps missions you play in a browser terminal, one at the end of each review week.',
+  itemListOrder: 'https://schema.org/ItemListOrderAscending',
+  numberOfItems: liveMissions.length,
+  itemListElement: liveMissions.map((m, i) => ({
+    '@type': 'ListItem',
+    position: i + 1,
+    name: m.title,
+    description: m.blurb,
+    url: `${site.url}/mission-90/missions/${m.id}/`,
+  })),
+};
+
+const jsonLd = [
+  breadcrumbLd([
+    { name: 'Home', item: `${site.url}/` },
+    { name: '90 Days DevOps', item: `${site.url}/mission-90/` },
+    { name: 'Missions', item: pageUrl },
+  ]),
+  itemList,
+];
+---
+
+<Shell
+  title="DevOps mission games — Mission 90 Days"
+  description="Story-driven DevOps missions you play in a browser terminal — fix a downed server, chase a DNS bug, rescue a container. No setup, no code required, free. Each mission pairs with a Mission 90 review day."
+  canonical={canonical}
+  jsonLd={jsonLd}
+  noAlternates
+>
+  {/* ── Header ───────────────────────────────────────────────────────────── */}
+  <section class="border-b border-hairline bg-canvas-soft">
+    <div class="container-page py-8 sm:py-12">
+      <nav aria-label="Breadcrumb" class="body-sm text-mute">
+        <ol class="flex flex-wrap items-center gap-1.5">
+          <li><a class="hover:text-ink" href="/">Home</a></li>
+          <li aria-hidden="true" class="px-1.5 text-hairline-strong">/</li>
+          <li><a class="hover:text-ink" href="/mission-90/">90 Days DevOps</a></li>
+          <li aria-hidden="true" class="px-1.5 text-hairline-strong">/</li>
+          <li aria-current="page" class="text-body">Missions</li>
+        </ol>
+      </nav>
+
+      <p class="eyebrow mt-6">Missions</p>
+      <h1 class="display-lg mt-2 text-balance text-ink">Mission games.</h1>
+      <p class="body-lg mt-3 max-w-2xl text-pretty text-body">
+        Story-driven missions you play in a real browser terminal. Each one drops you into a broken
+        system with a goal and the commands to fix it — no slides, no multiple choice — and pairs
+        with a Mission 90 review day so the theory sticks under pressure.
+      </p>
+      <p class="caption mt-4 text-mute">
+        <span class="tabular-nums">{playableCount}</span> playable now ·
+        <span class="tabular-nums">{productionCount}</span> in production
+      </p>
+    </div>
+  </section>
+
+  {/* ── The grid ─────────────────────────────────────────────────────────── */}
+  <section aria-labelledby="missions-heading" class="bg-canvas">
+    <div class="container-page py-12 sm:py-16">
+      <h2 id="missions-heading" class="sr-only">All missions</h2>
+      <ul
+        role="list"
+        class="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3"
+        data-missions-grid
+      >
+        {
+          ordered.map((mission) => (
+            <li class="h-full">
+              <MissionCard mission={mission} state={mission.status === 'live' ? 'playable' : 'planned'} />
+            </li>
+          ))
+        }
+      </ul>
+
+      <p class="body-sm mt-10 max-w-2xl text-pretty text-mute">
+        The road ahead: new missions ship alongside their review day, not before. Each one is built
+        and tested against the week it caps, so when it lands it plays exactly like the day it
+        reviews — which is why they arrive one at a time rather than all at once.
+      </p>
+    </div>
+  </section>
+</Shell>
+
+<script>
+  import { parseProgress } from '../../../lib/mission90/progress';
+
+  const KEY = 'oc-m90-v1';
+
+  /** Seconds → "m:ss" (mirrors the terminal island's victory format). */
+  function fmtDuration(seconds: number): string {
+    const s = Math.max(0, Math.round(seconds));
+    const m = Math.floor(s / 60);
+    return `${m}:${String(s % 60).padStart(2, '0')}`;
+  }
+
+  /** ISO date → short local date, falling back to the raw string on parse fail. */
+  function fmtDate(iso: string): string {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+
+  function enhance(): void {
+    const grid = document.querySelector<HTMLElement>('[data-missions-grid]');
+    if (!grid) return; // not on this page
+
+    let raw: string | null = null;
+    try {
+      raw = localStorage.getItem(KEY);
+    } catch {
+      return; // storage blocked — the server-rendered playable cards stand.
+    }
+    const progress = parseProgress(raw);
+
+    // Only enhance LIVE (playable) cards the learner has actually finished.
+    grid
+      .querySelectorAll<HTMLElement>('[data-mission-card][data-mission-state="playable"]')
+      .forEach((card) => {
+        const id = card.dataset.missionId;
+        if (!id) return;
+        const entry = progress.missions[id];
+        if (!entry) return; // not completed — leave the playable default.
+
+        card.dataset.missionState = 'completed';
+
+        const badge = card.querySelector<HTMLElement>('[data-mc-badge-label]');
+        if (badge) badge.textContent = 'Completed';
+
+        const cta = card.querySelector<HTMLElement>('[data-mc-cta-label]');
+        if (cta) cta.textContent = 'Replay';
+
+        const stats = card.querySelector<HTMLElement>('[data-mc-stats]');
+        if (stats) {
+          stats.textContent = `${entry.commands} cmds · ${entry.hints} hints · ${fmtDuration(entry.seconds)}`;
+          stats.classList.remove('hidden');
+        }
+
+        const date = card.querySelector<HTMLElement>('[data-mc-date]');
+        if (date) {
+          date.textContent = `Completed ${fmtDate(entry.completedAt)}`;
+          date.classList.remove('hidden');
+        }
+      });
+  }
+
+  document.addEventListener('astro:page-load', enhance);
+</script>
