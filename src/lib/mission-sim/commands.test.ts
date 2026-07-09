@@ -225,6 +225,29 @@ describe('pipe: cat | grep', () => {
   });
 });
 
+describe('rejected pipe drops the left segment narration', () => {
+  // A rejected (non-grep) pipe is a true no-op: the left command runs but its
+  // effects are dropped AND its sys/ok/hint narration is suppressed — only the
+  // rejection err survives. These pin that contract so a revert of the
+  // `filter((l) => l.kind === 'err')` line back to `!== 'out'` fails CI (that
+  // revert would re-leak kill's fake recovery and free hints — see 706099f).
+  it('suppresses kill recovery (sys) lines and drops the effect', () => {
+    const r = run(makeState(), 'kill 4521 | ls');
+    expect(r.output).toHaveLength(1);
+    expect(r.output[0].kind).toBe('err');
+    expect(r.output[0].text).toContain('can only pipe into grep');
+    expect(r.output.some((l) => l.kind === 'sys')).toBe(false);
+    expect(r.effects).toEqual({});
+  });
+
+  it('suppresses the leaked hint line and drops the hint-count effect', () => {
+    const r = run(makeState(), 'hint | ls');
+    expect(r.output.every((l) => l.kind === 'err')).toBe(true);
+    expect(r.output.some((l) => l.kind === 'hint')).toBe(false);
+    expect(r.effects.hintsUsedDelta).toBeUndefined();
+  });
+});
+
 describe('ps', () => {
   it('renders an aux-style header and rows', () => {
     const r = run(makeState(), 'ps');
