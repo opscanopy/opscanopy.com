@@ -43,12 +43,18 @@ const nextMissionTitle =
 const trackLabel = (t: 'service' | 'product' | 'both') =>
   t === 'service' ? 'Service' : t === 'product' ? 'Product' : 'Both';
 
-// Prev/next pager targets. Draft days render as un-linked "Drops soon" cards
-// (never an anchor — SEO hygiene); Day 1's prev is the hub, not a day.
+// Prev/next pager targets.
+//  • Prev: a draft prior day renders as an un-linked "Drops soon" card (never an
+//    anchor — SEO hygiene); Day 1's prev is the hub, not a day.
+//  • Next: NEVER a dead grey wall. When Day N+1 is still a draft we mirror the
+//    completion band's no-dead-end rule and turn "Next" into a real forward
+//    action — this day's mission when it has a published one, else the roadmap —
+//    while keeping the honest "Day N+1 drops soon" note.
 type Pager =
   | { kind: 'hub'; href: string; title: string }
   | { kind: 'live'; href: string; title: string }
-  | { kind: 'draft'; title: string };
+  | { kind: 'draft'; title: string }
+  | { kind: 'draft-forward'; href: string; title: string; note: string };
 
 const prevPager: Pager =
   dayNum <= 1
@@ -57,16 +63,27 @@ const prevPager: Pager =
       ? { kind: 'live', href: `/mission-90/day/${dayNum - 1}/`, title: prevReg!.title }
       : { kind: 'draft', title: `Day ${dayNum - 1} · Drops soon` };
 
+// Forward target when tomorrow is a draft: this day's mission if it has a live
+// one, otherwise the roadmap. Guarding on status === 'live' means we can never
+// point at an unpublished mission page (same discipline as the completion band).
+const thisReg = getDay(dayNum);
+const thisMission =
+  thisReg?.hasMission && thisReg.missionId ? missionById.get(thisReg.missionId) : undefined;
+const nextForward =
+  thisMission?.status === 'live'
+    ? { href: `/mission-90/missions/${thisMission.id}/`, title: `Play today's mission: ${thisMission.title}` }
+    : { href: '/mission-90/', title: 'Back to the roadmap' };
+
 const nextPager: Pager = !nextReg
   ? { kind: 'hub', href: '/mission-90/', title: 'Back to the roadmap' }
   : nextReg.status === 'live'
     ? { kind: 'live', href: `/mission-90/day/${dayNum + 1}/`, title: nextReg.title }
-    : { kind: 'draft', title: `Day ${dayNum + 1} · Drops soon` };
+    : { kind: 'draft-forward', href: nextForward.href, title: nextForward.title, note: `Day ${dayNum + 1} drops soon` };
 ---
 
 <div class="reading-progress" aria-hidden="true"><span class="reading-progress-fill"></span></div>
 
-<article class="bg-canvas-soft" data-mission-day data-copy-label="Copy" data-copied-label="Copied">
+<article class="bg-canvas-soft" data-mission-day data-day={dayNum} data-copy-label="Copy" data-copied-label="Copied">
   <div class="container-page py-12 sm:py-16">
     <div class="mx-auto w-full min-w-0 max-w-[44rem]">
       {/* ── Breadcrumb ── */}
@@ -192,7 +209,10 @@ const nextPager: Pager = !nextReg
       </div>
 
       {/* ── Interview answer bank ── frontmatter Q&A as recall-before-reveal
-           disclosures (same markup as GuidePost's faq), tagged by track. */}
+           disclosures (same markup as GuidePost's faq), tagged by track. Each
+           answer carries a subordinate "Copy answer" affordance (Priya's
+           highest-velocity channel) — copies the answer + attribution + a
+           Telegram-tagged day URL. */}
       <section class="mt-12" aria-label="Interview answer bank">
         <div class="divide-y divide-hairline border-y border-hairline">
           {
@@ -224,11 +244,46 @@ const nextPager: Pager = !nextReg
                 </summary>
                 <div class="pb-5">
                   <p class="body-sm text-pretty text-body">{qa.a}</p>
+                  <button
+                    type="button"
+                    class="md-copy-answer mt-3 inline-flex items-center gap-1.5 rounded-md border border-hairline-strong bg-canvas px-2.5 py-1.5 text-xs font-medium text-brand-strong transition-colors hover:bg-canvas-soft-2 [touch-action:manipulation]"
+                    data-copy-answer={qa.a}
+                    aria-label={`Copy the answer to “${qa.q}” for sharing`}
+                  >
+                    <svg
+                      class="md-copy-icon size-3.5"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.4"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      aria-hidden="true"
+                    >
+                      <rect x="5.5" y="5.5" width="8.5" height="8.5" rx="1.5" />
+                      <path d="M10.5 3.5H3.5A1.5 1.5 0 0 0 2 5v7" />
+                    </svg>
+                    <svg
+                      class="md-copy-check hidden size-3.5"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.7"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M3 8.5l3.5 3.5L13 4.5" />
+                    </svg>
+                    <span class="md-copy-label">Copy answer</span>
+                  </button>
                 </div>
               </details>
             ))
           }
         </div>
+        {/* Single polite live region for the per-answer copy affordances. */}
+        <span class="sr-only" role="status" aria-live="polite" data-m90-qa-status />
       </section>
 
       {/* ── Completion band ── */}
@@ -275,11 +330,31 @@ const nextPager: Pager = !nextReg
           )
         }
         {
-          nextPager.kind === 'draft' ? (
-            <span class="card-soft flex min-w-0 flex-col p-5 text-right">
-              <span class="caption text-mute">Next</span>
-              <span class="body-sm mt-2 text-balance font-semibold text-mute">{nextPager.title}</span>
-            </span>
+          nextPager.kind === 'draft-forward' ? (
+            /* Tomorrow isn't live yet — keep forward motion with a real action
+               (this day's mission or the roadmap) instead of a dead grey wall,
+               and stay honest with the muted "drops soon" note. */
+            <a
+              href={nextPager.href}
+              rel="next"
+              class="card group flex min-w-0 flex-col p-5 text-right transition-[transform,box-shadow] duration-150 ease-out hover:-translate-y-0.5 hover:shadow-soft focus-visible:-translate-y-0.5 focus-visible:shadow-soft motion-reduce:transform-none motion-reduce:hover:translate-y-0"
+            >
+              <span class="caption inline-flex items-center justify-end gap-1 text-mute">
+                Keep going
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  aria-hidden="true"
+                  class="transition-transform duration-150 ease-out group-hover:translate-x-0.5 motion-reduce:transform-none"
+                >
+                  <path d="M6 3.5 10.5 8 6 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </span>
+              <span class="body-sm mt-2 text-balance font-semibold text-ink">{nextPager.title}</span>
+              <span class="caption mt-1 text-mute">{nextPager.note}</span>
+            </a>
           ) : (
             <a
               href={nextPager.href}
@@ -328,6 +403,23 @@ const nextPager: Pager = !nextReg
     padding: 3px 7px;
     white-space: nowrap;
   }
+
+  /* Per-answer "Copy answer" share — subordinate ghost button, keyboard-first. */
+  .md-copy-answer:focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
+  .md-copy-answer[data-copied] {
+    border-color: color-mix(in srgb, var(--color-success) 55%, transparent);
+    color: var(--color-success);
+  }
+  /* Comfortable touch target without enlarging the pointer-device button. */
+  @media (pointer: coarse) {
+    .md-copy-answer {
+      min-height: 44px;
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .md-faq-chevron {
       transition: none;
@@ -795,6 +887,59 @@ const nextPager: Pager = !nextReg
         pre.appendChild(btn);
       });
     }
+
+    // --- Interview Q&A "copy answer" share (per question, Telegram-first) ---
+    // Mirrors MissionTerminal.copyShare: clipboard API + hidden-textarea
+    // execCommand fallback, a single polite sr-only status, calm reset. The
+    // answer text is trusted frontmatter and only ever written as plain text.
+    const qaStatus = article.querySelector<HTMLElement>('[data-m90-qa-status]');
+    const qaDay = article.dataset.day ?? '';
+    article.querySelectorAll<HTMLButtonElement>('.md-copy-answer').forEach((btn) => {
+      if (btn.dataset.copyBound) return;
+      btn.dataset.copyBound = 'true';
+      const label = btn.querySelector<HTMLElement>('.md-copy-label');
+      const idle = label?.textContent ?? 'Copy answer';
+      let resetTimer: number | undefined;
+
+      const setCopied = (copied: boolean): void => {
+        btn.querySelector('.md-copy-icon')?.classList.toggle('hidden', copied);
+        btn.querySelector('.md-copy-check')?.classList.toggle('hidden', !copied);
+        if (label) label.textContent = copied ? 'Copied' : idle;
+        if (copied) btn.dataset.copied = 'true';
+        else delete btn.dataset.copied;
+      };
+
+      btn.addEventListener('click', async () => {
+        const answer = btn.dataset.copyAnswer ?? '';
+        const url = `${location.origin}${location.pathname}?utm_source=telegram&utm_medium=post&utm_campaign=m90`;
+        const text = `${answer}\n\n— OpsCanopy · 90 Days DevOps${qaDay ? ` · Day ${qaDay}` : ''}\n${url}`;
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+          } else {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'absolute';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            const ok = document.execCommand('copy');
+            document.body.removeChild(ta);
+            if (!ok) throw new Error('copy failed');
+          }
+          setCopied(true);
+          if (qaStatus) qaStatus.textContent = 'Answer copied to clipboard.';
+          window.clearTimeout(resetTimer);
+          resetTimer = window.setTimeout(() => {
+            setCopied(false);
+            if (qaStatus) qaStatus.textContent = '';
+          }, 2000);
+        } catch {
+          if (qaStatus) qaStatus.textContent = 'Copy failed — select the text manually.';
+        }
+      });
+    });
 
     // --- Reading progress bar ---
     const fill = document.querySelector<HTMLElement>('.reading-progress-fill');
