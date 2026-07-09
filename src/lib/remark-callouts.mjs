@@ -9,6 +9,7 @@
 
 const TYPES = [
   { type: 'warning', labels: ['warning', 'gotcha', 'caution', 'danger', 'careful', 'avoid', 'pitfall'] },
+  { type: 'real-error', labels: ['real error', 'error i hit'] },
   { type: 'tip', labels: ['tip', 'pro tip', 'protip', 'best practice'] },
   { type: 'aside', labels: ['real world', 'real-world', 'example', 'interview', 'interview tip', 'in practice', 'analogy', 'aside'] },
   { type: 'note', labels: ['note', 'important', 'key', 'remember', 'key takeaway'] },

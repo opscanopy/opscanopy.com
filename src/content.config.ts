@@ -57,4 +57,24 @@ const guides = defineCollection({
   }),
 });
 
-export const collections = { blog, guides };
+const mission90Days = defineCollection({
+  loader: glob({ pattern: '**/*.md', base: './src/content/mission90' }),
+  schema: z.object({
+    day: z.number().int().min(1).max(90),
+    title: z.string(),
+    description: z.string(),
+    phase: z.number().int().min(1).max(5),
+    minutes: z.number().int().positive(),
+    goals: z.array(z.string()).length(3),
+    tomorrow: z.string().optional(),
+    interviewQA: z.array(z.object({
+      q: z.string(), a: z.string(),
+      track: z.enum(['service', 'product', 'both']).default('both'),
+    })).min(3).max(5),
+    goDeeperMinutes: z.number().int().positive().optional(),
+    updatedDate: z.coerce.date().optional(),
+    draft: z.boolean().default(false),
+  }),
+});
+
+export const collections = { blog, guides, mission90Days };

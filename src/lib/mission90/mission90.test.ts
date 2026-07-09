@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   program,
   phases,
@@ -137,4 +139,150 @@ describe('mission90 registry integrity', () => {
     expect(totalCoreMinutes).toBeGreaterThanOrEqual(4600);
     expect(totalCoreMinutes).toBeLessThanOrEqual(4900);
   });
+});
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Content ↔ registry cross-checks. The Astro content collection can't be
+ * imported in a vitest node env, so we read the `---` frontmatter and body of
+ * each day markdown file straight off disk. Only top-level scalar frontmatter
+ * fields (day, title, minutes, phase, draft) are parsed — no YAML dependency.
+ * Everything enumerates the files actually present so the suite scales as days
+ * are authored (it does not hardcode day-001).
+ * ──────────────────────────────────────────────────────────────────────── */
+const M90_DIR = 'src/content/mission90';
+
+interface DayFile {
+  file: string;
+  day: number;
+  title: string;
+  minutes: number;
+  phase: number;
+  draft: boolean;
+  body: string;
+}
+
+/** Read one top-level `key: value` scalar from a frontmatter block. */
+function fmScalar(fm: string, key: string): string | undefined {
+  const m = fm.match(new RegExp(`^${key}:[ \\t]*(.+?)[ \\t]*$`, 'm'));
+  if (!m) return undefined;
+  return m[1].replace(/^["']|["']$/g, '');
+}
+
+function loadDayFiles(): DayFile[] {
+  if (!existsSync(M90_DIR)) return [];
+  const out: DayFile[] = [];
+  for (const file of readdirSync(M90_DIR)) {
+    if (!file.endsWith('.md') || file.startsWith('_')) continue;
+    const raw = readFileSync(join(M90_DIR, file), 'utf8').replace(/\r\n/g, '\n');
+    const m = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+    if (!m) continue;
+    const [, fm, body] = m;
+    const dayStr = fmScalar(fm, 'day');
+    if (dayStr === undefined) continue;
+    out.push({
+      file,
+      day: Number(dayStr),
+      title: fmScalar(fm, 'title') ?? '',
+      minutes: Number(fmScalar(fm, 'minutes')),
+      phase: Number(fmScalar(fm, 'phase')),
+      draft: fmScalar(fm, 'draft') === 'true',
+      body,
+    });
+  }
+  return out;
+}
+
+const dayFiles = loadDayFiles();
+const nonDraftFiles = dayFiles.filter((f) => !f.draft);
+const nonDraftByDay = new Map(nonDraftFiles.map((f) => [f.day, f]));
+
+describe('mission90 registry ↔ content collection', () => {
+  it('every live registry day has a matching non-draft file on disk', () => {
+    expect(liveDays.length, 'expected at least one live day').toBeGreaterThan(0);
+    for (const d of liveDays) {
+      const f = nonDraftByDay.get(d.day);
+      expect(
+        f,
+        `no non-draft file in ${M90_DIR} for live registry day ${d.day} ("${d.slug}")`,
+      ).toBeDefined();
+    }
+  });
+
+  it("registry title/minutes/phase match each live day's file frontmatter", () => {
+    for (const d of liveDays) {
+      const f = nonDraftByDay.get(d.day);
+      if (!f) continue; // absence is reported by the existence test above
+      expect(f.title, `day ${d.day} title`).toBe(d.title);
+      expect(f.minutes, `day ${d.day} minutes`).toBe(d.minutes);
+      expect(f.phase, `day ${d.day} phase`).toBe(d.phase);
+    }
+  });
+});
+
+const FIXED = { lab: 'Hands-On Lab', errors: 'Real Errors I Hit', goDeeper: 'Go Deeper' } as const;
+
+/** All body `## ` headings (excludes `###`+), in document order, with offsets. */
+function h2Headings(body: string): { text: string; start: number; end: number }[] {
+  const re = /^##(?!#)[ \t]+(.+?)[ \t]*$/gm;
+  const out: { text: string; start: number; end: number }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body))) {
+    out.push({ text: m[1], start: m.index, end: m.index + m[0].length });
+  }
+  return out;
+}
+
+/** Prose word count — strips diagrams (figure/svg), any HTML tags, and fenced
+ *  code so SVG markup and command blocks don't inflate the concept budget. */
+function conceptWordCount(text: string): number {
+  const stripped = text
+    .replace(/<figure[\s\S]*?<\/figure>/gi, ' ')
+    .replace(/<svg[\s\S]*?<\/svg>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/```[\s\S]*?```/g, ' ');
+  return stripped.split(/\s+/).filter((t) => /[A-Za-z0-9]/.test(t)).length;
+}
+
+describe('mission90 day content shape', () => {
+  it('at least one non-draft day file exists to validate', () => {
+    expect(nonDraftFiles.length).toBeGreaterThan(0);
+  });
+
+  for (const f of nonDraftFiles) {
+    describe(`${f.file} (day ${f.day})`, () => {
+      const h2s = h2Headings(f.body);
+
+      it('body H2s follow the fixed order: concept → Hands-On Lab → Real Errors I Hit → interview → [Go Deeper]', () => {
+        expect(h2s.length, 'expected 4 or 5 body H2 headings').toBeGreaterThanOrEqual(4);
+        expect(h2s.length, 'expected 4 or 5 body H2 headings').toBeLessThanOrEqual(5);
+        // [0] concept heading — topic-specific, not a fixed label, not the interview H2
+        expect(h2s[0].text.length, 'concept H2 must not be empty').toBeGreaterThan(0);
+        expect([FIXED.lab, FIXED.errors, FIXED.goDeeper], 'first H2 must be the concept, not a fixed label').not.toContain(
+          h2s[0].text,
+        );
+        expect(h2s[0].text, 'first H2 must be the concept, not the interview H2').not.toMatch(
+          /Interview Questions$/,
+        );
+        // [1] lab, [2] errors, [3] interview
+        expect(h2s[1].text).toBe(FIXED.lab);
+        expect(h2s[2].text).toBe(FIXED.errors);
+        expect(h2s[3].text, 'fourth H2 must be the interview heading').toMatch(/Interview Questions$/);
+        // [4] optional Go Deeper
+        if (h2s.length === 5) expect(h2s[4].text).toBe(FIXED.goDeeper);
+      });
+
+      it('concept section (first H2 → Hands-On Lab) is ≤600 words', () => {
+        expect(h2s.length).toBeGreaterThanOrEqual(2);
+        const concept = f.body.slice(h2s[0].end, h2s[1].start);
+        expect(conceptWordCount(concept)).toBeLessThanOrEqual(600);
+      });
+
+      it('Hands-On Lab section has ≤12 fenced code blocks', () => {
+        expect(h2s.length).toBeGreaterThanOrEqual(3);
+        const lab = f.body.slice(h2s[1].end, h2s[2].start);
+        const fences = (lab.match(/^```/gm) ?? []).length;
+        expect(Math.floor(fences / 2)).toBeLessThanOrEqual(12);
+      });
+    });
+  }
 });
