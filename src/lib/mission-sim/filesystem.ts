@@ -57,8 +57,11 @@ export function getNode(fs: MissionFsNode, path: string): MissionFsNode | string
   let node: MissionFsNode | string = root;
   for (const seg of splitTilde(path)) {
     if (typeof node === 'string') return null; // tried to traverse through a file
-    const next: MissionFsNode | string | undefined = node[seg];
-    if (next === undefined) return null;
+    // hasOwnProperty (not `=== undefined`) so inherited Object.prototype keys
+    // — constructor, toString, __proto__, valueOf — don't resolve as phantom
+    // filesystem nodes (e.g. `cat ~/toString` must be No such file, not a dir).
+    if (!Object.prototype.hasOwnProperty.call(node, seg)) return null;
+    const next: MissionFsNode | string = node[seg];
     node = next;
   }
   return node;

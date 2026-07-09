@@ -254,12 +254,16 @@ export function execute(state: MissionState, parsed: ParsedCommand): ExecuteResu
 
   // Single pipe. Only grep can consume stdin on this training box.
   if (parsed.pipeTo.cmd !== 'grep') {
+    // Rejected pipe is a true no-op: DROP the left segment's effects. Committing
+    // them here (e.g. `kill 4521 | ls`) would mutate state — killing the culprit
+    // — while the err line makes checkObjectives credit nothing, permanently
+    // soft-locking a one-shot objective whose target is now consumed.
     return {
       output: [
         ...left.output.filter((l) => l.kind !== 'out'),
         err(`bash: ${parsed.pipeTo.cmd}: can only pipe into grep on this training box`),
       ],
-      effects: left.effects,
+      effects: {},
     };
   }
   const stdinLines = left.output.filter((l) => l.kind === 'out').map((l) => l.text);

@@ -88,6 +88,20 @@ describe('getNode', () => {
   it('returns null when traversing through a file', () => {
     expect(getNode(sampleFs(), '~/notes.txt/deeper')).toBeNull();
   });
+
+  it('does not resolve inherited Object.prototype keys as phantom nodes', () => {
+    // Regression: a bare `node[seg]` lookup would return Object.prototype's
+    // constructor/toString/valueOf/hasOwnProperty (a function) and __proto__
+    // (an object), making these look like real files/dirs.
+    const fs = sampleFs();
+    for (const key of ['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__']) {
+      expect(getNode(fs, `~/${key}`), key).toBeNull();
+      expect(getNode(fs, `~/logs/${key}`), `logs/${key}`).toBeNull();
+    }
+    // and they behave as genuinely-missing for the higher-level accessors
+    expect(readFile(fs, '~/toString')).toBeNull();
+    expect(listDir(fs, '~/valueOf')).toBeNull();
+  });
 });
 
 describe('listDir', () => {

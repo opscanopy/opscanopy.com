@@ -187,4 +187,27 @@ describe('week1-server-down — kill-first speedrun (anti-soft-lock regression)'
     const r = runCommand(s, 'ps');
     expect(r.completed).toEqual([4]); // backup-script visible in the table
   });
+
+  it('a rejected pipe (`kill 4521 | ls`) is a true no-op — no state mutation, no soft-lock', () => {
+    let s: MissionState = createMission(config);
+    for (const c of ['pwd', 'ls']) s = runCommand(s, c).state;
+
+    // Pipe the kill into a non-grep command: the box rejects it. The kill must
+    // NOT take effect (else obj 5 would be consumed with no credit, permanently
+    // soft-locking the mission).
+    const r = runCommand(s, 'kill 4521 | ls');
+    expect(r.completed).toEqual([]); // no objective credited
+    expect(r.output.some((l) => l.kind === 'err')).toBe(true); // rejection shown
+    // state is untouched: culprit alive, no healthy respawn, status still crashed
+    expect(r.state.processes.some((p) => p.pid === 4521)).toBe(true);
+    expect(r.state.processes.some((p) => p.pid === 2310)).toBe(false);
+    expect(readFile(r.state.fs, '~/app/status')).toBe('CRASHED — waiting for CPU');
+    s = r.state;
+
+    // mission is still winnable: a real kill now completes objective 5
+    for (const c of ['cat ~/logs/server.log']) s = runCommand(s, c).state;
+    const kill = runCommand(s, 'kill 4521');
+    expect(kill.completed).toEqual([5]);
+    expect(kill.victory).toBe(true);
+  });
 });
