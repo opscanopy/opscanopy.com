@@ -73,5 +73,25 @@ export function localizeKey(pageKey: string, locale: Locale): string {
   return key === '/' ? `/${locale}` : `/${locale}${key}`;
 }
 
+/**
+ * Top-level sections that exist ONLY in English — no localized page tree is
+ * built for them (verified: no src/pages/{locale}/learn or .../mission-90).
+ */
+const ENGLISH_ONLY_SECTIONS = ['/learn', '/mission-90'];
+
+/**
+ * localizeKey for nav / footer / menu CHROME links. English-only sections are
+ * never locale-prefixed, so their links resolve to the real English page from
+ * every locale instead of a `/de/learn`-style 404. Every other key localizes as
+ * usual, so Tools and Blog (which do have localized pages) are unaffected.
+ */
+export function localizeNavHref(pageKey: string, locale: Locale): string {
+  const key = pageKey.startsWith('/') ? pageKey : '/' + pageKey;
+  const isEnglishOnly = ENGLISH_ONLY_SECTIONS.some(
+    (p) => key === p || key === `${p}/` || key.startsWith(`${p}/`),
+  );
+  return isEnglishOnly ? key : localizeKey(key, locale);
+}
+
 export { LOCALES, DEFAULT_LOCALE, isLocale };
 export type { Locale };
