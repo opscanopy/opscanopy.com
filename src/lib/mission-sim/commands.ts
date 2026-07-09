@@ -348,13 +348,16 @@ export function execute(state: MissionState, parsed: ParsedCommand): ExecuteResu
 
   // Single pipe. Only grep can consume stdin on this training box.
   if (parsed.pipeTo.cmd !== 'grep') {
-    // Rejected pipe is a true no-op: DROP the left segment's effects. Committing
-    // them here (e.g. `kill 4521 | ls`) would mutate state — killing the culprit
-    // — while the err line makes checkObjectives credit nothing, permanently
-    // soft-locking a one-shot objective whose target is now consumed.
+    // Rejected pipe is a TRUE no-op. We drop the left segment's effects (so
+    // `kill 4521 | ls` never mutates state, which would otherwise soft-lock a
+    // one-shot objective) AND its narration: keep only genuine `err` lines, not
+    // the `out`/`sys`/`ok`/`hint` lines. Otherwise the left command's "it
+    // happened" story leaks — e.g. kill's `sys` recovery lines would narrate a
+    // recovery that never occurred, and `hint | ls` would reveal a hint while
+    // the dropped `hintsUsedDelta` leaves rank undocked. Show only the rejection.
     return {
       output: [
-        ...left.output.filter((l) => l.kind !== 'out'),
+        ...left.output.filter((l) => l.kind === 'err'),
         err(`bash: ${parsed.pipeTo.cmd}: can only pipe into grep on this training box`),
       ],
       effects: {},
