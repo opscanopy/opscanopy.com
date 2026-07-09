@@ -1,0 +1,837 @@
+---
+/**
+ * MissionDay — the reading surface for one Mission 90 day. Derived from
+ * GuidePost.astro's article experience (reading-progress bar, `.rich-text`
+ * prose, code-copy buttons, faq-style disclosures, prev/next pager) but with NO
+ * TOC rail and a 44rem measure column (--container-article).
+ *
+ * The `.rich-text` prose styles are carried in the `<style is:global>` block
+ * below because <Content /> markdown output has no component scope hash — the
+ * same rationale GuidePost documents. rehype-chapters (a global markdown plugin)
+ * injects `.chapter-meta` + `.chapter-pager` into every day body, so those are
+ * styled here too. The remark-callouts "Real world:" / "Real error:" blockquotes
+ * are styled by the callout rules here + the real-error override in global.css.
+ */
+import type { CollectionEntry } from 'astro:content';
+import { render } from 'astro:content';
+import { phaseForDay, getDay, missions } from '../../data/mission90';
+import M90CompleteCheck from './M90CompleteCheck.astro';
+
+interface Props {
+  entry: CollectionEntry<'mission90Days'>;
+}
+const { entry } = Astro.props;
+const d = entry.data;
+const dayNum = d.day;
+const { Content } = await render(entry);
+
+const phase = phaseForDay(dayNum)!;
+const [phaseLo, phaseHi] = phase.days;
+const phaseTotal = phaseHi - phaseLo + 1;
+
+const prevReg = getDay(dayNum - 1);
+const prevIsLive = prevReg?.status === 'live';
+
+const nextReg = getDay(dayNum + 1);
+const nextIsDraft = !nextReg || nextReg.status !== 'live';
+const nextHref = `/mission-90/day/${dayNum + 1}/`;
+
+const missionById = new Map(missions.map((m) => [m.id, m]));
+const nextMissionTitle =
+  nextReg?.hasMission && nextReg.missionId ? missionById.get(nextReg.missionId)?.title : undefined;
+
+const trackLabel = (t: 'service' | 'product' | 'both') =>
+  t === 'service' ? 'Service' : t === 'product' ? 'Product' : 'Both';
+
+// Prev/next pager targets. Draft days render as un-linked "Drops soon" cards
+// (never an anchor — SEO hygiene); Day 1's prev is the hub, not a day.
+type Pager =
+  | { kind: 'hub'; href: string; title: string }
+  | { kind: 'live'; href: string; title: string }
+  | { kind: 'draft'; title: string };
+
+const prevPager: Pager =
+  dayNum <= 1
+    ? { kind: 'hub', href: '/mission-90/', title: 'Back to the roadmap' }
+    : prevIsLive
+      ? { kind: 'live', href: `/mission-90/day/${dayNum - 1}/`, title: prevReg!.title }
+      : { kind: 'draft', title: `Day ${dayNum - 1} · Drops soon` };
+
+const nextPager: Pager = !nextReg
+  ? { kind: 'hub', href: '/mission-90/', title: 'Back to the roadmap' }
+  : nextReg.status === 'live'
+    ? { kind: 'live', href: `/mission-90/day/${dayNum + 1}/`, title: nextReg.title }
+    : { kind: 'draft', title: `Day ${dayNum + 1} · Drops soon` };
+---
+
+<div class="reading-progress" aria-hidden="true"><span class="reading-progress-fill"></span></div>
+
+<article class="bg-canvas-soft" data-mission-day data-copy-label="Copy" data-copied-label="Copied">
+  <div class="container-page py-12 sm:py-16">
+    <div class="mx-auto w-full min-w-0 max-w-[44rem]">
+      {/* ── Breadcrumb ── */}
+      <nav aria-label="Breadcrumb" class="mb-6">
+        <ol role="list" class="caption flex flex-wrap items-center gap-x-1.5 gap-y-1 text-mute">
+          <li><a href="/" class="rounded px-0.5 transition-colors hover:text-ink">Home</a></li>
+          <li aria-hidden="true">/</li>
+          <li>
+            <a href="/mission-90/" class="rounded px-0.5 transition-colors hover:text-ink">90 Days DevOps</a>
+          </li>
+          <li aria-hidden="true">/</li>
+          <li class="text-body" aria-current="page">Day {dayNum}</li>
+        </ol>
+      </nav>
+
+      {/* ── Eyebrow + title ── */}
+      <p class="eyebrow text-brand-strong">Phase {phase.id} · {phase.name.toUpperCase()}</p>
+      <h1 class="display-lg mt-3 text-balance text-ink">{d.title}</h1>
+
+      {/* ── Meta row ── */}
+      <div class="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span class="badge code-mono">Day {dayNum} of 90</span>
+        <span class="badge">
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="9"></circle>
+            <path d="M12 7v5l3 2"></path>
+          </svg>
+          ~{d.minutes} min
+        </span>
+        <span
+          class="code-mono inline-flex items-center gap-1.5 text-[12px] text-mute"
+          data-m90-phase-range={`${phaseLo}-${phaseHi}`}
+        >
+          <span class="text-brand-strong" data-m90-phase-blocks aria-hidden="true">░░░░░</span>
+          <span class="tabular-nums"><span data-m90-phase-done>0</span>/{phaseTotal} in phase</span>
+        </span>
+        {
+          dayNum > 1 && prevIsLive && (
+            <a
+              href={`/mission-90/day/${dayNum - 1}/`}
+              class="caption font-medium text-brand-strong underline-offset-2 hover:underline"
+            >
+              Builds on Day {dayNum - 1}
+            </a>
+          )
+        }
+      </div>
+
+      {/* ── Orientation banner ── cold SEO visitors landing mid-course (day > 1)
+           with no saved progress. Never gates, never redirects; script reveals it. */}
+      {
+        dayNum > 1 && (
+          <aside
+            data-m90-orientation
+            hidden
+            class="mt-6 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-hairline bg-canvas px-4 py-3 text-sm"
+          >
+            <span class="text-body">
+              You&rsquo;ve landed on Day {dayNum} of a free 90-day DevOps path.
+            </span>
+            <a href="/mission-90/" class="font-medium text-link underline-offset-2 hover:underline">
+              Full roadmap
+            </a>
+            <span aria-hidden="true" class="text-mute">
+              ·
+            </span>
+            <a href="/mission-90/day/1/" class="font-medium text-link underline-offset-2 hover:underline">
+              Start at Day 1
+            </a>
+            <button
+              type="button"
+              data-m90-orient-dismiss
+              aria-label="Dismiss"
+              class="ml-auto grid size-6 place-items-center rounded-full text-mute transition-colors hover:bg-canvas-soft-2 hover:text-ink"
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+              </svg>
+            </button>
+          </aside>
+        )
+      }
+
+      {/* ── Goals ── deliberately non-interactive (static emerald checks). */}
+      <section class="card-soft mt-8 p-6" aria-label={`Day ${dayNum} goals`}>
+        <p class="eyebrow text-brand-strong">By the end of today</p>
+        <ul role="list" class="mt-4 flex flex-col gap-3">
+          {
+            d.goals.map((g) => (
+              <li class="flex items-start gap-3">
+                <svg
+                  class="mt-0.5 size-5 shrink-0 text-brand-strong"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+                <span class="body-md text-ink">{g}</span>
+              </li>
+            ))
+          }
+        </ul>
+      </section>
+
+      {/* ── Concept + body ── Shiki code, remark-callouts, rehype-chapters. */}
+      <div class="rich-text mt-10">
+        <Content />
+      </div>
+
+      {/* ── Interview answer bank ── frontmatter Q&A as recall-before-reveal
+           disclosures (same markup as GuidePost's faq), tagged by track. */}
+      <section class="mt-12" aria-label="Interview answer bank">
+        <div class="divide-y divide-hairline border-y border-hairline">
+          {
+            d.interviewQA.map((qa) => (
+              <details class="md-faq group">
+                <summary class="flex cursor-pointer list-none items-start justify-between gap-3 py-4">
+                  <span class="body-md text-balance font-semibold text-ink transition-colors group-hover:text-link">
+                    {qa.q}
+                  </span>
+                  <span class="mt-0.5 flex shrink-0 items-center gap-2">
+                    <span class="md-track-tag">{trackLabel(qa.track)}</span>
+                    <span
+                      aria-hidden="true"
+                      class="grid size-6 place-items-center rounded-full text-mute transition-colors group-hover:bg-canvas-soft-2 group-hover:text-ink"
+                    >
+                      <svg
+                        class="md-faq-chevron size-4 transition-transform duration-200 ease-out"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </span>
+                  </span>
+                </summary>
+                <div class="pb-5">
+                  <p class="body-sm text-pretty text-body">{qa.a}</p>
+                </div>
+              </details>
+            ))
+          }
+        </div>
+      </section>
+
+      {/* ── Completion band ── */}
+      <M90CompleteCheck
+        day={dayNum}
+        tomorrowTitle={d.tomorrow}
+        nextHref={nextHref}
+        nextIsDraft={nextIsDraft}
+        nextMissionTitle={nextMissionTitle}
+      />
+
+      {/* ── Prev / next pager ── */}
+      <nav
+        aria-label="Day navigation"
+        class="mt-16 grid grid-cols-1 gap-4 border-t border-hairline pt-12 sm:grid-cols-2"
+      >
+        {
+          prevPager.kind === 'draft' ? (
+            <span class="card-soft flex min-w-0 flex-col p-5">
+              <span class="caption text-mute">Previous</span>
+              <span class="body-sm mt-2 text-balance font-semibold text-mute">{prevPager.title}</span>
+            </span>
+          ) : (
+            <a
+              href={prevPager.href}
+              rel="prev"
+              class="card group flex min-w-0 flex-col p-5 transition-[transform,box-shadow] duration-150 ease-out hover:-translate-y-0.5 hover:shadow-soft focus-visible:-translate-y-0.5 focus-visible:shadow-soft motion-reduce:transform-none motion-reduce:hover:translate-y-0"
+            >
+              <span class="caption inline-flex items-center gap-1 text-mute">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  aria-hidden="true"
+                  class="transition-transform duration-150 ease-out group-hover:-translate-x-0.5 motion-reduce:transform-none"
+                >
+                  <path d="M10 3.5 5.5 8 10 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                {prevPager.kind === 'hub' ? 'Roadmap' : 'Previous'}
+              </span>
+              <span class="body-sm mt-2 text-balance font-semibold text-ink">{prevPager.title}</span>
+            </a>
+          )
+        }
+        {
+          nextPager.kind === 'draft' ? (
+            <span class="card-soft flex min-w-0 flex-col p-5 text-right">
+              <span class="caption text-mute">Next</span>
+              <span class="body-sm mt-2 text-balance font-semibold text-mute">{nextPager.title}</span>
+            </span>
+          ) : (
+            <a
+              href={nextPager.href}
+              rel="next"
+              class="card group flex min-w-0 flex-col p-5 text-right transition-[transform,box-shadow] duration-150 ease-out hover:-translate-y-0.5 hover:shadow-soft focus-visible:-translate-y-0.5 focus-visible:shadow-soft motion-reduce:transform-none motion-reduce:hover:translate-y-0"
+            >
+              <span class="caption inline-flex items-center justify-end gap-1 text-mute">
+                {nextPager.kind === 'hub' ? 'Roadmap' : 'Next'}
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  aria-hidden="true"
+                  class="transition-transform duration-150 ease-out group-hover:translate-x-0.5 motion-reduce:transform-none"
+                >
+                  <path d="M6 3.5 10.5 8 6 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </span>
+              <span class="body-sm mt-2 text-balance font-semibold text-ink">{nextPager.title}</span>
+            </a>
+          )
+        }
+      </nav>
+    </div>
+  </div>
+</article>
+
+<style>
+  /* Interview disclosures — suppress the native marker, rotate our chevron. */
+  .md-faq > summary::-webkit-details-marker {
+    display: none;
+  }
+  .md-faq[open] > summary .md-faq-chevron {
+    transform: rotate(180deg);
+  }
+  .md-track-tag {
+    font-size: 10px;
+    line-height: 1;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+    color: var(--color-mute);
+    border: 1px solid var(--color-hairline-strong);
+    border-radius: 9999px;
+    padding: 3px 7px;
+    white-space: nowrap;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .md-faq-chevron {
+      transition: none;
+    }
+  }
+</style>
+
+<style is:global>
+  /*
+   * GLOBAL on purpose: the day body is rendered by <Content /> (markdown), and
+   * Astro does NOT add this component's scope hash to <Content /> output — so
+   * scoped `.rich-text x` selectors would never match the prose. Every selector
+   * here is namespaced under `.rich-text` (or the unique `.reading-progress`
+   * class), so going global is safe. Ported from GuidePost's rich-text styles —
+   * keep visually in sync with GuidePost.astro's <style is:global> block if that
+   * changes (day pages and guide pages never co-render, so there is no cascade
+   * conflict; this is a deliberate second copy).
+   */
+  @reference "../../styles/global.css";
+
+  /* --- Reading progress bar (fixed, scroll-driven via scaleX) --- */
+  .reading-progress {
+    position: fixed;
+    inset: 0 0 auto 0;
+    height: 3px;
+    z-index: 50;
+    pointer-events: none;
+  }
+  .reading-progress-fill {
+    display: block;
+    height: 100%;
+    width: 100%;
+    transform: scaleX(0);
+    transform-origin: 0 50%;
+    background: linear-gradient(90deg, var(--color-brand), var(--color-brand-strong));
+  }
+
+  /* --- Base prose --- */
+  .rich-text {
+    color: var(--color-body);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 30px;
+    overflow-wrap: break-word;
+    counter-reset: dgm;
+  }
+  .rich-text > :first-child {
+    margin-top: 0;
+  }
+  .rich-text > :last-child {
+    margin-bottom: 0;
+  }
+
+  /* Chapter framing (rehype-chapters): a per-section "Section X of Y · ~N min"
+     line under each H2, and a prev/next pager at each section's end. */
+  .rich-text .chapter-meta {
+    margin: 6px 0 0;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--color-mute);
+  }
+  .rich-text .chapter-pager {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-top: 44px;
+    padding-top: 20px;
+    border-top: 1px solid var(--color-hairline);
+  }
+  .rich-text .chapter-link {
+    display: flex;
+    flex: 1 1 45%;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+    text-decoration: none;
+  }
+  .rich-text .chapter-prev {
+    align-items: flex-start;
+  }
+  .rich-text .chapter-next {
+    margin-left: auto;
+    align-items: flex-end;
+    text-align: right;
+  }
+  .rich-text .chapter-dir {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-mute);
+  }
+  .rich-text .chapter-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-link);
+    overflow-wrap: anywhere;
+  }
+  .rich-text .chapter-link:hover .chapter-title {
+    color: var(--color-link-deep);
+    text-decoration: underline;
+  }
+  @media (max-width: 480px) {
+    .rich-text .chapter-pager {
+      flex-direction: column;
+    }
+    .rich-text .chapter-link {
+      flex: 1 1 100%;
+    }
+    .rich-text .chapter-next {
+      margin-left: 0;
+      align-items: flex-start;
+      text-align: left;
+    }
+  }
+
+  .rich-text p {
+    margin-block: 32px;
+    text-wrap: pretty;
+  }
+
+  .rich-text :is(h2, h3, h4) {
+    color: var(--color-ink);
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    text-wrap: balance;
+    scroll-margin-top: 88px;
+  }
+  /* Heading sizes/line-heights mirror the global type scale (see GuidePost). */
+  .rich-text h2 {
+    margin-top: 48px;
+    margin-bottom: 16px;
+    font-size: clamp(22px, 2.4vw, 24px);
+    line-height: 32px;
+    letter-spacing: -0.04em;
+  }
+  .rich-text h3 {
+    margin-top: 36px;
+    margin-bottom: 12px;
+    font-size: clamp(18px, 2vw, 20px);
+    line-height: 28px;
+    letter-spacing: -0.03em;
+  }
+  .rich-text h4 {
+    margin-top: 28px;
+    margin-bottom: 8px;
+    font-size: 16px;
+    line-height: 24px;
+  }
+
+  .rich-text :is(ul, ol) {
+    margin-block: 28px;
+    padding-left: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .rich-text ul {
+    list-style: disc;
+  }
+  .rich-text ol {
+    list-style: decimal;
+  }
+  .rich-text li::marker {
+    color: var(--color-mute);
+  }
+  .rich-text li > :is(ul, ol) {
+    margin-block: 8px;
+  }
+
+  .rich-text a {
+    color: var(--color-link);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+    overflow-wrap: anywhere;
+    transition:
+      color 0.15s ease,
+      text-decoration-color 0.15s ease;
+  }
+  .rich-text a:hover {
+    color: var(--color-link-deep);
+  }
+  .rich-text strong {
+    color: var(--color-ink);
+    font-weight: 600;
+  }
+
+  /* Inline code — theme-aware soft chip. */
+  .rich-text :not(pre) > code {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    background: var(--color-canvas-soft-2);
+    color: var(--color-ink);
+    padding: 2px 6px;
+    border-radius: var(--radius-xs);
+    border: 1px solid var(--color-hairline-strong);
+    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
+  }
+
+  /* Code blocks (Shiki sets data-language). */
+  .rich-text pre {
+    position: relative;
+    margin-block: 36px;
+    padding: 38px 24px 20px;
+    border-radius: var(--radius-md);
+    background: var(--color-primary);
+    color: var(--color-on-primary);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    box-shadow: var(--shadow-subtle);
+    tab-size: 2;
+  }
+  .rich-text pre::before {
+    content: attr(data-language);
+    position: absolute;
+    top: 10px;
+    left: 16px;
+    z-index: 1;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: color-mix(in srgb, var(--color-on-primary) 50%, transparent);
+    pointer-events: none;
+  }
+  .rich-text pre[data-language='plaintext'],
+  .rich-text pre:not([data-language]) {
+    padding-top: 20px;
+  }
+  .rich-text pre[data-language='plaintext']::before,
+  .rich-text pre:not([data-language])::before {
+    content: '';
+  }
+
+  /* Code-copy button (injected by the script below). */
+  .rich-text pre .rich-code-copy {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 1;
+    padding: 4px 10px;
+    border: 1px solid color-mix(in srgb, var(--color-on-primary) 28%, transparent);
+    border-radius: var(--radius-xs);
+    background: color-mix(in srgb, var(--color-on-primary) 10%, transparent);
+    color: var(--color-on-primary);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.7;
+    transition:
+      opacity 0.15s ease,
+      background-color 0.15s ease,
+      border-color 0.15s ease;
+  }
+  .rich-text pre:hover .rich-code-copy,
+  .rich-text pre .rich-code-copy:focus-visible {
+    opacity: 1;
+  }
+  .rich-text pre .rich-code-copy:hover {
+    background: color-mix(in srgb, var(--color-on-primary) 18%, transparent);
+  }
+  .rich-text pre .rich-code-copy[data-copied] {
+    opacity: 1;
+    border-color: color-mix(in srgb, var(--color-success) 60%, transparent);
+    color: var(--color-success);
+  }
+  .rich-text pre code {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+    background: transparent;
+    padding: 0;
+    white-space: pre;
+    box-shadow: none;
+  }
+
+  .rich-text hr {
+    margin-block: 40px;
+    border: 0;
+    border-top: 1px solid var(--color-hairline);
+  }
+  .rich-text img {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius-md);
+    margin-block: 24px;
+  }
+
+  /* Callouts — a blockquote whose first paragraph starts with a bold label.
+     remark-callouts tags recognised labels via data-callout. The real-error
+     variant's colors come from global.css; the base chrome + tip/warning/aside
+     live here. */
+  .rich-text blockquote {
+    margin-block: 24px;
+    border-left: 3px solid var(--color-brand);
+    background: var(--color-canvas-soft-2);
+    border-radius: var(--radius-sm);
+    padding: 12px 16px;
+    color: var(--color-body);
+    font-style: normal;
+  }
+  .rich-text blockquote :is(p):first-child strong:first-child {
+    display: inline-block;
+  }
+  .rich-text blockquote[data-callout='tip'] {
+    border-left-color: #3b82f6;
+    background: color-mix(in srgb, #3b82f6 8%, var(--color-canvas-soft-2));
+  }
+  .rich-text blockquote[data-callout='tip'] :is(p):first-child strong:first-child {
+    color: color-mix(in srgb, #3b82f6 75%, var(--color-ink));
+  }
+  .rich-text blockquote[data-callout='warning'] {
+    border-left-color: #f59e0b;
+    background: color-mix(in srgb, #f59e0b 10%, var(--color-canvas-soft-2));
+  }
+  .rich-text blockquote[data-callout='warning'] :is(p):first-child strong:first-child {
+    color: color-mix(in srgb, #b45309 80%, var(--color-ink));
+  }
+  .rich-text blockquote[data-callout='aside'] {
+    border-left-color: var(--color-hairline-strong);
+    background: transparent;
+  }
+  .rich-text blockquote[data-callout='aside'] :is(p):first-child strong:first-child {
+    color: var(--color-mute);
+  }
+
+  /* Inline SVG concept diagrams — <figure class="dgm">, auto-numbered "Fig. N". */
+  .rich-text figure.dgm {
+    margin-block: 36px;
+    padding: 24px 16px;
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-md);
+    background: var(--color-canvas-soft);
+    text-align: center;
+  }
+  .rich-text figure.dgm figcaption::before {
+    counter-increment: dgm;
+    content: 'Fig. ' counter(dgm) ' — ';
+    font-weight: 600;
+    color: var(--color-ink);
+  }
+  .rich-text figure.dgm svg {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+    color: var(--color-ink);
+  }
+  .rich-text figure.dgm figcaption {
+    margin-top: 14px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--color-mute);
+    text-wrap: pretty;
+  }
+  .rich-text .dgm .dgm-surface {
+    fill: var(--color-canvas-soft-2);
+  }
+  .rich-text .dgm .dgm-surface-2 {
+    fill: var(--color-canvas-soft);
+  }
+  .rich-text .dgm .dgm-stroke {
+    stroke: var(--color-hairline-strong);
+  }
+  .rich-text .dgm .dgm-ink {
+    fill: var(--color-ink);
+  }
+  .rich-text .dgm .dgm-ink-stroke {
+    stroke: var(--color-ink);
+  }
+  .rich-text .dgm .dgm-muted {
+    fill: var(--color-mute);
+  }
+  .rich-text .dgm .dgm-muted-stroke {
+    stroke: var(--color-mute);
+  }
+  .rich-text .dgm .dgm-accent {
+    fill: var(--color-brand);
+  }
+  .rich-text .dgm .dgm-accent-stroke {
+    stroke: var(--color-brand);
+  }
+  .rich-text .dgm .dgm-accent-soft {
+    fill: color-mix(in srgb, var(--color-brand) 14%, transparent);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .reading-progress-fill,
+    .rich-text a,
+    .rich-text pre .rich-code-copy {
+      transition: none;
+    }
+  }
+</style>
+
+<script>
+  import { parseProgress, phaseProgress } from '../../lib/mission90/progress';
+
+  const KEY = 'oc-m90-v1';
+  let scrollBound = false;
+  let progressBound = false;
+
+  function readRaw(): string | null {
+    try {
+      return localStorage.getItem(KEY);
+    } catch {
+      return null;
+    }
+  }
+
+  // Fill the phase-progress strip ("▓▓▓░░ {done}/{total} in phase"). Also runs on
+  // m90:progress so ticking this day updates the strip live.
+  function syncPhaseStrip(): void {
+    const strip = document.querySelector<HTMLElement>('[data-m90-phase-range]');
+    if (!strip) return;
+    const [lo, hi] = (strip.dataset.m90PhaseRange ?? '').split('-').map(Number);
+    if (!Number.isFinite(lo) || !Number.isFinite(hi)) return;
+    const { done, total } = phaseProgress(parseProgress(readRaw()), [lo, hi]);
+    const doneEl = strip.querySelector<HTMLElement>('[data-m90-phase-done]');
+    if (doneEl) doneEl.textContent = String(done);
+    const blocks = strip.querySelector<HTMLElement>('[data-m90-phase-blocks]');
+    if (blocks) {
+      const filled = total > 0 ? Math.min(5, Math.round((done / total) * 5)) : 0;
+      blocks.textContent = '▓'.repeat(filled) + '░'.repeat(5 - filled);
+    }
+  }
+
+  function initMissionDay(): void {
+    const article = document.querySelector<HTMLElement>('[data-mission-day]');
+    if (!article) return;
+    const root = article.querySelector<HTMLElement>('.rich-text');
+
+    // --- Code-copy buttons (per <pre>) ---
+    if (root && navigator.clipboard) {
+      const copyLabel = article.dataset.copyLabel ?? 'Copy';
+      const copiedLabel = article.dataset.copiedLabel ?? 'Copied';
+      root.querySelectorAll<HTMLPreElement>('pre').forEach((pre) => {
+        if (pre.dataset.copyReady) return;
+        pre.dataset.copyReady = 'true';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'rich-code-copy';
+        btn.textContent = copyLabel;
+        btn.setAttribute('aria-label', 'Copy code to clipboard');
+        let resetTimer: number | undefined;
+        btn.addEventListener('click', async () => {
+          const code = pre.querySelector('code');
+          const text = (code ?? pre).textContent ?? '';
+          try {
+            await navigator.clipboard.writeText(text);
+            btn.textContent = copiedLabel;
+            btn.dataset.copied = 'true';
+            window.clearTimeout(resetTimer);
+            resetTimer = window.setTimeout(() => {
+              btn.textContent = copyLabel;
+              delete btn.dataset.copied;
+            }, 2000);
+          } catch {
+            /* clipboard blocked — leave the label unchanged */
+          }
+        });
+        pre.appendChild(btn);
+      });
+    }
+
+    // --- Reading progress bar ---
+    const fill = document.querySelector<HTMLElement>('.reading-progress-fill');
+    const onScroll = () => {
+      if (!fill) return;
+      const total = article.offsetHeight - window.innerHeight;
+      const scrolled = window.scrollY - article.offsetTop;
+      const ratio = total > 0 ? Math.min(1, Math.max(0, scrolled / total)) : 0;
+      fill.style.transform = `scaleX(${ratio})`;
+    };
+    onScroll();
+    if (!scrollBound) {
+      scrollBound = true;
+      window.addEventListener('scroll', onScroll, { passive: true });
+      window.addEventListener('resize', onScroll, { passive: true });
+    }
+
+    // --- Orientation banner (cold visitor mid-course, no saved progress) ---
+    const banner = article.querySelector<HTMLElement>('[data-m90-orientation]');
+    if (banner && !banner.dataset.bound) {
+      banner.dataset.bound = 'true';
+      // Only reveal when the learner has NO Mission-90 progress at all.
+      if (readRaw() === null) banner.hidden = false;
+      banner
+        .querySelector<HTMLElement>('[data-m90-orient-dismiss]')
+        ?.addEventListener('click', () => {
+          banner.hidden = true;
+        });
+    }
+
+    syncPhaseStrip();
+    if (!progressBound) {
+      progressBound = true;
+      document.addEventListener('m90:progress', syncPhaseStrip);
+    }
+  }
+
+  initMissionDay();
+  document.addEventListener('astro:page-load', initMissionDay);
+</script>

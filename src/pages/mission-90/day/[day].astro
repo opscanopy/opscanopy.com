@@ -1,0 +1,108 @@
+---
+/**
+ * Mission 90 — day detail route (/mission-90/day/{N}/).
+ *
+ * getStaticPaths builds a page for EVERY live registry day, JOINED to its
+ * non-draft `mission90Days` collection entry. That join is the build-time
+ * consistency check (plan trap #2): if a live registry day has no published
+ * entry — or a published entry's registry day is not `live` — the build THROWS
+ * and fails, so a half-shipped day can never emit. Draft days get no page.
+ *
+ * The page assembles JSON-LD the way GuidePost does (TechArticle + FAQPage +
+ * BreadcrumbList) and hands the entry + registry day to <MissionDay>, which
+ * owns the reading experience and calls the collection's render().
+ */
+import { getCollection } from 'astro:content';
+import Shell from '../../../components/Shell.astro';
+import MissionDay from '../../../components/mission90/MissionDay.astro';
+import { site } from '../../../data/site';
+import { liveDays, getDay, program } from '../../../data/mission90';
+import { techArticleLd, faqPageLd, breadcrumbLd } from '../../../lib/jsonld';
+
+export async function getStaticPaths() {
+  const published = await getCollection('mission90Days', ({ data }) => !data.draft);
+  const entryByDay = new Map(published.map((e) => [e.data.day, e]));
+
+  // Direction A — every PUBLISHED collection entry must map to a LIVE registry
+  // day. Catches a day authored (draft:false) before its registry row is flipped
+  // to 'live' (or a stray entry with a day number the registry doesn't know).
+  for (const entry of published) {
+    const reg = getDay(entry.data.day);
+    if (!reg) {
+      throw new Error(
+        `[mission-90] Published entry "${entry.id}" has day:${entry.data.day}, which is not in the registry (src/data/mission90.ts).`,
+      );
+    }
+    if (reg.status !== 'live') {
+      throw new Error(
+        `[mission-90] Day ${entry.data.day} has a published (draft:false) collection entry but the registry marks it '${reg.status}'. Flip the registry day to 'live', or set draft:true on "${entry.id}".`,
+      );
+    }
+  }
+
+  // Direction B — every LIVE registry day must have a published entry, and that
+  // pairing is what we actually build.
+  return liveDays.map((reg) => {
+    const entry = entryByDay.get(reg.day);
+    if (!entry) {
+      throw new Error(
+        `[mission-90] Registry marks Day ${reg.day} 'live' but no non-draft mission90Days entry has day:${reg.day}. Author src/content/mission90/day-${String(reg.day).padStart(3, '0')}.md with draft:false, or set the registry day back to 'draft'.`,
+      );
+    }
+    return { params: { day: String(reg.day) }, props: { entry } };
+  });
+}
+
+const { entry } = Astro.props;
+const d = entry.data;
+const dayNum = d.day;
+
+const canonical = `/mission-90/day/${dayNum}/`;
+const absoluteUrl = `${site.url}/mission-90/day/${dayNum}/`;
+const hubUrl = `${site.url}${program.route}`;
+
+// The mission schema has no pubDate; the frontmatter updatedDate is the single
+// date signal. Fall back to the program's reference date so JSON-LD is valid on
+// a day authored without one.
+const isoPublished = (d.updatedDate ?? new Date('2026-07-05')).toISOString();
+const isoModified = d.updatedDate?.toISOString();
+
+// TITLE CONTRACT (docs/mission90-authoring.md): the clean frontmatter title +
+// the day suffix. The frontmatter `title` never bakes in the suffix; this
+// template appends it. (Layout adds the site-wide "· OpsCanopy" brand suffix on
+// top, as it does for every page.)
+const pageTitle = `${d.title} — Mission 90, Day ${dayNum}`;
+
+const jsonLd = [
+  techArticleLd({
+    headline: d.title,
+    description: d.description,
+    url: absoluteUrl,
+    datePublished: isoPublished,
+    dateModified: isoModified,
+    proficiencyLevel: 'Beginner',
+    // Person byline — the days are written first-person ("the real errors I
+    // hit"). site.ts carries no person-level author name/url, so per the brief
+    // this is name-only; the publisher stays the site Organization.
+    author: { name: 'Pushkar' },
+    isPartOfCourse: { name: program.name, url: hubUrl },
+  }),
+  faqPageLd(d.interviewQA.map((qa) => ({ q: qa.q, a: qa.a }))),
+  breadcrumbLd([
+    { name: 'Home', item: `${site.url}/` },
+    { name: '90 Days DevOps', item: hubUrl },
+    { name: `Day ${dayNum}`, item: absoluteUrl },
+  ]),
+];
+---
+
+<Shell
+  title={pageTitle}
+  description={d.description}
+  canonical={canonical}
+  type="article"
+  jsonLd={jsonLd}
+  noAlternates
+>
+  <MissionDay entry={entry} />
+</Shell>

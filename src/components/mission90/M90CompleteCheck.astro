@@ -1,0 +1,335 @@
+---
+/**
+ * M90CompleteCheck — the "mark this day complete" band at the foot of a day.
+ *
+ * Idioms borrowed from Roadmap.astro / M90DayTable.astro: a real sr-only
+ * checkbox drives a dot-with-tick marker (reduced-motion-guarded pop), progress
+ * lives under the versioned `oc-m90-v1` key, and every storage access is wrapped
+ * in try/catch so the band renders and toggles perfectly with storage blocked
+ * (the static default IS the un-checked cold-start state). On a completion write
+ * it dispatches `m90:progress` — the same event the hub listens for.
+ *
+ * The next-step CTAs never dead-end: when the next day is still a draft (Day 1's
+ * launch reality) the primary action becomes the free-play Mission, not a link
+ * to a page that doesn't exist yet. There is exactly ONE btn-primary in the band.
+ *
+ * Mission-unlock and next-day metadata are looked up from the registry via the
+ * `day` prop, so callers only pass the launch-specific CTA facts.
+ */
+import { getDay, missions } from '../../data/mission90';
+
+interface Props {
+  day: number;
+  /** Frontmatter `tomorrow` teaser (the daily-return hook). */
+  tomorrowTitle?: string;
+  /** Absolute-in-site href of Day N+1 (used only when that day is live). */
+  nextHref: string;
+  /** True when Day N+1 is draft or does not exist. */
+  nextIsDraft: boolean;
+  /** Title of Day N+1's mission, when N+1 is itself a mission day. */
+  nextMissionTitle?: string;
+}
+const { day, tomorrowTitle, nextHref, nextIsDraft, nextMissionTitle } = Astro.props;
+
+const missionById = new Map(missions.map((m) => [m.id, m]));
+
+// Does THIS day unlock a mission? (Day 1 does not — so this stays absent at launch.)
+const reg = getDay(day);
+const thisMission = reg?.hasMission && reg.missionId ? missionById.get(reg.missionId) : undefined;
+
+// Next day's title (for the live "Continue to Day N+1: {title}" label).
+const nextDayTitle = getDay(day + 1)?.title;
+
+// The free-play mission — the no-dead-end target when tomorrow is a draft.
+// Derived from the registry (not hardcoded) so it can never point at an
+// unpublished mission; at launch this resolves to week1-server-down.
+const freePlayMission = missions.find((m) => m.status === 'live');
+const PLAYABLE_MISSION_HREF = freePlayMission
+  ? `/mission-90/missions/${freePlayMission.id}/`
+  : '/mission-90/missions/';
+
+// Forward CTA identity + its DEFAULT emphasis. When tomorrow is a draft the
+// mission is the immediate action, so it is primary from the start; when
+// tomorrow is a live day the "Continue" CTA starts secondary and the completion
+// tick promotes it to primary.
+const forward = nextIsDraft
+  ? {
+      href: PLAYABLE_MISSION_HREF,
+      label: 'Play Mission 1 — free-play, no setup',
+      defaultPrimary: true,
+    }
+  : {
+      href: nextHref,
+      label: `Continue to Day ${day + 1}${nextDayTitle ? `: ${nextDayTitle}` : ''}`,
+      defaultPrimary: false,
+    };
+
+// Tomorrow hook: a mission-day tomorrow gets the louder "you play" framing;
+// otherwise the frontmatter teaser sentence.
+const tomorrowHook = nextMissionTitle ? `Tomorrow you play: ${nextMissionTitle}` : tomorrowTitle;
+
+const labelIdle = `Mark Day ${day} complete`;
+const labelDone = `Day ${day} done.`;
+---
+
+<section
+  class="card mt-16 p-6 sm:p-8"
+  data-mcc
+  data-day={day}
+  data-prefetch={forward.href}
+  aria-label={`Mark Day ${day} complete`}
+>
+  <div class="flex items-start gap-4">
+    <label class="mcc-check [touch-action:manipulation]">
+      <input type="checkbox" class="sr-only" data-mcc-check aria-label={labelIdle} />
+      <span class="mcc-dot" data-mcc-dot aria-hidden="true">
+        <svg class="mcc-tick" viewBox="0 0 16 16" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 8.4 6.8 11.2 12 5"></path>
+        </svg>
+      </span>
+    </label>
+    <div class="min-w-0 flex-1">
+      <h2
+        class="display-sm text-ink"
+        data-mcc-label
+        data-idle={labelIdle}
+        data-done-label={labelDone}
+      >
+        {labelIdle}
+      </h2>
+      {
+        tomorrowHook && (
+          <p class="body-sm mt-1.5 text-pretty text-mute" data-mcc-tomorrow>
+            {tomorrowHook}
+          </p>
+        )
+      }
+    </div>
+  </div>
+
+  {
+    thisMission && (
+      <div class="mcc-unlock mt-5">
+        <p class="body-sm text-pretty text-ink">
+          <span class="font-semibold text-brand-strong">Mission unlocked:</span> {thisMission.title} —
+          you have the skills now.
+        </p>
+        <a
+          href={`/mission-90/missions/${thisMission.id}/`}
+          class="link-inline group mt-1 inline-flex items-center gap-1 font-medium"
+        >
+          Play (15–20 min)
+          <span
+            aria-hidden="true"
+            class="transition-transform duration-150 ease-out group-hover:translate-x-0.5 motion-reduce:transform-none"
+            >&rarr;</span
+          >
+        </a>
+      </div>
+    )
+  }
+
+  <div class="mt-6 flex flex-wrap items-center gap-3">
+    <a
+      href={forward.href}
+      class:list={['btn [touch-action:manipulation]', forward.defaultPrimary ? 'btn-primary' : 'btn-secondary']}
+      data-mcc-forward
+      data-default-primary={String(forward.defaultPrimary)}
+    >
+      {forward.label}
+    </a>
+    <a href="/mission-90/" class="btn btn-secondary [touch-action:manipulation]">Back to the roadmap</a>
+  </div>
+
+  {
+    nextIsDraft && getDay(day + 1) && (
+      <p class="caption mt-4 text-mute">Day {day + 1} drops soon — it&rsquo;s being written live.</p>
+    )
+  }
+</section>
+
+<style>
+  /* Completion checkbox — a larger sibling of Roadmap's .rm-check dot. */
+  .mcc-check {
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    cursor: pointer;
+  }
+  .mcc-check:focus-within .mcc-dot {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
+  .mcc-dot {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 9999px;
+    border: 2px solid var(--color-mute);
+    background: var(--color-canvas);
+    transition:
+      background-color 0.18s ease,
+      border-color 0.18s ease,
+      transform 0.18s ease;
+  }
+  .mcc-check:hover .mcc-dot {
+    border-color: var(--color-brand);
+    background: color-mix(in srgb, var(--color-brand) 14%, transparent);
+  }
+  /* Tick stroke is white — it sits on the emerald-filled dot (a colored surface),
+     matching the established .rm-tick / .m90-tick pattern. */
+  .mcc-tick {
+    width: 15px;
+    height: 15px;
+    stroke: #fff;
+    stroke-width: 2.5;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+  [data-mcc][data-done='true'] .mcc-dot {
+    background: var(--color-brand);
+    border-color: var(--color-brand);
+  }
+  [data-mcc][data-done='true'] .mcc-tick {
+    opacity: 1;
+  }
+  .mcc-dot.mcc-pop {
+    animation: mcc-pop 0.22s ease;
+  }
+  @keyframes mcc-pop {
+    0% {
+      transform: scale(0.8);
+    }
+    60% {
+      transform: scale(1.12);
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+
+  .mcc-unlock {
+    border-left: 3px solid var(--color-brand);
+    background: color-mix(in srgb, var(--color-brand) 7%, transparent);
+    border-radius: var(--radius-sm);
+    padding: 0.75rem 1rem;
+  }
+
+  /* Enlarge the tap target on touch (the visible dot stays 28px, centered). */
+  @media (pointer: coarse) {
+    .mcc-check {
+      width: 44px;
+      height: 44px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mcc-dot,
+    .mcc-tick {
+      transition: none;
+    }
+    .mcc-dot.mcc-pop {
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  import { parseProgress } from '../../lib/mission90/progress';
+
+  const KEY = 'oc-m90-v1';
+
+  function readProgress() {
+    let raw: string | null = null;
+    try {
+      raw = localStorage.getItem(KEY);
+    } catch {
+      /* storage blocked — treat as cold start */
+    }
+    return parseProgress(raw);
+  }
+
+  function initM90CompleteCheck(): void {
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    document.querySelectorAll<HTMLElement>('[data-mcc]').forEach((band) => {
+      const day = Number(band.dataset.day);
+      const cb = band.querySelector<HTMLInputElement>('[data-mcc-check]');
+      const dot = band.querySelector<HTMLElement>('[data-mcc-dot]');
+      const label = band.querySelector<HTMLElement>('[data-mcc-label]');
+      const tomorrow = band.querySelector<HTMLElement>('[data-mcc-tomorrow]');
+      const forward = band.querySelector<HTMLElement>('[data-mcc-forward]');
+      if (!cb || !Number.isFinite(day)) return;
+
+      const labelIdle = label?.dataset.idle ?? `Mark Day ${day} complete`;
+      const labelDone = label?.dataset.doneLabel ?? `Day ${day} done.`;
+      const forwardDefaultPrimary = forward?.dataset.defaultPrimary === 'true';
+
+      const applyState = (done: boolean): void => {
+        band.dataset.done = String(done);
+        if (label) label.textContent = done ? labelDone : labelIdle;
+        if (tomorrow) {
+          tomorrow.classList.toggle('text-mute', !done);
+          tomorrow.classList.toggle('text-ink', done);
+        }
+        // Exactly one btn-primary: the forward CTA is primary once complete (and
+        // already primary by default when tomorrow is a draft mission).
+        if (forward) {
+          const primary = done || forwardDefaultPrimary;
+          forward.classList.toggle('btn-primary', primary);
+          forward.classList.toggle('btn-secondary', !primary);
+        }
+      };
+
+      // Boot: reflect stored completion (returning learner sees the done state).
+      const done0 = Object.prototype.hasOwnProperty.call(readProgress().days, String(day));
+      cb.checked = done0;
+      applyState(done0);
+
+      if (band.dataset.bound) return;
+      band.dataset.bound = 'true';
+
+      cb.addEventListener('change', () => {
+        // Read → modify → write through the versioned schema (no clobbering the
+        // rest of progress). Toggle-off is allowed, no confirm dialog.
+        const p = readProgress();
+        if (cb.checked) p.days[String(day)] = { completedAt: new Date().toISOString() };
+        else delete p.days[String(day)];
+        try {
+          localStorage.setItem(KEY, JSON.stringify(p));
+        } catch {
+          /* storage blocked — the UI still updates for this session */
+        }
+
+        applyState(cb.checked);
+
+        if (cb.checked) {
+          if (!reduceMotion && dot) {
+            dot.classList.remove('mcc-pop');
+            void dot.offsetWidth;
+            dot.classList.add('mcc-pop');
+          }
+          // Warm the forward destination on completion (once).
+          const href = band.dataset.prefetch;
+          if (href && !band.dataset.prefetched) {
+            band.dataset.prefetched = 'true';
+            const link = document.createElement('link');
+            link.rel = 'prefetch';
+            link.href = href;
+            document.head.appendChild(link);
+          }
+        }
+
+        // Let the hub's CTA / resume / phase-journey re-sync if it's listening.
+        document.dispatchEvent(new CustomEvent('m90:progress'));
+      });
+    });
+  }
+
+  initM90CompleteCheck();
+  document.addEventListener('astro:page-load', initM90CompleteCheck);
+</script>
