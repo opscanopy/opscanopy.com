@@ -8,15 +8,22 @@
  * Error strings mimic real bash/coreutils output so the terminal feels honest.
  * Nothing here throws on user input.
  */
-import type { MissionFsNode, MissionProcess, MissionState, OutputLine, ParsedCommand } from './types';
-import { getNode, listDir, resolvePath } from './filesystem';
+import type {
+  MissionEffect,
+  MissionFsNode,
+  MissionState,
+  OutputLine,
+  ParsedCommand,
+  ResponseMatch,
+} from './types';
+import { getNode, listDir, readFile, resolvePath } from './filesystem';
 
-/** What a command wants changed. The façade applies these to build the next state. */
-export interface CommandEffects {
-  cwd?: string;
-  removePids?: number[];
-  addProcs?: MissionProcess[];
-  writeFiles?: Record<string, string>;
+/**
+ * What a command wants changed. The façade applies these to build the next
+ * state. Extends the config-facing MissionEffect with the engine-only
+ * hint counter (which no config can set).
+ */
+export interface CommandEffects extends MissionEffect {
   hintsUsedDelta?: number;
 }
 
@@ -180,7 +187,12 @@ const ONE_LINERS: Record<string, string> = {
 };
 
 const help: Handler = (state) => ({
-  output: state.config.supportedCommands.map((c) => out(`${c.padEnd(6)} — ${ONE_LINERS[c] ?? ''}`)),
+  // Iterate supportedCommands (never Object.keys(config.commands)) so the list
+  // length stays === supportedCommands.length; only the LOOKUP consults a
+  // scripted verb's oneLiner before falling back to the built-in table.
+  output: state.config.supportedCommands.map((c) =>
+    out(`${c.padEnd(6)} — ${state.config.commands?.[c]?.oneLiner ?? ONE_LINERS[c] ?? ''}`),
+  ),
   effects: {},
 });
 
@@ -199,6 +211,9 @@ const hint: Handler = (state) => {
 const clear: Handler = () => ({ output: [], effects: {} });
 
 const HANDLERS: Record<string, Handler> = { pwd, ls, cd, cat, grep, ps, kill, help, hint, clear };
+
+/** Built-in verbs are never shadowable by a mission's scripted commands. */
+const RESERVED = new Set(Object.keys(HANDLERS));
 
 /* ── unsupported-but-real commands → in-fiction denials ───────────────────── */
 
@@ -222,15 +237,92 @@ const DENIALS: Record<string, string | null> = {
   logout: 'logout: no escape until checkout is back up',
 };
 
+/* ── scripted commands (config-authored verbs) ────────────────────────────── */
+
+/**
+ * Does a scripted response's match hold for the CURRENT state + segment?
+ * Every present field must hold (AND); an omitted field matches anything.
+ * Read defensively (state.flags may be undefined) — pure, never throws.
+ */
+function matchesResponse(match: ResponseMatch | undefined, state: MissionState, seg: Segment): boolean {
+  if (!match) return true;
+  const flags = state.flags ?? {};
+
+  if (match.args) {
+    for (const a of match.args) if (!seg.args.includes(a)) return false;
+  }
+  if (match.argIncludes !== undefined) {
+    if (!seg.args.join(' ').includes(match.argIncludes)) return false;
+  }
+  if (match.flags) {
+    for (const f of match.flags) if (!seg.flags.has(f)) return false;
+  }
+  if (match.cwdIs !== undefined) {
+    if (state.cwd !== match.cwdIs) return false;
+  }
+  if (match.flag) {
+    const want = match.flag.equals ?? true;
+    if (flags[match.flag.name] !== want) return false;
+  }
+  if (match.fileContains) {
+    const contents = readFile(state.fs, match.fileContains.path);
+    if (contents === null || !contents.includes(match.fileContains.text)) return false;
+  }
+  if (match.processPresent !== undefined) {
+    if (!state.processes.some((p) => p.command.includes(match.processPresent!))) return false;
+  }
+  if (match.processAbsent !== undefined) {
+    if (state.processes.some((p) => p.command.includes(match.processAbsent!))) return false;
+  }
+  return true;
+}
+
+function toLines(texts: string[], kind: OutputLine['kind']): OutputLine[] {
+  return texts.map((text) => ({ text, kind }));
+}
+
+/**
+ * Run a config-authored verb: the first response whose match holds wins;
+ * else the `default` block; else a generic non-empty diagnostic line so the
+ * terminal is never silent. Effects flow straight through to the façade.
+ */
+function runScripted(state: MissionState, cmd: string, seg: Segment): ExecuteResult {
+  const sc = state.config.commands![cmd];
+  for (const resp of sc.responses ?? []) {
+    if (matchesResponse(resp.match, state, seg)) {
+      return { output: toLines(resp.output, resp.outKind ?? 'out'), effects: resp.effect ?? {} };
+    }
+  }
+  if (sc.default) {
+    return { output: toLines(sc.default.output, sc.default.outKind ?? 'out'), effects: sc.default.effect ?? {} };
+  }
+  return { output: [out(`${cmd}: no output`)], effects: {} };
+}
+
 /* ── dispatch ─────────────────────────────────────────────────────────────── */
+
+const deny = (cmd: string): ExecuteResult =>
+  fail(DENIALS[cmd] ?? `${cmd}: not available on this training box`);
 
 function runSegment(state: MissionState, seg: Segment, stdin: string[] | null): ExecuteResult {
   const supported = state.config.supportedCommands.includes(seg.cmd);
-  const handler: Handler | undefined = HANDLERS[seg.cmd];
-  if (supported && handler) return handler(state, seg, stdin);
-  if (seg.cmd in HANDLERS || seg.cmd in DENIALS) {
-    return fail(DENIALS[seg.cmd] ?? `${seg.cmd}: not available on this training box`);
+
+  // 1. Built-ins are reserved: run when supported, else deny. Never shadowable.
+  if (RESERVED.has(seg.cmd)) {
+    if (supported) return HANDLERS[seg.cmd](state, seg, stdin);
+    return deny(seg.cmd);
   }
+
+  // 2. A scripted + supported verb wins — even over a DENIAL entry (this is how
+  //    a mission enables chmod/docker/kubectl/dig/terraform/aws/git).
+  const scripted = state.config.commands?.[seg.cmd];
+  if (scripted && supported) return runScripted(state, seg.cmd, seg);
+
+  // 3. A real-but-unavailable command, or a scripted verb the mission did NOT
+  //    put in supportedCommands, denies in fiction.
+  if (seg.cmd in DENIALS || scripted) return deny(seg.cmd);
+
+  // 4. Anything else does not exist.
   return fail(`bash: ${seg.cmd}: command not found`);
 }
 
@@ -240,6 +332,8 @@ function mergeEffects(a: CommandEffects, b: CommandEffects): CommandEffects {
   if (b.removePids) merged.removePids = [...(merged.removePids ?? []), ...b.removePids];
   if (b.addProcs) merged.addProcs = [...(merged.addProcs ?? []), ...b.addProcs];
   if (b.writeFiles) merged.writeFiles = { ...(merged.writeFiles ?? {}), ...b.writeFiles };
+  if (b.appendFiles) merged.appendFiles = { ...(merged.appendFiles ?? {}), ...b.appendFiles };
+  if (b.setFlags) merged.setFlags = { ...(merged.setFlags ?? {}), ...b.setFlags };
   if (b.hintsUsedDelta) merged.hintsUsedDelta = (merged.hintsUsedDelta ?? 0) + b.hintsUsedDelta;
   return merged;
 }

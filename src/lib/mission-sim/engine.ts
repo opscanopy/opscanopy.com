@@ -9,16 +9,17 @@
  * `runCommand` is a pure transition: it returns a NEW top-level state and
  * leaves the state it was given untouched.
  */
-import type { MissionConfig, MissionFsNode, MissionState, OutputLine, RunResult } from './types';
+import type { MissionConfig, MissionEffect, MissionFsNode, MissionState, OutputLine, RunResult } from './types';
 import { parseCommand } from './parser';
 import { execute } from './commands';
 import { checkObjectives } from './objectives';
-import { writeFile } from './filesystem';
+import { readFile, writeFile } from './filesystem';
 
 export { parseCommand } from './parser';
 export { getNode, listDir, readFile, resolvePath } from './filesystem';
 export type {
   MissionConfig,
+  MissionEffect,
   MissionFsNode,
   MissionObjective,
   MissionProcess,
@@ -26,7 +27,10 @@ export type {
   ObjectiveTrigger,
   OutputLine,
   ParsedCommand,
+  ResponseMatch,
   RunResult,
+  ScriptedCommand,
+  ScriptedResponse,
 } from './types';
 
 /** Recursively clone a mission filesystem tree. */
@@ -50,7 +54,52 @@ export function createMission(config: MissionConfig): MissionState {
     commandsRun: 0,
     startedAtMs: null,
     victory: false,
+    flags: { ...(config.flags ?? {}) },
   };
+}
+
+/**
+ * Apply a command's effect to a state, immutably, in a FIXED order:
+ *   1. processes — remove pids, then add procs
+ *   2. files — clone fs when writeFiles OR appendFiles present, overwrite, then
+ *      append (`existing + '\n' + contents`, soft-failing like writeFile)
+ *   3. flags — a fresh object ({ ...state.flags, ...setFlags }); never mutated
+ *   4. cwd
+ * Returns a new state; the input state is never touched. Never throws.
+ */
+export function applyEffect(state: MissionState, e: MissionEffect): MissionState {
+  // 1. processes
+  let processes = state.processes;
+  if (e.removePids?.length || e.addProcs?.length) {
+    const gone = new Set(e.removePids ?? []);
+    processes = [
+      ...state.processes.filter((p) => !gone.has(p.pid)),
+      ...(e.addProcs ?? []).map((p) => ({ ...p })),
+    ];
+  }
+
+  // 2. files — MUST clone for appendFiles too, or an append mutates prior state.
+  let fs = state.fs;
+  const hasWrite = e.writeFiles && Object.keys(e.writeFiles).length > 0;
+  const hasAppend = e.appendFiles && Object.keys(e.appendFiles).length > 0;
+  if (hasWrite || hasAppend) {
+    fs = cloneFs(state.fs);
+    for (const [path, contents] of Object.entries(e.writeFiles ?? {})) writeFile(fs, path, contents);
+    for (const [path, contents] of Object.entries(e.appendFiles ?? {})) {
+      writeFile(fs, path, (readFile(fs, path) ?? '') + '\n' + contents);
+    }
+  }
+
+  // 3. flags — fresh object, never mutate state.flags.
+  let flags = state.flags;
+  if (e.setFlags && Object.keys(e.setFlags).length > 0) {
+    flags = { ...(state.flags ?? {}), ...e.setFlags };
+  }
+
+  // 4. cwd
+  const cwd = e.cwd ?? state.cwd;
+
+  return { ...state, cwd, fs, processes, flags };
 }
 
 /**
@@ -85,26 +134,11 @@ export function runCommand(state: MissionState, input: string): RunResult {
 
   const { output: cmdOutput, effects } = execute(state, parsed);
 
-  // Apply effects onto a fresh top-level state.
-  let processes = state.processes;
-  if (effects.removePids?.length || effects.addProcs?.length) {
-    const gone = new Set(effects.removePids ?? []);
-    processes = [
-      ...state.processes.filter((p) => !gone.has(p.pid)),
-      ...(effects.addProcs ?? []).map((p) => ({ ...p })),
-    ];
-  }
-  let fs = state.fs;
-  if (effects.writeFiles && Object.keys(effects.writeFiles).length > 0) {
-    fs = cloneFs(state.fs);
-    for (const [path, contents] of Object.entries(effects.writeFiles)) writeFile(fs, path, contents);
-  }
-
+  // Apply the effect immutably (procs → files → flags → cwd), then layer on the
+  // engine-owned counters that no config effect can touch.
+  const applied = applyEffect(state, effects);
   const next: MissionState = {
-    ...state,
-    cwd: effects.cwd ?? state.cwd,
-    fs,
-    processes,
+    ...applied,
     hintsUsed: state.hintsUsed + (effects.hintsUsedDelta ?? 0),
     commandsRun: state.commandsRun + 1,
     objectivesDone: [...state.objectivesDone],

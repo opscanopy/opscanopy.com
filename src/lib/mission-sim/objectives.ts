@@ -7,7 +7,7 @@
  * "find the evidence" afterwards by reading the log.
  */
 import type { MissionState, ObjectiveTrigger, OutputLine, ParsedCommand } from './types';
-import { resolvePath } from './filesystem';
+import { readFile, resolvePath } from './filesystem';
 
 /**
  * Return the ids of every pending objective completed by this command.
@@ -66,6 +66,36 @@ function matchesWhen(
 
   if ('outputMatched' in when) {
     return output.some((l) => (l.kind === 'out' || l.kind === 'sys') && l.text.includes(when.outputMatched));
+  }
+
+  // ── state-based variants, evaluated on the RESULTING (next) state ──────────
+
+  if ('flagSet' in when) {
+    return Boolean((next.flags ?? {})[when.flagSet]);
+  }
+
+  if ('flagIs' in when) {
+    return (next.flags ?? {})[when.flagIs.name] === when.flagIs.value;
+  }
+
+  if ('fileContains' in when) {
+    const contents = readFile(next.fs, when.fileContains.path);
+    return contents !== null && contents.includes(when.fileContains.text);
+  }
+
+  if ('processStarted' in when) {
+    // True only when a NOT-present-or-crashed process becomes present-and-running:
+    // a proc whose command includes X with stat !== 'crashed' that was NOT already
+    // present-and-running in prev. (A lingering crashed same-named proc — e.g.
+    // Week-1's crashed `node server.js` — must not falsely complete this.)
+    const running = (s: MissionState) =>
+      s.processes.some((p) => p.command.includes(when.processStarted) && p.stat !== 'crashed');
+    return running(next) && !running(prev);
+  }
+
+  if ('processGone' in when) {
+    const present = (s: MissionState) => s.processes.some((p) => p.command.includes(when.processGone));
+    return present(prev) && !present(next);
   }
 
   return false;
