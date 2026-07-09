@@ -21,6 +21,7 @@
  * arbitrary user input.
  */
 import { missions, getDay } from '../../data/mission90';
+import { site } from '../../data/site';
 
 export interface Props {
   /** Mission id — matches a `MissionConfig.id` and a registry `missions[].id`. */
@@ -40,6 +41,12 @@ const nextDay = getDay(nextDayNum);
 // primary CTA must fall back to the roadmap so victory is NEVER a dead end.
 const nextDayLive = nextDay?.status === 'live';
 const nextDayHref = `/mission-90/day/${nextDayNum}/`;
+
+/* ── Zero-backend "notify me" targets (subordinate to the victory CTA) ────── */
+// The mission-series RSS feed + brand follow links — no email form, no backend.
+const feedHref = '/mission-90/feed.xml';
+const githubHref = site.github;
+const xHref = `https://x.com/${site.twitter.replace(/^@/, '')}`;
 ---
 
 <section
@@ -241,6 +248,14 @@ const nextDayHref = `/mission-90/day/${nextDayNum}/`;
           <p class="caption mt-3 text-white/50">Day {nextDayNum} drops soon.</p>
         )
       }
+      {/* Subordinate, zero-backend "notify me" — sits below the CTA row as a
+          quiet text link; never competes with the primary victory CTA. */}
+      <p class="mt-notify mt-4">
+        <span class="mt-notify-lead">Get notified when the next day drops</span>
+        <a class="mt-notify-link" href={feedHref}>RSS</a>
+        <a class="mt-notify-link" href={githubHref} target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a class="mt-notify-link" href={xHref} target="_blank" rel="noopener noreferrer">X</a>
+      </p>
       <span class="sr-only" role="status" aria-live="polite" data-mt-share-status></span>
     </div>
   </div>
@@ -469,12 +484,43 @@ const nextDayHref = `/mission-90/day/${nextDayNum}/`;
     transform: translateY(1px) scale(0.99);
   }
 
+  /* Notify affordance — deliberately quiet: small, muted text links that read
+     as a footnote below the CTA row, never as a button competing with the
+     primary victory CTA. Literal colors on the always-dark inverse surface. */
+  :global(.mt-notify) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 12px;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 20px;
+  }
+  :global(.mt-notify-lead) {
+    color: rgba(255, 255, 255, 0.5);
+  }
+  :global(.mt-notify-link) {
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: 500;
+    text-decoration: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    transition: color 0.15s ease, border-color 0.15s ease;
+  }
+  :global(.mt-notify-link:hover) {
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.55);
+  }
+
   @media (pointer: coarse) {
     :global(.mt-restart),
     :global(.mt-cta-primary),
     :global(.mt-cta-ghost),
     :global(.mt-cta-share) {
       min-height: 44px;
+    }
+    /* Keep the notify links tappable without inflating them into buttons. */
+    :global(.mt-notify-link) {
+      padding: 4px 0;
     }
   }
 
@@ -485,7 +531,8 @@ const nextDayHref = `/mission-90/day/${nextDayNum}/`;
     :global(.mt-bar-fill),
     :global(.mt-cta-primary),
     :global(.mt-cta-ghost),
-    :global(.mt-cta-share) {
+    :global(.mt-cta-share),
+    :global(.mt-notify-link) {
       transition: none;
     }
     :global(.mt-pop) {
@@ -549,6 +596,19 @@ const nextDayHref = `/mission-90/day/${nextDayNum}/`;
 
   const PROGRESS_KEY = 'oc-m90-v1';
   const RESET_MS = 1800;
+
+  /* ── Analytics (GA4, loaded site-wide) ────────────────────────────────────
+     Best-effort + no-PII: we only ever send the mission id. Guarded on
+     `window.gtag` being a function and wrapped in try/catch so a missing or
+     throwing analytics layer can never break the mission. */
+  function track(event: string, params: Record<string, string>): void {
+    try {
+      const gtag = (window as unknown as { gtag?: (...args: unknown[]) => void }).gtag;
+      if (typeof gtag === 'function') gtag('event', event, params);
+    } catch {
+      /* analytics is non-essential — swallow. */
+    }
+  }
 
   /* Vite needs literal import specifiers — one thunk per LIVE mission. Add the
      next mission's line here when its config module lands + it flips to live. */
@@ -761,7 +821,14 @@ const nextDayHref = `/mission-90/day/${nextDayNum}/`;
         return;
       }
 
-      if (trimmed !== '' && startedAtMs === null) startedAtMs = Date.now();
+      // First real command of this run: start the timer AND fire mission_start
+      // exactly once. `startedAtMs === null` is the natural single-fire gate —
+      // it is only reset by restart() (a fresh run), never per keystroke or per
+      // `clear`. `help`/invalid commands still count as "the mission began".
+      if (trimmed !== '' && startedAtMs === null) {
+        startedAtMs = Date.now();
+        track('mission_start', { mission: missionId });
+      }
 
       const atBottom = isAtBottom();
       const result = eng.runCommand(state, raw);
@@ -834,6 +901,7 @@ const nextDayHref = `/mission-90/day/${nextDayNum}/`;
 
       persistVictory(cmds, hints, seconds);
       celebrate();
+      track('mission_complete', { mission: missionId });
     }
 
     /* ── Share copy (CodeBlock pattern) ───────────────────────────────────── */
