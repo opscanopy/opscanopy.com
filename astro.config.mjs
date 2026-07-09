@@ -21,6 +21,9 @@ export default defineConfig({
   },
   integrations: [
     sitemap({
+      // Stamp every entry with a <lastmod> (build date is a safe default —
+      // this is a static site rebuilt on each deploy).
+      lastmod: new Date(),
       // Emit <xhtml:link rel="alternate" hreflang> groups. Map the URL path id
       // (pt-br) to its BCP-47 hreflang value (pt-BR).
       i18n: {

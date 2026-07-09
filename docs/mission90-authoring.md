@@ -103,6 +103,9 @@ never a goal.
 - **Description:** `Learn {topic} in under an hour: {2–3 specifics}. Hands-on
   lab, the real errors I hit, and {k} real interview questions. Day {N} of the
   free 90-day DevOps path.`
+  - **Hard cap ≤160 characters** — the meta `description` must fit in one SERP
+    snippet, so trim specifics (not the keyword-first opening) rather than
+    overrun. Google truncates past ~160.
 
 ---
 

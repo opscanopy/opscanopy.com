@@ -123,6 +123,34 @@ export function techArticleLd(o: {
 }
 
 /**
+ * HowTo object for a step-by-step install/setup guide (e.g. the Mission 90
+ * Day 0 lab-setup page). Each step becomes a HowToStep with a name + text.
+ * `totalTime` (optional) is an ISO-8601 duration, e.g. "PT20M".
+ */
+export function howToLd(o: {
+  name: string;
+  description: string;
+  url: string;
+  totalTime?: string;
+  steps: { name: string; text: string }[];
+}): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'HowTo',
+    name: o.name,
+    description: o.description,
+    url: o.url,
+    totalTime: o.totalTime,
+    step: o.steps.map((s, i) => ({
+      '@type': 'HowToStep',
+      position: i + 1,
+      name: s.name,
+      text: s.text,
+    })),
+  };
+}
+
+/**
  * Course object for a structured multi-phase program (e.g. Mission 90 Days).
  * `totalMinutes` is the TOTAL workload across the whole program, emitted as an
  * ISO-8601 duration rounded to the nearest hour (4740 → "PT79H"). Each phase
