@@ -127,12 +127,12 @@ function d(day: number, slug: string, title: string, minutes: number, opts: DayO
 export const days: Mission90Day[] = [
   // Phase 1 — Foundations (days 1–20)
   d(1, 'what-devops-is', 'What DevOps actually is + your first terminal session', 50, { live: true }),
-  d(2, 'linux-filesystem', 'The Linux filesystem: where everything lives', 50),
-  d(3, 'navigating-managing-files', 'Navigating & managing files — pwd, ls, cd, cp, mv, rm', 45),
-  d(4, 'reading-editing-files', 'Reading & editing files — cat, less, nano, vim survival', 45),
-  d(5, 'users-groups-permissions', 'Users, groups & permissions — chmod, chown, octal', 55),
-  d(6, 'processes-signals', 'Processes & signals — ps, top, kill, nice', 50),
-  d(7, 'week-1-review-server-down', 'Week 1 review + Server Down!', 45, { missionId: 'week1-server-down' }),
+  d(2, 'linux-filesystem', 'The Linux filesystem: where everything lives', 50, { live: true }),
+  d(3, 'navigating-managing-files', 'Navigating & managing files — pwd, ls, cd, cp, mv, rm', 45, { live: true }),
+  d(4, 'reading-editing-files', 'Reading & editing files — cat, less, nano, vim survival', 45, { live: true }),
+  d(5, 'users-groups-permissions', 'Users, groups & permissions — chmod, chown, octal', 55, { live: true }),
+  d(6, 'processes-signals', 'Processes & signals — ps, top, kill, nice', 50, { live: true }),
+  d(7, 'week-1-review-server-down', 'Week 1 review + Server Down!', 45, { missionId: 'week1-server-down', live: true }),
   d(8, 'grep-sed-awk', 'Text power tools — grep, sed & awk one-liners', 55),
   d(9, 'pipes-redirection-chaining', 'Pipes, redirection & command chaining', 50),
   d(10, 'packages-services', 'Packages & services — apt, systemd, journalctl', 55),

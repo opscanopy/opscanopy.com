@@ -122,9 +122,9 @@ describe('mission90 registry integrity', () => {
     }
   });
 
-  it('exactly one live day (day 1) and liveDays reflects status filtering', () => {
+  it('days 1–7 are live and liveDays reflects status filtering', () => {
     const live = days.filter((d) => d.status === 'live');
-    expect(live.map((d) => d.day)).toEqual([1]);
+    expect(live.map((d) => d.day)).toEqual([1, 2, 3, 4, 5, 6, 7]);
     expect(liveDays).toEqual(live);
   });
 
