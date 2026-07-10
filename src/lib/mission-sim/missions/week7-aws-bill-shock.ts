@@ -120,13 +120,25 @@ export const week7AwsBillShock: MissionConfig = {
             '=> EC2 tripled the bill. One line item dominates — inspect your instances.',
           ],
         },
+        // Pre-fix: the runaway box is still running (live query — gated so it
+        // never keeps claiming "running" after the box is terminated).
         {
-          match: { args: ['ec2', 'describe-instances'] },
+          match: { args: ['ec2', 'describe-instances'], flag: { name: 'billFixed', equals: false } },
           output: [
             'i-0prod01     t3.small     running   api-prod',
             'i-0prod02     t3.small     running   web-prod',
             'i-0prod03     t3.micro     running   worker-prod',
             'i-0abc123def  p3.2xlarge   running   ml-experiment-DELETEME   (26d, GPU, no owner)',
+          ],
+        },
+        // Post-fix: prod boxes remain; the runaway p3.2xlarge now reads terminated.
+        {
+          match: { args: ['ec2', 'describe-instances'] },
+          output: [
+            'i-0prod01     t3.small     running      api-prod',
+            'i-0prod02     t3.small     running      web-prod',
+            'i-0prod03     t3.micro     running      worker-prod',
+            'i-0abc123def  p3.2xlarge   terminated   ml-experiment-DELETEME',
           ],
         },
         {

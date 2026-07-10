@@ -154,6 +154,12 @@ describe('week7-aws-bill-shock — anti-soft-lock (fix-first still completes the
     const again = runCommand(s, 'aws ec2 terminate-instances --instance-ids i-0abc123def');
     expect(again.output.some((l) => l.text.includes('already terminated'))).toBe(true);
     expect(again.completed).toEqual([]);
+
+    // Post-fix honesty: a live query must not keep claiming the box is running.
+    const desc = runCommand(s, 'aws ec2 describe-instances');
+    const runawayLine = desc.output.map((l) => l.text).find((t) => t.includes('i-0abc123def'));
+    expect(runawayLine).toContain('terminated');
+    expect(runawayLine).not.toContain('running');
   });
 });
 
