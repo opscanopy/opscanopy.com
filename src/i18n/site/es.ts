@@ -10,6 +10,7 @@ const es: Partial<SiteContent> = {
     { href: '/learn', label: 'Learn' },
     { href: '/mission-90/', label: '90 Days DevOps' },
     { href: '/blog', label: 'Blog' },
+    { href: '/search', label: 'Buscar' },
   ],
   footer: [
     {

@@ -75,9 +75,10 @@ export function localizeKey(pageKey: string, locale: Locale): string {
 
 /**
  * Top-level sections that exist ONLY in English — no localized page tree is
- * built for them (verified: no src/pages/{locale}/learn or .../mission-90).
+ * built for them (verified: no src/pages/{locale}/learn, .../mission-90 or
+ * .../search). Locale headers link these unprefixed so /de/search never 404s.
  */
-const ENGLISH_ONLY_SECTIONS = ['/learn', '/mission-90'];
+const ENGLISH_ONLY_SECTIONS = ['/learn', '/mission-90', '/search'];
 
 /**
  * localizeKey for nav / footer / menu CHROME links. English-only sections are

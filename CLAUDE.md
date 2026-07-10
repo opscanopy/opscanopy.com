@@ -6,14 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 npm run dev          # start Astro dev server (localhost:4321)
-npm run build        # production build → dist/
+npm run build        # production build → dist/ (postbuild auto-runs Pagefind → dist/pagefind/)
 npm run preview      # preview the production build
 npm run test         # run all engine tests once (vitest run)
 npm run test:watch   # watch mode
 npm run deploy       # wrangler deploy — publishes dist/ to Cloudflare Static Assets
 ```
 
-Deploys are direct via wrangler (`wrangler.jsonc`, no Worker script — assets only). Pushing to GitHub does **not** deploy; always `npm run build` before `npm run deploy`. On this machine run vitest from PowerShell with a capital-drive path (`C:/…`) — a lowercase `c:/` cwd breaks Vitest 4 collection.
+Deploys are direct via wrangler (`wrangler.jsonc`, no Worker script — assets only). Pushing to GitHub does **not** deploy; always `npm run build` before `npm run deploy`. `npm run build` triggers the npm `postbuild` hook (`pagefind --site dist`), which writes the site-search index to `dist/pagefind/` — shipped by the same wrangler deploy and consumed at runtime by `/search`. Never invoke `astro build` bare when the output will be served (it skips the hook and `/search` shows its "index missing" state). On this machine run vitest from PowerShell with a capital-drive path (`C:/…`) — a lowercase `c:/` cwd breaks Vitest 4 collection.
 
 Run a single test file:
 ```bash
@@ -117,6 +117,12 @@ For runtime verification of playground changes (tests can't see the DOM), `.clau
 
 ### Site config
 
-**`src/data/site.ts`** — brand constants, `navLinks` (Tools, Blog), `footerColumns`. Change nav here, not in components.
+**Header/footer nav lives in `src/i18n/site/{en,de,es,fr,pt-br}.ts`**, read via `getSiteContent(lang)` (Header.astro / Footer.astro). A nav change must ship to **all five** locale files. Sections that exist only in English (`/learn`, `/mission-90`, `/search`) are listed in `ENGLISH_ONLY_SECTIONS` in `src/i18n/utils.ts` so `localizeNavHref` links them unprefixed from every locale (no `/de/learn`-style 404s).
+
+**`src/data/site.ts`** — brand constants (name, url, twitter, author). Its `navLinks` array is **legacy** — the Header does NOT read it; it only feeds a few in-page links on tool pages. Do not add nav entries there.
 
 **`src/data/tools.ts`** — the tool registry. `liveTools` (filtered view) drives every tool listing. Flip `status: 'planned' → 'live'` when shipping.
+
+### Site search (`/search`)
+
+Pagefind indexes `dist/` at build time (npm `postbuild`). `Shell.astro` stamps `data-pagefind-body` on `<main>` — Pagefind semantics: once any page has it, pages **without** it are excluded, so utility pages opt out via Shell's `searchIndex={false}` prop (defaults to `!noindex`; used by `/search` itself and the legal pages). Header/Footer carry `data-pagefind-ignore`. `/search` is a hand-built UI over the Pagefind JS API (no default UI bundle), English-only, `noindex`, and excluded from the sitemap in `astro.config.mjs`.
