@@ -219,7 +219,16 @@ describe('mission90 registry ↔ content collection', () => {
   });
 });
 
-const FIXED = { lab: 'Hands-On Lab', errors: 'Real Errors I Hit', goDeeper: 'Go Deeper' } as const;
+// The errors section is "Real Errors I Hit" for author-run days (verbatim errors
+// from a real WSL2 run — e.g. Day 1) and "Common Errors & Fixes" for authored
+// days whose errors are curated, not first-person. Both are accepted at H2[2].
+const FIXED = {
+  lab: 'Hands-On Lab',
+  errors: 'Real Errors I Hit',
+  errorsAuthored: 'Common Errors & Fixes',
+  goDeeper: 'Go Deeper',
+} as const;
+const ERRORS_HEADINGS: string[] = [FIXED.errors, FIXED.errorsAuthored];
 
 /** All body `## ` headings (excludes `###`+), in document order, with offsets. */
 function h2Headings(body: string): { text: string; start: number; end: number }[] {
@@ -257,15 +266,16 @@ describe('mission90 day content shape', () => {
         expect(h2s.length, 'expected 4 or 5 body H2 headings').toBeLessThanOrEqual(5);
         // [0] concept heading — topic-specific, not a fixed label, not the interview H2
         expect(h2s[0].text.length, 'concept H2 must not be empty').toBeGreaterThan(0);
-        expect([FIXED.lab, FIXED.errors, FIXED.goDeeper], 'first H2 must be the concept, not a fixed label').not.toContain(
-          h2s[0].text,
-        );
+        expect(
+          [FIXED.lab, FIXED.errors, FIXED.errorsAuthored, FIXED.goDeeper],
+          'first H2 must be the concept, not a fixed label',
+        ).not.toContain(h2s[0].text);
         expect(h2s[0].text, 'first H2 must be the concept, not the interview H2').not.toMatch(
           /Interview Questions$/,
         );
-        // [1] lab, [2] errors, [3] interview
+        // [1] lab, [2] errors (real or authored), [3] interview
         expect(h2s[1].text).toBe(FIXED.lab);
-        expect(h2s[2].text).toBe(FIXED.errors);
+        expect(ERRORS_HEADINGS, 'third H2 must be the errors section').toContain(h2s[2].text);
         expect(h2s[3].text, 'fourth H2 must be the interview heading').toMatch(/Interview Questions$/);
         // [4] optional Go Deeper
         if (h2s.length === 5) expect(h2s[4].text).toBe(FIXED.goDeeper);

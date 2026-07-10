@@ -35,9 +35,16 @@ that breaks these rules fails CI, not just review.
 - **The body H2 order is FIXED:**
   1. `## <topic-specific concept heading>`
   2. `## Hands-On Lab`
-  3. `## Real Errors I Hit`
+  3. `## Real Errors I Hit` **or** `## Common Errors & Fixes` — see below
   4. `## <topic> Interview Questions`
   5. `## Go Deeper` *(optional)*
+- **Errors section — two accepted headings:** use `## Real Errors I Hit`
+  (first-person) **only** on a day you have actually author-run in WSL2, with
+  verbatim errors from that run (Day 1 is the reference). For a day authored but
+  not yet personally run, use `## Common Errors & Fixes` — same
+  Error → Why → Fix → How-you'd-spot-it structure, written in the third person
+  (`> **Common error:**`, not `> **Real error:** I …`), so nothing falsely claims
+  a personal run. Swap to `Real Errors I Hit` once you have run it for real.
 - **Goals and Tomorrow render from frontmatter, NOT the body.** Never repeat
   them as body headings or prose.
 - **Only two keyword-carrying headings:** the concept H2 and the interview H2.
@@ -78,12 +85,19 @@ never a goal.
 
 ## Labs
 
-- **Author-executed before publishing** in **WSL2 Ubuntu 24.04**. You run every
-  command yourself, in order, on a real box.
-- **Real Errors come from that real run** — verbatim error text in code blocks,
-  never invented or paraphrased.
-- Structure each real error as: **Error → Why → Fix → How you'd spot it in
-  prod.**
+- **Ideally author-executed before publishing** in **WSL2 Ubuntu 24.04** — run
+  every command yourself, in order, on a real box, and use the `Real Errors I
+  Hit` heading with verbatim errors from that run.
+- **If a day is authored but not yet personally run:** use accurate,
+  representative expected output (these commands are deterministic on Ubuntu
+  24.04) and the `Common Errors & Fixes` heading (third person). Keep
+  machine-specific detail generic — never fabricate a specific hostname/kernel/
+  timestamp that implies a real session you did not run.
+- **Real Errors (first-person) come from a real run** — verbatim error text in
+  code blocks, never invented or paraphrased. Curated `Common Errors` may be
+  authored but must still be technically correct.
+- Structure each error (either heading) as: **Error → Why → Fix → How you'd spot
+  it in prod.**
 - **AWS days carry a "what this costs: ₹0 if…" box** so a learner never runs a
   lab that silently bills them.
 
@@ -101,8 +115,9 @@ never a goal.
     **without** the suffix; the template adds the SEO suffix. Do not bake
     "— Mission 90, Day N" into frontmatter `title`.
 - **Description:** `Learn {topic} in under an hour: {2–3 specifics}. Hands-on
-  lab, the real errors I hit, and {k} real interview questions. Day {N} of the
-  free 90-day DevOps path.`
+  lab, {the real errors I hit | common errors and fixes}, and {k} real interview
+  questions. Day {N} of the free 90-day DevOps path.` — use the errors phrase
+  that matches the day's errors heading.
   - **Hard cap ≤160 characters** — the meta `description` must fit in one SERP
     snippet, so trim specifics (not the keyword-first opening) rather than
     overrun. Google truncates past ~160.
