@@ -2,23 +2,20 @@
  * Config-validation + playthrough tests for the Week 3 mission ("Locked Out"),
  * the worked example proving the engine is config-only for a NON-kill fix.
  *
- * ISLAND CONTRACT: imports ONLY the engine façade and the mission config —
- * exactly what the Astro island is allowed to import.
+ * ISLAND CONTRACT: imports ONLY the engine façade, the mission config, and the
+ * shared config validator — exactly what the Astro island is allowed to
+ * import (the validator is test-only shared tooling, not island code).
  *
- * The config-validation guards here are written generically (they operate on
- * `config`, not on hard-coded week3 values) so future missions reuse them.
+ * The generic config guards live in ./_validation (validateMissionConfig);
+ * this file keeps only week3-SPECIFIC domain assertions + playthroughs.
  */
 import { describe, it, expect } from 'vitest';
-import { createMission, runCommand, getStats, rankFor, getNode, readFile } from '../engine';
+import { createMission, runCommand, getStats, rankFor, readFile } from '../engine';
 import type { MissionEffect, MissionState, RunResult } from '../engine';
+import { validateMissionConfig } from './_validation';
 import { week3LockedFile } from './week3-locked-file';
 
 const config = week3LockedFile;
-
-// Built-in verbs the engine reserves (never shadowable by scripted commands).
-const BUILTINS = ['pwd', 'ls', 'cd', 'cat', 'grep', 'ps', 'kill', 'help', 'hint', 'clear'];
-const RESERVED = new Set(BUILTINS);
-const STATE_WHENS = ['flagSet', 'flagIs', 'fileContains', 'processStarted'];
 
 /** Every effect authored anywhere in config.commands (responses + defaults). */
 function allEffects(): MissionEffect[] {
@@ -30,7 +27,7 @@ function allEffects(): MissionEffect[] {
   return effects;
 }
 
-describe('week3-locked-file — config validation (week1-style)', () => {
+describe('week3-locked-file — config validation', () => {
   it('has the canonical identity fields', () => {
     expect(config.id).toBe('week3-locked-file');
     expect(config.title).toBe('Locked Out');
@@ -41,121 +38,32 @@ describe('week3-locked-file — config validation (week1-style)', () => {
     expect(config.optimalCommands).toBe(6);
   });
 
-  it('every objective trigger cmd is a supported command', () => {
-    for (const obj of config.objectives) {
-      const cmds = Array.isArray(obj.trigger.cmd) ? obj.trigger.cmd : [obj.trigger.cmd];
-      for (const cmd of cmds) {
-        expect(config.supportedCommands, `objective ${obj.id} trigger '${cmd}'`).toContain(cmd);
-      }
-    }
+  it('passes every shared mission-config guard', () => {
+    // Trigger-cmd support, scripted-verb dispatch (G6), effect write paths (G7),
+    // err+effect, state-based whens on mutating verbs, evidence protection
+    // (G8/G8b), processStarted sanity (G9), hints/story shape, flag seeding —
+    // all factored into the shared validator; violations print in this diff.
+    expect(validateMissionConfig(config)).toEqual([]);
   });
 
-  it('every ~-rooted path mentioned in hints and story exists in the filesystem', () => {
-    const text = [...config.hints, ...config.story].join(' ');
-    const paths = text.match(/~\/[A-Za-z0-9._/-]+/g) ?? [];
-    expect(paths.length).toBeGreaterThan(0);
-    for (const path of paths) {
-      expect(getNode(config.filesystem, path), `path ${path} from hints/story`).not.toBeNull();
-    }
+  // ── week3-specific domain facts the generic validator cannot know ─────────
+
+  it('the hints point at the real evidence log and teach the exact fix', () => {
+    const hints = config.hints.join(' ');
+    expect(hints).toContain('~/logs/cron.log');
+    expect(hints).toContain('chmod +x ~/deploy/deploy.sh');
   });
 
-  it('has enough progressive hints (≥ objectives − 1)', () => {
-    expect(config.hints.length).toBeGreaterThanOrEqual(config.objectives.length - 1);
-  });
-
-  it('the story ends by pointing the player at help', () => {
-    expect(config.story.length).toBeGreaterThanOrEqual(2);
-    expect(config.story.at(-1)).toContain('help');
-  });
-});
-
-describe('week3-locked-file — config validation (scripted-command guards)', () => {
-  it('G6: every scripted command key is supported AND disjoint from RESERVED built-ins', () => {
-    for (const name of Object.keys(config.commands ?? {})) {
-      expect(config.supportedCommands, `scripted verb '${name}' must be supported`).toContain(name);
-      expect(RESERVED.has(name), `scripted verb '${name}' must not shadow a built-in`).toBe(false);
-    }
-  });
-
-  it('G7: every effect writeFiles/appendFiles path has an existing parent directory', () => {
-    for (const eff of allEffects()) {
-      const paths = [...Object.keys(eff.writeFiles ?? {}), ...Object.keys(eff.appendFiles ?? {})];
-      for (const p of paths) {
-        const parent = p.replace(/\/[^/]+\/?$/, '') || '~';
-        const node = getNode(config.filesystem, parent);
-        expect(node, `effect file parent ${parent} (for ${p})`).not.toBeNull();
-        expect(typeof node, `effect file parent ${parent} must be a directory`).toBe('object');
-      }
-    }
-  });
-
-  it('no response is both an `err` line AND effect-bearing', () => {
-    for (const sc of Object.values(config.commands ?? {})) {
-      const items = [...(sc.responses ?? []), ...(sc.default ? [sc.default] : [])];
-      for (const it2 of items) {
-        const isErr = it2.outKind === 'err';
-        const hasEffect = !!it2.effect && Object.keys(it2.effect).length > 0;
-        expect(isErr && hasEffect, 'an err line must never bear an effect (it would mutate but credit nothing)').toBe(false);
-      }
-    }
-  });
-
-  it('a remediation objective (triggered by a mutating scripted verb) uses a state-based `when`', () => {
-    const mutatingVerbs = new Set<string>();
-    for (const [name, sc] of Object.entries(config.commands ?? {})) {
-      const anyEffect = [...(sc.responses ?? []), ...(sc.default ? [sc.default] : [])]
-        .some((it2) => !!it2.effect && Object.keys(it2.effect).length > 0);
-      if (anyEffect) mutatingVerbs.add(name);
-    }
-    // sanity: this mission has at least one mutating verb (chmod)
-    expect(mutatingVerbs.has('chmod')).toBe(true);
-
-    for (const obj of config.objectives) {
-      const cmds = Array.isArray(obj.trigger.cmd) ? obj.trigger.cmd : [obj.trigger.cmd];
-      if (!cmds.some((c) => mutatingVerbs.has(c))) continue;
-      const when = obj.trigger.when;
-      expect(when && typeof when === 'object', `objective ${obj.id} needs a state-based when`).toBe(true);
-      const key = Object.keys(when as object)[0];
-      expect(STATE_WHENS, `objective ${obj.id} when '${key}' must be state-based`).toContain(key);
-    }
-  });
-
-  it('G8: no effect overwrites (writeFiles) a path another objective reads as evidence; appendFiles is allowed', () => {
-    const evidencePaths = new Set<string>();
-    for (const obj of config.objectives) {
-      const when = obj.trigger.when;
-      if (when && typeof when === 'object') {
-        if ('fileContains' in when) evidencePaths.add(when.fileContains.path);
-        if ('argIncludes' in when) evidencePaths.add(when.argIncludes);
-      }
-    }
-    for (const eff of allEffects()) {
-      for (const p of Object.keys(eff.writeFiles ?? {})) {
-        expect(evidencePaths.has(p), `writeFiles '${p}' overwrites objective evidence — use appendFiles`).toBe(false);
-      }
-    }
-    // The fix DOES append to the evidence log — that must be preserved, so it is
-    // append-only (never overwrite). Confirm the intent explicitly.
+  it('the fix appends to the evidence log (never overwrites it)', () => {
     const appendPaths = allEffects().flatMap((e) => Object.keys(e.appendFiles ?? {}));
     expect(appendPaths).toContain('~/logs/cron.log');
+    const writePaths = allEffects().flatMap((e) => Object.keys(e.writeFiles ?? {}));
+    expect(writePaths).not.toContain('~/logs/cron.log');
   });
 
-  it('G8b: this mission remediates without killing — no effect removes a pid', () => {
-    // (The general rule: a removePids effect must not orphan an objective whose
-    //  only evidence is that process. Week 3 removes nothing, so it holds.)
+  it('this mission remediates without killing — no effect removes a pid', () => {
     for (const eff of allEffects()) {
       expect(eff.removePids ?? []).toEqual([]);
-    }
-  });
-
-  it('G9: no processStarted objective targets a process already present-and-running at start', () => {
-    for (const obj of config.objectives) {
-      const when = obj.trigger.when;
-      if (when && typeof when === 'object' && 'processStarted' in when) {
-        const needle = when.processStarted;
-        const running = config.processes.some((p) => p.command.includes(needle) && p.stat !== 'crashed');
-        expect(running, `processStarted target '${needle}' already running at start`).toBe(false);
-      }
     }
   });
 
