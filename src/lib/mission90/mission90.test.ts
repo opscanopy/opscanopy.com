@@ -122,15 +122,15 @@ describe('mission90 registry integrity', () => {
     }
   });
 
-  it('days 1–21 are live and liveDays reflects status filtering', () => {
+  it('days 1–28 are live and liveDays reflects status filtering', () => {
     const live = days.filter((d) => d.status === 'live');
-    expect(live.map((d) => d.day)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]);
+    expect(live.map((d) => d.day)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]);
     expect(liveDays).toEqual(live);
   });
 
-  it('live missions are week1, week2 and week3', () => {
+  it('live missions are week1, week2, week3 and week4', () => {
     const live = missions.filter((m) => m.status === 'live');
-    expect(live.map((m) => m.id)).toEqual(['week1-server-down', 'week2-dns-detective', 'week3-locked-file']);
+    expect(live.map((m) => m.id)).toEqual(['week1-server-down', 'week2-dns-detective', 'week3-locked-file', 'week4-docker-rescue']);
   });
 
   it('totalCoreMinutes sums all 90 day minutes and lands near 80 hours', () => {
