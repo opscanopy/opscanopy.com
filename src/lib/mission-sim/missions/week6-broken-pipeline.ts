@@ -4,7 +4,7 @@
  * Friday, 17:03. The release workflow went red. The `build` matrix is green on
  * both Node versions, the `tag-release` job only logged a harmless "tag already
  * exists" warning — but the `publish` job dies with
- * `Error: denied: authentication required`. The workflow names the secret it uses
+ * `Error: unauthorized: authentication required`. The workflow names the secret it uses
  * (`secrets.REGISTRY_TOKEN`); that token was rotated this week and the new value
  * was never re-added to the repo secrets, so `docker login` fails and no image is
  * ever pushed. The log shows the FAILURE; the workflow shows WHICH SECRET — two
@@ -39,7 +39,7 @@ const releaseLog = [
   '2026-07-09 17:03:04 [INFO] job tag-release succeeded (non-fatal warning above)',
   '2026-07-09 17:03:10 [INFO] job publish started — logging in to registry.example.com',
   '2026-07-09 17:03:11 [ERROR] docker login failed for registry.example.com (bad credentials)',
-  '2026-07-09 17:03:11 [ERROR] Error: denied: authentication required',
+  '2026-07-09 17:03:11 [ERROR] Error: unauthorized: authentication required',
   '2026-07-09 17:03:11 [ERROR] job publish FAILED (exit 1)',
   '2026-07-09 17:03:12 [ERROR] release #4471 conclusion: failure',
 ].join('\n');
@@ -199,7 +199,7 @@ export const week6BrokenPipeline: MissionConfig = {
       id: 2,
       text: 'Find where the pipeline went red',
       trigger: { cmd: ['cat', 'grep'], when: { outputMatched: 'authentication required' } },
-      successLine: 'There it is — the publish job failed: denied: authentication required.',
+      successLine: 'There it is — the publish job failed: unauthorized: authentication required.',
     },
     {
       id: 3,
@@ -217,7 +217,7 @@ export const week6BrokenPipeline: MissionConfig = {
 
   hints: [
     'Start with `ls`, then read the failed run log at ~/logs/release.log.',
-    'It ends in "denied: authentication required" — an auth failure in the publish job, not the build matrix or the tag warning.',
+    'It ends in "unauthorized: authentication required" — an auth failure in the publish job, not the build matrix or the tag warning.',
     'The workflow at ~/project/.github/workflows/release.yml references secrets.REGISTRY_TOKEN; `gh secret list` shows it is missing — the token was rotated and never re-added.',
     'Re-add it and the run goes green: `gh secret set REGISTRY_TOKEN --body <token>`.',
   ],

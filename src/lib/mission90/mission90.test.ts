@@ -122,15 +122,15 @@ describe('mission90 registry integrity', () => {
     }
   });
 
-  it('days 1–35 are live and liveDays reflects status filtering', () => {
+  it('days 1–40 are live and liveDays reflects status filtering', () => {
     const live = days.filter((d) => d.status === 'live');
-    expect(live.map((d) => d.day)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35]);
+    expect(live.map((d) => d.day)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40]);
     expect(liveDays).toEqual(live);
   });
 
-  it('live missions are week1, week2, week3 and week4', () => {
+  it('live missions are week1-4 and week6', () => {
     const live = missions.filter((m) => m.status === 'live');
-    expect(live.map((m) => m.id)).toEqual(['week1-server-down', 'week2-dns-detective', 'week3-locked-file', 'week4-docker-rescue']);
+    expect(live.map((m) => m.id)).toEqual(['week1-server-down', 'week2-dns-detective', 'week3-locked-file', 'week4-docker-rescue', 'week6-broken-pipeline']);
   });
 
   it('totalCoreMinutes sums all 90 day minutes and lands near 80 hours', () => {
@@ -230,13 +230,24 @@ const FIXED = {
 } as const;
 const ERRORS_HEADINGS: string[] = [FIXED.errors, FIXED.errorsAuthored];
 
-/** All body `## ` headings (excludes `###`+), in document order, with offsets. */
+/** All body `## ` headings (excludes `###`+), in document order, with offsets.
+ *  Fence-aware: `## ` lines INSIDE fenced code blocks (```/~~~) are example
+ *  content (e.g. a keep-a-changelog sample), not document structure, so they
+ *  are skipped. Offsets are preserved into the original body for section slicing. */
 function h2Headings(body: string): { text: string; start: number; end: number }[] {
-  const re = /^##(?!#)[ \t]+(.+?)[ \t]*$/gm;
   const out: { text: string; start: number; end: number }[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(body))) {
-    out.push({ text: m[1], start: m.index, end: m.index + m[0].length });
+  const headingRe = /^##(?!#)[ \t]+(.+?)[ \t]*$/;
+  const fenceRe = /^[ \t]*(```|~~~)/;
+  let offset = 0;
+  let inFence = false;
+  for (const line of body.split('\n')) {
+    if (fenceRe.test(line)) {
+      inFence = !inFence;
+    } else if (!inFence) {
+      const m = headingRe.exec(line);
+      if (m) out.push({ text: m[1], start: offset, end: offset + line.length });
+    }
+    offset += line.length + 1; // + newline
   }
   return out;
 }
