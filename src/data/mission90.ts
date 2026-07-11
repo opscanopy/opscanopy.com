@@ -168,11 +168,11 @@ export const days: Mission90Day[] = [
   d(38, 'deploy-strategies', 'Deploy strategies — rolling, blue-green, canary', 45, { live: true }),
   d(39, 'pipeline-security', 'Pipeline security — secrets management, image scanning (Trivy), supply-chain basics', 50, { live: true }),
   d(40, 'phase-2-review-broken-pipeline', 'Phase 2 review + Broken Pipeline', 45, { missionId: 'week6-broken-pipeline', live: true }),
-  d(41, 'project-1-day-1', 'Project 1, Day 1: scope & scaffold', 60, { project: true }),
-  d(42, 'project-1-day-2', 'Project 1, Day 2: write & optimize the Dockerfiles', 60, { project: true }),
-  d(43, 'project-1-day-3', 'Project 1, Day 3: compose the full stack locally', 60, { project: true }),
-  d(44, 'project-1-day-4', 'Project 1, Day 4: build the CI pipeline', 60, { project: true }),
-  d(45, 'project-1-day-5', 'Project 1, Day 5: ship, tag & write the README', 60, { project: true }),
+  d(41, 'project-1-day-1', 'Project 1, Day 1: scope & scaffold', 60, { project: true, live: true }),
+  d(42, 'project-1-day-2', 'Project 1, Day 2: write & optimize the Dockerfiles', 60, { project: true, live: true }),
+  d(43, 'project-1-day-3', 'Project 1, Day 3: compose the full stack locally', 60, { project: true, live: true }),
+  d(44, 'project-1-day-4', 'Project 1, Day 4: build the CI pipeline', 60, { project: true, live: true }),
+  d(45, 'project-1-day-5', 'Project 1, Day 5: ship, tag & write the README', 60, { project: true, live: true }),
 
   // Phase 3 — Cloud (days 46–65)
   d(46, 'cloud-fundamentals', 'Cloud fundamentals — regions, AZs, shared responsibility', 45),
