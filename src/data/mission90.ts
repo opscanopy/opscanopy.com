@@ -175,10 +175,10 @@ export const days: Mission90Day[] = [
   d(45, 'project-1-day-5', 'Project 1, Day 5: ship, tag & write the README', 60, { project: true, live: true }),
 
   // Phase 3 — Cloud (days 46–65)
-  d(46, 'cloud-fundamentals', 'Cloud fundamentals — regions, AZs, shared responsibility', 45),
-  d(47, 'aws-account-hygiene', 'AWS account hygiene — IAM, MFA, budgets, cost tagging', 55),
-  d(48, 'ec2-basics', 'EC2 — launch, connect, security groups', 55),
-  d(49, 'week-7-review-aws-bill-shock', 'Week 7 review + AWS Bill Shock', 45, { missionId: 'week7-aws-bill-shock' }),
+  d(46, 'cloud-fundamentals', 'Cloud fundamentals — regions, AZs, shared responsibility', 45, { live: true }),
+  d(47, 'aws-account-hygiene', 'AWS account hygiene — IAM, MFA, budgets, cost tagging', 55, { live: true }),
+  d(48, 'ec2-basics', 'EC2 — launch, connect, security groups', 55, { live: true }),
+  d(49, 'week-7-review-aws-bill-shock', 'Week 7 review + AWS Bill Shock', 45, { missionId: 'week7-aws-bill-shock', live: true }),
   d(50, 'vpc-1', 'VPC 1 — subnets, route tables, gateways', 55),
   d(51, 'vpc-2', 'VPC 2 — NAT, public vs private, bastion patterns', 55),
   d(52, 's3', 'S3 — buckets, policies, static hosting, lifecycle', 50),
@@ -280,7 +280,7 @@ export const missions: Mission90Mission[] = [
     blurb: "The monthly AWS bill just tripled — hunt down what's burning money before finance hunts you.",
     unlockAfterDay: 49,
     skills: ['IAM & account hygiene', 'EC2', 'cost analysis'],
-    status: 'planned',
+    status: 'live',
   },
   {
     id: 'week8-database-recovery',
