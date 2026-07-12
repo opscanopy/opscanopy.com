@@ -212,11 +212,11 @@ export const days: Mission90Day[] = [
   d(78, 'terraform-modules-workspaces', 'Terraform 3 — modules & workspaces', 55, { live: true }),
   d(79, 'terraform-aws', 'Terraform + AWS — provision the project infra', 60, { live: true }),
   d(80, 'week-12-review-terraform-trouble', 'Week 12 review + Terraform Trouble', 45, { missionId: 'week12-terraform-trouble', live: true }),
-  d(81, 'project-3-day-1', 'Project 3, Day 1: design the capstone architecture', 60, { project: true }),
-  d(82, 'project-3-day-2', 'Project 3, Day 2: write the Terraform foundation', 60, { project: true }),
-  d(83, 'project-3-day-3', 'Project 3, Day 3: build the Kubernetes manifests', 60, { project: true }),
-  d(84, 'project-3-day-4', 'Project 3, Day 4: Helm, ingress & TLS', 60, { project: true }),
-  d(85, 'project-3-day-5', 'Project 3, Day 5: end-to-end run & writeup', 60, { project: true }),
+  d(81, 'project-3-day-1', 'Project 3, Day 1: design the capstone architecture', 60, { project: true, live: true }),
+  d(82, 'project-3-day-2', 'Project 3, Day 2: write the Terraform foundation', 60, { project: true, live: true }),
+  d(83, 'project-3-day-3', 'Project 3, Day 3: build the Kubernetes manifests', 60, { project: true, live: true }),
+  d(84, 'project-3-day-4', 'Project 3, Day 4: Helm, ingress & TLS', 60, { project: true, live: true }),
+  d(85, 'project-3-day-5', 'Project 3, Day 5: end-to-end run & writeup', 60, { project: true, live: true }),
 
   // Phase 5 — Job Ready (days 86–90)
   d(86, 'devops-resume', 'Your DevOps resume — turning 90 days into bullets', 50),
