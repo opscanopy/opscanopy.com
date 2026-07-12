@@ -219,11 +219,11 @@ export const days: Mission90Day[] = [
   d(85, 'project-3-day-5', 'Project 3, Day 5: end-to-end run & writeup', 60, { project: true, live: true }),
 
   // Phase 5 — Job Ready (days 86–90)
-  d(86, 'devops-resume', 'Your DevOps resume — turning 90 days into bullets', 50),
-  d(87, 'portfolio-github-polish', 'Portfolio & GitHub polish — READMEs, diagrams, demos', 50),
-  d(88, 'incident-management', 'Incident management — severity, runbooks, postmortems, error budgets', 55),
-  d(89, 'interview-drill', 'Interview drill — rapid-fire across the stack + scenario walk-throughs', 55),
-  d(90, 'final-boss-midnight-outage', "FINAL BOSS: The Midnight Outage + what's next", 60, { missionId: 'final-midnight-outage' }),
+  d(86, 'devops-resume', 'Your DevOps resume — turning 90 days into bullets', 50, { live: true }),
+  d(87, 'portfolio-github-polish', 'Portfolio & GitHub polish — READMEs, diagrams, demos', 50, { live: true }),
+  d(88, 'incident-management', 'Incident management — severity, runbooks, postmortems, error budgets', 55, { live: true }),
+  d(89, 'interview-drill', 'Interview drill — rapid-fire across the stack + scenario walk-throughs', 55, { live: true }),
+  d(90, 'final-boss-midnight-outage', "FINAL BOSS: The Midnight Outage + what's next", 60, { missionId: 'final-midnight-outage', live: true }),
 ];
 
 export const missions: Mission90Mission[] = [
@@ -316,7 +316,7 @@ export const missions: Mission90Mission[] = [
     blurb: "Everything you've learned, one pager at midnight — a full-stack outage across DNS, containers, K8s and AWS.",
     unlockAfterDay: 90,
     skills: ['incident response', 'full-stack debugging', 'Kubernetes', 'AWS'],
-    status: 'planned',
+    status: 'live',
   },
 ];
 
