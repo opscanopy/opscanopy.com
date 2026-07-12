@@ -4,9 +4,9 @@
  *
  * 00:14. A single security-group change revoked tcp/443 ingress on sg-web. The
  * load-balancer health checks to the web tier went red, DNS (Route 53 health
- * check) failed traffic over to the passive region — and there a web pod is
- * CrashLooping on a `db-credentials` Secret that no longer exists. One change,
- * three symptoms, all regions 5xx.
+ * check) failed traffic over to the passive region — and there the web pods are
+ * stuck (ContainerCreating) unable to mount a `db-credentials` Secret that no
+ * longer exists. One change, three symptoms, all regions 5xx.
  *
  * The fix is a CHAIN, and the chain is the point:
  *   1. aws  — re-open tcp/443 on sg-web (open the network path back up),
@@ -31,7 +31,8 @@
  *     (sg-audit.txt / events.txt) and write a SEPARATE status marker — the
  *     REVOKE and "not found" evidence stays readable for a fix-first player.
  *
- * NOTE: dormant — deliberately NOT registered in the live mission registry.
+ * NOTE: live — the Day-90 capstone mission, registered in src/data/mission90.ts
+ * and wired into MissionTerminal's missionModules map.
  */
 import type { MissionConfig } from '../types';
 
@@ -57,9 +58,7 @@ const eventsTxt = [
   '# kubectl get events -n web  (passive-region cluster)',
   'LAST SEEN   TYPE      REASON        OBJECT                       MESSAGE',
   '30s         Warning   FailedMount   pod/web-passive-7c9f-4xk2p   MountVolume.SetUp failed for volume "db-creds" : secret "db-credentials" not found',
-  '25s         Warning   Failed        pod/web-passive-7c9f-t9r4w   Error: secret "db-credentials" not found',
-  '25s         Warning   BackOff       pod/web-passive-7c9f-4xk2p   Back-off restarting failed container web',
-  '10s         Warning   BackOff       pod/web-passive-7c9f-t9r4w   Back-off restarting failed container web',
+  '18s         Warning   FailedMount   pod/web-passive-7c9f-t9r4w   MountVolume.SetUp failed for volume "db-creds" : secret "db-credentials" not found',
 ].join('\n');
 
 export const finalMidnightOutage: MissionConfig = {
@@ -77,8 +76,8 @@ export const finalMidnightOutage: MissionConfig = {
       'it is your call. Ninety days of training come down to the next few minutes.',
     'The shape of it: a security-group change at 00:14 revoked tcp/443 ingress on sg-web, ' +
       'so the load-balancer health checks went red and DNS failed traffic over to the ' +
-      'passive region — where a web pod is crash-looping on a Secret that no longer ' +
-      'exists. One small change knocked the whole stack over, region by region.',
+      'passive region — where the web pods cannot start, stuck mounting a Secret that no ' +
+      'longer exists. One small change knocked the whole stack over, region by region.',
     'Fix it UPSTREAM-FIRST: re-open the security group, restore the missing Secret, then ' +
       'confirm DNS has healed back to the healthy primary. Order is the whole lesson. ' +
       'Everything you need is in ~/incident.log, ~/aws and ~/k8s. Type `help` to see what ' +
@@ -226,10 +225,10 @@ export const finalMidnightOutage: MissionConfig = {
         {
           match: { args: ['get', 'pods'], flag: { name: 'k8sFixed', equals: false } },
           output: [
-            'NAME                         READY   STATUS             RESTARTS   AGE',
-            'web-passive-7c9f-4xk2p       0/1     CrashLoopBackOff   6          7m',
-            'web-passive-7c9f-t9r4w       0/1     CrashLoopBackOff   6          7m',
-            'Neither passive-region pod is Ready — both are crash-looping.',
+            'NAME                         READY   STATUS              RESTARTS   AGE',
+            'web-passive-7c9f-4xk2p       0/1     ContainerCreating   0          7m',
+            'web-passive-7c9f-t9r4w       0/1     ContainerCreating   0          7m',
+            'Neither passive-region pod is Ready — both are stuck ContainerCreating, unable to mount the Secret.',
           ],
         },
         // `kubectl describe pod <name>` — the mount failure (gated pre-fix).
@@ -237,11 +236,10 @@ export const finalMidnightOutage: MissionConfig = {
           match: { args: ['describe', 'pod'], flag: { name: 'k8sFixed', equals: false } },
           output: [
             'Name:      web-passive-7c9f-4xk2p',
-            'Status:    CrashLoopBackOff',
+            'Status:    Pending',
             'Events:',
             '  Warning  FailedMount  MountVolume.SetUp failed for volume "db-creds" : secret "db-credentials" not found',
-            '  Warning  BackOff      Back-off restarting failed container web',
-            'The pod cannot mount the db-credentials Secret — it was deleted.',
+            'The pod cannot mount the db-credentials Secret — it was deleted, so the container never starts.',
           ],
         },
       ],

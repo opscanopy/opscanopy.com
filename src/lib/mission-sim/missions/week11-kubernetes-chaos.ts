@@ -24,7 +24,7 @@
  * events log + write a status marker). Objectives complete in ANY order; the
  * append-only events log keeps the "not found" evidence even after the fix.
  *
- * NOTE: dormant — deliberately NOT registered in the live mission registry.
+ * NOTE: live — the Week-11 mission, registered at day 73 and wired into MissionTerminal.
  */
 import type { MissionConfig } from '../types';
 

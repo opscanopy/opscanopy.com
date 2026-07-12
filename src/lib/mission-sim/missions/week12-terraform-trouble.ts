@@ -31,7 +31,7 @@
  * READ-ONLY verbs cat/grep via outputMatched, so terraform's own output can
  * never falsely credit them.
  *
- * NOTE: dormant — deliberately NOT registered in the live mission registry.
+ * NOTE: live — the Week-12 mission, registered at day 80 and wired into MissionTerminal.
  */
 import type { MissionConfig } from '../types';
 
