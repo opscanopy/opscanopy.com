@@ -29,10 +29,10 @@
 import type { MissionConfig } from '../types';
 
 const podsTxt = [
-  'NAME                    READY   STATUS             RESTARTS   AGE',
-  'web-6d8f7c9b5d-4xk2p    0/1     Pending            0          6m',
-  'web-6d8f7c9b5d-7bqzn    0/1     CrashLoopBackOff   5          6m',
-  'web-6d8f7c9b5d-t9r4w    0/1     CrashLoopBackOff   5          6m',
+  'NAME                    READY   STATUS              RESTARTS   AGE',
+  'web-6d8f7c9b5d-4xk2p    0/1     ContainerCreating   0          6m',
+  'web-6d8f7c9b5d-7bqzn    0/1     CrashLoopBackOff    5          6m',
+  'web-6d8f7c9b5d-t9r4w    0/1     CrashLoopBackOff    5          6m',
 ].join('\n');
 
 const eventsTxt = [
@@ -135,11 +135,11 @@ export const week11KubernetesChaos: MissionConfig = {
         {
           match: { args: ['get', 'pods'], flag: { name: 'secretRestored', equals: false } },
           output: [
-            'NAME                    READY   STATUS             RESTARTS   AGE',
-            'web-6d8f7c9b5d-4xk2p    0/1     Pending            0          7m',
-            'web-6d8f7c9b5d-7bqzn    0/1     CrashLoopBackOff   6          7m',
-            'web-6d8f7c9b5d-t9r4w    0/1     CrashLoopBackOff   6          7m',
-            'One pod stuck Pending, two crash-looping — not one of the three is Ready.',
+            'NAME                    READY   STATUS              RESTARTS   AGE',
+            'web-6d8f7c9b5d-4xk2p    0/1     ContainerCreating   0          7m',
+            'web-6d8f7c9b5d-7bqzn    0/1     CrashLoopBackOff    6          7m',
+            'web-6d8f7c9b5d-t9r4w    0/1     CrashLoopBackOff    6          7m',
+            'One pod stuck ContainerCreating (mount failing), two crash-looping — not one of the three is Ready.',
           ],
         },
         // `kubectl describe pod <name>` — the events, incl. the mount failure.
