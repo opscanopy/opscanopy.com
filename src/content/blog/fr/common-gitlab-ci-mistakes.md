@@ -69,6 +69,8 @@ empty-job:
 
 Les templates cachés, préfixés d'un point, font exception — nous y reviendrons dans l'erreur numéro six. Ils ont le droit d'être des fragments partiels, ils ne sont donc pas tenus de porter un script.
 
+![Illustration synthwave : une loupe examine un .gitlab-ci.yml sur un moniteur CRT rétro, entouré d'icônes néon numérotées représentant des erreurs de pipeline courantes — une pièce de puzzle cassée, un bouclier fissuré, des engrenages et un sablier](/blog/in-content/common-gitlab-ci-mistakes.webp)
+
 ## 3. needs pointant vers un job d'un stage ultérieur ou vers un job inexistant
 
 ```yaml

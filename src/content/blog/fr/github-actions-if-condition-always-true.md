@@ -85,6 +85,8 @@ Si vous voulez tout de même que l'étape exige une réussite, dites-le explicit
 
 C'est aussi pourquoi certains s'étonnent qu'une étape de « nettoyage » ne s'exécute qu'en cas de réussite alors qu'ils voulaient qu'elle s'exécute quoi qu'il arrive — la garde implicite est toujours là tant qu'ils n'ont pas ajouté `always()`.
 
+![Illustration synthwave : un terminal CRT rétro dont la condition if est convertie en chaîne truthy, de sorte que chaque exécution franchit la porte tout droit vers TRUE](/blog/in-content/github-actions-if-condition-always-true.webp)
+
 ## `success()` vs `always()` vs `failure()` vs `cancelled()`
 
 Ces quatre fonctions de statut décident *si l'étape tient compte des résultats précédents tout court*. Les confondre constitue l'autre moitié du « mon `if` ne se comporte pas comme prévu ».

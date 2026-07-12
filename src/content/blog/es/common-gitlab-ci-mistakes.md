@@ -69,6 +69,8 @@ empty-job:
 
 Las plantillas ocultas con prefijo de punto son la excepción — más sobre ellas en el error número seis. Tienen permitido ser fragmentos parciales, así que no están obligadas a llevar un script.
 
+![Ilustración synthwave: una lupa examina un .gitlab-ci.yml en un monitor CRT retro, rodeado de iconos de neón numerados con errores comunes de pipeline — una pieza de puzle rota, un escudo agrietado, engranajes y un reloj de arena](/blog/in-content/common-gitlab-ci-mistakes.webp)
+
 ## 3. needs apuntando a un job de un stage posterior o a un job que no existe
 
 ```yaml

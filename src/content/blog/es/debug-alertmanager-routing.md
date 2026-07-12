@@ -119,6 +119,8 @@ Todos los matchers de una ruta deben cumplirse para que coincida: es un AND lóg
 
 Si tus reglas de alerta llevan los labels equivocados desde el principio, o les faltan aquellos por los que enrutan tus rutas, corrígelo aguas arriba. El [Prometheus Relabel Tester](/prometheus-relabel-tester) muestra exactamente qué labels sobreviven a tus reglas de relabel antes de que lleguen siquiera al árbol de rutas.
 
+![Ilustración synthwave de la depuración del enrutamiento de Alertmanager: una alerta recorre un árbol de rutas de neón a través de una puerta first-match-wins, pasando por las trampas clásicas — continue ausente, regex de matcher, defaults catch-all](/blog/in-content/debug-alertmanager-routing.webp)
+
 ## Bug 3: una ruta catch-all por defecto se traga todo antes de que se alcance tu ruta
 
 Una ruta catch-all de Alertmanager se supone que es una red de seguridad: el receiver que se dispara cuando nada más específico coincide. Pero un catch-all colocado *encima* de un hermano específico, en lugar de debajo, se convierte en una trampa. Combinado con "gana la primera coincidencia", una regla amplia en la parte superior ensombrece toda regla específica que tenga debajo:

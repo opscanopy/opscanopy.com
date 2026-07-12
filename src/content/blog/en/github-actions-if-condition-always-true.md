@@ -83,6 +83,8 @@ If you still want the step to require success, say so explicitly:
 
 This is also why people are confused that a "cleanup" step runs only on success when they wanted it to run no matter what — the implicit guard is still there until they add `always()`.
 
+![Synthwave illustration: a retro CRT terminal where an if condition coerces to a truthy string, so every run pours through the gate straight to TRUE](/blog/in-content/github-actions-if-condition-always-true.webp)
+
 ## `success()` vs `always()` vs `failure()` vs `cancelled()`
 
 These four status functions decide *whether the step considers prior results at all*. Mixing them up is the other half of "my `if` doesn't behave."

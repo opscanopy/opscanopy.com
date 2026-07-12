@@ -67,6 +67,8 @@ A `regex: api` rule will not keep a target whose `job` is `api-server`, because 
 
 When the regex matches and the action writes a label, `replacement` supplies the value. Capture groups expand as `$1`, `${1}`, or named groups `$name`/`${name}`; the default replacement is `$1`, which is why a bare `replace` with `regex: (.*)` copies the source value through unchanged. `modulus` is only read by `hashmod`, and `target_label` is required by `replace`, `hashmod`, `lowercase`, `uppercase`, `keepequal`, and `dropequal`.
 
+![Synthwave illustration of a relabel rule: source_labels flow into an anchored regex, the $1:$2 replacement expands, and actions like replace, keep, labelmap and hashmod rewrite the labels.](/blog/in-content/prometheus-relabel-configs-explained.webp)
+
 ## The actions one by one: replace, keep, drop, labelmap, labelkeep, labeldrop, hashmod
 
 Prometheus supports eleven actions. Each example below is a complete, runnable rule.

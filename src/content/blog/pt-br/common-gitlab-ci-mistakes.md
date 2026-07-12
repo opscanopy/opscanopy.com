@@ -69,6 +69,8 @@ empty-job:
 
 Templates ocultos, prefixados com ponto, são a exceção — mais sobre isso no erro seis. Eles têm permissão para ser fragmentos parciais, então não são obrigados a carregar um script.
 
+![Ilustração synthwave: uma lupa examina um .gitlab-ci.yml em um monitor CRT retrô, cercado por ícones neon numerados de erros comuns de pipeline — uma peça de quebra-cabeça quebrada, um escudo rachado, engrenagens e uma ampulheta](/blog/in-content/common-gitlab-ci-mistakes.webp)
+
 ## 3. needs apontando para um job em um stage posterior ou para um job que não existe
 
 ```yaml

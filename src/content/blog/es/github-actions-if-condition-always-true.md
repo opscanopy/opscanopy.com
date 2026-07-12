@@ -85,6 +85,8 @@ Si todavía quieres que el paso requiera éxito, dilo explícitamente:
 
 Esto también explica por qué hay quien se desconcierta de que un paso de «limpieza» se ejecute solo en caso de éxito cuando querían que se ejecutara pasara lo que pasara — la protección implícita sigue ahí hasta que añaden `always()`.
 
+![Ilustración synthwave: un terminal CRT retro cuya condición if se convierte en una cadena truthy, de modo que cada ejecución atraviesa la puerta directa hacia TRUE](/blog/in-content/github-actions-if-condition-always-true.webp)
+
 ## `success()` frente a `always()` frente a `failure()` frente a `cancelled()`
 
 Estas cuatro funciones de estado deciden *si el paso tiene en cuenta los resultados anteriores en absoluto*. Confundirlas es la otra mitad de «mi `if` no se comporta».

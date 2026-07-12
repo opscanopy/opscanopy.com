@@ -59,6 +59,8 @@ rate(http_requests_total{job="api"}[5m])
 
 Une brève note sur le dimensionnement de la fenêtre : la plage (`[5m]`) devrait couvrir confortablement au moins quelques intervalles de scrape. Trop courte, et vous obtenez des résultats bruités et lacunaires ; trop longue, et vous lissez les pics que vous cherchiez justement à capter.
 
+![Illustration : une requête PromQL en couches empilées éclairées au néon — sélecteurs à la base, puis plages, fonctions et agrégation — lue de l'intérieur vers l'extérieur](/blog/in-content/reading-promql.webp)
+
 ## Couche 3 : les fonctions
 
 Les fonctions transforment les vecteurs. Celles que vous rencontrerez constamment :

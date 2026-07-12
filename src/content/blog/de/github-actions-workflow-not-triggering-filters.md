@@ -62,6 +62,8 @@ Die Glob-Zeichen, die GitHub berücksichtigt: `*` (beliebige Zeichen außer `/`)
 
 Warum das wichtig ist: Dass `*` keinen `/` überquert, ist für einen großen Anteil der „github actions branches filter not working"-Berichte verantwortlich. Im Zweifel greifen Sie zu `**`.
 
+![Synthwave-Illustration: Ein push-Event erreicht ein Retro-Terminal mit der Aufschrift WORKFLOW START, während branches-, tags- und paths-Filter Refs und geänderte Dateien zulassen oder ablehnen](/blog/in-content/github-actions-workflow-not-triggering-filters.webp)
+
 ## 3. Die UND-Semantik von `branches` + `paths`
 
 Das ist die Sache, die erfahrene Ingenieure erwischt. Wenn ein `push`- oder `pull_request`-Event **sowohl** einen Branch-Filter als auch einen Pfad-Filter hat, muss das Event **beide** erfüllen, um auszulösen. Sie sind mit UND verknüpft, nicht mit ODER.

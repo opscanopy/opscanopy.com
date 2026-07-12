@@ -60,6 +60,8 @@ The glob characters GitHub honors: `*` (any chars except `/`), `**` (any chars i
 
 Why it matters: `*` not crossing `/` is responsible for a huge share of "github actions branches filter not working" reports. When in doubt, reach for `**`.
 
+![Synthwave illustration: a push event reaches a retro terminal reading WORKFLOW START while branches, tags and paths filters approve or reject refs and changed files](/blog/in-content/github-actions-workflow-not-triggering-filters.webp)
+
 ## 3. The AND-semantics of `branches` + `paths`
 
 This is the one that burns experienced engineers. When a `push` or `pull_request` event has **both** a branch filter and a path filter, the event must satisfy **both** to trigger. They are ANDed, not ORed.

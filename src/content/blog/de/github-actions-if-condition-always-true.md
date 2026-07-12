@@ -85,6 +85,8 @@ Wenn der Schritt weiterhin Erfolg voraussetzen soll, sagen Sie es explizit:
 
 Das ist auch der Grund, warum Leute verwirrt sind, dass ein „Cleanup"-Schritt nur bei Erfolg läuft, obwohl sie wollten, dass er auf jeden Fall läuft — der implizite Schutz ist nach wie vor da, bis sie `always()` hinzufügen.
 
+![Synthwave-Illustration: ein Retro-CRT-Terminal, dessen if-Bedingung zu einer truthy Zeichenkette gecastet wird, sodass jeder Lauf durch das Gate direkt zu TRUE strömt](/blog/in-content/github-actions-if-condition-always-true.webp)
+
 ## `success()` vs. `always()` vs. `failure()` vs. `cancelled()`
 
 Diese vier Statusfunktionen entscheiden, *ob der Schritt vorherige Ergebnisse überhaupt berücksichtigt*. Sie zu verwechseln ist die andere Hälfte von „mein `if` verhält sich nicht so, wie es soll".

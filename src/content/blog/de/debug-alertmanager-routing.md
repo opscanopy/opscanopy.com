@@ -119,6 +119,8 @@ Alle Matcher einer Route müssen halten, damit sie matcht — es ist ein logisch
 
 Wenn deine Alert-Regeln von vornherein die falschen Labels tragen — oder die fehlen, auf die deine Routes matchen — behebe das weiter oben in der Kette. Der [Prometheus Relabel Tester](/prometheus-relabel-tester) zeigt dir genau, welche Labels deine relabel_configs überleben, bevor sie überhaupt den Routing-Baum erreichen.
 
+![Synthwave-Illustration zum Debuggen des Alertmanager-Routings: Ein Alert fährt einen neonfarbenen Routing-Baum entlang durch ein First-Match-Wins-Tor, vorbei an den klassischen Fallen — fehlendes continue, Matcher-Regex, Catch-all-Defaults](/blog/in-content/debug-alertmanager-routing.webp)
+
 ## Bug 3: eine Catch-all-Default-Route verschluckt alles, bevor deine Route erreicht wird
 
 Eine Alertmanager-Catch-all-Route soll ein Sicherheitsnetz sein — der Receiver, der feuert, wenn nichts Spezifischeres matcht. Aber ein Catch-all, das *über* einem spezifischen Sibling platziert ist statt darunter, wird zur Falle. In Kombination mit first-match-wins überschattet eine breite Regel ganz oben jede spezifische Regel darunter:

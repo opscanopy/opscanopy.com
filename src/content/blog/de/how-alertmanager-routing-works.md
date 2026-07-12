@@ -75,6 +75,8 @@ Zwei Details bringen Leute ständig zum Stolpern:
 
 Diese Labels überhaupt erst an den Alert zu bekommen, ist eine eigene Aufgabe, die zur Scrape-Zeit passiert — wenn das Label, das dein Matcher prüft, nie gesetzt wurde, verfolge es mit dem [Prometheus Relabel Tester](/prometheus-relabel-tester) zurück zu deiner Scrape-Config, bevor du dem Route-Baum die Schuld gibst.
 
+![Illustration: Ein eingehender Alert steigt im Alertmanager-Route-Baum von der Root-Route in Kind-Routen mit Matchers und continue: true ab, bis er auf der passenden Route landet](/blog/in-content/how-alertmanager-routing-works.webp)
+
 ## Tiefensuche-Matching und continue: das erste passende Geschwister gewinnt, außer continue ist true
 
 Hier ist die Regel, die das nächtliche Beispiel verletzt hat. Innerhalb einer passenden Route werden die Kind-Routen **der Reihe nach, von oben nach unten** ausgewertet. Der Alert steigt in das **erste** Kind ab, dessen Matchers alle zutreffen — und danach **stoppt** der Geschwister-Scan standardmäßig. Spätere Geschwister werden nicht einmal mehr geprüft.

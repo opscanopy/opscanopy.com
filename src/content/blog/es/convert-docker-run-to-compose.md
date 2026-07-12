@@ -194,6 +194,8 @@ Estos son los límites estilo v2 que Compose respeta directamente. Cuando llegue
 - `--rm` (eliminar al salir) es irrelevante porque Compose gestiona el ciclo de vida.
 - `-d` / `--detach` queda sustituido por cómo arrancas el stack: `docker compose up -d`.
 
+![Ilustración: un comando docker run en un terminal retro, cuyos flags fluyen de pantalla en pantalla hasta recomponerse como un servicio de docker-compose.yml](/blog/in-content/convert-docker-run-to-compose.webp)
+
 ## Un ejemplo completo resuelto
 
 Toma este comando más largo: un servicio de API en una red de usuario, con entorno, capacidades y una entrada de host adicional:

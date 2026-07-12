@@ -52,6 +52,8 @@ deploy:
 
 Valid YAML is only half the job. The [GitLab CI Validator](/gitlab-ci-validator) checks both in one pass: it parses the YAML first, and only if that succeeds does it run the structural checks against your jobs. If the parse fails, you get a single line-referenced error and nothing else — there's no point reporting "undefined stage" on a document that didn't parse.
 
+![Illustration: a glowing .gitlab-ci.yml scanned by CI lint tools, yamllint and editor checks, with OK and error verdicts flowing toward a draft merge request](/blog/in-content/validate-gitlab-ci-yml.webp)
+
 ## YAML errors that bite: indentation, tabs, duplicate keys
 
 YAML is whitespace-significant, and CI config is exactly the kind of nested structure where that bites. The classic GitLab error message — `did not find expected key` — is almost always one of these.

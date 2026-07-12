@@ -67,6 +67,8 @@ empty-job:
 
 Hidden, dot-prefixed templates are the exception — more on those in mistake six. They are allowed to be partial fragments, so they are not required to carry a script.
 
+![Synthwave illustration: a magnifying glass examining a .gitlab-ci.yml on a retro CRT monitor, surrounded by numbered neon icons of common pipeline mistakes — a broken puzzle piece, a cracked shield, gears, and an hourglass](/blog/in-content/common-gitlab-ci-mistakes.webp)
+
 ## 3. needs pointing at a job in a later stage or a job that does not exist
 
 ```yaml

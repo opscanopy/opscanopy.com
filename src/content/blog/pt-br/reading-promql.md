@@ -59,6 +59,8 @@ O `rate` examina as amostras do contador ao longo dos últimos 5 minutos e retor
 
 Uma nota breve sobre o dimensionamento da janela: o intervalo (`[5m]`) deve cobrir confortavelmente pelo menos alguns intervalos de coleta. Curto demais e você obtém resultados ruidosos e com lacunas; longo demais e você suaviza os picos que tentava capturar.
 
+![Ilustração: uma consulta PromQL como camadas empilhadas iluminadas em neon — seletores na base, depois intervalos, funções e agregação — lida de dentro para fora](/blog/in-content/reading-promql.webp)
+
 ## Camada 3: funções
 
 Funções transformam vetores. As que você verá o tempo todo:

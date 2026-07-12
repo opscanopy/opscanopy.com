@@ -103,6 +103,8 @@ services:
 
 Le service `api` atteint la base de données via le nom d'hôte `db` sans aucun câblage supplémentaire. C'est le réseau implicite par défaut qui fait son travail — nous y reviendrons plus bas. Et parce que l'ensemble est un fichier, vous pouvez linter la CI qui le construit et le livre ; si votre pipeline exécute `docker compose up` dans un job, le [GitLab CI Validator](/gitlab-ci-validator) détectera un `.gitlab-ci.yml` malformé avant que le runner ne le fasse.
 
+![Illustration synthwave : une commande docker run sur une seule ligne affichée sur un ordinateur rétro migre le long d'une flèche néon vers une pile multi-conteneurs Docker Compose sur un autre](/blog/in-content/docker-run-vs-compose.webp)
+
 ## Le sens inverse : de Compose vers docker run
 
 La migration n'est pas à sens unique. Vous rencontrerez des cas où vous disposez d'un service Compose mais avez besoin d'une seule ligne `docker run` :

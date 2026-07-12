@@ -75,6 +75,8 @@ Deux détails font constamment trébucher :
 
 Faire en sorte que ces labels figurent sur l'alerte dès le départ est un travail distinct qui se déroule au moment du scrape — si le label que votre matcher vérifie n'a jamais été défini, remontez jusqu'à votre config de scrape avec le [Prometheus Relabel Tester](/prometheus-relabel-tester) avant d'accuser l'arbre de routes.
 
+![Illustration : une alerte entrante descend l'arbre de routes Alertmanager depuis la route racine vers des routes enfants avec des matchers et continue: true, jusqu'à atterrir sur la route correspondante](/blog/in-content/how-alertmanager-routing-works.webp)
+
 ## Correspondance en profondeur d'abord et continue : le premier frère qui correspond gagne, sauf si continue vaut true
 
 Voici la règle que l'exemple de la nuit dernière a enfreinte. Au sein d'une route correspondante, les routes enfants sont évaluées **dans l'ordre, de haut en bas**. L'alerte descend dans le **premier** enfant dont tous les matchers sont vérifiés — puis, par défaut, le balayage des frères **s'arrête**. Les frères suivants ne sont même jamais examinés.

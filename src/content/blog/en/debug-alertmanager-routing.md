@@ -117,6 +117,8 @@ All matchers on a route must hold for it to match — it is a logical AND. An al
 
 If your alert rules carry the wrong labels in the first place — or are missing the ones your routes match on — fix that upstream. The [Prometheus Relabel Tester](/prometheus-relabel-tester) previews exactly what labels survive your relabel rules before they ever reach the route tree.
 
+![Synthwave illustration of debugging Alertmanager routing: an alert rides a neon route tree through a first-match-wins gate, past the classic traps — missing continue, matcher regex, catch-all defaults](/blog/in-content/debug-alertmanager-routing.webp)
+
 ## Bug 3: a catch-all default route swallows everything before your route is reached
 
 An Alertmanager catch-all route is supposed to be a safety net — the receiver that fires when nothing more specific matches. But a catch-all placed *above* a specific sibling, instead of below it, turns into a trap. Combined with first-match-wins, a broad rule at the top shadows every specific rule beneath it:

@@ -75,6 +75,8 @@ Hay dos detalles que confunden constantemente a la gente:
 
 Conseguir que esas labels lleguen a la alerta en primer lugar es una tarea aparte que ocurre en el momento del scrape — si la label que comprueba tu matcher nunca se asignó, rastréala hasta tu configuración de scrape con el [Prometheus Relabel Tester](/prometheus-relabel-tester) antes de echarle la culpa al árbol de rutas.
 
+![Ilustración: una alerta entrante desciende por el árbol de rutas de Alertmanager desde la ruta raíz hacia rutas hijas con matchers y continue: true, hasta aterrizar en la ruta coincidente](/blog/in-content/how-alertmanager-routing-works.webp)
+
 ## Coincidencia en profundidad y continue: gana el primer hermano que coincide, salvo que continue sea true
 
 Esta es la regla que rompió el ejemplo de la madrugada. Dentro de una ruta coincidente, las rutas hijas se evalúan **en orden, de arriba abajo**. La alerta desciende al **primer** hijo cuyos matchers se cumplan todos — y entonces, por defecto, el barrido de hermanos **se detiene**. Los hermanos posteriores ni siquiera se comprueban.

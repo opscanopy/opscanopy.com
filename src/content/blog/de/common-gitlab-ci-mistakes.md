@@ -69,6 +69,8 @@ empty-job:
 
 Versteckte, mit Punkt beginnende Templates sind die Ausnahme — mehr dazu in Fehler sechs. Sie dürfen unvollständige Fragmente sein und müssen daher kein Skript tragen.
 
+![Synthwave-Illustration: eine Lupe untersucht eine .gitlab-ci.yml auf einem Retro-Röhrenmonitor, umgeben von nummerierten Neon-Symbolen häufiger Pipeline-Fehler — ein zerbrochenes Puzzleteil, ein gesprungenes Schild, Zahnräder und eine Sanduhr](/blog/in-content/common-gitlab-ci-mistakes.webp)
+
 ## 3. needs zeigt auf einen Job in einer späteren Stage oder auf einen Job, der nicht existiert
 
 ```yaml

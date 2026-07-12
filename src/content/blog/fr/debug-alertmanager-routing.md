@@ -119,6 +119,8 @@ Tous les matchers d'une route doivent tenir pour qu'elle matche — c'est un ET 
 
 Si vos règles d'alerting portent dès le départ les mauvais labels — ou s'il leur manque ceux sur lesquels vos routes matchent — corrigez cela en amont. Le [Prometheus Relabel Tester](/prometheus-relabel-tester) prévisualise exactement quels labels survivent à vos relabel rules avant même qu'ils n'atteignent l'arbre de routes.
 
+![Illustration synthwave du débogage du routage d'Alertmanager : une alerte parcourt un arbre de routes néon à travers une porte first-match-wins, en passant devant les pièges classiques — continue oublié, regex de matcher, catch-all par défaut](/blog/in-content/debug-alertmanager-routing.webp)
+
 ## Bug 3 : une route catch-all par défaut avale tout avant que votre route ne soit atteinte
 
 Une route catch-all dans Alertmanager est censée être un filet de sécurité — le receiver qui se déclenche quand rien de plus spécifique ne matche. Mais un catch-all placé *au-dessus* d'un sibling spécifique, au lieu d'en dessous, se transforme en piège. Combiné au first-match-wins, une règle large en haut masque toutes les règles spécifiques en dessous :

@@ -59,6 +59,8 @@ rate(http_requests_total{job="api"}[5m])
 
 Una breve nota sobre el tamaño de la ventana: el rango (`[5m]`) debería cubrir holgadamente al menos unos cuantos intervalos de scrape. Demasiado corto y obtienes resultados ruidosos y con huecos; demasiado largo y suavizas hasta hacer desaparecer los picos que intentabas capturar.
 
+![Ilustración: una consulta de PromQL como capas apiladas iluminadas en neón — selectores en la base, luego rangos, funciones y agregación — leída de dentro hacia afuera](/blog/in-content/reading-promql.webp)
+
 ## Capa 3: funciones
 
 Las funciones transforman vectores. Las que verás constantemente:

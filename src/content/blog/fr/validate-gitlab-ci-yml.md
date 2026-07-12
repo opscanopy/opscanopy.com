@@ -54,6 +54,8 @@ deploy:
 
 Un YAML valide ne représente que la moitié du travail. Le [GitLab CI Validator](/gitlab-ci-validator) vérifie les deux en une seule passe : il analyse d'abord le YAML, et ce n'est que si cette étape réussit qu'il exécute les contrôles structurels sur vos jobs. Si l'analyse échoue, vous obtenez une unique erreur avec un numéro de ligne, et rien d'autre — inutile de signaler un « stage non défini » sur un document qui ne s'est même pas analysé.
 
+![Illustration : un .gitlab-ci.yml lumineux analysé par des outils de CI lint, yamllint et les vérifications de l'éditeur, avec des verdicts OK ou erreur qui convergent vers un draft merge request](/blog/in-content/validate-gitlab-ci-yml.webp)
+
 ## Les erreurs YAML qui piquent : indentation, tabulations, clés en double
 
 Le YAML est sensible aux espaces, et une configuration CI est exactement le genre de structure imbriquée où cela pose problème. Le message d'erreur GitLab classique — `did not find expected key` — correspond presque toujours à l'une de ces situations.

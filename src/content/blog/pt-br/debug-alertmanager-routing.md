@@ -119,6 +119,8 @@ Todos os matchers de uma rota precisam se sustentar para que ela case — é um 
 
 Se as suas regras de alerta carregam os labels errados já de início — ou estão sem os labels que as suas rotas usam para casar — corrija isso na origem. O [Prometheus Relabel Tester](/prometheus-relabel-tester) mostra uma prévia exata de quais labels sobrevivem às suas regras de relabel antes mesmo de chegarem à árvore de rotas.
 
+![Ilustração synthwave da depuração do roteamento do Alertmanager: um alerta percorre uma árvore de rotas neon através de um portão first-match-wins, passando pelas armadilhas clássicas — continue ausente, regex de matcher, defaults catch-all](/blog/in-content/debug-alertmanager-routing.webp)
+
 ## Bug 3: uma rota catch-all default engole tudo antes da sua rota ser alcançada
 
 Uma rota catch-all do Alertmanager deveria ser uma rede de segurança — o receiver que dispara quando nada mais específico casa. Mas um catch-all posicionado *acima* de um irmão específico, em vez de abaixo dele, vira uma armadilha. Combinado com o primeiro-match-vence, uma regra ampla no topo encobre todas as regras específicas abaixo dela:

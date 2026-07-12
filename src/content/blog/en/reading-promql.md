@@ -60,6 +60,8 @@ rate(http_requests_total{job="api"}[5m])
 
 A short note on window sizing: the range (`[5m]`) should comfortably cover at least a few scrape intervals. Too short and you get noisy, gappy results; too long and you smooth away the spikes you were trying to catch.
 
+![Illustration: a PromQL query as neon-lit stacked layers — selectors at the base, then ranges, functions and aggregation — read from the inside out](/blog/in-content/reading-promql.webp)
+
 ## Layer 3: functions
 
 Functions transform vectors. The ones you’ll see constantly:

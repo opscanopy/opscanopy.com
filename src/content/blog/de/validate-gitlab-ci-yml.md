@@ -54,6 +54,8 @@ deploy:
 
 Gültiges YAML ist nur die halbe Miete. Der [GitLab CI Validator](/gitlab-ci-validator) prüft beides in einem Durchgang: Er parst zuerst das YAML, und nur wenn das gelingt, führt er die strukturellen Prüfungen gegen deine Jobs aus. Schlägt das Parsen fehl, bekommst du eine einzige Fehlermeldung mit Zeilenangabe und sonst nichts — es bringt nichts, „undefined stage“ für ein Dokument zu melden, das gar nicht geparst werden konnte.
 
+![Illustration: eine leuchtende .gitlab-ci.yml, geprüft von CI-Lint-Tools, yamllint und Editor-Checks — OK- und Fehler-Ergebnisse fließen in Richtung eines Draft Merge Requests](/blog/in-content/validate-gitlab-ci-yml.webp)
+
 ## YAML-Fehler, die wehtun: Einrückung, Tabs, doppelte Schlüssel
 
 YAML ist whitespace-sensitiv, und CI-Konfiguration ist genau die Art von verschachtelter Struktur, bei der das zum Verhängnis wird. Die klassische GitLab-Fehlermeldung — `did not find expected key` — ist fast immer einer dieser Fälle.

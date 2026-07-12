@@ -101,6 +101,8 @@ services:
 
 The `api` service reaches the database at the hostname `db` with zero extra wiring. That is the implicit default network doing its job — more on that below. And because the whole thing is a file, you can lint the CI that builds and ships it; if your pipeline runs `docker compose up` in a job, the [GitLab CI Validator](/gitlab-ci-validator) will catch a malformed `.gitlab-ci.yml` before the runner does.
 
+![Synthwave illustration: a docker run one-liner on one retro computer migrating along a neon arrow to a multi-container Docker Compose stack on another](/blog/in-content/docker-run-vs-compose.webp)
+
 ## Going the other way: Compose to docker run
 
 Migration is not a one-way street. You will hit cases where you have a Compose service but need a single `docker run` line:

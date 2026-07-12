@@ -62,6 +62,8 @@ Los caracteres glob que GitHub respeta: `*` (cualquier carácter excepto `/`), `
 
 Por qué importa: que `*` no cruce `/` es responsable de una gran parte de los reportes de "filtro branches de github actions no funciona". Ante la duda, recurre a `**`.
 
+![Ilustración synthwave: un evento push llega a un terminal retro que muestra WORKFLOW START mientras los filtros branches, tags y paths aprueban o rechazan refs y archivos modificados](/blog/in-content/github-actions-workflow-not-triggering-filters.webp)
+
 ## 3. La semántica AND de `branches` + `paths`
 
 Esta es la que quema a los ingenieros con experiencia. Cuando un evento `push` o `pull_request` tiene **a la vez** un filtro de rama y un filtro de ruta, el evento debe satisfacer **ambos** para dispararse. Se combinan con un AND, no con un OR.

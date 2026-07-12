@@ -59,6 +59,8 @@ rate(http_requests_total{job="api"}[5m])
 
 Eine kurze Anmerkung zur Fenstergröße: Der Bereich (`[5m]`) sollte bequem mindestens einige Scrape-Intervalle abdecken. Zu kurz, und Sie erhalten verrauschte, lückenhafte Ergebnisse; zu lang, und Sie glätten genau die Spitzen weg, die Sie eigentlich erfassen wollten.
 
+![Illustration: eine PromQL-Abfrage als neonbeleuchtete, gestapelte Schichten — Selektoren als Basis, darüber Bereiche, Funktionen und Aggregation — von innen nach außen gelesen](/blog/in-content/reading-promql.webp)
+
 ## Schicht 3: Funktionen
 
 Funktionen transformieren Vektoren. Diejenigen, die Ihnen ständig begegnen werden:

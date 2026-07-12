@@ -75,6 +75,8 @@ Dois detalhes confundem as pessoas o tempo todo:
 
 Colocar esses labels no alerta em primeiro lugar é um trabalho à parte, que acontece no momento do scrape — se o label que seu matcher verifica nunca foi definido, rastreie de volta até a sua configuração de scrape com o [Prometheus Relabel Tester](/prometheus-relabel-tester) antes de culpar a árvore de rotas.
 
+![Ilustração: um alerta de entrada desce pela árvore de rotas do Alertmanager, da rota raiz para rotas filhas com matchers e continue: true, até cair na rota correspondente](/blog/in-content/how-alertmanager-routing-works.webp)
+
 ## Correspondência em profundidade e continue: o primeiro irmão correspondente vence, a menos que continue seja true
 
 Aqui está a regra que o exemplo da madrugada quebrou. Dentro de uma rota correspondente, as rotas filhas são avaliadas **em ordem, de cima para baixo**. O alerta desce para o **primeiro** filho cujos matchers se aplicam por completo — e então, por padrão, a varredura dos irmãos **para**. Os irmãos seguintes nem chegam a ser verificados.

@@ -73,6 +73,8 @@ Two details trip people up constantly:
 
 Getting those labels onto the alert in the first place is a separate job that happens at scrape time — if the label your matcher checks was never set, walk it back to your scrape config with the [Prometheus Relabel Tester](/prometheus-relabel-tester) before you blame the route tree.
 
+![Illustration: an incoming alert descends the Alertmanager route tree from the root route into child routes with matchers and continue: true, ending on the matched route](/blog/in-content/how-alertmanager-routing-works.webp)
+
 ## Depth-first matching and continue: first matching sibling wins unless continue is true
 
 Here is the rule that the late-night example broke. Within a matched route, child routes are evaluated **in order, top to bottom**. The alert descends into the **first** child whose matchers all hold — and then, by default, the sibling scan **stops**. Later siblings are never even checked.

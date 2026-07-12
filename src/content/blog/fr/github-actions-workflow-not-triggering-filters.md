@@ -62,6 +62,8 @@ Les caractères glob que GitHub respecte : `*` (n'importe quels caractères sauf
 
 Pourquoi c'est important : le fait que `*` ne traverse pas `/` est responsable d'une part énorme des rapports « le filtre branches de github actions ne fonctionne pas ». Dans le doute, optez pour `**`.
 
+![Illustration synthwave : un événement push atteint un terminal rétro affichant WORKFLOW START tandis que les filtres branches, tags et paths acceptent ou rejettent les refs et les fichiers modifiés](/blog/in-content/github-actions-workflow-not-triggering-filters.webp)
+
 ## 3. La sémantique ET de `branches` + `paths`
 
 C'est celle qui piège les ingénieurs expérimentés. Lorsqu'un événement `push` ou `pull_request` possède **à la fois** un filtre de branche et un filtre de chemin, l'événement doit satisfaire **les deux** pour se déclencher. Ils sont reliés par un ET, pas par un OU.
