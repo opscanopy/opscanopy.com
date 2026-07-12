@@ -191,10 +191,10 @@ export const days: Mission90Day[] = [
   d(59, 'ecr-ecs-fargate', 'ECR + ECS/Fargate — containers on AWS (Go Deeper: where Lambda fits)', 60, { live: true }),
   d(60, 'observability-1', 'Observability 1 — Prometheus & Grafana fundamentals', 55, { live: true }),
   d(61, 'observability-2', 'Observability 2 — alerts, SLOs & log aggregation (Loki)', 50, { live: true }),
-  d(62, 'project-2-day-1', 'Project 2, Day 1: plan the AWS architecture', 60, { project: true }),
-  d(63, 'project-2-day-2', 'Project 2, Day 2: network & IAM groundwork', 60, { project: true }),
-  d(64, 'project-2-day-3', 'Project 2, Day 3: deploy containers behind a load balancer', 60, { project: true }),
-  d(65, 'project-2-day-4', 'Project 2, Day 4: DNS, TLS & monitoring', 60, { project: true }),
+  d(62, 'project-2-day-1', 'Project 2, Day 1: plan the AWS architecture', 60, { project: true, live: true }),
+  d(63, 'project-2-day-2', 'Project 2, Day 2: network & IAM groundwork', 60, { project: true, live: true }),
+  d(64, 'project-2-day-3', 'Project 2, Day 3: deploy containers behind a load balancer', 60, { project: true, live: true }),
+  d(65, 'project-2-day-4', 'Project 2, Day 4: DNS, TLS & monitoring', 60, { project: true, live: true }),
 
   // Phase 4 — Orchestration & IaC (days 66–85)
   d(66, 'why-kubernetes', 'Why Kubernetes — the problems it solves', 45),
