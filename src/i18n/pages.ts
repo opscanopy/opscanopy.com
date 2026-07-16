@@ -26,7 +26,10 @@ export function getPagesContent(lang: Locale): PagesContent {
     about: p.about ?? en.about,
     terms: p.terms ?? en.terms,
     contact: p.contact ?? en.contact,
-    ui: { updatedLabel: p.ui?.updatedLabel ?? en.ui.updatedLabel },
+    ui: {
+      updatedLabel: p.ui?.updatedLabel ?? en.ui.updatedLabel,
+      consent: p.ui?.consent ?? en.ui.consent,
+    },
   };
 }
 

@@ -35,6 +35,7 @@ declare module 'js-yaml' {
 
 import yaml from 'js-yaml';
 import { checkRegexSafety } from '../regex-safety';
+import { base64UrlEncode, base64UrlDecode } from '../codec';
 import type { RunResult, TestResult, ShareState } from './types';
 
 /* ────────────────────────────────────────────────────────────────────────── *
@@ -957,27 +958,6 @@ function nowMs(): number {
 /* ────────────────────────────────────────────────────────────────────────── *
  *  Shareable-URL state (base64url in the location hash).
  * ────────────────────────────────────────────────────────────────────────── */
-
-/** URL-safe base64 of a UTF-8 string. */
-function base64UrlEncode(input: string): string {
-  // encodeURIComponent → percent-escape unicode → raw bytes safe for btoa.
-  const bytes = encodeURIComponent(input).replace(/%([0-9A-F]{2})/g, (_, h) =>
-    String.fromCharCode(parseInt(h, 16)),
-  );
-  return btoa(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-/** Inverse of base64UrlEncode. */
-function base64UrlDecode(input: string): string {
-  let b64 = input.replace(/-/g, '+').replace(/_/g, '/');
-  while (b64.length % 4 !== 0) b64 += '=';
-  const bytes = atob(b64);
-  let percent = '';
-  for (let i = 0; i < bytes.length; i++) {
-    percent += '%' + bytes.charCodeAt(i).toString(16).padStart(2, '0');
-  }
-  return decodeURIComponent(percent);
-}
 
 /**
  * Encode the editor state into a URL hash fragment, e.g.

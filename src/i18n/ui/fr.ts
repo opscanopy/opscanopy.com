@@ -103,6 +103,32 @@ const fr: Partial<UiDict> = {
   'category.Scheduling': 'Planification',
   'category.Logs': 'Logs',
   'category.Config': 'Config',
+  'category.Docker': 'Docker',
+  'category.all': 'Tous',
+
+  // Tool catalog (/tools)
+  'tools.badgeLive': 'En service',
+  'tools.tryLabel': 'Essayer :',
+  'tools.openTool': "Ouvrir l'outil",
+  'tools.availableNow': 'Disponibles maintenant',
+  'tools.liveToolsHeading': 'Outils en service.',
+  'tools.clientSideBadge': '100% côté client',
+  'tools.browseByCategory': 'Parcourir par catégorie',
+  'tools.searchPlaceholder': 'Rechercher des outils…',
+  'tools.searchLabel': 'Rechercher des outils',
+  'tools.filterLabel': 'Filtrer par catégorie',
+  'tools.sortLabel': 'Trier',
+  'tools.sortAriaLabel': 'Trier les outils',
+  'tools.sortDefault': 'Par défaut',
+  'tools.sortAZ': 'A–Z',
+  'tools.sortNewest': 'Plus récents',
+  'tools.emptyTitle': 'Aucun outil ne correspond à {query}.',
+  'tools.emptyQueryFallback': 'votre recherche',
+  'tools.emptyHint': "Essayez l'un de ceux-ci, ou réinitialisez les filtres pour tout voir.",
+  'tools.clearFilters': 'Réinitialiser les filtres',
+  'tools.zeroLiveTitle': "Rien en service pour l'instant.",
+  'tools.zeroLiveBody':
+    "Le premier outil est en cours de finition avant sa mise en ligne : revenez bientôt pour découvrir ce qui arrive.",
 };
 
 export default fr;

@@ -110,6 +110,31 @@ const en = {
   'category.Scheduling': 'Scheduling',
   'category.Logs': 'Logs',
   'category.Config': 'Config',
+  'category.Docker': 'Docker',
+  'category.all': 'All',
+
+  // Tool catalog (/tools) — chrome shared by ToolCard + the catalog page
+  'tools.badgeLive': 'Live',
+  'tools.tryLabel': 'Try:',
+  'tools.openTool': 'Open tool',
+  'tools.availableNow': 'Available now',
+  'tools.liveToolsHeading': 'Live tools.',
+  'tools.clientSideBadge': '100% client-side',
+  'tools.browseByCategory': 'Browse by category',
+  'tools.searchPlaceholder': 'Search tools…',
+  'tools.searchLabel': 'Search tools',
+  'tools.filterLabel': 'Filter by category',
+  'tools.sortLabel': 'Sort',
+  'tools.sortAriaLabel': 'Sort tools',
+  'tools.sortDefault': 'Default',
+  'tools.sortAZ': 'A–Z',
+  'tools.sortNewest': 'Newest',
+  'tools.emptyTitle': 'No tools match {query}.',
+  'tools.emptyQueryFallback': 'your search',
+  'tools.emptyHint': 'Try one of these, or clear the filters to see everything.',
+  'tools.clearFilters': 'Clear filters',
+  'tools.zeroLiveTitle': 'Nothing live just yet.',
+  'tools.zeroLiveBody': 'The first tool is being polished to ship — check back soon to see what is coming.',
 } as const;
 
 export type UiKey = keyof typeof en;

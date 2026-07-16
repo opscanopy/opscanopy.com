@@ -102,6 +102,32 @@ const ptBr: Partial<UiDict> = {
   'category.Scheduling': 'Agendamento',
   'category.Logs': 'Logs',
   'category.Config': 'Config',
+  'category.Docker': 'Docker',
+  'category.all': 'Todas',
+
+  // Tool catalog (/tools)
+  'tools.badgeLive': 'No ar',
+  'tools.tryLabel': 'Testar:',
+  'tools.openTool': 'Abrir ferramenta',
+  'tools.availableNow': 'Disponíveis agora',
+  'tools.liveToolsHeading': 'Ferramentas no ar.',
+  'tools.clientSideBadge': '100% no lado do cliente',
+  'tools.browseByCategory': 'Navegar por categoria',
+  'tools.searchPlaceholder': 'Buscar ferramentas…',
+  'tools.searchLabel': 'Buscar ferramentas',
+  'tools.filterLabel': 'Filtrar por categoria',
+  'tools.sortLabel': 'Ordenar',
+  'tools.sortAriaLabel': 'Ordenar ferramentas',
+  'tools.sortDefault': 'Padrão',
+  'tools.sortAZ': 'A–Z',
+  'tools.sortNewest': 'Mais recentes',
+  'tools.emptyTitle': 'Nenhuma ferramenta corresponde a {query}.',
+  'tools.emptyQueryFallback': 'sua busca',
+  'tools.emptyHint': 'Experimente um destes, ou limpe os filtros para ver tudo.',
+  'tools.clearFilters': 'Limpar filtros',
+  'tools.zeroLiveTitle': 'Nada no ar ainda.',
+  'tools.zeroLiveBody':
+    'A primeira ferramenta está sendo finalizada para o lançamento: volte em breve para ver o que vem por aí.',
 };
 
 export default ptBr;

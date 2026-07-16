@@ -3,8 +3,10 @@
  *
  * Every English blog post (src/content/blog/en/*.md) MUST declare a
  * `relatedTool.href` in its YAML frontmatter that maps to a known tool slug
- * from the registry (src/data/tools.ts).  This test locks that contract in so
- * the blog→tool conversion CTA can never silently go missing.
+ * from the registry (src/data/tools.ts) — or to one of the few first-party
+ * section hubs (e.g. /mission-90/) a post may promote instead of a tool.
+ * This test locks that contract in so the blog→conversion CTA can never
+ * silently go missing or point at a dead destination.
  *
  * Parsing: a simple line-based scan between the leading '---' fences.  No
  * extra dependencies — only Node built-ins and vitest.
@@ -103,6 +105,12 @@ function parseRelatedToolHref(src: string): string | null {
 /** Set of valid slugs — every entry in tools.ts regardless of status. */
 const validSlugs = new Set(tools.map((t) => t.slug));
 
+/**
+ * First-party section hubs a post may use as its conversion CTA instead of a
+ * tool (kept deliberately tiny — add entries only for real flagship sections).
+ */
+const validSectionHrefs = new Set(['/mission-90/']);
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -126,12 +134,14 @@ describe('blog/en relatedTool integrity', () => {
         `${file}: relatedTool.href is missing or empty in frontmatter`,
       ).toBeTruthy();
 
-      // href is expected to be "/<slug>" — strip the leading slash.
+      // href is expected to be "/<slug>" — strip the leading slash. Section
+      // hubs (e.g. /mission-90/) are matched against the allowlist verbatim.
       const slug = (href as string).replace(/^\//, '');
 
       expect(
-        validSlugs.has(slug),
-        `${file}: relatedTool.href "/${slug}" does not match any slug in src/data/tools.ts. ` +
+        validSlugs.has(slug) || validSectionHrefs.has(href as string),
+        `${file}: relatedTool.href "${href}" matches neither a slug in src/data/tools.ts ` +
+          `nor a section hub in validSectionHrefs. ` +
           `Valid slugs: ${[...validSlugs].sort().join(', ')}`,
       ).toBe(true);
     });

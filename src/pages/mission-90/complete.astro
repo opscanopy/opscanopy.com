@@ -1,0 +1,315 @@
+---
+/**
+ * /mission-90/complete — a personal progress snapshot & completion artifact.
+ *
+ * Not gated on finishing all 90 days: it renders a "your journey so far" card
+ * for any learner with progress, and a celebratory "you did it" card once
+ * every live day is done. Reads localStorage client-side only (this is a
+ * static page — there is nothing to read at build time), so the server-
+ * rendered markup is a loading/empty shell that a boot script fills in.
+ *
+ * The completion card is generated as an inline SVG string (branded, no
+ * external assets) and offered as a PNG download via a canvas round-trip —
+ * a personal artifact a learner can post to LinkedIn/X, answering "what do I
+ * actually get at the end?" without any backend or account.
+ */
+import Shell from '../../components/Shell.astro';
+import Button from '../../components/Button.astro';
+import { breadcrumbLd } from '../../lib/jsonld';
+import { site } from '../../data/site';
+
+const jsonLd = breadcrumbLd([
+  { name: 'Home', item: `${site.url}/` },
+  { name: '90 Days DevOps', item: `${site.url}/mission-90/` },
+  { name: 'My progress', item: `${site.url}/mission-90/complete/` },
+]);
+---
+
+<Shell
+  title="My Mission 90 Days DevOps Progress — OpsCanopy"
+  description="A personal snapshot of your Mission 90 Days DevOps progress — days completed, missions cleared, and a shareable completion card. Generated from this browser's saved progress."
+  canonical="/mission-90/complete"
+  jsonLd={jsonLd}
+  noindex
+  noAlternates
+>
+  <section class="section-pad bg-canvas-soft">
+    <div class="container-page">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Mission 90 Days DevOps</p>
+        <h1 id="m90c-heading" class="display-xl mt-4 text-balance text-ink">Loading your progress…</h1>
+        <p id="m90c-sub" class="body-lg mt-4 text-pretty text-body"></p>
+      </div>
+
+      <div id="m90c-empty" class="mx-auto mt-10 max-w-xl text-center" hidden>
+        <p class="body-md text-body">
+          No progress found in this browser yet — this page reads the same local save as the hub, so
+          it only has something to show once you've ticked at least one day.
+        </p>
+        <div class="mt-5 flex flex-wrap justify-center gap-3">
+          <Button href="/mission-90/day/1/" variant="primary">Start Day 1</Button>
+          <Button href="/mission-90/" variant="secondary">Back to the hub</Button>
+        </div>
+      </div>
+
+      <div id="m90c-content" hidden>
+        <dl class="mx-auto mt-10 grid max-w-3xl grid-cols-2 gap-4 sm:grid-cols-4">
+          <div class="card-soft rounded-lg p-4 text-center">
+            <dt class="caption text-mute">Days</dt>
+            <dd class="display-sm mt-1 tabular-nums text-ink"><span id="m90c-days">0</span>/90</dd>
+          </div>
+          <div class="card-soft rounded-lg p-4 text-center">
+            <dt class="caption text-mute">Missions</dt>
+            <dd class="display-sm mt-1 tabular-nums text-ink"><span id="m90c-missions">0</span>/<span id="m90c-missions-total">10</span></dd>
+          </div>
+          <div class="card-soft rounded-lg p-4 text-center">
+            <dt class="caption text-mute">Phases done</dt>
+            <dd class="display-sm mt-1 tabular-nums text-ink" id="m90c-phases">0/5</dd>
+          </div>
+          <div class="card-soft rounded-lg p-4 text-center">
+            <dt class="caption text-mute">Since</dt>
+            <dd class="display-sm mt-1 text-ink" id="m90c-since">—</dd>
+          </div>
+        </dl>
+
+        <div class="mx-auto mt-12 max-w-xl">
+          <div
+            id="m90c-card-wrap"
+            class="overflow-hidden rounded-xl border border-hairline bg-inverse shadow-float"
+          >
+          </div>
+          <div class="mt-4 flex flex-wrap justify-center gap-3">
+            <button type="button" id="m90c-download" class="btn btn-primary btn-sm" style="touch-action: manipulation;">
+              Download image
+            </button>
+            <button type="button" id="m90c-copy-blurb" class="btn btn-secondary btn-sm" style="touch-action: manipulation;">
+              Copy share text
+            </button>
+          </div>
+          <p class="caption mt-2 text-center text-mute" role="status" id="m90c-status"></p>
+        </div>
+
+        <div id="m90c-missions-wrap" class="mx-auto mt-14 max-w-2xl" hidden>
+          <p class="eyebrow text-center">Missions cleared</p>
+          <ul id="m90c-missions-list" role="list" class="mt-4 space-y-2"></ul>
+        </div>
+
+        <div class="mt-14 flex justify-center gap-3">
+          <Button href="/mission-90/" variant="secondary">Back to the hub</Button>
+        </div>
+      </div>
+    </div>
+  </section>
+</Shell>
+
+<script>
+  import { parseProgress, doneCount, phaseProgress } from '../../lib/mission90/progress';
+  import { program, phases, missions, liveDays } from '../../data/mission90';
+  import { copyTextToClipboard } from '../../lib/clipboard';
+  import { escapeHtml } from '../../lib/escape-html';
+
+  const KEY = 'oc-m90-v1';
+
+  function readProgress() {
+    try {
+      return parseProgress(localStorage.getItem(KEY));
+    } catch {
+      return parseProgress(null);
+    }
+  }
+
+  function fmtDate(iso: string): string {
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      }).format(new Date(iso));
+    } catch {
+      return iso;
+    }
+  }
+
+  function formatDuration(seconds: number): string {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }
+
+  /** Branded, dependency-free SVG completion card — 1200×630 (social-card ratio). */
+  function buildCardSvg(opts: {
+    title: string;
+    days: number;
+    totalDays: number;
+    missionsCount: number;
+    missionsTotal: number;
+    dateRange: string;
+  }): string {
+    const { title, days, totalDays, missionsCount, missionsTotal, dateRange } = opts;
+    const pct = totalDays > 0 ? Math.round((days / totalDays) * 100) : 0;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+      <rect width="1200" height="630" fill="#0a0a0a"/>
+      <rect x="0" y="0" width="1200" height="10" fill="#10b981"/>
+      <text x="60" y="110" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700" fill="#10b981" letter-spacing="1">OPSCANOPY &#183; MISSION 90 DAYS DEVOPS</text>
+      <text x="60" y="200" font-family="Arial, Helvetica, sans-serif" font-size="52" font-weight="700" fill="#ffffff">${escapeHtml(title)}</text>
+      <text x="60" y="340" font-family="Arial, Helvetica, sans-serif" font-size="88" font-weight="700" fill="#ffffff">${days}<tspan font-size="34" fill="#8a8a8a">/${totalDays} days (${pct}%)</tspan></text>
+      <text x="60" y="420" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="700" fill="#ffffff">${missionsCount}<tspan font-size="26" fill="#8a8a8a">/${missionsTotal} browser missions cleared</tspan></text>
+      <text x="60" y="560" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#8a8a8a">${escapeHtml(dateRange)}</text>
+      <text x="1140" y="560" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#8a8a8a" text-anchor="end">opscanopy.com/mission-90</text>
+    </svg>`;
+  }
+
+  let currentSvg = '';
+  let currentBlurb = '';
+
+  function downloadCard(): void {
+    if (!currentSvg) return;
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1200;
+      canvas.height = 630;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(img, 0, 0);
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'mission-90-progress.png';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }, 'image/png');
+    };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(currentSvg);
+  }
+
+  function render(): void {
+    const p = readProgress();
+    const done = doneCount(p);
+    const missionsDone = Object.keys(p.missions).length;
+
+    const heading = document.getElementById('m90c-heading');
+    const sub = document.getElementById('m90c-sub');
+    const empty = document.getElementById('m90c-empty');
+    const content = document.getElementById('m90c-content');
+
+    if (done === 0 && missionsDone === 0 && !p.startedAt) {
+      if (heading) heading.textContent = 'No progress yet';
+      if (sub) sub.textContent = "You haven't started Mission 90 in this browser yet.";
+      if (empty) empty.hidden = false;
+      if (content) content.hidden = true;
+      return;
+    }
+
+    const totalDays = liveDays.length || program.totalDays;
+    const allDone = totalDays > 0 && done >= totalDays;
+    const title = allDone
+      ? 'Developer to DevOps engineer. Complete.'
+      : `Day ${done} of ${program.totalDays} — nice work so far.`;
+
+    if (heading) heading.textContent = allDone ? 'You did it.' : `Day ${done} of ${program.totalDays}.`;
+    if (sub) {
+      sub.textContent = allDone
+        ? 'You completed the full Mission 90 Days DevOps program. Here is your run.'
+        : "Here's a snapshot of your Mission 90 progress in this browser. Keep going, or check back anytime.";
+    }
+
+    const daysEl = document.getElementById('m90c-days');
+    if (daysEl) daysEl.textContent = String(done);
+    const missionsEl = document.getElementById('m90c-missions');
+    if (missionsEl) missionsEl.textContent = String(missionsDone);
+    const missionsTotalEl = document.getElementById('m90c-missions-total');
+    if (missionsTotalEl) missionsTotalEl.textContent = String(missions.length);
+
+    const phasesDone = phases.filter((ph) => {
+      const { done: pd, total } = phaseProgress(p, ph.days);
+      return total > 0 && pd >= total;
+    }).length;
+    const phasesEl = document.getElementById('m90c-phases');
+    if (phasesEl) phasesEl.textContent = `${phasesDone}/${phases.length}`;
+
+    const sinceEl = document.getElementById('m90c-since');
+    const startLabel = p.startedAt ? fmtDate(p.startedAt) : null;
+    if (sinceEl) sinceEl.textContent = startLabel ?? '—';
+
+    const today = fmtDate(new Date().toISOString());
+    const dateRange = startLabel ? `${startLabel} — ${today}` : today;
+
+    currentSvg = buildCardSvg({
+      title,
+      days: done,
+      totalDays: program.totalDays,
+      missionsCount: missionsDone,
+      missionsTotal: missions.length,
+      dateRange,
+    });
+    const cardWrap = document.getElementById('m90c-card-wrap');
+    if (cardWrap) {
+      cardWrap.innerHTML = `<img src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(currentSvg)}" width="1200" height="630" alt="Mission 90 progress card: ${escapeHtml(title)}" style="width:100%;height:auto;display:block;" />`;
+    }
+
+    const shareUrl = `${location.origin}/mission-90/?utm_source=share&utm_medium=progress_card`;
+    currentBlurb = allDone
+      ? `I just completed OpsCanopy's Mission 90 Days DevOps program — ${done}/${program.totalDays} days and ${missionsDone}/${missions.length} browser missions cleared. Free, no signup: ${shareUrl}`
+      : `I'm on Day ${done}/${program.totalDays} of OpsCanopy's Mission 90 Days DevOps program (${missionsDone}/${missions.length} browser missions cleared so far). Free, no signup: ${shareUrl}`;
+
+    const missionsListWrap = document.getElementById('m90c-missions-wrap');
+    const missionsList = document.getElementById('m90c-missions-list');
+    if (missionsList) {
+      missionsList.innerHTML = '';
+      const cleared = missions.filter((m) => p.missions[m.id]);
+      if (cleared.length > 0 && missionsListWrap) {
+        missionsListWrap.hidden = false;
+        for (const m of cleared) {
+          const run = p.missions[m.id];
+          const li = document.createElement('li');
+          li.className = 'card-soft flex items-center justify-between gap-3 rounded-lg p-3';
+          const stats = run
+            ? `${run.commands} commands &middot; ${run.hints} hint${run.hints === 1 ? '' : 's'} &middot; ${formatDuration(run.seconds)}`
+            : '';
+          li.innerHTML = `<span class="body-sm font-medium text-ink">${escapeHtml(m.title)}</span><span class="caption text-mute">${stats}</span>`;
+          missionsList.appendChild(li);
+        }
+      } else if (missionsListWrap) {
+        missionsListWrap.hidden = true;
+      }
+    }
+
+    if (empty) empty.hidden = true;
+    if (content) content.hidden = false;
+  }
+
+  function boot(): void {
+    render();
+    const downloadBtn = document.getElementById('m90c-download');
+    const copyBtn = document.getElementById('m90c-copy-blurb');
+    const status = document.getElementById('m90c-status');
+    if (downloadBtn && downloadBtn.dataset.bound !== 'true') {
+      downloadBtn.dataset.bound = 'true';
+      downloadBtn.addEventListener('click', downloadCard);
+    }
+    if (copyBtn && copyBtn.dataset.bound !== 'true') {
+      copyBtn.dataset.bound = 'true';
+      copyBtn.addEventListener('click', () => {
+        void copyTextToClipboard(currentBlurb).then((ok) => {
+          if (status) {
+            status.textContent = ok
+              ? 'Copied — paste it into LinkedIn, X, or wherever you post.'
+              : "Couldn't copy automatically — the text is in the box above, select and copy by hand.";
+          }
+        });
+      });
+    }
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+  document.addEventListener('m90:progress', render);
+  window.addEventListener('storage', (e) => {
+    if (e.key === KEY) render();
+  });
+</script>

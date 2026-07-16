@@ -103,6 +103,32 @@ const de: Partial<UiDict> = {
   'category.Scheduling': 'Zeitplanung',
   'category.Logs': 'Logs',
   'category.Config': 'Config',
+  'category.Docker': 'Docker',
+  'category.all': 'Alle',
+
+  // Tool catalog (/tools)
+  'tools.badgeLive': 'Live',
+  'tools.tryLabel': 'Testen:',
+  'tools.openTool': 'Tool öffnen',
+  'tools.availableNow': 'Jetzt verfügbar',
+  'tools.liveToolsHeading': 'Live-Tools.',
+  'tools.clientSideBadge': '100% clientseitig',
+  'tools.browseByCategory': 'Nach Kategorie durchsuchen',
+  'tools.searchPlaceholder': 'Tools durchsuchen…',
+  'tools.searchLabel': 'Tools durchsuchen',
+  'tools.filterLabel': 'Nach Kategorie filtern',
+  'tools.sortLabel': 'Sortieren',
+  'tools.sortAriaLabel': 'Tools sortieren',
+  'tools.sortDefault': 'Standard',
+  'tools.sortAZ': 'A–Z',
+  'tools.sortNewest': 'Neueste',
+  'tools.emptyTitle': 'Keine Tools entsprechen {query}.',
+  'tools.emptyQueryFallback': 'Ihrer Suche',
+  'tools.emptyHint': 'Probieren Sie eines davon, oder setzen Sie die Filter zurück, um alles zu sehen.',
+  'tools.clearFilters': 'Filter zurücksetzen',
+  'tools.zeroLiveTitle': 'Noch nichts live.',
+  'tools.zeroLiveBody':
+    'Das erste Tool wird gerade für den Release poliert – schauen Sie bald wieder vorbei, um zu sehen, was kommt.',
 };
 
 export default de;

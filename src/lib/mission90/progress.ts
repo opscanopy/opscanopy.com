@@ -10,6 +10,8 @@
  * timezone conversion is ever applied.
  */
 
+import { base64UrlEncode, base64UrlDecode } from '../codec';
+
 /** Shape stored under the `oc-m90-v1` localStorage key. */
 export interface M90Progress {
   /** ISO date the user first started the mission. */
@@ -97,6 +99,43 @@ export function parseProgress(raw: string | null): M90Progress {
   return progress;
 }
 
+/**
+ * Serialize progress into a portable, copy-pasteable code — the same
+ * base64url codec the AlertLint share links use. Lets a learner move
+ * progress across browsers/devices without any backend or account.
+ */
+export function exportProgress(p: M90Progress): string {
+  return base64UrlEncode(JSON.stringify(p));
+}
+
+/**
+ * Parse a progress export code back into a validated M90Progress, or null
+ * when the code isn't a valid progress export at all (bad base64, non-JSON,
+ * or JSON that isn't an object). A code that decodes to a well-formed but
+ * genuinely empty/partial progress object still salvages via the same
+ * malformed-sub-entry tolerance as `parseProgress` — only totally invalid
+ * codes return null, so the UI can tell "bad code" apart from "valid code,
+ * nothing in it yet".
+ */
+export function importProgress(code: string): M90Progress | null {
+  const trimmed = code.trim();
+  if (!trimmed) return null;
+  let json: string;
+  try {
+    json = base64UrlDecode(trimmed);
+  } catch {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed)) return null;
+  return parseProgress(json);
+}
+
 /** Count of completed days. */
 export function doneCount(p: M90Progress): number {
   return Object.keys(p.days).length;
@@ -112,6 +151,24 @@ export function nextDay(p: M90Progress, liveDayNumbers: number[]): number | null
     if (!Object.prototype.hasOwnProperty.call(p.days, String(n))) return n;
   }
   return null;
+}
+
+/**
+ * The day the learner should continue with. Unlike `nextDay` (lowest incomplete
+ * overall), this respects where they actually are: the first incomplete live
+ * day at or after `lastVisitedDay`, so a learner who jumped to Day 30 is not
+ * sent back to Day 1. Falls back to `nextDay` when the anchor is unset or
+ * everything from it onward is done; null when every live day is complete.
+ */
+export function resumeDay(p: M90Progress, liveDayNumbers: number[]): number | null {
+  const anchor = p.lastVisitedDay;
+  if (typeof anchor === 'number') {
+    const sorted = [...liveDayNumbers].sort((a, b) => a - b);
+    for (const n of sorted) {
+      if (n >= anchor && !Object.prototype.hasOwnProperty.call(p.days, String(n))) return n;
+    }
+  }
+  return nextDay(p, liveDayNumbers);
 }
 
 /** Completion within an inclusive day range, e.g. [21, 45] → { done: 3, total: 25 }. */

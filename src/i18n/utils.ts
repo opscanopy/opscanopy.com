@@ -64,13 +64,26 @@ export function stripLocale(pathname: string): string {
 }
 
 /**
+ * Append the trailing slash that canonical/hreflang URLs always carry
+ * (SEO.astro's getAbsoluteLocaleUrl, driven by the astro.config build.format
+ * default of "directory"), UNLESS the key is an in-page anchor ("/#why") or
+ * already ends in "/". Anchors are left bare — inserting a slash before "#"
+ * would change what the browser scrolls to.
+ */
+function withTrailingSlash(key: string): string {
+  if (key.endsWith('/') || key.includes('#')) return key;
+  return `${key}/`;
+}
+
+/**
  * Turn a locale-neutral page key into a localized path. en stays un-prefixed.
- * "/tools" + "de" → "/de/tools"; "/tools" + "en" → "/tools"; "/" + "de" → "/de".
+ * "/tools" + "de" → "/de/tools/"; "/tools" + "en" → "/tools/"; "/" + "de" → "/de".
  */
 export function localizeKey(pageKey: string, locale: Locale): string {
   const key = pageKey.startsWith('/') ? pageKey : '/' + pageKey;
-  if (locale === DEFAULT_LOCALE) return key;
-  return key === '/' ? `/${locale}` : `/${locale}${key}`;
+  const path = key === '/' ? key : withTrailingSlash(key);
+  if (locale === DEFAULT_LOCALE) return path;
+  return path === '/' ? `/${locale}` : `/${locale}${path}`;
 }
 
 /**
@@ -91,7 +104,7 @@ export function localizeNavHref(pageKey: string, locale: Locale): string {
   const isEnglishOnly = ENGLISH_ONLY_SECTIONS.some(
     (p) => key === p || key === `${p}/` || key.startsWith(`${p}/`),
   );
-  return isEnglishOnly ? key : localizeKey(key, locale);
+  return isEnglishOnly ? withTrailingSlash(key) : localizeKey(key, locale);
 }
 
 export { LOCALES, DEFAULT_LOCALE, isLocale };

@@ -15,6 +15,11 @@ const UPDATED = '2026-06-12';
 const fr: Partial<PagesContent> = {
   ui: {
     updatedLabel: 'Dernière mise à jour',
+    consent: {
+      label: 'Autoriser les cookies d’analyse',
+      on: 'Les cookies d’analyse sont activés. Décochez la case pour revenir au mode sans cookies.',
+      off: 'Actuellement sans cookies — aucun cookie d’analyse n’est déposé sans votre accord.',
+    },
   },
 
   privacy: {
@@ -43,7 +48,7 @@ const fr: Partial<PagesContent> = {
       {
         heading: 'Ce que nous ne collectons pas',
         body: [
-          'Nous ne collectons pas le contenu de vos entrées ou de vos sorties. Nous n’utilisons pas de cookies publicitaires, de traceurs intersites ni d’empreinte numérique. Nous ne vendons, ne louons ni ne partageons aucune donnée personnelle, car nous ne la recueillons pas en premier lieu.',
+          'Nous ne collectons pas le contenu de vos entrées ou de vos sorties. Nous n’utilisons pas de cookies publicitaires, de traceurs intersites ni d’empreinte numérique. Nous ne vendons, ne louons ni ne partageons aucune donnée personnelle, car nous ne la recueillons pas en premier lieu. Notre seule mesure d’audience est l’outil d’analyse sans cookies par défaut décrit ci-dessous.',
           'Toute préférence que le site mémorise — comme votre thème clair/sombre ou votre langue — est stockée dans le stockage local de votre navigateur, sur votre appareil, et ne nous est jamais transmise.',
         ],
       },
@@ -54,9 +59,16 @@ const fr: Partial<PagesContent> = {
         ],
       },
       {
+        heading: 'Mesure d’audience',
+        body: [
+          'Nous utilisons Google Analytics 4 pour comprendre quels outils et guides sont réellement utiles : pages vues et une poignée d’événements produit anonymes (par exemple « un résultat a été copié sur cette page » ou « un jour de Mission 90 a été marqué comme terminé »). Ces événements ne contiennent que le chemin de la page — jamais ce que vous saisissez ou collez dans un outil.',
+          'Par défaut, la mesure d’audience fonctionne en mode sans cookies (« consentement refusé ») : aucun cookie d’analyse n’est déposé et aucun identifiant persistant n’est stocké sur votre appareil, sauf si vous l’acceptez explicitement via l’interrupteur ci-dessous. Vous pouvez changer d’avis à tout moment sur cette page, et le site fonctionne exactement de la même façon dans les deux cas.',
+        ],
+      },
+      {
         heading: 'Services tiers',
         body: [
-          'Nous limitons les dépendances externes au strict minimum. Le site peut charger des ressources telles que des polices web nécessaires au rendu des pages. Nous n’intégrons aucun réseau publicitaire ni pixel de suivi des réseaux sociaux.',
+          'En dehors du script de mesure d’audience décrit ci-dessus, nous limitons les dépendances externes au strict minimum — les polices sont auto-hébergées et les pages ne chargent aucun autre code tiers. Nous n’intégrons aucun réseau publicitaire ni pixel de suivi des réseaux sociaux.',
         ],
       },
       {
@@ -188,6 +200,12 @@ const fr: Partial<PagesContent> = {
       },
     ],
     links: [
+      { label: 'Écrire à hello@opscanopy.com', href: 'mailto:hello@opscanopy.com' },
+      {
+        label: 'Signaler un problème',
+        href: 'https://github.com/opscanopy/opscanopy.com/issues/new',
+        external: true,
+      },
       { label: 'OpsCanopy sur GitHub', href: 'https://github.com/opscanopy', external: true },
       { label: '@opscanopy sur X', href: 'https://twitter.com/opscanopy', external: true },
     ],

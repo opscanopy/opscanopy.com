@@ -100,6 +100,32 @@ const es: Partial<UiDict> = {
   'category.Scheduling': 'Programación',
   'category.Logs': 'Logs',
   'category.Config': 'Config',
+  'category.Docker': 'Docker',
+  'category.all': 'Todas',
+
+  // Tool catalog (/tools)
+  'tools.badgeLive': 'En activo',
+  'tools.tryLabel': 'Prueba:',
+  'tools.openTool': 'Abrir herramienta',
+  'tools.availableNow': 'Disponibles ahora',
+  'tools.liveToolsHeading': 'Herramientas en activo.',
+  'tools.clientSideBadge': '100% del lado del cliente',
+  'tools.browseByCategory': 'Explorar por categoría',
+  'tools.searchPlaceholder': 'Buscar herramientas…',
+  'tools.searchLabel': 'Buscar herramientas',
+  'tools.filterLabel': 'Filtrar por categoría',
+  'tools.sortLabel': 'Ordenar',
+  'tools.sortAriaLabel': 'Ordenar herramientas',
+  'tools.sortDefault': 'Predeterminado',
+  'tools.sortAZ': 'A–Z',
+  'tools.sortNewest': 'Más recientes',
+  'tools.emptyTitle': 'Ninguna herramienta coincide con {query}.',
+  'tools.emptyQueryFallback': 'tu búsqueda',
+  'tools.emptyHint': 'Prueba una de estas opciones, o borra los filtros para ver todo.',
+  'tools.clearFilters': 'Borrar filtros',
+  'tools.zeroLiveTitle': 'Nada en activo todavía.',
+  'tools.zeroLiveBody':
+    'La primera herramienta se está puliendo para su lanzamiento: vuelve pronto para ver lo que llega.',
 };
 
 export default es;

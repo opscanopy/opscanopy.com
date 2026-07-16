@@ -46,6 +46,12 @@ export interface PagesContent {
   /** Shared chrome strings for the info-page template. */
   ui: {
     updatedLabel: string;
+    /** Analytics opt-in toggle on /privacy (see ConsentToggle.astro). */
+    consent: {
+      label: string;
+      on: string;
+      off: string;
+    };
   };
 }
 
@@ -54,6 +60,11 @@ const UPDATED = '2026-06-12';
 const en: PagesContent = {
   ui: {
     updatedLabel: 'Last updated',
+    consent: {
+      label: 'Allow analytics cookies',
+      on: 'Analytics cookies are on. Uncheck the box to return to cookieless mode.',
+      off: 'Currently cookieless — no analytics cookie is set unless you opt in.',
+    },
   },
 
   privacy: {
@@ -82,7 +93,7 @@ const en: PagesContent = {
       {
         heading: 'What we do not collect',
         body: [
-          'We do not collect the contents of your inputs or outputs. We do not use advertising cookies, cross-site trackers, or fingerprinting. We do not sell, rent, or share personal data, because we do not gather it in the first place.',
+          'We do not collect the contents of your inputs or outputs. We do not use advertising cookies, cross-site trackers, or fingerprinting. We do not sell, rent, or share personal data, because we do not gather it in the first place. Our only measurement is the cookieless-by-default analytics described below.',
           'Any preference the site remembers — such as your light/dark theme or language — is stored in your browser’s local storage on your device and is never transmitted to us.',
         ],
       },
@@ -93,9 +104,16 @@ const en: PagesContent = {
         ],
       },
       {
+        heading: 'Analytics',
+        body: [
+          'We use Google Analytics 4 to understand which tools and guides are actually useful: page views plus a handful of anonymous product events (for example “a result was copied on this page” or “a Mission 90 day was marked complete”). These events carry only the page path — they never include anything you type or paste into a tool.',
+          'By default, analytics runs in cookieless “consent denied” mode: no analytics cookie is set and no persistent identifier is stored on your device unless you explicitly opt in with the toggle below. You can change your choice at any time on this page, and the site works identically either way.',
+        ],
+      },
+      {
         heading: 'Third-party services',
         body: [
-          'We keep external dependencies to a minimum. The site may load assets such as web fonts needed to render pages. We do not embed advertising networks or social tracking pixels.',
+          'Beyond the analytics script described above, we keep external dependencies to a minimum — fonts are self-hosted and pages load no other third-party code. We do not embed advertising networks or social tracking pixels.',
         ],
       },
       {
@@ -234,6 +252,12 @@ const en: PagesContent = {
       },
     ],
     links: [
+      { label: 'Email hello@opscanopy.com', href: 'mailto:hello@opscanopy.com' },
+      {
+        label: 'Report an issue',
+        href: 'https://github.com/opscanopy/opscanopy.com/issues/new',
+        external: true,
+      },
       { label: 'OpsCanopy on GitHub', href: 'https://github.com/opscanopy', external: true },
       { label: '@opscanopy on X', href: 'https://twitter.com/opscanopy', external: true },
     ],

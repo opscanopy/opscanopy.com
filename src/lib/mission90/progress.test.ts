@@ -13,10 +13,18 @@ import {
   parseProgress,
   doneCount,
   nextDay,
+  resumeDay,
   phaseProgress,
   streak,
+  exportProgress,
+  importProgress,
   type M90Progress,
 } from './progress';
+import { base64UrlEncode } from '../codec';
+
+/** Test-only: encode an arbitrary raw JSON string, bypassing exportProgress's
+ *  M90Progress typing, so malformed-shape import cases can be constructed. */
+const exportProgressOf = (rawJson: string): string => base64UrlEncode(rawJson);
 
 const EMPTY: M90Progress = { days: {}, missions: {} };
 
@@ -207,6 +215,99 @@ describe('nextDay()', () => {
     const live = [7, 3, 1];
     nextDay(done(), live);
     expect(live).toEqual([7, 3, 1]);
+  });
+});
+
+describe('resumeDay()', () => {
+  const LIVE = Array.from({ length: 90 }, (_, i) => i + 1);
+  const prog = (over: Partial<M90Progress> = {}, ...doneDays: number[]): M90Progress => ({
+    days: Object.fromEntries(doneDays.map((n) => [String(n), day()])),
+    missions: {},
+    ...over,
+  });
+
+  it('falls back to nextDay when lastVisitedDay is unset', () => {
+    expect(resumeDay(prog({}, 1, 2), LIVE)).toBe(3);
+    expect(resumeDay(prog(), LIVE)).toBe(1);
+  });
+
+  it('resumes at the last visited day when it is still incomplete', () => {
+    // A learner who jumped straight to Day 30 continues there, not at Day 1.
+    expect(resumeDay(prog({ lastVisitedDay: 30 }), LIVE)).toBe(30);
+  });
+
+  it('advances past the last visited day once it is complete', () => {
+    expect(resumeDay(prog({ lastVisitedDay: 30 }, 30), LIVE)).toBe(31);
+    expect(resumeDay(prog({ lastVisitedDay: 30 }, 30, 31, 32), LIVE)).toBe(33);
+  });
+
+  it('falls back to the lowest incomplete day when everything from the anchor onward is done', () => {
+    // Visited/finished the tail — circle back to the earlier gap.
+    expect(resumeDay(prog({ lastVisitedDay: 89 }, 89, 90), LIVE)).toBe(1);
+  });
+
+  it('returns null when every live day is done', () => {
+    const all = prog({ lastVisitedDay: 45 }, ...LIVE);
+    expect(resumeDay(all, LIVE)).toBeNull();
+  });
+
+  it('ignores an anchor beyond the live range and falls back', () => {
+    expect(resumeDay(prog({ lastVisitedDay: 200 }, 1), LIVE)).toBe(2);
+  });
+
+  it('handles unsorted live day lists and does not mutate them', () => {
+    const live = [7, 3, 1, 5];
+    expect(resumeDay(prog({ lastVisitedDay: 4 }), live)).toBe(5);
+    expect(live).toEqual([7, 3, 1, 5]);
+  });
+});
+
+describe('exportProgress() / importProgress()', () => {
+  it('round-trips a full progress object', () => {
+    const p: M90Progress = {
+      startedAt: '2026-01-01T00:00:00.000Z',
+      lastVisitedDay: 12,
+      days: { '1': day(), '2': day('2026-01-02T00:00:00.000Z') },
+      missions: { 'm90-log-hunt': mission() },
+    };
+    const code = exportProgress(p);
+    expect(importProgress(code)).toEqual(p);
+  });
+
+  it('round-trips empty progress', () => {
+    expect(importProgress(exportProgress(EMPTY))).toEqual(EMPTY);
+  });
+
+  it('produces a URL-safe code with no +, / or = characters', () => {
+    const p: M90Progress = {
+      days: Object.fromEntries(Array.from({ length: 40 }, (_, i) => [String(i + 1), day()])),
+      missions: {},
+    };
+    expect(exportProgress(p)).not.toMatch(/[+/=]/);
+  });
+
+  it('tolerates surrounding whitespace on import (copy-paste noise)', () => {
+    const p: M90Progress = { days: { '5': day() }, missions: {} };
+    expect(importProgress(`  ${exportProgress(p)}\n`)).toEqual(p);
+  });
+
+  it('returns null for garbage / non-base64 input', () => {
+    expect(importProgress('not a real code!!!')).toBeNull();
+  });
+
+  it('returns null for the empty string', () => {
+    expect(importProgress('')).toBeNull();
+  });
+
+  it('returns null for a code that decodes to valid JSON but not an object', () => {
+    // base64url of JSON.stringify(42) — decodes fine, but isn't a progress record.
+    expect(importProgress(exportProgressOf('42'))).toBeNull();
+  });
+
+  it('salvages malformed sub-entries the same way parseProgress does', () => {
+    const raw = JSON.stringify({ days: { '1': day(), '2': 'junk' }, missions: {} });
+    const code = exportProgressOf(raw);
+    expect(importProgress(code)).toEqual({ days: { '1': day() }, missions: {} });
   });
 });
 

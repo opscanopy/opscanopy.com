@@ -5,6 +5,11 @@ const UPDATED = '2026-06-12';
 const de: Partial<PagesContent> = {
   ui: {
     updatedLabel: 'Zuletzt aktualisiert',
+    consent: {
+      label: 'Analyse-Cookies erlauben',
+      on: 'Analyse-Cookies sind aktiv. Deaktivieren Sie das Kästchen, um zum cookielosen Modus zurückzukehren.',
+      off: 'Derzeit cookielos — ohne Ihre Zustimmung wird kein Analyse-Cookie gesetzt.',
+    },
   },
 
   privacy: {
@@ -33,7 +38,7 @@ const de: Partial<PagesContent> = {
       {
         heading: 'Was wir nicht erfassen',
         body: [
-          'Wir erfassen nicht den Inhalt Ihrer Eingaben oder Ausgaben. Wir verwenden keine Werbe-Cookies, keine seitenübergreifenden Tracker und kein Fingerprinting. Wir verkaufen, vermieten oder teilen keine personenbezogenen Daten, weil wir sie gar nicht erst erheben.',
+          'Wir erfassen nicht den Inhalt Ihrer Eingaben oder Ausgaben. Wir verwenden keine Werbe-Cookies, keine seitenübergreifenden Tracker und kein Fingerprinting. Wir verkaufen, vermieten oder teilen keine personenbezogenen Daten, weil wir sie gar nicht erst erheben. Unsere einzige Messung ist die unten beschriebene, standardmäßig cookielose Web-Analyse.',
           'Jede Einstellung, die sich die Website merkt — etwa Ihr helles/dunkles Theme oder Ihre Sprache —, wird im lokalen Speicher Ihres Browsers auf Ihrem Gerät abgelegt und niemals an uns übertragen.',
         ],
       },
@@ -44,9 +49,16 @@ const de: Partial<PagesContent> = {
         ],
       },
       {
+        heading: 'Web-Analyse',
+        body: [
+          'Wir verwenden Google Analytics 4, um zu verstehen, welche Tools und Guides tatsächlich nützlich sind: Seitenaufrufe sowie eine Handvoll anonymer Produkt-Ereignisse (zum Beispiel „auf dieser Seite wurde ein Ergebnis kopiert“ oder „ein Mission-90-Tag wurde als abgeschlossen markiert“). Diese Ereignisse enthalten nur den Seitenpfad — niemals etwas, das Sie in ein Tool eingeben oder einfügen.',
+          'Standardmäßig läuft die Analyse im cookielosen Modus („Einwilligung verweigert“): Es wird kein Analyse-Cookie gesetzt und keine dauerhafte Kennung auf Ihrem Gerät gespeichert, es sei denn, Sie stimmen über den Schalter unten ausdrücklich zu. Sie können Ihre Wahl jederzeit auf dieser Seite ändern — die Website funktioniert in beiden Fällen identisch.',
+        ],
+      },
+      {
         heading: 'Dienste von Drittanbietern',
         body: [
-          'Wir halten externe Abhängigkeiten auf ein Minimum. Die Website kann Ressourcen wie Web-Fonts laden, die zum Darstellen der Seiten benötigt werden. Wir binden keine Werbenetzwerke oder Social-Tracking-Pixel ein.',
+          'Abgesehen vom oben beschriebenen Analyse-Skript halten wir externe Abhängigkeiten auf ein Minimum — Schriftarten werden selbst gehostet, und die Seiten laden keinen weiteren Drittanbieter-Code. Wir binden keine Werbenetzwerke oder Social-Tracking-Pixel ein.',
         ],
       },
       {
@@ -178,6 +190,12 @@ const de: Partial<PagesContent> = {
       },
     ],
     links: [
+      { label: 'E-Mail an hello@opscanopy.com', href: 'mailto:hello@opscanopy.com' },
+      {
+        label: 'Ein Problem melden',
+        href: 'https://github.com/opscanopy/opscanopy.com/issues/new',
+        external: true,
+      },
       { label: 'OpsCanopy auf GitHub', href: 'https://github.com/opscanopy', external: true },
       { label: '@opscanopy auf X', href: 'https://twitter.com/opscanopy', external: true },
     ],

@@ -67,6 +67,7 @@ const en: SiteContent = {
         { href: '/blog', label: 'Blog' },
         { href: '/rss.xml', label: 'RSS feed' },
         { href: '/#why', label: 'Why OpsCanopy' },
+        { href: 'https://github.com/opscanopy/opscanopy.com', label: 'Source on GitHub' },
       ],
     },
     {

@@ -5,6 +5,11 @@ const UPDATED = '2026-06-12';
 const ptBr: Partial<PagesContent> = {
   ui: {
     updatedLabel: 'Última atualização',
+    consent: {
+      label: 'Permitir cookies de análise',
+      on: 'Os cookies de análise estão ativados. Desmarque a caixa para voltar ao modo sem cookies.',
+      off: 'Atualmente sem cookies — nenhum cookie de análise é definido sem o seu consentimento.',
+    },
   },
 
   privacy: {
@@ -33,7 +38,7 @@ const ptBr: Partial<PagesContent> = {
       {
         heading: 'O que não coletamos',
         body: [
-          'Não coletamos o conteúdo das suas entradas nem das suas saídas. Não usamos cookies de publicidade, rastreadores entre sites ou fingerprinting. Não vendemos, alugamos nem compartilhamos dados pessoais, porque nem sequer os coletamos.',
+          'Não coletamos o conteúdo das suas entradas nem das suas saídas. Não usamos cookies de publicidade, rastreadores entre sites ou fingerprinting. Não vendemos, alugamos nem compartilhamos dados pessoais, porque nem sequer os coletamos. Nossa única medição é a análise sem cookies por padrão descrita abaixo.',
           'Qualquer preferência que o site memoriza — como o tema claro/escuro ou o idioma — é armazenada no armazenamento local do seu navegador, no seu dispositivo, e nunca é transmitida para nós.',
         ],
       },
@@ -44,9 +49,16 @@ const ptBr: Partial<PagesContent> = {
         ],
       },
       {
+        heading: 'Análise de uso (analytics)',
+        body: [
+          'Usamos o Google Analytics 4 para entender quais ferramentas e guias são realmente úteis: visualizações de página e um punhado de eventos de produto anônimos (por exemplo, “um resultado foi copiado nesta página” ou “um dia do Mission 90 foi marcado como concluído”). Esses eventos carregam apenas o caminho da página — nunca incluem nada do que você digita ou cola em uma ferramenta.',
+          'Por padrão, a análise roda em modo sem cookies (“consentimento negado”): nenhum cookie de análise é definido e nenhum identificador persistente é armazenado no seu dispositivo, a menos que você aceite explicitamente no controle abaixo. Você pode mudar sua escolha a qualquer momento nesta página, e o site funciona exatamente igual nos dois casos.',
+        ],
+      },
+      {
         heading: 'Serviços de terceiros',
         body: [
-          'Mantemos as dependências externas no mínimo. O site pode carregar recursos como fontes web necessárias para renderizar as páginas. Não incorporamos redes de publicidade nem pixels de rastreamento social.',
+          'Além do script de análise descrito acima, mantemos as dependências externas no mínimo — as fontes são hospedadas por nós mesmos e as páginas não carregam nenhum outro código de terceiros. Não incorporamos redes de publicidade nem pixels de rastreamento social.',
         ],
       },
       {
@@ -178,6 +190,12 @@ const ptBr: Partial<PagesContent> = {
       },
     ],
     links: [
+      { label: 'E-mail para hello@opscanopy.com', href: 'mailto:hello@opscanopy.com' },
+      {
+        label: 'Relatar um problema',
+        href: 'https://github.com/opscanopy/opscanopy.com/issues/new',
+        external: true,
+      },
       { label: 'OpsCanopy no GitHub', href: 'https://github.com/opscanopy', external: true },
       { label: '@opscanopy no X', href: 'https://twitter.com/opscanopy', external: true },
     ],

@@ -1,0 +1,91 @@
+---
+/**
+ * ConsentToggle — the analytics opt-in switch rendered on the /privacy pages
+ * (all locales; each page passes translated strings).
+ *
+ * Pairs with the Consent Mode v2 default in Layout.astro: GA4 runs cookieless
+ * ("denied") until the visitor checks this box, which persists
+ * localStorage['oc-analytics-consent'] and pushes a live consent update.
+ * Unchecking reverts to denied. Works without JS (the box simply does nothing),
+ * and renders no personal data.
+ */
+export interface Props {
+  /** Checkbox label, e.g. "Allow analytics cookies". */
+  label: string;
+  /** Status line shown while opted in. */
+  onText: string;
+  /** Status line shown while cookieless (default). */
+  offText: string;
+}
+
+const { label, onText, offText } = Astro.props;
+---
+
+<div class="rounded-xl border border-hairline bg-canvas-soft p-5" data-consent-widget>
+  <label class="flex cursor-pointer items-start gap-3" style="touch-action: manipulation;">
+    <input
+      type="checkbox"
+      data-consent-checkbox
+      class="mt-0.5 h-5 w-5 shrink-0 cursor-pointer rounded border-hairline accent-(--color-brand-strong)"
+    />
+    <span class="body-md font-medium text-ink">{label}</span>
+  </label>
+  <p
+    class="body-sm mt-2 pl-8 text-mute"
+    role="status"
+    data-consent-status
+    data-on={onText}
+    data-off={offText}
+  >
+  </p>
+</div>
+
+<script>
+  function bootConsentToggles() {
+    document.querySelectorAll<HTMLElement>('[data-consent-widget]').forEach((root) => {
+      if (root.dataset.wired === 'true') return;
+      root.dataset.wired = 'true';
+
+      const cb = root.querySelector<HTMLInputElement>('[data-consent-checkbox]');
+      const status = root.querySelector<HTMLElement>('[data-consent-status]');
+      if (!cb || !status) return;
+
+      const KEY = 'oc-analytics-consent';
+      const granted = () => {
+        try {
+          return localStorage.getItem(KEY) === 'granted';
+        } catch {
+          return false;
+        }
+      };
+      const render = () => {
+        status.textContent = (cb.checked ? status.dataset.on : status.dataset.off) ?? '';
+      };
+
+      cb.checked = granted();
+      render();
+
+      cb.addEventListener('change', () => {
+        try {
+          localStorage.setItem(KEY, cb.checked ? 'granted' : 'denied');
+        } catch {
+          /* storage blocked — the live gtag update below still applies this tab */
+        }
+        try {
+          const w = window as unknown as { gtag?: (...args: unknown[]) => void };
+          if (typeof w.gtag === 'function') {
+            w.gtag('consent', 'update', {
+              analytics_storage: cb.checked ? 'granted' : 'denied',
+            });
+          }
+        } catch {
+          /* gtag absent (blocked) — nothing to update */
+        }
+        render();
+      });
+    });
+  }
+
+  bootConsentToggles();
+  document.addEventListener('astro:page-load', bootConsentToggles);
+</script>
