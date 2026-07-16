@@ -29,13 +29,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Highest day number the v1 schema accepts. The `oc-m90-v1` blob belongs to
+ * the fixed 90-day program, and day keys outside 1–90 can only come from
+ * corruption or a crafted import code — without this clamp, 90 junk keys
+ * would flip doneCount()/the completion card to "program complete".
+ */
+const MAX_DAY = 90;
+
+/** True for a canonical day key: "1"–"90", integer, no leading zeros. */
+function isDayKey(key: string): boolean {
+  if (!/^[1-9][0-9]?$/.test(key)) return false;
+  return Number(key) <= MAX_DAY;
+}
+
 /** Salvage the well-formed `{ completedAt }` day entries; drop the rest. */
 function parseDays(value: unknown): M90Progress['days'] {
   // Null-prototype accumulator: hostile keys can never reach Object.prototype.
   const days: M90Progress['days'] = Object.create(null);
   if (!isRecord(value)) return days;
   for (const [key, entry] of Object.entries(value)) {
-    if (key === '__proto__') continue; // prototype-shaped key — always malformed, drop it
+    if (!isDayKey(key)) continue; // out-of-program or malformed key — drop it
     if (isRecord(entry) && typeof entry.completedAt === 'string') {
       days[key] = { completedAt: entry.completedAt };
     }
@@ -93,7 +107,12 @@ export function parseProgress(raw: string | null): M90Progress {
     missions: parseMissions(parsed.missions),
   };
   if (typeof parsed.startedAt === 'string') progress.startedAt = parsed.startedAt;
-  if (typeof parsed.lastVisitedDay === 'number' && Number.isFinite(parsed.lastVisitedDay)) {
+  if (
+    typeof parsed.lastVisitedDay === 'number' &&
+    Number.isInteger(parsed.lastVisitedDay) &&
+    parsed.lastVisitedDay >= 1 &&
+    parsed.lastVisitedDay <= MAX_DAY
+  ) {
     progress.lastVisitedDay = parsed.lastVisitedDay;
   }
   return progress;
@@ -110,12 +129,12 @@ export function exportProgress(p: M90Progress): string {
 
 /**
  * Parse a progress export code back into a validated M90Progress, or null
- * when the code isn't a valid progress export at all (bad base64, non-JSON,
- * or JSON that isn't an object). A code that decodes to a well-formed but
- * genuinely empty/partial progress object still salvages via the same
- * malformed-sub-entry tolerance as `parseProgress` — only totally invalid
- * codes return null, so the UI can tell "bad code" apart from "valid code,
- * nothing in it yet".
+ * when the code is invalid (bad base64, non-JSON, JSON that isn't an object)
+ * OR salvages to zero progress. The zero-progress rejection is deliberate:
+ * restoring overwrites the local blob, and a structurally-valid object with
+ * nothing in it is far more likely a wrong paste (e.g. another tool's share
+ * code, which uses the same base64url codec) than a genuine backup — treating
+ * it as invalid protects a learner's real progress from a silent wipe.
  */
 export function importProgress(code: string): M90Progress | null {
   const trimmed = code.trim();
@@ -133,7 +152,15 @@ export function importProgress(code: string): M90Progress | null {
     return null;
   }
   if (!isRecord(parsed)) return null;
-  return parseProgress(json);
+  const progress = parseProgress(json);
+  if (
+    doneCount(progress) === 0 &&
+    Object.keys(progress.missions).length === 0 &&
+    !progress.startedAt
+  ) {
+    return null;
+  }
+  return progress;
 }
 
 /** Count of completed days. */

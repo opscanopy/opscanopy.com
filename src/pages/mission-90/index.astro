@@ -249,6 +249,15 @@ const constructionPath =
               Copy my code
             </button>
             <p class="caption mt-1.5 text-mute" role="status" data-m90-backup-status></p>
+            {/* Manual fallback — revealed only when the clipboard is blocked,
+                so the backup path is never a dead end. */}
+            <textarea
+              data-m90-backup-code
+              hidden
+              readonly
+              rows="3"
+              aria-label="Your progress backup code"
+              class="input-focus mt-2 w-full rounded-lg border border-hairline bg-canvas p-2 font-mono text-xs text-ink"></textarea>
           </div>
           <div class="min-w-0 flex-1">
             <label for="m90-restore-input" class="body-sm font-medium text-ink">Restore from a code</label>
@@ -960,13 +969,23 @@ const constructionPath =
     const restoreBtn = root.querySelector<HTMLButtonElement>('[data-m90-restore-btn]');
     const restoreStatus = root.querySelector<HTMLElement>('[data-m90-restore-status]');
 
+    const copyFallback = root.querySelector<HTMLTextAreaElement>('[data-m90-backup-code]');
+
     copyBtn?.addEventListener('click', () => {
       const code = exportProgress(readProgress());
       void copyTextToClipboard(code).then((ok) => {
         if (copyStatus) {
           copyStatus.textContent = ok
             ? 'Copied — paste it somewhere safe, then paste it back here on the other device.'
-            : "Couldn't copy automatically — select and copy the code by hand.";
+            : "Couldn't copy automatically — select the code below and copy it by hand.";
+        }
+        // Clipboard blocked (hardened browsers): surface the code itself so
+        // the backup path is never a dead end.
+        if (!ok && copyFallback) {
+          copyFallback.value = code;
+          copyFallback.hidden = false;
+          copyFallback.focus();
+          copyFallback.select();
         }
       });
     });
@@ -976,14 +995,21 @@ const constructionPath =
       const imported = importProgress(raw);
       if (!imported) {
         if (restoreStatus) {
-          restoreStatus.textContent = "That code doesn't look right — check you copied the whole thing.";
+          restoreStatus.textContent =
+            "That code doesn't look right — check you copied the whole thing (a valid code always contains progress).";
         }
         return;
       }
       try {
         localStorage.setItem(KEY, JSON.stringify(imported));
       } catch {
-        /* storage blocked — restored state still renders for this session */
+        // Storage blocked (private mode / quota): the restore did NOT stick.
+        // Say so honestly instead of claiming success over unchanged data.
+        if (restoreStatus) {
+          restoreStatus.textContent =
+            "Couldn't save — this browser is blocking site storage, so the restore didn't stick.";
+        }
+        return;
       }
       if (restoreInput) restoreInput.value = '';
       if (restoreStatus) restoreStatus.textContent = 'Progress restored.';

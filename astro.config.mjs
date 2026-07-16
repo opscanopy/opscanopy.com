@@ -31,12 +31,14 @@ export default defineConfig({
         locales: { en: 'en', es: 'es', de: 'de', fr: 'fr', 'pt-br': 'pt-BR' },
       },
       // Keep noindex routes out of the sitemap (/search is the noindex
-      // Pagefind UI — exact-match the path so future "search…" slugs survive).
+      // Pagefind UI — exact-match the path so future "search…" slugs survive;
+      // /mission-90/complete is the noindex personal-progress card page).
       filter: (page) =>
         !page.includes('/alertlint-wasm-demo') &&
         !page.includes('/404') &&
         !page.includes('/500') &&
-        !/\/search\/?$/.test(page),
+        !/\/search\/?$/.test(page) &&
+        !/\/mission-90\/complete\/?$/.test(page),
     }),
   ],
   markdown: {

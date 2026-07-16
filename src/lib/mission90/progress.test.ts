@@ -274,8 +274,24 @@ describe('exportProgress() / importProgress()', () => {
     expect(importProgress(code)).toEqual(p);
   });
 
-  it('round-trips empty progress', () => {
-    expect(importProgress(exportProgress(EMPTY))).toEqual(EMPTY);
+  it('rejects an empty-progress code (nothing to restore — protects local progress)', () => {
+    // A restore OVERWRITES the local blob, so a code that salvages to zero
+    // progress (wrong paste, another tool's share code) must read as invalid
+    // rather than silently wiping a learner's real progress.
+    expect(importProgress(exportProgress(EMPTY))).toBeNull();
+  });
+
+  it('rejects a bare "{}" object code (the classic wrong-paste)', () => {
+    expect(importProgress(exportProgressOf('{}'))).toBeNull();
+  });
+
+  it('rejects a foreign share-shaped object (e.g. an AlertLint share payload)', () => {
+    expect(importProgress(exportProgressOf('{"rules":"a","test":"b"}'))).toBeNull();
+  });
+
+  it('accepts a code with only startedAt (still worth restoring)', () => {
+    const p: M90Progress = { startedAt: '2026-01-01T00:00:00.000Z', days: {}, missions: {} };
+    expect(importProgress(exportProgress(p))).toEqual(p);
   });
 
   it('produces a URL-safe code with no +, / or = characters', () => {
@@ -308,6 +324,33 @@ describe('exportProgress() / importProgress()', () => {
     const raw = JSON.stringify({ days: { '1': day(), '2': 'junk' }, missions: {} });
     const code = exportProgressOf(raw);
     expect(importProgress(code)).toEqual({ days: { '1': day() }, missions: {} });
+  });
+
+  it('drops out-of-program day keys, so a crafted code cannot inflate completion', () => {
+    const raw = JSON.stringify({
+      days: { '90': day(), '91': day(), '200': day(), '0': day(), '007': day(), abc: day() },
+      missions: {},
+    });
+    const p = importProgress(exportProgressOf(raw));
+    expect(p).not.toBeNull();
+    expect(Object.keys(p!.days)).toEqual(['90']);
+  });
+});
+
+describe('day-key and lastVisitedDay clamping', () => {
+  it('parseProgress drops day keys outside 1–90 and non-canonical integers', () => {
+    const raw = JSON.stringify({
+      days: { '1': day(), '90': day(), '91': day(), '0': day(), '-3': day(), '07': day(), '1.5': day() },
+      missions: {},
+    });
+    expect(Object.keys(parseProgress(raw).days).sort()).toEqual(['1', '90']);
+  });
+
+  it('parseProgress drops an out-of-range or non-integer lastVisitedDay', () => {
+    expect(parseProgress(JSON.stringify({ days: {}, missions: {}, lastVisitedDay: 999 })).lastVisitedDay).toBeUndefined();
+    expect(parseProgress(JSON.stringify({ days: {}, missions: {}, lastVisitedDay: 0 })).lastVisitedDay).toBeUndefined();
+    expect(parseProgress(JSON.stringify({ days: {}, missions: {}, lastVisitedDay: 4.5 })).lastVisitedDay).toBeUndefined();
+    expect(parseProgress(JSON.stringify({ days: {}, missions: {}, lastVisitedDay: 42 })).lastVisitedDay).toBe(42);
   });
 });
 

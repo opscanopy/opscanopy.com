@@ -31,7 +31,9 @@ export async function GET(): Promise<Response> {
 
   const items = posts
     .map((post) => {
-      const link = `${site.url}/blog/${post.slug}`;
+      // Trailing slash = the canonical form (guid changes with it — a one-time
+      // re-display in readers, accepted while the feed audience is small).
+      const link = `${site.url}/blog/${post.slug}/`;
       const title = escapeXml(post.entry.data.title);
       const description = escapeXml(post.entry.data.description ?? '');
       const pubDate = rfc822(post.entry.data.pubDate);
@@ -46,7 +48,7 @@ export async function GET(): Promise<Response> {
     .join('\n');
 
   const channelTitle = escapeXml(`${site.name} Blog`);
-  const channelLink = `${site.url}/blog`;
+  const channelLink = `${site.url}/blog/`;
   const channelDescription = escapeXml(
     'DevOps articles, guides, and tutorials from the OpsCanopy team — delivered right to your reader.',
   );

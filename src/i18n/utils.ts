@@ -66,24 +66,28 @@ export function stripLocale(pathname: string): string {
 /**
  * Append the trailing slash that canonical/hreflang URLs always carry
  * (SEO.astro's getAbsoluteLocaleUrl, driven by the astro.config build.format
- * default of "directory"), UNLESS the key is an in-page anchor ("/#why") or
- * already ends in "/". Anchors are left bare — inserting a slash before "#"
- * would change what the browser scrolls to.
+ * default of "directory"), UNLESS the key is an in-page anchor ("/#why"),
+ * already ends in "/", or points at a FILE (last segment has an extension,
+ * e.g. "/rss.xml", "/mission-90/feed.xml") — files are served at their exact
+ * path on the static host, so "/rss.xml/" would 404.
  */
 function withTrailingSlash(key: string): string {
   if (key.endsWith('/') || key.includes('#')) return key;
+  const lastSegment = key.slice(key.lastIndexOf('/') + 1);
+  if (lastSegment.includes('.')) return key;
   return `${key}/`;
 }
 
 /**
  * Turn a locale-neutral page key into a localized path. en stays un-prefixed.
- * "/tools" + "de" → "/de/tools/"; "/tools" + "en" → "/tools/"; "/" + "de" → "/de".
+ * "/tools" + "de" → "/de/tools/"; "/tools" + "en" → "/tools/"; "/" + "de" → "/de/"
+ * (slashed like every other canonical — "/de" would 308-hop on the static host).
  */
 export function localizeKey(pageKey: string, locale: Locale): string {
   const key = pageKey.startsWith('/') ? pageKey : '/' + pageKey;
   const path = key === '/' ? key : withTrailingSlash(key);
   if (locale === DEFAULT_LOCALE) return path;
-  return path === '/' ? `/${locale}` : `/${locale}${path}`;
+  return path === '/' ? `/${locale}/` : `/${locale}${path}`;
 }
 
 /**
