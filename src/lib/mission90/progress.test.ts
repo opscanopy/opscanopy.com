@@ -18,6 +18,10 @@ import {
   streak,
   exportProgress,
   importProgress,
+  markDayDone,
+  unmarkDay,
+  recordMissionRun,
+  PROGRESS_KEY,
   type M90Progress,
 } from './progress';
 import { base64UrlEncode } from '../codec';
@@ -351,6 +355,136 @@ describe('day-key and lastVisitedDay clamping', () => {
     expect(parseProgress(JSON.stringify({ days: {}, missions: {}, lastVisitedDay: 0 })).lastVisitedDay).toBeUndefined();
     expect(parseProgress(JSON.stringify({ days: {}, missions: {}, lastVisitedDay: 4.5 })).lastVisitedDay).toBeUndefined();
     expect(parseProgress(JSON.stringify({ days: {}, missions: {}, lastVisitedDay: 42 })).lastVisitedDay).toBe(42);
+  });
+});
+
+describe('PROGRESS_KEY', () => {
+  it('is the versioned localStorage key every page script reads/writes', () => {
+    expect(PROGRESS_KEY).toBe('oc-m90-v1');
+  });
+});
+
+describe('markDayDone()', () => {
+  const NOW = '2026-07-10T12:00:00.000Z';
+
+  it('adds a completedAt entry for the day', () => {
+    const p: M90Progress = { days: {}, missions: {} };
+    const next = markDayDone(p, 5, NOW);
+    expect(next.days).toEqual({ '5': { completedAt: NOW } });
+  });
+
+  it('stamps startedAt only when absent (first-ever completion)', () => {
+    const p: M90Progress = { days: {}, missions: {} };
+    const next = markDayDone(p, 1, NOW);
+    expect(next.startedAt).toBe(NOW);
+  });
+
+  it('does not restamp startedAt on a later completion', () => {
+    const p: M90Progress = { startedAt: '2026-01-01T00:00:00.000Z', days: {}, missions: {} };
+    const next = markDayDone(p, 2, NOW);
+    expect(next.startedAt).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('overwrites an existing entry for the same day (re-marking is idempotent)', () => {
+    const p: M90Progress = { days: { '5': day('2026-01-01T00:00:00.000Z') }, missions: {} };
+    const next = markDayDone(p, 5, NOW);
+    expect(next.days['5']).toEqual({ completedAt: NOW });
+  });
+
+  it('never mutates the input', () => {
+    const p: M90Progress = { days: {}, missions: {} };
+    markDayDone(p, 5, NOW);
+    expect(p.days).toEqual({});
+  });
+
+  it('leaves other days and missions untouched', () => {
+    const p: M90Progress = { days: { '1': day() }, missions: { m: mission() } };
+    const next = markDayDone(p, 2, NOW);
+    expect(next.days['1']).toEqual(day());
+    expect(next.missions['m']).toEqual(mission());
+  });
+});
+
+describe('unmarkDay()', () => {
+  it('removes the day entry', () => {
+    const p: M90Progress = { days: { '5': day(), '6': day() }, missions: {} };
+    const next = unmarkDay(p, 5);
+    expect(Object.keys(next.days)).toEqual(['6']);
+  });
+
+  it('never touches startedAt', () => {
+    const p: M90Progress = { startedAt: '2026-01-01T00:00:00.000Z', days: { '5': day() }, missions: {} };
+    const next = unmarkDay(p, 5);
+    expect(next.startedAt).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('is a no-op for a day that was never marked', () => {
+    const p: M90Progress = { days: { '5': day() }, missions: {} };
+    const next = unmarkDay(p, 6);
+    expect(next.days).toEqual({ '5': day() });
+  });
+
+  it('never mutates the input', () => {
+    const p: M90Progress = { days: { '5': day() }, missions: {} };
+    unmarkDay(p, 5);
+    expect(p.days).toEqual({ '5': day() });
+  });
+});
+
+describe('recordMissionRun()', () => {
+  const NOW = '2026-07-10T12:00:00.000Z';
+
+  it('records the first run for a mission', () => {
+    const p: M90Progress = { days: {}, missions: {} };
+    const next = recordMissionRun(p, 'm1', { commands: 12, hints: 1, seconds: 340 }, NOW);
+    expect(next.missions['m1']).toEqual({ completedAt: NOW, commands: 12, hints: 1, seconds: 340 });
+  });
+
+  it('overwrites with a strictly better run (fewer commands)', () => {
+    const p: M90Progress = { days: {}, missions: { m1: mission({ commands: 20, hints: 2 }) } };
+    const next = recordMissionRun(p, 'm1', { commands: 10, hints: 3, seconds: 100 }, NOW);
+    expect(next.missions['m1']).toEqual({ completedAt: NOW, commands: 10, hints: 3, seconds: 100 });
+  });
+
+  it('keeps the existing run when the new one has more commands', () => {
+    const existing = mission({ commands: 10, hints: 1 });
+    const p: M90Progress = { days: {}, missions: { m1: existing } };
+    const next = recordMissionRun(p, 'm1', { commands: 20, hints: 0, seconds: 50 }, NOW);
+    expect(next.missions['m1']).toEqual(existing);
+  });
+
+  it('tie-breaks on hints when commands are equal: overwrites with fewer hints', () => {
+    const existing = mission({ commands: 10, hints: 3 });
+    const p: M90Progress = { days: {}, missions: { m1: existing } };
+    const next = recordMissionRun(p, 'm1', { commands: 10, hints: 1, seconds: 50 }, NOW);
+    expect(next.missions['m1']).toEqual({ completedAt: NOW, commands: 10, hints: 1, seconds: 50 });
+  });
+
+  it('keeps the existing run on an exact tie (commands and hints equal)', () => {
+    const existing = mission({ commands: 10, hints: 1 });
+    const p: M90Progress = { days: {}, missions: { m1: existing } };
+    const next = recordMissionRun(p, 'm1', { commands: 10, hints: 1, seconds: 999 }, NOW);
+    expect(next.missions['m1']).toEqual(existing);
+  });
+
+  it('stamps startedAt if absent, even when the existing run is kept', () => {
+    const existing = mission({ commands: 5, hints: 0 });
+    const p: M90Progress = { days: {}, missions: { m1: existing } };
+    const next = recordMissionRun(p, 'm1', { commands: 99, hints: 9, seconds: 1 }, NOW);
+    expect(next.startedAt).toBe(NOW);
+  });
+
+  it('never mutates the input', () => {
+    const p: M90Progress = { days: {}, missions: {} };
+    recordMissionRun(p, 'm1', { commands: 1, hints: 0, seconds: 1 }, NOW);
+    expect(p.missions).toEqual({});
+  });
+
+  it('leaves other missions and days untouched', () => {
+    const p: M90Progress = { days: { '1': day() }, missions: { other: mission() } };
+    const next = recordMissionRun(p, 'm1', { commands: 1, hints: 0, seconds: 1 }, NOW);
+    expect(next.days['1']).toEqual(day());
+    expect(next.missions['other']).toEqual(mission());
   });
 });
 
