@@ -21,6 +21,7 @@ that breaks these rules fails CI, not just review.
 | **Hands-On Lab** | **20–35 min**, **≤12 command blocks**, every block has a `# comment` **and** expected output. |
 | **Real Errors I Hit** | **1–4** (minimum 1). |
 | **Q&A (interviewQA)** | **3–5**, each answer **≤120 words** and speakable, tagged `[Service]` / `[Product]` / `[Both]`. |
+| **Quick check (`check`)** | *Optional.* **1–3** questions, **2–5 options** each, `explain` **≤50 words**. |
 | **Go Deeper** | **≤5 items**, each **time-tagged** (e.g. "10 min —"). |
 | **Tomorrow** | **1 sentence** *(optional in the schema, but author it for every non-final day — it is the daily-return hook)*. |
 
@@ -49,6 +50,32 @@ that breaks these rules fails CI, not just review.
   them as body headings or prose.
 - **Only two keyword-carrying headings:** the concept H2 and the interview H2.
   Every other H2 is a fixed structural label.
+
+---
+
+## Quick check (`check`)
+
+Optional and progressive by construction — a day with no `check` field is
+exactly as valid as one with 1–3 questions, and rollout is one day at a time.
+Rendered by `M90DayCheck.astro` between the interview bank and the
+completion band. Formative only: no answer is ever persisted, so there is no
+"pass" to design around — write questions to teach, not to gate.
+
+- **1–3 questions per day.** Don't cover material the day doesn't teach — a
+  question must be **answerable from today's content only**, never from a
+  future day or general knowledge outside the lesson.
+- **2–5 options**, exactly one correct (`answerIndex`, 0-based). The schema
+  refines `answerIndex` against that question's own `options` length, so a
+  typo'd index fails the build instead of shipping an unanswerable question.
+- **Distractors must be plausible**, not jokes or straw-men — each wrong
+  option should be something a learner who half-read the lesson could
+  genuinely believe. A distractor that's obviously silly teaches nothing.
+- **`explain` is optional but strongly encouraged, ≤50 words.** It shows on a
+  correct answer AND is revealed after a second miss, so write it to stand
+  alone (don't say "as above" — the learner may be seeing it after guessing
+  wrong twice, not after reading the concept section).
+- Write the question stem and options the same speakable, plain-English
+  register as the rest of the day — no trick wording, no double negatives.
 
 ---
 

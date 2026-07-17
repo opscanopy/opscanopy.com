@@ -57,6 +57,23 @@ const guides = defineCollection({
   }),
 });
 
+/** One "quick check" question — a sibling of interviewQA, optional and
+ *  progressive: a day with no `check` field is exactly as valid as one with
+ *  1-3 questions. `answerIndex` is refined against THIS question's own
+ *  `options` length so a malformed index fails validation at build time
+ *  rather than silently rendering an unanswerable question. */
+const m90CheckQuestion = z
+  .object({
+    q: z.string(),
+    options: z.array(z.string()).min(2).max(5),
+    answerIndex: z.number().int().min(0),
+    explain: z.string().optional(),
+  })
+  .refine((c) => c.answerIndex < c.options.length, {
+    message: 'answerIndex must be a valid index into options',
+    path: ['answerIndex'],
+  });
+
 const mission90Days = defineCollection({
   loader: glob({ pattern: '**/*.md', base: './src/content/mission90' }),
   schema: z.object({
@@ -71,6 +88,7 @@ const mission90Days = defineCollection({
       q: z.string(), a: z.string(),
       track: z.enum(['service', 'product', 'both']).default('both'),
     })).min(3).max(5),
+    check: z.array(m90CheckQuestion).min(1).max(3).optional(),
     goDeeperMinutes: z.number().int().positive().optional(),
     updatedDate: z.coerce.date().optional(),
     draft: z.boolean().default(false),
