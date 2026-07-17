@@ -60,8 +60,13 @@ describe('localizeNavHref()', () => {
     for (const locale of ['en', 'de', 'es', 'fr', 'pt-br'] as const) {
       expect(localizeNavHref('/learn', locale)).toBe('/learn/');
       expect(localizeNavHref('/mission-90', locale)).toBe('/mission-90/');
-      expect(localizeNavHref('/search', locale)).toBe('/search/');
     }
+  });
+
+  it('localizes /search like any other page — it has a real page per locale, unlike /learn or /mission-90', () => {
+    expect(localizeNavHref('/search', 'en')).toBe('/search/');
+    expect(localizeNavHref('/search', 'de')).toBe('/de/search/');
+    expect(localizeNavHref('/search', 'fr')).toBe('/fr/search/');
   });
 
   it('leaves nested paths under an English-only section unprefixed', () => {

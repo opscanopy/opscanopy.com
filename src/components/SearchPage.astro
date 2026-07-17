@@ -1,0 +1,628 @@
+---
+/**
+ * SearchPage — the shared interactive body for /search and its 4 localized
+ * mirrors (de/es/fr/pt-br). Single source of truth for the search form,
+ * results list, and their script/style (previously hand-duplicated would
+ * have meant 5 copies of the whole Pagefind-driving script).
+ *
+ * Hand-built UI over the Pagefind JS API — the default Pagefind UI bundle/CSS
+ * is deliberately NOT used (design-system tokens + our own a11y contract
+ * instead). The index only exists after a production build, so the module is
+ * imported at runtime inside a try/catch and `npm run dev` shows a calm
+ * "unavailable" state instead of crashing.
+ *
+ * Pagefind indexes per <html lang> into separate sub-indexes, auto-selected
+ * by the page's own lang attribute — so this same component searches only
+ * the current locale's pages without any extra wiring.
+ *
+ * Self-detects the locale via Astro.currentLocale (same pattern as ToolCard/
+ * ToolsCatalog), so callers pass no props. The <script> below stays 100%
+ * locale-agnostic: every translated string it needs is read from data-*
+ * attributes on #ss-results at boot, and the two HTML-bearing states
+ * (initial empty state, "index unavailable") are captured from/rendered via
+ * the server-rendered markup rather than re-built as English template
+ * literals in JS.
+ */
+import { DEFAULT_LOCALE, type Locale } from '../i18n/config';
+import { useTranslations, localizeKey } from '../i18n/utils';
+
+const lang: Locale = (Astro.currentLocale as Locale) ?? DEFAULT_LOCALE;
+const t = useTranslations(lang);
+const toolsHref = localizeKey('/tools', lang);
+const blogHref = localizeKey('/blog', lang);
+---
+
+<section class="ss-page" aria-label={t('search.ariaLabel')}>
+  <div class="container-page py-14 sm:py-20">
+    <div class="mx-auto w-full max-w-2xl">
+      <p class="eyebrow mb-3">{t('search.eyebrow')}</p>
+      <h1 class="display-md text-ink">{t('search.heading')}</h1>
+      <p class="body-md mt-3 max-w-prose text-body">{t('search.lead')}</p>
+
+      <form id="ss-form" role="search" aria-label={t('search.ariaLabel')} class="mt-8">
+        <label class="eyebrow mb-2 block" for="ss-input">{t('search.inputLabel')}</label>
+        <div class="ss-input-wrap">
+          <svg
+            class="ss-input-icon"
+            viewBox="0 0 20 20"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="9" cy="9" r="6.25"></circle>
+            <path d="M13.5 13.5L17 17"></path>
+          </svg>
+          <input
+            id="ss-input"
+            type="search"
+            class="ss-input input-focus"
+            spellcheck="false"
+            autocapitalize="off"
+            autocorrect="off"
+            autocomplete="off"
+            enterkeyhint="search"
+            placeholder={t('search.placeholder')}
+            aria-describedby="ss-input-hint"
+          />
+        </div>
+        <p id="ss-input-hint" class="caption mt-2 text-mute">{t('search.hint')}</p>
+      </form>
+
+      <div
+        id="ss-results"
+        class="mt-8"
+        data-i18n-unavailable-prefix={t('search.unavailablePrefix')}
+        data-i18n-unavailable-tools-link={t('search.unavailableToolsLink')}
+        data-i18n-unavailable-middle={t('search.unavailableMiddle')}
+        data-i18n-unavailable-blog-link={t('search.unavailableBlogLink')}
+        data-i18n-unavailable-suffix={t('search.unavailableSuffix')}
+        data-i18n-no-results-prefix={t('search.noResultsPrefix')}
+        data-i18n-no-results-tips={t('search.noResultsTips')}
+        data-i18n-no-results-coverage={t('search.noResultsCoverage')}
+        data-i18n-results-singular={t('search.resultsForSingular')}
+        data-i18n-results-plural={t('search.resultsForPlural')}
+        data-i18n-show-more={t('search.showMoreResults')}
+        data-i18n-show-more-count={t('search.showMoreResultsCount')}
+        data-i18n-status-no-results={t('search.statusNoResults')}
+        data-i18n-status-singular={t('search.statusResultsSingular')}
+        data-i18n-status-plural={t('search.statusResultsPlural')}
+        data-i18n-status-unavailable={t('search.statusUnavailable')}
+        data-tools-href={toolsHref}
+        data-blog-href={blogHref}
+      >
+        <p class="ss-empty body-sm text-mute">
+          {t('search.initialEmptyPrefix')} <span class="code-mono">subnet</span>, <span class="code-mono">cron</span>,
+          {t('search.exampleOr')} <span class="code-mono">jwt</span>.
+        </p>
+      </div>
+      {/* Sole live region — the results container itself is NOT aria-live. */}
+      <span id="ss-status" class="sr-only" role="status"></span>
+
+      <noscript>
+        <p class="body-sm mt-6 text-mute">
+          {t('search.noscriptPrefix')} <a class="link-inline" href={toolsHref}>{t('search.noscriptLink')}</a>.
+        </p>
+      </noscript>
+    </div>
+  </div>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  .ss-input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .ss-input-icon {
+    position: absolute;
+    left: 14px;
+    width: 18px;
+    height: 18px;
+    color: var(--color-mute);
+    pointer-events: none;
+  }
+  .ss-input {
+    width: 100%;
+    height: 48px;
+    padding: 0 16px 0 42px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-size: 15px;
+    line-height: 24px;
+    transition: box-shadow 0.15s ease;
+  }
+  /* Unlayered scoped CSS always beats a layered Tailwind @utility for the same
+     property (CSS Cascade Layers) — excluding :focus-visible here lets the
+     shared .input-focus utility's ring actually take over during focus. */
+  .ss-input:not(:focus-visible) {
+    box-shadow: var(--shadow-hairline);
+  }
+  .ss-input::placeholder {
+    color: var(--color-mute);
+  }
+  .ss-input:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .ss-input:focus {
+    outline: none;
+  }
+  .ss-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 72px;
+    padding: 20px 16px;
+    gap: 0.35ch;
+    flex-wrap: wrap;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+
+  :global(.ss-count) {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 18px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+    margin-bottom: 12px;
+  }
+
+  :global(.ss-list) {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  :global(.ss-link) {
+    display: block;
+    padding: 14px 16px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    text-decoration: none;
+    transition: box-shadow 0.12s ease, background 0.12s ease;
+    animation: ss-rise 0.18s ease both;
+  }
+  :global(.ss-link:hover) {
+    background: var(--color-canvas-soft-2);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  :global(.ss-link:focus-visible) {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--color-link);
+  }
+  :global(.ss-title) {
+    display: block;
+    font-size: 15px;
+    line-height: 22px;
+    font-weight: 500;
+    color: var(--color-ink);
+    text-wrap: pretty;
+  }
+  :global(.ss-link:hover .ss-title) {
+    color: var(--color-brand-strong);
+  }
+  :global(.ss-url) {
+    display: block;
+    margin-top: 2px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 18px;
+    color: var(--color-mute);
+    overflow-wrap: anywhere;
+  }
+  :global(.ss-excerpt) {
+    display: block;
+    margin-top: 6px;
+    font-size: 13px;
+    line-height: 19px;
+    color: var(--color-body);
+    text-wrap: pretty;
+    overflow-wrap: anywhere;
+  }
+  :global(.ss-excerpt mark) {
+    background: var(--color-brand-soft);
+    color: var(--color-brand-strong);
+    border-radius: 2px;
+    padding: 0 1px;
+  }
+
+  :global(.ss-more) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 14px;
+    min-height: 36px;
+    padding: 0 16px;
+    border: none;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    font-size: 13px;
+    line-height: 18px;
+    font-weight: 500;
+    color: var(--color-brand-strong);
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  :global(.ss-more:hover) {
+    background: var(--color-brand-soft);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+  }
+  :global(.ss-more:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  @media (pointer: coarse) {
+    :global(.ss-more) {
+      min-height: 44px;
+    }
+  }
+
+  @keyframes ss-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.ss-link) {
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  import { escapeHtml } from '../lib/escape-html';
+  import { safeGtag } from '../lib/gtag';
+
+  /* Minimal shapes of the Pagefind JS API surface we use. */
+  interface PagefindFragment {
+    url: string;
+    excerpt: string;
+    meta?: { title?: string };
+  }
+  interface PagefindResult {
+    id: string;
+    data: () => Promise<PagefindFragment>;
+  }
+  interface PagefindModule {
+    search: (term: string) => Promise<{ results: PagefindResult[] }>;
+  }
+
+  const DEBOUNCE_MS = 180;
+  const PAGE_SIZE = 10;
+  /* Kept in a variable so neither Vite nor TS tries to resolve it at build
+     time — dist/pagefind/pagefind.js only exists after `npm run build`. */
+  const PAGEFIND_URL = '/pagefind/pagefind.js';
+
+  /** Fill `{name}`-style placeholders in an already-TRANSLATED template
+   *  string read from a data-* attribute — mirrors i18n/utils.ts's own
+   *  interpolate(), duplicated locally since this script cannot import
+   *  server-side i18n code (it must stay a plain, locale-agnostic module). */
+  function fillTemplate(template: string, vars: Record<string, string | number>): string {
+    return template.replace(/\{(\w+)\}/g, (match, key) => (key in vars ? String(vars[key]) : match));
+  }
+
+  /**
+   * Pagefind excerpts arrive as HTML strings with <mark> around the matched
+   * terms. DOCUMENTED EXEMPTION from the escape-everything rule: the whole
+   * excerpt is escaped first, then ONLY literal &lt;mark&gt;/&lt;/mark&gt;
+   * pairs are unescaped — every other tag stays inert text, so nothing but
+   * the bare highlight element ever reaches innerHTML.
+   */
+  function excerptHtml(excerpt: string): string {
+    return escapeHtml(excerpt)
+      .replace(/&lt;mark&gt;/g, '<mark>')
+      .replace(/&lt;\/mark&gt;/g, '</mark>');
+  }
+
+  /**
+   * GA4 search_performed — result COUNT only, NEVER the query text. Fired
+   * once per settled (debounced) query, not per keystroke. safeGtag no-ops
+   * silently if gtag is absent/blocked — dataLayer is always set by the
+   * Layout.astro shim before any other script on the page runs, so no
+   * separate dataLayer check is needed here.
+   */
+  function sendSearchPerformed(count: number): void {
+    safeGtag('event', 'search_performed', { result_count: count });
+  }
+
+  function boot(): void {
+    const form = document.getElementById('ss-form') as HTMLFormElement | null;
+    const input = document.getElementById('ss-input') as HTMLInputElement | null;
+    const resultsBox = document.getElementById('ss-results');
+    const status = document.getElementById('ss-status');
+    if (!form || !input || !resultsBox || !status) return;
+    if (form.dataset.ssWired === 'true') return;
+    form.dataset.ssWired = 'true';
+
+    // Every translated string the script needs, read once from data-*
+    // attributes rendered server-side — this function body never contains
+    // English (or any other locale's) literal text.
+    const i18n = {
+      unavailablePrefix: resultsBox.dataset.i18nUnavailablePrefix ?? '',
+      unavailableToolsLink: resultsBox.dataset.i18nUnavailableToolsLink ?? '',
+      unavailableMiddle: resultsBox.dataset.i18nUnavailableMiddle ?? '',
+      unavailableBlogLink: resultsBox.dataset.i18nUnavailableBlogLink ?? '',
+      unavailableSuffix: resultsBox.dataset.i18nUnavailableSuffix ?? '',
+      noResultsPrefix: resultsBox.dataset.i18nNoResultsPrefix ?? '',
+      noResultsTips: resultsBox.dataset.i18nNoResultsTips ?? '',
+      noResultsCoverage: resultsBox.dataset.i18nNoResultsCoverage ?? '',
+      resultsSingular: resultsBox.dataset.i18nResultsSingular ?? '',
+      resultsPlural: resultsBox.dataset.i18nResultsPlural ?? '',
+      showMore: resultsBox.dataset.i18nShowMore ?? '',
+      showMoreCount: resultsBox.dataset.i18nShowMoreCount ?? '',
+      statusNoResults: resultsBox.dataset.i18nStatusNoResults ?? '',
+      statusSingular: resultsBox.dataset.i18nStatusSingular ?? '',
+      statusPlural: resultsBox.dataset.i18nStatusPlural ?? '',
+      statusUnavailable: resultsBox.dataset.i18nStatusUnavailable ?? '',
+      toolsHref: resultsBox.dataset.toolsHref ?? '/tools/',
+      blogHref: resultsBox.dataset.blogHref ?? '/blog/',
+    };
+
+    // Snapshot the server-rendered initial empty state so it can be restored
+    // exactly (already correctly translated) without rebuilding it in JS.
+    const initialResultsHtml = resultsBox.innerHTML;
+
+    let pagefind: PagefindModule | null = null;
+    let loadFailed = false;
+    let loading: Promise<void> | null = null;
+
+    function loadPagefind(): Promise<void> {
+      if (!loading) {
+        loading = (async () => {
+          try {
+            /* Runtime-only module — exists in dist/, not in the dev server. */
+            pagefind = (await import(/* @vite-ignore */ PAGEFIND_URL)) as PagefindModule;
+          } catch {
+            loadFailed = true;
+          }
+        })();
+      }
+      return loading;
+    }
+
+    function setStatus(text: string): void {
+      status!.textContent = text;
+    }
+
+    function renderInitial(): void {
+      resultsBox!.innerHTML = initialResultsHtml;
+    }
+
+    function renderUnavailable(): void {
+      resultsBox!.innerHTML =
+        `<p class="ss-empty body-sm text-mute">${escapeHtml(i18n.unavailablePrefix)} ` +
+        `<a class="link-inline" href="${escapeHtml(i18n.toolsHref)}">${escapeHtml(i18n.unavailableToolsLink)}</a> ` +
+        `${escapeHtml(i18n.unavailableMiddle)} ` +
+        `<a class="link-inline" href="${escapeHtml(i18n.blogHref)}">${escapeHtml(i18n.unavailableBlogLink)}</a> ` +
+        `${escapeHtml(i18n.unavailableSuffix)}</p>`;
+    }
+
+    function renderNoResults(term: string): void {
+      resultsBox!.innerHTML =
+        `<p class="ss-empty body-sm text-mute">${fillTemplate(escapeHtml(i18n.noResultsPrefix), { term: escapeHtml(term) })} ` +
+        `${escapeHtml(i18n.noResultsTips)} ${escapeHtml(i18n.noResultsCoverage)}</p>`;
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* Rendering                                                         */
+    /* ---------------------------------------------------------------- */
+
+    let currentResults: PagefindResult[] = [];
+    let shown = 0;
+
+    async function appendBatch(focusFirstNew: boolean): Promise<void> {
+      const id = queryId; // guard: bail if a newer query re-renders mid-fetch
+      const batch = currentResults.slice(shown, shown + PAGE_SIZE);
+      const fragments = await Promise.all(
+        batch.map(async (r) => {
+          try {
+            return await r.data();
+          } catch {
+            return null;
+          }
+        }),
+      );
+      if (id !== queryId) return; // superseded — never append into a newer list
+      const list = resultsBox!.querySelector<HTMLUListElement>('.ss-list');
+      if (!list) return;
+      const firstNewIndex = list.children.length;
+      const html = fragments
+        .filter((f): f is PagefindFragment => f !== null)
+        .map((f) => {
+          const title = escapeHtml(f.meta?.title || f.url);
+          const url = escapeHtml(f.url);
+          return (
+            '<li>' +
+            `<a class="ss-link" href="${url}">` +
+            `<span class="ss-title">${title}</span>` +
+            `<span class="ss-url">${url}</span>` +
+            `<span class="ss-excerpt">${excerptHtml(f.excerpt)}</span>` +
+            '</a></li>'
+          );
+        })
+        .join('');
+      list.insertAdjacentHTML('beforeend', html);
+      shown += batch.length;
+
+      const moreBtn = resultsBox!.querySelector<HTMLButtonElement>('.ss-more');
+      if (moreBtn) {
+        const remaining = currentResults.length - shown;
+        if (remaining > 0) {
+          moreBtn.textContent = fillTemplate(i18n.showMoreCount, { n: remaining });
+        } else {
+          moreBtn.remove();
+        }
+      }
+      if (focusFirstNew) {
+        list.querySelectorAll<HTMLAnchorElement>('a.ss-link')[firstNewIndex]?.focus();
+      }
+    }
+
+    async function renderResults(term: string, results: PagefindResult[]): Promise<void> {
+      currentResults = results;
+      shown = 0;
+      const n = results.length;
+      const template = n === 1 ? i18n.resultsSingular : i18n.resultsPlural;
+      const countText = fillTemplate(template, { n, term: escapeHtml(term) });
+      resultsBox!.innerHTML =
+        `<p class="ss-count">${countText}</p>` +
+        '<ul class="ss-list"></ul>' +
+        (n > PAGE_SIZE ? `<button type="button" class="ss-more">${escapeHtml(i18n.showMore)}</button>` : '');
+      await appendBatch(false);
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* Search driver — debounced live eval, Enter forces immediate run.  */
+    /* ---------------------------------------------------------------- */
+
+    let timer: number | undefined;
+    let queryId = 0;
+    let lastTrackedTerm: string | null = null;
+
+    async function runSearch(): Promise<void> {
+      const term = input!.value.trim();
+      const id = ++queryId;
+
+      if (term.length === 0) {
+        setStatus('');
+        lastTrackedTerm = null;
+        if (loadFailed) renderUnavailable();
+        else renderInitial();
+        return;
+      }
+
+      await loadPagefind();
+      if (id !== queryId) return; // superseded while loading
+      if (loadFailed || !pagefind) {
+        renderUnavailable();
+        setStatus(i18n.statusUnavailable);
+        return;
+      }
+
+      let results: PagefindResult[] = [];
+      try {
+        const res = await pagefind.search(term);
+        results = Array.isArray(res?.results) ? res.results : [];
+      } catch {
+        results = [];
+      }
+      if (id !== queryId) return; // a newer query settled meanwhile
+
+      if (results.length === 0) {
+        renderNoResults(term);
+        setStatus(i18n.statusNoResults);
+      } else {
+        await renderResults(term, results);
+        if (id !== queryId) return;
+        setStatus(fillTemplate(results.length === 1 ? i18n.statusSingular : i18n.statusPlural, { n: results.length }));
+      }
+
+      /* One analytics event per settled query — count only, no query text. */
+      if (term !== lastTrackedTerm) {
+        lastTrackedTerm = term;
+        sendSearchPerformed(results.length);
+      }
+    }
+
+    function scheduleSearch(): void {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => void runSearch(), DEBOUNCE_MS);
+    }
+
+    function runNow(): void {
+      window.clearTimeout(timer);
+      void runSearch();
+    }
+
+    input.addEventListener('input', scheduleSearch);
+    /* Warm the index up as soon as the field is touched. */
+    input.addEventListener('focus', () => void loadPagefind(), { once: true });
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      runNow();
+      /* Dismiss the on-screen keyboard so results are visible. */
+      if (window.matchMedia?.('(pointer: coarse)').matches) input.blur();
+    });
+
+    /* ---------------------------------------------------------------- */
+    /* Keyboard nav — ArrowDown from the input enters the results; ↑/↓   */
+    /* move focus through result links; Escape returns to the input.     */
+    /* ---------------------------------------------------------------- */
+
+    const resultLinks = (): HTMLAnchorElement[] =>
+      Array.from(resultsBox!.querySelectorAll<HTMLAnchorElement>('a.ss-link'));
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        runNow();
+        /* Dismiss the on-screen keyboard so results are visible. */
+        if (window.matchMedia?.('(pointer: coarse)').matches) input.blur();
+        return;
+      }
+      if (e.key === 'ArrowDown') {
+        const links = resultLinks();
+        if (links.length) {
+          e.preventDefault();
+          links[0].focus();
+        }
+      }
+    });
+
+    resultsBox.addEventListener('keydown', (e) => {
+      const links = resultLinks();
+      const idx = links.indexOf(document.activeElement as HTMLAnchorElement);
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        input!.focus();
+        return;
+      }
+      if (idx === -1) return;
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        (links[idx + 1] ?? links[idx]).focus();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (idx === 0) input!.focus();
+        else links[idx - 1].focus();
+      }
+    });
+
+    resultsBox.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.ss-more');
+      if (!btn) return;
+      /* User-initiated — moving focus to the first appended result is the
+         expected continuation, not a focus steal. */
+      void appendBatch(true);
+    });
+
+    /* Surface the unavailable state up front (dev server / missing index)
+       instead of letting the first keystroke discover it. */
+    void loadPagefind().then(() => {
+      if (loadFailed && input!.value.trim().length === 0) renderUnavailable();
+    });
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

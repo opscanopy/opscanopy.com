@@ -135,6 +135,39 @@ const en = {
   'tools.clearFilters': 'Clear filters',
   'tools.zeroLiveTitle': 'Nothing live just yet.',
   'tools.zeroLiveBody': 'The first tool is being polished to ship — check back soon to see what is coming.',
+
+  // Site search (/search)
+  'search.title': 'Search — OpsCanopy',
+  'search.metaDescription': 'Search every OpsCanopy tool, guide, and blog post.',
+  'search.ariaLabel': 'Site search',
+  'search.eyebrow': 'Search',
+  'search.heading': 'Search OpsCanopy',
+  'search.lead':
+    'Every tool, guide, and blog post on the site — searched entirely in your browser. Nothing you type leaves this page.',
+  'search.inputLabel': 'Search the site',
+  'search.placeholder': 'subnet, cron, docker compose…',
+  'search.hint': 'Results update as you type — press Enter to run now.',
+  'search.initialEmptyPrefix': 'Type to search tools, guides, and blog posts — try',
+  'search.exampleOr': 'or',
+  'search.noscriptPrefix': 'Search runs entirely in your browser — enable JavaScript to use it, or',
+  'search.noscriptLink': 'browse the full tool catalog',
+  'search.unavailablePrefix':
+    'Search is not available here — the index is generated when the site is built, so it is missing in this preview.',
+  'search.unavailableToolsLink': 'Browse all tools',
+  'search.unavailableMiddle': 'or the',
+  'search.unavailableBlogLink': 'blog',
+  'search.unavailableSuffix': 'instead.',
+  'search.noResultsPrefix': 'No matches for “{term}”.',
+  'search.noResultsTips': 'Shorter, simpler terms work best — tool names, protocols, or the exact error string.',
+  'search.noResultsCoverage': 'Search covers the English pages of the site.',
+  'search.resultsForSingular': '{n} result for “{term}”',
+  'search.resultsForPlural': '{n} results for “{term}”',
+  'search.showMoreResults': 'Show more results',
+  'search.showMoreResultsCount': 'Show more results ({n})',
+  'search.statusNoResults': 'No results.',
+  'search.statusResultsSingular': '{n} result.',
+  'search.statusResultsPlural': '{n} results.',
+  'search.statusUnavailable': 'Search is not available in this preview.',
 } as const;
 
 export type UiKey = keyof typeof en;

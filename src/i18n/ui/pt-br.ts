@@ -128,6 +128,40 @@ const ptBr: Partial<UiDict> = {
   'tools.zeroLiveTitle': 'Nada no ar ainda.',
   'tools.zeroLiveBody':
     'A primeira ferramenta está sendo finalizada para o lançamento: volte em breve para ver o que vem por aí.',
+
+  // Site search (/search)
+  'search.title': 'Buscar — OpsCanopy',
+  'search.metaDescription': 'Busque em todas as ferramentas, guias e posts do blog da OpsCanopy.',
+  'search.ariaLabel': 'Busca no site',
+  'search.eyebrow': 'Buscar',
+  'search.heading': 'Buscar na OpsCanopy',
+  'search.lead':
+    'Todas as ferramentas, guias e posts do blog do site — buscados inteiramente no seu navegador. Nada do que você digita sai desta página.',
+  'search.inputLabel': 'Buscar no site',
+  'search.placeholder': 'subnet, cron, docker compose…',
+  'search.hint': 'Os resultados são atualizados enquanto você digita — pressione Enter para buscar agora.',
+  'search.initialEmptyPrefix': 'Digite para buscar ferramentas, guias e posts do blog — experimente',
+  'search.exampleOr': 'ou',
+  'search.noscriptPrefix': 'A busca funciona inteiramente no seu navegador — ative o JavaScript para usá-la, ou',
+  'search.noscriptLink': 'explore o catálogo completo de ferramentas',
+  'search.unavailablePrefix':
+    'A busca não está disponível aqui — o índice é gerado ao compilar o site, por isso está ausente nesta prévia. Explore',
+  'search.unavailableToolsLink': 'todas as ferramentas',
+  'search.unavailableMiddle': 'ou o',
+  'search.unavailableBlogLink': 'blog',
+  'search.unavailableSuffix': '.',
+  'search.noResultsPrefix': 'Nenhum resultado para “{term}”.',
+  'search.noResultsTips':
+    'Termos curtos e simples funcionam melhor — nomes de ferramentas, protocolos ou a mensagem de erro exata.',
+  'search.noResultsCoverage': 'A busca cobre apenas as páginas em português do site.',
+  'search.resultsForSingular': '{n} resultado para “{term}”',
+  'search.resultsForPlural': '{n} resultados para “{term}”',
+  'search.showMoreResults': 'Ver mais resultados',
+  'search.showMoreResultsCount': 'Ver mais resultados ({n})',
+  'search.statusNoResults': 'Nenhum resultado.',
+  'search.statusResultsSingular': '{n} resultado.',
+  'search.statusResultsPlural': '{n} resultados.',
+  'search.statusUnavailable': 'A busca não está disponível nesta prévia.',
 };
 
 export default ptBr;

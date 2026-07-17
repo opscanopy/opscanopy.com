@@ -129,6 +129,40 @@ const fr: Partial<UiDict> = {
   'tools.zeroLiveTitle': "Rien en service pour l'instant.",
   'tools.zeroLiveBody':
     "Le premier outil est en cours de finition avant sa mise en ligne : revenez bientôt pour découvrir ce qui arrive.",
+
+  // Site search (/search)
+  'search.title': 'Recherche — OpsCanopy',
+  'search.metaDescription': 'Recherchez parmi tous les outils, guides et articles de blog OpsCanopy.',
+  'search.ariaLabel': 'Recherche sur le site',
+  'search.eyebrow': 'Recherche',
+  'search.heading': 'Rechercher sur OpsCanopy',
+  'search.lead':
+    'Tous les outils, guides et articles de blog du site — recherchés entièrement dans votre navigateur. Rien de ce que vous saisissez ne quitte cette page.',
+  'search.inputLabel': 'Rechercher sur le site',
+  'search.placeholder': 'subnet, cron, docker compose…',
+  'search.hint': 'Les résultats se mettent à jour au fur et à mesure — appuyez sur Entrée pour lancer la recherche immédiatement.',
+  'search.initialEmptyPrefix': 'Tapez pour rechercher des outils, guides et articles de blog — essayez',
+  'search.exampleOr': 'ou',
+  'search.noscriptPrefix': 'La recherche fonctionne entièrement dans votre navigateur — activez JavaScript pour l’utiliser, ou',
+  'search.noscriptLink': 'parcourez le catalogue complet des outils',
+  'search.unavailablePrefix':
+    'La recherche n’est pas disponible ici — l’index est généré lors de la compilation du site, il est donc absent de cet aperçu. Parcourez plutôt',
+  'search.unavailableToolsLink': 'tous les outils',
+  'search.unavailableMiddle': 'ou le',
+  'search.unavailableBlogLink': 'blog',
+  'search.unavailableSuffix': '.',
+  'search.noResultsPrefix': 'Aucune correspondance pour « {term} ».',
+  'search.noResultsTips':
+    'Les termes courts et simples fonctionnent mieux — noms d’outils, protocoles ou message d’erreur exact.',
+  'search.noResultsCoverage': 'La recherche couvre uniquement les pages françaises du site.',
+  'search.resultsForSingular': '{n} résultat pour « {term} »',
+  'search.resultsForPlural': '{n} résultats pour « {term} »',
+  'search.showMoreResults': 'Afficher plus de résultats',
+  'search.showMoreResultsCount': 'Afficher plus de résultats ({n})',
+  'search.statusNoResults': 'Aucun résultat.',
+  'search.statusResultsSingular': '{n} résultat.',
+  'search.statusResultsPlural': '{n} résultats.',
+  'search.statusUnavailable': 'La recherche n’est pas disponible dans cet aperçu.',
 };
 
 export default fr;

@@ -92,10 +92,12 @@ export function localizeKey(pageKey: string, locale: Locale): string {
 
 /**
  * Top-level sections that exist ONLY in English — no localized page tree is
- * built for them (verified: no src/pages/{locale}/learn, .../mission-90 or
- * .../search). Locale headers link these unprefixed so /de/search never 404s.
+ * built for them (verified: no src/pages/{locale}/learn or .../mission-90).
+ * Locale headers link these unprefixed so e.g. /de/learn never 404s.
+ * '/search' is NOT here — it has a real localized page per locale (see
+ * src/pages/{locale}/search.astro), so it localizes like any other page.
  */
-const ENGLISH_ONLY_SECTIONS = ['/learn', '/mission-90', '/search'];
+const ENGLISH_ONLY_SECTIONS = ['/learn', '/mission-90'];
 
 /**
  * localizeKey for nav / footer / menu CHROME links. English-only sections are

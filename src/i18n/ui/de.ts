@@ -129,6 +129,40 @@ const de: Partial<UiDict> = {
   'tools.zeroLiveTitle': 'Noch nichts live.',
   'tools.zeroLiveBody':
     'Das erste Tool wird gerade für den Release poliert – schauen Sie bald wieder vorbei, um zu sehen, was kommt.',
+
+  // Site search (/search)
+  'search.title': 'Suche — OpsCanopy',
+  'search.metaDescription': 'Durchsuchen Sie jedes OpsCanopy-Tool, jeden Guide und Blogbeitrag.',
+  'search.ariaLabel': 'Website-Suche',
+  'search.eyebrow': 'Suche',
+  'search.heading': 'OpsCanopy durchsuchen',
+  'search.lead':
+    'Jedes Tool, jeder Guide und jeder Blogbeitrag der Website – durchsucht vollständig in Ihrem Browser. Nichts, was Sie eingeben, verlässt diese Seite.',
+  'search.inputLabel': 'Die Website durchsuchen',
+  'search.placeholder': 'subnet, cron, docker compose…',
+  'search.hint': 'Ergebnisse aktualisieren sich beim Tippen — drücken Sie Enter, um sofort zu suchen.',
+  'search.initialEmptyPrefix': 'Tippen Sie, um Tools, Guides und Blogbeiträge zu durchsuchen — probieren Sie',
+  'search.exampleOr': 'oder',
+  'search.noscriptPrefix': 'Die Suche läuft vollständig in Ihrem Browser — aktivieren Sie JavaScript, um sie zu nutzen, oder',
+  'search.noscriptLink': 'durchsuchen Sie den gesamten Tool-Katalog',
+  'search.unavailablePrefix':
+    'Die Suche ist hier nicht verfügbar — der Index wird beim Erstellen der Website generiert und fehlt daher in dieser Vorschau. Durchsuchen Sie stattdessen',
+  'search.unavailableToolsLink': 'alle Tools',
+  'search.unavailableMiddle': 'oder den',
+  'search.unavailableBlogLink': 'Blog',
+  'search.unavailableSuffix': '.',
+  'search.noResultsPrefix': 'Keine Treffer für „{term}“.',
+  'search.noResultsTips':
+    'Kürzere, einfachere Begriffe funktionieren am besten — Toolnamen, Protokolle oder die genaue Fehlermeldung.',
+  'search.noResultsCoverage': 'Die Suche deckt nur die deutschen Seiten der Website ab.',
+  'search.resultsForSingular': '{n} Ergebnis für „{term}“',
+  'search.resultsForPlural': '{n} Ergebnisse für „{term}“',
+  'search.showMoreResults': 'Weitere Ergebnisse anzeigen',
+  'search.showMoreResultsCount': 'Weitere Ergebnisse anzeigen ({n})',
+  'search.statusNoResults': 'Keine Ergebnisse.',
+  'search.statusResultsSingular': '{n} Ergebnis.',
+  'search.statusResultsPlural': '{n} Ergebnisse.',
+  'search.statusUnavailable': 'Die Suche ist in dieser Vorschau nicht verfügbar.',
 };
 
 export default de;
