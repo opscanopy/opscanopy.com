@@ -17,12 +17,24 @@ import Shell from '../../components/Shell.astro';
 import Button from '../../components/Button.astro';
 import { breadcrumbLd } from '../../lib/jsonld';
 import { site } from '../../data/site';
+import { program, phases, missions, liveDays } from '../../data/mission90';
 
 const jsonLd = breadcrumbLd([
   { name: 'Home', item: `${site.url}/` },
   { name: '90 Days DevOps', item: `${site.url}/mission-90/` },
   { name: 'My progress', item: `${site.url}/mission-90/complete/` },
 ]);
+
+// Data island for the client script — mirrors the hub's #m90-data pattern
+// (src/pages/mission-90/index.astro) so this page's boot script never
+// statically imports the full curriculum registry (all 90 days' titles +
+// metadata) into its own JS chunk.
+const m90cData = {
+  programTotal: program.totalDays,
+  liveDayCount: liveDays.length,
+  phaseRanges: phases.map((p) => p.days),
+  missions: missions.map((m) => ({ id: m.id, title: m.title })),
+};
 ---
 
 <Shell
@@ -109,20 +121,45 @@ const jsonLd = breadcrumbLd([
       </div>
     </div>
   </section>
+
+  {/* Registry data for the boot script below — same data-island pattern as
+      the hub, so this page's client JS never statically bundles the full
+      curriculum registry (see the frontmatter comment above). */}
+  <script type="application/json" id="m90c-data" set:html={JSON.stringify(m90cData)} />
 </Shell>
 
 <script>
   import { parseProgress, doneCount, phaseProgress, PROGRESS_KEY } from '../../lib/mission90/progress';
-  import { program, phases, missions, liveDays } from '../../data/mission90';
   import { copyTextToClipboard } from '../../lib/clipboard';
   import { escapeHtml } from '../../lib/escape-html';
   import { formatDuration, fmtDate } from '../../lib/mission90/format';
+
+  interface MissionMeta {
+    id: string;
+    title: string;
+  }
 
   function readProgress() {
     try {
       return parseProgress(localStorage.getItem(PROGRESS_KEY));
     } catch {
       return parseProgress(null);
+    }
+  }
+
+  function getData(): {
+    programTotal: number;
+    liveDayCount: number;
+    phaseRanges: [number, number][];
+    missions: MissionMeta[];
+  } {
+    const empty = { programTotal: 0, liveDayCount: 0, phaseRanges: [] as [number, number][], missions: [] };
+    const el = document.getElementById('m90c-data');
+    if (!el || !el.textContent) return empty;
+    try {
+      return JSON.parse(el.textContent);
+    } catch {
+      return empty;
     }
   }
 
@@ -178,6 +215,7 @@ const jsonLd = breadcrumbLd([
   }
 
   function render(): void {
+    const data = getData();
     const p = readProgress();
     const done = doneCount(p);
     const missionsDone = Object.keys(p.missions).length;
@@ -195,16 +233,16 @@ const jsonLd = breadcrumbLd([
       return;
     }
 
-    const totalDays = liveDays.length || program.totalDays;
+    const totalDays = data.liveDayCount || data.programTotal;
     const allDone = totalDays > 0 && done >= totalDays;
     // done is a COUNT of completed days, not a position — say "N of 90 days
     // done", never "Day N", or a learner who skipped around gets the wrong day.
     const title = allDone
       ? 'Developer to DevOps engineer. Complete.'
-      : `${done} of ${program.totalDays} days done — nice work so far.`;
+      : `${done} of ${data.programTotal} days done — nice work so far.`;
 
     if (heading) {
-      heading.textContent = allDone ? 'You did it.' : `${done} of ${program.totalDays} days done.`;
+      heading.textContent = allDone ? 'You did it.' : `${done} of ${data.programTotal} days done.`;
     }
     if (sub) {
       sub.textContent = allDone
@@ -217,14 +255,14 @@ const jsonLd = breadcrumbLd([
     const missionsEl = document.getElementById('m90c-missions');
     if (missionsEl) missionsEl.textContent = String(missionsDone);
     const missionsTotalEl = document.getElementById('m90c-missions-total');
-    if (missionsTotalEl) missionsTotalEl.textContent = String(missions.length);
+    if (missionsTotalEl) missionsTotalEl.textContent = String(data.missions.length);
 
-    const phasesDone = phases.filter((ph) => {
-      const { done: pd, total } = phaseProgress(p, ph.days);
+    const phasesDone = data.phaseRanges.filter((range) => {
+      const { done: pd, total } = phaseProgress(p, range);
       return total > 0 && pd >= total;
     }).length;
     const phasesEl = document.getElementById('m90c-phases');
-    if (phasesEl) phasesEl.textContent = `${phasesDone}/${phases.length}`;
+    if (phasesEl) phasesEl.textContent = `${phasesDone}/${data.phaseRanges.length}`;
 
     const sinceEl = document.getElementById('m90c-since');
     const startLabel = p.startedAt ? fmtDate(p.startedAt) : null;
@@ -236,9 +274,9 @@ const jsonLd = breadcrumbLd([
     currentSvg = buildCardSvg({
       title,
       days: done,
-      totalDays: program.totalDays,
+      totalDays: data.programTotal,
       missionsCount: missionsDone,
-      missionsTotal: missions.length,
+      missionsTotal: data.missions.length,
       dateRange,
     });
     const cardWrap = document.getElementById('m90c-card-wrap');
@@ -248,14 +286,14 @@ const jsonLd = breadcrumbLd([
 
     const shareUrl = `${location.origin}/mission-90/?utm_source=share&utm_medium=progress_card`;
     currentBlurb = allDone
-      ? `I just completed OpsCanopy's Mission 90 Days DevOps program — ${done}/${program.totalDays} days and ${missionsDone}/${missions.length} browser missions cleared. Free, no signup: ${shareUrl}`
-      : `I've completed ${done}/${program.totalDays} days of OpsCanopy's Mission 90 Days DevOps program (${missionsDone}/${missions.length} browser missions cleared so far). Free, no signup: ${shareUrl}`;
+      ? `I just completed OpsCanopy's Mission 90 Days DevOps program — ${done}/${data.programTotal} days and ${missionsDone}/${data.missions.length} browser missions cleared. Free, no signup: ${shareUrl}`
+      : `I've completed ${done}/${data.programTotal} days of OpsCanopy's Mission 90 Days DevOps program (${missionsDone}/${data.missions.length} browser missions cleared so far). Free, no signup: ${shareUrl}`;
 
     const missionsListWrap = document.getElementById('m90c-missions-wrap');
     const missionsList = document.getElementById('m90c-missions-list');
     if (missionsList) {
       missionsList.innerHTML = '';
-      const cleared = missions.filter((m) => p.missions[m.id]);
+      const cleared = data.missions.filter((m) => p.missions[m.id]);
       if (cleared.length > 0 && missionsListWrap) {
         missionsListWrap.hidden = false;
         for (const m of cleared) {
@@ -311,7 +349,10 @@ const jsonLd = breadcrumbLd([
 
   boot();
   document.addEventListener('astro:page-load', boot);
-  document.addEventListener('m90:progress', render);
+  // No same-tab m90:progress listener here: this page renders no writer
+  // component (M90DayTable/M90CompleteCheck/MissionTerminal all live on
+  // other pages), so the event can never fire on /mission-90/complete/.
+  // Cross-tab updates are covered by the storage listener below.
   window.addEventListener('storage', (e) => {
     if (e.key === PROGRESS_KEY) render();
   });
