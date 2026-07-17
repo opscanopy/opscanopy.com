@@ -84,6 +84,24 @@ export function faqPageLd(faqs: { q: string; a: string }[]): Record<string, unkn
 }
 
 /**
+ * CollectionPage object for a page that aggregates content drawn from many
+ * other pages (e.g. every Mission-90 day's interview Q&A) rather than being
+ * a single article itself. Deliberately separate from faqPageLd: an
+ * aggregator built from content whose SOURCE pages already emit their own
+ * FAQPage-shaped structured data should not re-emit the same questions as a
+ * second FAQPage — that would duplicate structured data across pages.
+ */
+export function collectionPageLd(o: { name: string; description: string; url: string }): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'CollectionPage',
+    name: o.name,
+    description: o.description,
+    url: o.url,
+  };
+}
+
+/**
  * TechArticle object for a Learn guide page. Mirrors the BlogPosting shape used
  * by blog posts but typed as TechArticle (technical how-to/reference content).
  *
