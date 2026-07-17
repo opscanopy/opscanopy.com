@@ -20,6 +20,9 @@ import {
   importProgress,
   markDayDone,
   unmarkDay,
+  markDaysDone,
+  unmarkDays,
+  markPhaseDone,
   recordMissionRun,
   PROGRESS_KEY,
   type M90Progress,
@@ -428,6 +431,125 @@ describe('unmarkDay()', () => {
     const p: M90Progress = { days: { '5': day() }, missions: {} };
     unmarkDay(p, 5);
     expect(p.days).toEqual({ '5': day() });
+  });
+});
+
+describe('markDaysDone()', () => {
+  const NOW = '2026-07-10T12:00:00.000Z';
+
+  it('marks every day in the inclusive range', () => {
+    const p: M90Progress = { days: {}, missions: {} };
+    const next = markDaysDone(p, [21, 24], NOW);
+    expect(Object.keys(next.days).sort()).toEqual(['21', '22', '23', '24']);
+  });
+
+  it('never overwrites an already-completed day inside the range', () => {
+    const p: M90Progress = { days: { '22': day('2026-01-01T00:00:00.000Z') }, missions: {} };
+    const next = markDaysDone(p, [21, 24], NOW);
+    expect(next.days['22']).toEqual(day('2026-01-01T00:00:00.000Z'));
+    expect(next.days['21']).toEqual(day(NOW));
+  });
+
+  it('stamps startedAt only when absent', () => {
+    const p: M90Progress = { days: {}, missions: {} };
+    expect(markDaysDone(p, [1, 3], NOW).startedAt).toBe(NOW);
+
+    const started: M90Progress = { startedAt: '2026-01-01T00:00:00.000Z', days: {}, missions: {} };
+    expect(markDaysDone(started, [1, 3], NOW).startedAt).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('clamps the range to 1–90', () => {
+    const p: M90Progress = { days: {}, missions: {} };
+    const next = markDaysDone(p, [88, 95], NOW);
+    expect(Object.keys(next.days).sort()).toEqual(['88', '89', '90']);
+  });
+
+  it('handles a single-day range', () => {
+    const p: M90Progress = { days: {}, missions: {} };
+    const next = markDaysDone(p, [7, 7], NOW);
+    expect(Object.keys(next.days)).toEqual(['7']);
+  });
+
+  it('never mutates the input', () => {
+    const p: M90Progress = { days: {}, missions: {} };
+    markDaysDone(p, [21, 24], NOW);
+    expect(p.days).toEqual({});
+  });
+});
+
+describe('unmarkDays()', () => {
+  it('removes every day entry in the inclusive range', () => {
+    const p: M90Progress = { days: { '21': day(), '22': day(), '30': day() }, missions: {} };
+    const next = unmarkDays(p, [21, 24]);
+    expect(Object.keys(next.days)).toEqual(['30']);
+  });
+
+  it('never touches startedAt', () => {
+    const p: M90Progress = {
+      startedAt: '2026-01-01T00:00:00.000Z',
+      days: { '21': day() },
+      missions: {},
+    };
+    expect(unmarkDays(p, [21, 24]).startedAt).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('is a no-op when nothing in the range was marked', () => {
+    const p: M90Progress = { days: { '5': day() }, missions: {} };
+    const next = unmarkDays(p, [21, 24]);
+    expect(next.days).toEqual({ '5': day() });
+  });
+
+  it('never mutates the input', () => {
+    const p: M90Progress = { days: { '21': day() }, missions: {} };
+    unmarkDays(p, [21, 24]);
+    expect(p.days).toEqual({ '21': day() });
+  });
+});
+
+describe('markPhaseDone()', () => {
+  const NOW = '2026-07-10T12:00:00.000Z';
+
+  it('marks every day in the phase range', () => {
+    const p: M90Progress = { days: {}, missions: {} };
+    const next = markPhaseDone(p, [21, 24], NOW);
+    expect(Object.keys(next.days).sort()).toEqual(['21', '22', '23', '24']);
+  });
+
+  it('advances lastVisitedDay to just past the phase', () => {
+    const p: M90Progress = { days: {}, missions: {} };
+    const next = markPhaseDone(p, [21, 45], NOW);
+    expect(next.lastVisitedDay).toBe(46);
+  });
+
+  it('clamps lastVisitedDay to 90 for the final phase', () => {
+    const p: M90Progress = { days: {}, missions: {} };
+    const next = markPhaseDone(p, [86, 90], NOW);
+    expect(next.lastVisitedDay).toBe(90);
+  });
+
+  it('never rewinds lastVisitedDay if already further ahead', () => {
+    const p: M90Progress = { lastVisitedDay: 60, days: {}, missions: {} };
+    const next = markPhaseDone(p, [21, 45], NOW);
+    expect(next.lastVisitedDay).toBe(60);
+  });
+
+  it('advances lastVisitedDay when unset, even for an early phase', () => {
+    const p: M90Progress = { days: {}, missions: {} };
+    const next = markPhaseDone(p, [1, 20], NOW);
+    expect(next.lastVisitedDay).toBe(21);
+  });
+
+  it('never overwrites an already-completed day inside the phase', () => {
+    const p: M90Progress = { days: { '22': day('2026-01-01T00:00:00.000Z') }, missions: {} };
+    const next = markPhaseDone(p, [21, 24], NOW);
+    expect(next.days['22']).toEqual(day('2026-01-01T00:00:00.000Z'));
+  });
+
+  it('never mutates the input', () => {
+    const p: M90Progress = { days: {}, missions: {} };
+    markPhaseDone(p, [21, 24], NOW);
+    expect(p.days).toEqual({});
+    expect(p.lastVisitedDay).toBeUndefined();
   });
 });
 

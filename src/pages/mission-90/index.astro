@@ -24,6 +24,7 @@ import Badge from '../../components/Badge.astro';
 import M90ProgressCard from '../../components/mission90/M90ProgressCard.astro';
 import M90StateCta from '../../components/mission90/M90StateCta.astro';
 import M90DayTable from '../../components/mission90/M90DayTable.astro';
+import M90SkipAhead from '../../components/mission90/M90SkipAhead.astro';
 import { site } from '../../data/site';
 import {
   program,
@@ -364,6 +365,10 @@ const constructionPath =
             <li>— progress is saved only in this browser's local storage — no account, no email. Back up a code before clearing site data (below) or switching devices</li>
           </ul>
         </Card>
+      </div>
+
+      <div class="mt-8 max-w-2xl">
+        <M90SkipAhead />
       </div>
     </div>
   </section>
@@ -799,6 +804,8 @@ const constructionPath =
     phaseProgress,
     exportProgress,
     importProgress,
+    markPhaseDone,
+    unmarkDays,
     PROGRESS_KEY,
   } from '../../lib/mission90/progress';
   import { copyTextToClipboard } from '../../lib/clipboard';
@@ -819,6 +826,12 @@ const constructionPath =
       /* storage blocked — cold start */
     }
     return parseProgress(raw);
+  }
+
+  /** Parse a "21-45" data attribute into a [lo, hi] tuple, or null if malformed. */
+  function parsePhaseRange(raw: string | undefined): [number, number] | null {
+    const parts = (raw ?? '').split('-').map(Number);
+    return parts.length === 2 && parts.every(Number.isFinite) ? [parts[0], parts[1]] : null;
   }
 
   function getData(): { liveDays: LiveDay[]; liveDayNumbers: number[]; programTotal: number } {
@@ -849,6 +862,23 @@ const constructionPath =
         const c = card.querySelector<HTMLElement>('[data-phase-count]');
         if (c) c.textContent = `${pd}/${total}`;
       });
+
+    // Skip-ahead disclosure: same phaseProgress counts, plus a toggle whose
+    // label/state reflects whether the WHOLE phase is done — however that
+    // happened, bulk-marked here or completed day-by-day in the table below.
+    document.querySelectorAll<HTMLElement>('[data-skip-phase]').forEach((row) => {
+      const range = parsePhaseRange(row.dataset.skipPhaseRange);
+      if (!range) return;
+      const { done: pd, total } = phaseProgress(p, range);
+      const count = row.querySelector<HTMLElement>('[data-skip-phase-count]');
+      if (count) count.textContent = `${pd}/${total} done`;
+      const btn = row.querySelector<HTMLButtonElement>('[data-skip-phase-toggle]');
+      if (btn) {
+        const isDone = total > 0 && pd === total;
+        btn.textContent = isDone ? 'Marked — undo' : 'Mark done';
+        btn.dataset.state = isDone ? 'done' : 'pending';
+      }
+    });
 
     const first = document.querySelector<HTMLElement>('[data-m90-cta-first]');
     const returning = document.querySelector<HTMLElement>('[data-m90-cta-returning]');
@@ -1015,10 +1045,42 @@ const constructionPath =
     });
   }
 
+  // Skip-ahead: bulk mark/unmark a whole phase. One delegated listener on the
+  // disclosure root — render() (above) keeps every row's count/label in sync,
+  // so this handler only needs to mutate storage and dispatch m90:progress.
+  function initSkipAhead(): void {
+    const root = document.querySelector<HTMLElement>('[data-m90-skip-ahead]');
+    if (!root || root.dataset.bound === 'true') return;
+    root.dataset.bound = 'true';
+
+    const status = root.querySelector<HTMLElement>('[data-skip-ahead-status]');
+
+    root.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-skip-phase-toggle]');
+      if (!btn) return;
+      const row = btn.closest<HTMLElement>('[data-skip-phase]');
+      const range = parsePhaseRange(row?.dataset.skipPhaseRange);
+      if (!range) return;
+
+      const wasDone = btn.dataset.state === 'done';
+      const now = new Date().toISOString();
+      const next = wasDone ? unmarkDays(readProgress(), range) : markPhaseDone(readProgress(), range, now);
+      try {
+        localStorage.setItem(PROGRESS_KEY, JSON.stringify(next));
+      } catch {
+        if (status) status.textContent = "Couldn't save — this browser is blocking site storage.";
+        return;
+      }
+      if (status) status.textContent = wasDone ? 'Phase unmarked.' : 'Phase marked done.';
+      document.dispatchEvent(new CustomEvent('m90:progress'));
+    });
+  }
+
   let bound = false;
   function boot(): void {
     render();
     initBackupRestore();
+    initSkipAhead();
     if (!bound) {
       bound = true;
       // The table re-fires this after a day is ticked so the hub re-syncs.

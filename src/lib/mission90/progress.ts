@@ -246,6 +246,58 @@ export function unmarkDay(p: M90Progress, day: number): M90Progress {
 }
 
 /**
+ * Mark every day in an inclusive range done, returning a new M90Progress
+ * (never mutates `p`). The range is clamped to the valid 1–90 schema — a
+ * phase's own range is always inside that already, but a hand-built or
+ * imported range is not trusted. Never overwrites an already-completed
+ * day's `completedAt` (only newly-completed days in the range get `nowIso`),
+ * matching `markDayDone`'s re-marking contract. Stamps `startedAt` only if
+ * absent.
+ */
+export function markDaysDone(p: M90Progress, range: [number, number], nowIso: string): M90Progress {
+  const [lo, hi] = range;
+  const days: M90Progress['days'] = Object.create(null);
+  Object.assign(days, p.days);
+  for (let n = Math.max(1, lo); n <= Math.min(MAX_DAY, hi); n++) {
+    const key = String(n);
+    if (!(key in days)) days[key] = { completedAt: nowIso };
+  }
+  return { ...p, days, startedAt: p.startedAt ?? nowIso };
+}
+
+/**
+ * Remove every day's completion in an inclusive range, returning a new
+ * M90Progress (never mutates `p`). Never touches `startedAt`, matching
+ * `unmarkDay`'s contract.
+ */
+export function unmarkDays(p: M90Progress, range: [number, number]): M90Progress {
+  const [lo, hi] = range;
+  const days: M90Progress['days'] = Object.create(null);
+  Object.assign(days, p.days);
+  for (let n = Math.max(1, lo); n <= Math.min(MAX_DAY, hi); n++) {
+    delete days[String(n)];
+  }
+  return { ...p, days };
+}
+
+/**
+ * Bulk-mark a whole phase done (skip-ahead) AND advance `lastVisitedDay` to
+ * just past it, so resumeDay() picks up after the phase rather than trying
+ * to resume from a day in the middle of what was just skipped. Forward-only:
+ * never rewinds `lastVisitedDay` if the learner has already progressed
+ * further than this phase on their own.
+ */
+export function markPhaseDone(p: M90Progress, range: [number, number], nowIso: string): M90Progress {
+  const marked = markDaysDone(p, range, nowIso);
+  const candidate = Math.min(MAX_DAY, range[1] + 1);
+  const lastVisitedDay =
+    marked.lastVisitedDay === undefined || candidate > marked.lastVisitedDay
+      ? candidate
+      : marked.lastVisitedDay;
+  return { ...marked, lastVisitedDay };
+}
+
+/**
  * Record a mission run, keeping the best of the existing and new runs
  * (fewer commands wins; equal commands falls through to fewer hints; an
  * exact tie keeps the existing run). Returns a new M90Progress (never
