@@ -92,4 +92,4 @@ When you move a query between the two languages, walk these in order:
 
 Holding both dialects in your head at once is exactly the kind of context-switching that produces silent bugs — a `rate` that means the wrong thing, a missing `unwrap`, a selector that compiles but matches nothing. The **LogQL ↔ PromQL Helper** does the mechanical part for you: paste a query in either language, get the closest equivalent in the other, plus explicit notes on what mapped cleanly and what couldn’t. It runs entirely in your browser — your queries never leave the device — so you can sanity-check a translation before it lands in a dashboard or an alert rule.
 
-[Open the LogQL ↔ PromQL Helper →](/logql-promql-helper)
+[Open the LogQL ↔ PromQL Helper →](/logql-promql-helper/)

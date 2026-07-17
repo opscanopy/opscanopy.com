@@ -14,7 +14,7 @@ relatedTool:
 
 Você subiu um container com uma linha rápida de `docker run` durante uma sessão de depuração. Funcionou. Agora alguém quer aquilo no repositório, revisável em um PR, iniciável com um único comando — e você tem um one-liner de 200 caracteres com `-p`, três montagens `-v`, meia dúzia de flags `-e` e uma política `--restart` que agora precisa converter para `docker-compose.yml`. É nesse momento que a maioria das pessoas recorre à documentação e começa a traduzir tudo na mão, e é exatamente aí que flags são esquecidas, portas ficam com as aspas erradas e listas são aninhadas incorretamente.
 
-Este guia mostra como converter um comando `docker run` em `docker-compose.yml` flag por flag, incluindo as pegadinhas que aparecem quando você faz isso na mão. Cada mapeamento aqui corresponde ao que o [conversor Docker Run to Compose](/docker-run-to-compose) realmente gera, então você pode ler as regras e depois colar seu comando na ferramenta para pular a parte mecânica.
+Este guia mostra como converter um comando `docker run` em `docker-compose.yml` flag por flag, incluindo as pegadinhas que aparecem quando você faz isso na mão. Cada mapeamento aqui corresponde ao que o [conversor Docker Run to Compose](/docker-run-to-compose/) realmente gera, então você pode ler as regras e depois colar seu comando na ferramenta para pular a parte mecânica.
 
 ## Por que migrar do docker run para o Compose
 
@@ -117,7 +117,7 @@ env_file:
   - .env
 ```
 
-Ao mover o ambiente da linha de comando para arquivos, vale a pena confirmar que seu `.env` e seu `.env.example` não ficaram desalinhados — o [Env Example Checker](/env-example-checker) aponta as chaves que existem em um mas não no outro, para que uma variável faltando não apareça como um erro em tempo de execução.
+Ao mover o ambiente da linha de comando para arquivos, vale a pena confirmar que seu `.env` e seu `.env.example` não ficaram desalinhados — o [Env Example Checker](/env-example-checker/) aponta as chaves que existem em um mas não no outro, para que uma variável faltando não apareça como um erro em tempo de execução.
 
 ### --restart, --name, -w, -u
 
@@ -185,7 +185,7 @@ mem_limit: 256m
 cpus: "1.5"
 ```
 
-Esses são os limites no estilo v2 que o Compose respeita diretamente. Quando você eventualmente migrar este container para o Kubernetes, esses números viram requests e limits do pod — a [Kubernetes Resource Calculator](/kubernetes-resource-calculator) transforma um valor de memória e CPU em valores seguros de `requests`/`limits`, para que você não fique chutando na conversão.
+Esses são os limites no estilo v2 que o Compose respeita diretamente. Quando você eventualmente migrar este container para o Kubernetes, esses números viram requests e limits do pod — a [Kubernetes Resource Calculator](/kubernetes-resource-calculator/) transforma um valor de memória e CPU em valores seguros de `requests`/`limits`, para que você não fique chutando na conversão.
 
 ### As flags sem equivalente no Compose
 
@@ -250,7 +250,7 @@ volumes:
   pgdata:
 ```
 
-**Precedência de ambiente.** Se você usar tanto `environment` quanto `env_file`, os valores definidos inline em `environment` ganham da mesma chave em um arquivo de ambiente. E nenhum dos dois sobrescreve uma variável que já esteja definida no shell quando você roda `docker compose up`, a menos que você a referencie. Mantenha segredos fora do `environment:` (que é versionado) e dentro do `env_file:` (que fica no gitignore) — e verifique as chaves do arquivo com o [Env Example Checker](/env-example-checker) antes de publicar.
+**Precedência de ambiente.** Se você usar tanto `environment` quanto `env_file`, os valores definidos inline em `environment` ganham da mesma chave em um arquivo de ambiente. E nenhum dos dois sobrescreve uma variável que já esteja definida no shell quando você roda `docker compose up`, a menos que você a referencie. Mantenha segredos fora do `environment:` (que é versionado) e dentro do `env_file:` (que fica no gitignore) — e verifique as chaves do arquivo com o [Env Example Checker](/env-example-checker/) antes de publicar.
 
 **Modos de rede host e none.** Como vimos acima, `--network host` e `--network none` não são redes — são modos. Colocar `host` em uma lista `networks:` é inválido; tem que ser `network_mode: host`. Esse é o tipo de coisa fácil de passar batido na mão, porque a grafia da flag é idêntica à de um `--network backend` normal.
 
@@ -260,6 +260,6 @@ volumes:
 
 As regras acima são tudo o que você precisa para fazer isso na mão. Mas a conversão manual é exatamente onde uma flag é esquecida, uma porta perde suas aspas ou `--network host` acaba na chave errada — e você só descobre quando o container se comporta de forma diferente do comando original.
 
-O [conversor Docker Run to Compose](/docker-run-to-compose) faz a tradução mecânica para você. Ele tokeniza o comando do jeito que um shell faria — respeitando aspas, flags curtas agrupadas como `-it` e continuações com barra invertida e quebra de linha — mapeia cada flag para a chave correspondente do Compose e gera um YAML determinístico. Flags sem equivalente (`--rm`, `-d`) voltam como avisos em vez de sumirem silenciosamente, então nada desaparece sem você saber. Ele também funciona no sentido inverso: cole um serviço do Compose e receba de volta uma linha `docker run` equivalente.
+O [conversor Docker Run to Compose](/docker-run-to-compose/) faz a tradução mecânica para você. Ele tokeniza o comando do jeito que um shell faria — respeitando aspas, flags curtas agrupadas como `-it` e continuações com barra invertida e quebra de linha — mapeia cada flag para a chave correspondente do Compose e gera um YAML determinístico. Flags sem equivalente (`--rm`, `-d`) voltam como avisos em vez de sumirem silenciosamente, então nada desaparece sem você saber. Ele também funciona no sentido inverso: cole um serviço do Compose e receba de volta uma linha `docker run` equivalente.
 
 Tudo acontece no seu navegador, então você pode colar comandos que citam registries privados ou carregam valores `-e` com segredos sem que nada saia da aba. Cole seu comando, leia os avisos e faça o commit do resultado.

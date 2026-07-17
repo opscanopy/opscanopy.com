@@ -25,7 +25,7 @@ faqs:
     a: "Use key-based authentication instead of passwords, disable root login, change defaults in sshd_config, and use an SSH agent. ssh user@host connects; scp/rsync transfer files."
 ---
 
-Linux is the operating system under every Docker container, every Kubernetes node, and the majority of cloud VMs. Before you can deploy, debug, or automate anything in a modern infrastructure stack, you need to be comfortable at the shell. This guide takes you from the absolute fundamentals — how Linux thinks about files and processes — through the tools DevOps engineers reach for daily: permissions, grep/awk/sed, systemd, SSH, package managers, network commands, and production-grade bash scripting. Follow the [Linux roadmap](/learn/roadmaps/linux) to see how these topics connect into a full learning path.
+Linux is the operating system under every Docker container, every Kubernetes node, and the majority of cloud VMs. Before you can deploy, debug, or automate anything in a modern infrastructure stack, you need to be comfortable at the shell. This guide takes you from the absolute fundamentals — how Linux thinks about files and processes — through the tools DevOps engineers reach for daily: permissions, grep/awk/sed, systemd, SSH, package managers, network commands, and production-grade bash scripting. Follow the [Linux roadmap](/learn/roadmaps/linux/) to see how these topics connect into a full learning path.
 
 ## Introduction to Linux
 
@@ -745,7 +745,7 @@ umask 027      # more restrictive: files 640, dirs 750
 
 ## Grep Pattern Searching
 
-`grep` filters lines matching a regular expression. It's your first tool for searching logs, configs, and code at the command line. See also [Piping Redirection](#piping-redirection) for how grep composes with other tools. Build and test patterns first with the [Regex Log Tester](/regex-log-tester).
+`grep` filters lines matching a regular expression. It's your first tool for searching logs, configs, and code at the command line. See also [Piping Redirection](#piping-redirection) for how grep composes with other tools. Build and test patterns first with the [Regex Log Tester](/regex-log-tester/).
 
 ### Basic Usage
 
@@ -2053,7 +2053,7 @@ Common bonding modes: `active-backup` (failover), `balance-rr` (round robin), `8
 
 SSH is how you access every cloud VM, container host, and remote server. Beyond basic login, it gives you encrypted tunnels, file transfer, and agent forwarding. Misconfiguring it creates security holes; understanding it properly lets you build zero-trust access patterns.
 
-See also: [File Permissions Ownership](#file-permissions-ownership) — SSH enforces strict permission checks on key files. Going deeper on networking? See [Networking for DevOps](/learn/guides/networking-for-devops).
+See also: [File Permissions Ownership](#file-permissions-ownership) — SSH enforces strict permission checks on key files. Going deeper on networking? See [Networking for DevOps](/learn/guides/networking-for-devops/).
 
 <figure class="dgm" role="img" aria-label="SSH key-based authentication handshake diagram showing client with private key and server with authorized_keys exchanging a challenge and encrypted response">
 <svg viewBox="0 0 660 220" width="660" height="220" xmlns="http://www.w3.org/2000/svg">
@@ -2123,7 +2123,7 @@ ssh-add ~/.ssh/id_ed25519
 ssh-add -l                          # list loaded keys
 ```
 
-> **Note:** The public key body (the long string after `ssh-ed25519`) is base64-encoded binary. If you ever need to inspect or transform an encoded blob like this — or a base64 secret in a Kubernetes manifest — the [Base64 Encoder/Decoder](/base64-encoder-decoder) is handy.
+> **Note:** The public key body (the long string after `ssh-ed25519`) is base64-encoded binary. If you ever need to inspect or transform an encoded blob like this — or a base64 secret in a Kubernetes manifest — the [Base64 Encoder/Decoder](/base64-encoder-decoder/) is handy.
 
 ### ~/.ssh/config
 
@@ -3144,7 +3144,7 @@ $ systemctl status crond          # RHEL
 
 Named shortcuts replace the whole 5-field expression: `@reboot`, `@hourly`, `@daily`, `@weekly`, `@monthly`, `@yearly`.
 
-> **Tip:** Cron expressions are easy to get subtly wrong. Validate them against a human-readable description and the next few run times with the [Cron Expression Tester](/cron-expression-tester) before committing a crontab.
+> **Tip:** Cron expressions are easy to get subtly wrong. Validate them against a human-readable description and the next few run times with the [Cron Expression Tester](/cron-expression-tester/) before committing a crontab.
 
 ### Managing Crontabs
 
@@ -3489,7 +3489,7 @@ $ sha512sum kernel.tar.xz          # extra paranoid
 $ sha256sum -c SHA256SUMS          # verify against a published checksum file
 ```
 
-> **Tip:** Need to hash a string or small file quickly, or compare a download against its published digest without dropping to a shell? The [Hash Generator](/hash-generator) produces MD5/SHA-1/SHA-256/SHA-512 in the browser.
+> **Tip:** Need to hash a string or small file quickly, or compare a download against its published digest without dropping to a shell? The [Hash Generator](/hash-generator/) produces MD5/SHA-1/SHA-256/SHA-512 in the browser.
 
 ### GPG Basics
 
@@ -6255,7 +6255,7 @@ You will be shocked how much of "learning AWS" is actually "applying Linux on re
 
 ### 30-day Linux-to-DevOps ramp (one focused task per day)
 
-Ready to apply what you've learned? Work through the [Hands-on DevOps Projects](/learn/guides/devops-projects) to build real systems with Linux, Docker, and CI/CD.
+Ready to apply what you've learned? Work through the [Hands-on DevOps Projects](/learn/guides/devops-projects/) to build real systems with Linux, Docker, and CI/CD.
 
 1. Install Ubuntu 24.04 in a VM. Customize `.bashrc`, install zsh + oh-my-zsh.
 2. Complete OverTheWire Bandit levels 0–10.

@@ -139,7 +139,7 @@ on:
       - 'release/**'
 ```
 
-Y `pull_request` desde un fork está restringido: la PR de un contribuidor primerizo puede requerir aprobación manual antes de que se ejecute ningún workflow, lo que se ve idéntico a "no se disparó". Si cambiaste a `pull_request_target` para sortear las restricciones de los forks, ten en cuenta que lee el workflow y los disparadores de la versión del archivo de la rama **base**, y conlleva un riesgo de seguridad real, tratado en nuestro artículo [errores de seguridad en GitHub Actions](/blog/github-actions-security-misconfigurations).
+Y `pull_request` desde un fork está restringido: la PR de un contribuidor primerizo puede requerir aprobación manual antes de que se ejecute ningún workflow, lo que se ve idéntico a "no se disparó". Si cambiaste a `pull_request_target` para sortear las restricciones de los forks, ten en cuenta que lee el workflow y los disparadores de la versión del archivo de la rama **base**, y conlleva un riesgo de seguridad real, tratado en nuestro artículo [errores de seguridad en GitHub Actions](/blog/github-actions-security-misconfigurations/).
 
 ## Una chuleta de filtros para copiar y pegar
 
@@ -171,4 +171,4 @@ El **Probador de Expresiones y Disparadores de GitHub Actions** cierra ese ciclo
 
 Ve exactamente qué jobs se ejecutan antes de hacer push, no después.
 
-[Abre el Probador de Expresiones y Disparadores de GitHub Actions →](/github-actions-expression-tester)
+[Abre el Probador de Expresiones y Disparadores de GitHub Actions →](/github-actions-expression-tester/)

@@ -157,4 +157,4 @@ The **GitHub Actions Validator** checks all five, client-side, the moment you pa
 
 If you’ve ever shipped a workflow and hoped it was safe, this is the step that makes sure.
 
-[Try the GitHub Actions Validator →](/github-actions-validator)
+[Try the GitHub Actions Validator →](/github-actions-validator/)

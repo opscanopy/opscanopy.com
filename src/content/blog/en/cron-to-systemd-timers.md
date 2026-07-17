@@ -151,4 +151,4 @@ sudo systemctl start backup.service  # trigger a manual run to test now
 
 The mechanical part — turning five cron fields into an `OnCalendar` line and scaffolding the `.timer`/`.service` pair — is exactly the kind of thing that’s easy to get subtly wrong by hand, especially with step values, ranges, and day-of-week edge cases. Our **Cron to systemd Converter** does it in the browser: paste a crontab line, get a ready-to-edit timer and service unit with the correct `OnCalendar` expression and migration notes, with nothing uploaded anywhere.
 
-[Convert your crontab to systemd timers →](/cron-to-systemd)
+[Convert your crontab to systemd timers →](/cron-to-systemd/)

@@ -25,7 +25,7 @@ faqs:
     a: "L4 balances by IP/port (TCP/UDP) without inspecting content; L7 understands HTTP and can route by host, path, headers, or cookies, enabling smarter routing at higher cost."
 ---
 
-Networking is the invisible plumbing that every deployment depends on. When a pod can't reach its database, a deploy fails, or latency spikes with no obvious cause, the engineer who understands the network stack finds the answer while everyone else is still guessing. This guide covers the networking fundamentals every DevOps practitioner needs — from binary subnet math to Kubernetes service meshes — grounded in the commands you'll actually run. If you want a structured learning path alongside this reference, see the [Networking roadmap](/learn/roadmaps/networking).
+Networking is the invisible plumbing that every deployment depends on. When a pod can't reach its database, a deploy fails, or latency spikes with no obvious cause, the engineer who understands the network stack finds the answer while everyone else is still guessing. This guide covers the networking fundamentals every DevOps practitioner needs — from binary subnet math to Kubernetes service meshes — grounded in the commands you'll actually run. If you want a structured learning path alongside this reference, see the [Networking roadmap](/learn/roadmaps/networking/).
 
 ## Why Networking Matters for DevOps
 
@@ -185,7 +185,7 @@ IPv6 uses 128-bit addresses written in eight groups of four hex digits, e.g. `20
 
 Key DevOps IPv6 touchpoints: AWS dual-stack VPCs, Kubernetes Pod IPs (IPv6 mode), and modern load balancers that accept both stacks. The subnet math uses /64 prefixes for most LANs (leaving 64 bits for host IDs).
 
-Use the [IP Address Converter](/ip-address-converter) to convert between dotted-decimal, binary, and hex representations — indispensable when verifying subnet masks or reading raw packet captures.
+Use the [IP Address Converter](/ip-address-converter/) to convert between dotted-decimal, binary, and hex representations — indispensable when verifying subnet masks or reading raw packet captures.
 
 ## Subnets and CIDR
 
@@ -303,9 +303,9 @@ VLSM allows different subnets within the same address space to use different pre
 
 You should never do this math by hand under pressure. Use these tools:
 
-- **[Subnet Calculator](/subnet-calculator)** — enter any IP/prefix and instantly get network address, broadcast, usable host range, and mask
-- **[CIDR Checker](/cidr-checker)** — verify whether an IP falls inside a given CIDR block, check overlap between ranges
-- **[Subnet Splitter](/subnet-splitter)** — divide a parent CIDR into equal or custom-sized child subnets automatically
+- **[Subnet Calculator](/subnet-calculator/)** — enter any IP/prefix and instantly get network address, broadcast, usable host range, and mask
+- **[CIDR Checker](/cidr-checker/)** — verify whether an IP falls inside a given CIDR block, check overlap between ranges
+- **[Subnet Splitter](/subnet-splitter/)** — divide a parent CIDR into equal or custom-sized child subnets automatically
 
 ## TCP vs UDP
 
@@ -577,7 +577,7 @@ nslookup example.com
 nslookup -type=MX example.com 8.8.8.8
 ```
 
-Use the [Reverse DNS / PTR](/reverse-dns-ptr) tool to look up the hostname registered for any IP — useful for verifying that mail server PTR records are set correctly and for identifying infrastructure from IPs you see in logs.
+Use the [Reverse DNS / PTR](/reverse-dns-ptr/) tool to look up the hostname registered for any IP — useful for verifying that mail server PTR records are set correctly and for identifying infrastructure from IPs you see in logs.
 
 > **Note:** `/etc/hosts` takes precedence over DNS on most Linux systems. During incident response, check whether a stale hosts entry is masking a real DNS record.
 
@@ -923,7 +923,7 @@ A **MAC (Media Access Control) address** is a 48-bit Layer 2 hardware address as
 
 The first three bytes (OUI — Organizationally Unique Identifier) identify the manufacturer; the last three bytes are device-specific. MAC addresses are used for delivery within a single Layer 2 segment (broadcast domain). Routers do not forward MAC addresses between segments — IP (Layer 3) handles inter-segment routing.
 
-Use the [MAC Address Formatter](/mac-address-formatter) to normalize MAC addresses between colon, hyphen, and Cisco dotted-quad formats, and to look up the manufacturer OUI for any address.
+Use the [MAC Address Formatter](/mac-address-formatter/) to normalize MAC addresses between colon, hyphen, and Cisco dotted-quad formats, and to look up the manufacturer OUI for any address.
 
 ### ARP — Address Resolution Protocol
 
@@ -949,7 +949,7 @@ ip neigh flush dev eth0
 
 ## Network Troubleshooting Toolkit
 
-Systematic troubleshooting follows the OSI model from the bottom up: is the interface up? Can I reach the gateway? Can I resolve DNS? Can I complete a TCP handshake? Can I get an HTTP 200? Each step isolates a layer. The commands below (`ping`, `dig`, `ss`, `tcpdump`) are Linux utilities; see [Linux for DevOps](/learn/guides/linux-for-devops) for the broader shell environment they live in.
+Systematic troubleshooting follows the OSI model from the bottom up: is the interface up? Can I reach the gateway? Can I resolve DNS? Can I complete a TCP handshake? Can I get an HTTP 200? Each step isolates a layer. The commands below (`ping`, `dig`, `ss`, `tcpdump`) are Linux utilities; see [Linux for DevOps](/learn/guides/linux-for-devops/) for the broader shell environment they live in.
 
 ### ping — ICMP Reachability
 
@@ -1163,6 +1163,6 @@ A: BGP (Border Gateway Protocol) is the routing protocol that exchanges routes b
 
 ## What's Next
 
-Networking knowledge is most powerful when combined with hands-on command-line proficiency. Pair this with the command-line side in [Linux for DevOps](/learn/guides/linux-for-devops), where you'll see how the same `ss`, `ip`, and `tcpdump` commands fit into a broader systems administration workflow.
+Networking knowledge is most powerful when combined with hands-on command-line proficiency. Pair this with the command-line side in [Linux for DevOps](/learn/guides/linux-for-devops/), where you'll see how the same `ss`, `ip`, and `tcpdump` commands fit into a broader systems administration workflow.
 
-For immediate hands-on practice, use the subnet tools linked throughout this guide — in particular the [Subnet Calculator](/subnet-calculator) and [Subnet Splitter](/subnet-splitter) — to work through VPC design exercises until the CIDR arithmetic feels automatic.
+For immediate hands-on practice, use the subnet tools linked throughout this guide — in particular the [Subnet Calculator](/subnet-calculator/) and [Subnet Splitter](/subnet-splitter/) — to work through VPC design exercises until the CIDR arithmetic feels automatic.

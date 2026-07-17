@@ -139,7 +139,7 @@ on:
       - 'release/**'
 ```
 
-Und ein `pull_request` aus einem Fork ist eingeschränkt: Der PR eines erstmaligen Beitragenden kann eine manuelle Freigabe erfordern, bevor irgendein Workflow läuft — was identisch aussieht zu „nicht ausgelöst". Falls Sie auf `pull_request_target` umgestiegen sind, um die Fork-Einschränkungen zu umgehen, beachten Sie: Es liest den Workflow und die Trigger aus der Version der Datei im **Base**-Branch — und trägt ein echtes Sicherheitsrisiko, das in unserem Beitrag zu [GitHub-Actions-Sicherheitsfehlkonfigurationen](/blog/github-actions-security-misconfigurations) behandelt wird.
+Und ein `pull_request` aus einem Fork ist eingeschränkt: Der PR eines erstmaligen Beitragenden kann eine manuelle Freigabe erfordern, bevor irgendein Workflow läuft — was identisch aussieht zu „nicht ausgelöst". Falls Sie auf `pull_request_target` umgestiegen sind, um die Fork-Einschränkungen zu umgehen, beachten Sie: Es liest den Workflow und die Trigger aus der Version der Datei im **Base**-Branch — und trägt ein echtes Sicherheitsrisiko, das in unserem Beitrag zu [GitHub-Actions-Sicherheitsfehlkonfigurationen](/blog/github-actions-security-misconfigurations/) behandelt wird.
 
 ## Ein Filter-Spickzettel zum Kopieren
 
@@ -171,4 +171,4 @@ Der **GitHub Actions Ausdrucks- & Trigger-Tester** schließt diese Schleife. Fü
 
 Sehen Sie genau, welche Jobs laufen, bevor Sie pushen — nicht danach.
 
-[GitHub Actions Ausdrucks- & Trigger-Tester öffnen →](/github-actions-expression-tester)
+[GitHub Actions Ausdrucks- & Trigger-Tester öffnen →](/github-actions-expression-tester/)

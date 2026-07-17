@@ -91,4 +91,4 @@ Cuando muevas una consulta entre los dos lenguajes, recorre estos pasos en orden
 
 Mantener ambos dialectos en la cabeza a la vez es exactamente el tipo de cambio de contexto que produce errores silenciosos — un `rate` que significa lo que no debe, un `unwrap` que falta, un selector que compila pero no coincide con nada. El **LogQL ↔ PromQL Helper** hace la parte mecánica por ti: pega una consulta en cualquiera de los dos lenguajes y obtén el equivalente más cercano en el otro, además de notas explícitas sobre qué se correspondió con limpieza y qué no se pudo. Se ejecuta enteramente en tu navegador — tus consultas nunca salen del dispositivo — para que puedas verificar la coherencia de una traducción antes de que llegue a un dashboard o a una regla de alerta.
 
-[Abrir el LogQL ↔ PromQL Helper →](/logql-promql-helper)
+[Abrir el LogQL ↔ PromQL Helper →](/logql-promql-helper/)

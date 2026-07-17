@@ -12,7 +12,7 @@ relatedTool:
 
 A target you expected to scrape never shows up in Prometheus. No error in the logs, no failed scrape, nothing red on the targets page — the series just isn't there. You add `--log.level=debug`, restart, squint at the output, and eventually find it: a `keep` rule three lines into your `relabel_configs` quietly dropped the target because the regex didn't match the way you assumed. That silent failure is the whole reason `relabel_configs` deserves a careful read. Prometheus relabeling rewrites, keeps, or drops targets and their labels, and when it's wrong it doesn't complain — it just discards your metrics.
 
-This guide walks through Prometheus relabeling from the ground up: what it does, the fields every rule is built from, and each action with a small example. The semantics here match exactly what the engine in the [Prometheus Relabel Tester](/prometheus-relabel-tester) implements, so you can paste any snippet below into it and watch the labels change.
+This guide walks through Prometheus relabeling from the ground up: what it does, the fields every rule is built from, and each action with a small example. The semantics here match exactly what the engine in the [Prometheus Relabel Tester](/prometheus-relabel-tester/) implements, so you can paste any snippet below into it and watch the labels change.
 
 ## What relabeling actually does
 
@@ -267,6 +267,6 @@ The second rule shows the joined-source idiom in action: two `source_labels` joi
 
 Relabeling is the one part of a Prometheus config where being almost right produces no error and no warning — just missing or wrong series. The regex anchoring, the empty-replacement deletion, the MD5 hashmod, the join order of multiple `source_labels`: each is easy to get subtly wrong, and a live Prometheus won't tell you which one bit you.
 
-Paste the recipes from this post, with a realistic set of `__meta_*` labels, into the [Prometheus Relabel Tester](/prometheus-relabel-tester) and you'll see the joined value, the matched (or unmatched) regex, the per-label diff, and a clear flag — naming the rule and action — whenever a target is dropped. It runs entirely in your browser, so you can safely paste internal scrape configs.
+Paste the recipes from this post, with a realistic set of `__meta_*` labels, into the [Prometheus Relabel Tester](/prometheus-relabel-tester/) and you'll see the joined value, the matched (or unmatched) regex, the per-label diff, and a clear flag — naming the rule and action — whenever a target is dropped. It runs entirely in your browser, so you can safely paste internal scrape configs.
 
-Once the labels are shaped the way you want, the next questions are what you query and how you alert. Break down an expression with [the PromQL Explainer](/promql-explainer), or if you're moving rules between Loki and Prometheus, translate them with [the LogQL ↔ PromQL Helper](/logql-promql-helper). Get the labels right first — everything downstream depends on them.
+Once the labels are shaped the way you want, the next questions are what you query and how you alert. Break down an expression with [the PromQL Explainer](/promql-explainer/), or if you're moving rules between Loki and Prometheus, translate them with [the LogQL ↔ PromQL Helper](/logql-promql-helper/). Get the labels right first — everything downstream depends on them.

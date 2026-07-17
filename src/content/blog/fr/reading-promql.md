@@ -121,4 +121,4 @@ La méthode de l'intérieur vers l'extérieur fonctionne sur chaque expression P
 
 La prochaine fois qu'un panneau de tableau de bord ou une règle d'alerte vous fait plisser les yeux, ne devinez pas.
 
-[Expliquer une requête PromQL →](/promql-explainer)
+[Expliquer une requête PromQL →](/promql-explainer/)

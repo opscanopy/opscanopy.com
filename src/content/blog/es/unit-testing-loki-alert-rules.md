@@ -91,4 +91,4 @@ No tienes que esperar a que el proyecto upstream lance esto. **AlertLint** ejecu
 
 Si alguna vez has enviado una alerta de Loki y has cruzado los dedos esperando que funcionara, este es el paso que falta.
 
-[Prueba AlertLint — el probador de reglas de alerta de Loki →](/loki-alert-rule-tester)
+[Prueba AlertLint — el probador de reglas de alerta de Loki →](/loki-alert-rule-tester/)

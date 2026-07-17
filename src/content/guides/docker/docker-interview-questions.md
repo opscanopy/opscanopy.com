@@ -25,9 +25,9 @@ faqs:
     a: "Named volumes in production for Docker-managed persistent data; bind mounts mainly in local development for live source code."
 ---
 
-This guide is built for DevOps interview prep. It covers the ten core Docker topics that come up repeatedly — from why containers exist through to a production-grade troubleshooting playbook — using scenario-based questions, clear answers, worked examples, and the gotchas interviewers love to probe. Every command is real and runnable on Ubuntu 24.04 with a current Docker Engine. Before diving in, bookmark the [Docker roadmap](/learn/roadmaps/docker) to see how these topics fit into a full learning path.
+This guide is built for DevOps interview prep. It covers the ten core Docker topics that come up repeatedly — from why containers exist through to a production-grade troubleshooting playbook — using scenario-based questions, clear answers, worked examples, and the gotchas interviewers love to probe. Every command is real and runnable on Ubuntu 24.04 with a current Docker Engine. Before diving in, bookmark the [Docker roadmap](/learn/roadmaps/docker/) to see how these topics fit into a full learning path.
 
-Study the concepts first in [Docker for DevOps](/learn/guides/docker-for-devops).
+Study the concepts first in [Docker for DevOps](/learn/guides/docker-for-devops/).
 
 ---
 
@@ -822,7 +822,7 @@ docker network connect appnet web
 
 ## Docker Compose
 
-Running one container with a long `docker run` command is fine. But a real app is a *web frontend + an API + a database + a cache*, each needing its own ports, volumes, env vars, and a shared network. Typing four `docker run` commands in the right order, every time, is painful and error-prone. **Docker Compose** solves this: you declare your entire multi-container stack in one YAML file and bring it all up with a single command. Use this with the [Docker run → Compose converter](/docker-run-to-compose) to translate existing `docker run` commands into Compose services quickly.
+Running one container with a long `docker run` command is fine. But a real app is a *web frontend + an API + a database + a cache*, each needing its own ports, volumes, env vars, and a shared network. Typing four `docker run` commands in the right order, every time, is painful and error-prone. **Docker Compose** solves this: you declare your entire multi-container stack in one YAML file and bring it all up with a single command. Use this with the [Docker run → Compose converter](/docker-run-to-compose/) to translate existing `docker run` commands into Compose services quickly.
 
 > **Note:** If `docker run` is cooking one dish, Compose is the full recipe card for a thali — it lists every dish (service), the ingredients (image, env, volumes), and the order to serve them (depends_on). One command and the whole meal arrives, plated the same way every single time.
 
@@ -929,11 +929,11 @@ A plain `depends_on: [db]` only controls **start order**. Compose will start `db
 
 For readiness, add a `healthcheck` to the dependency service and use `condition: service_healthy` in the dependent service — only then does Compose wait.
 
-> **Tip:** Keep secrets and environment-specific values out of the compose file. Put them in a `.env` file (auto-loaded by Compose for `${VAR}` substitution) and add `.env` to `.gitignore`. For per-environment tweaks, use a `compose.override.yaml` (auto-merged in dev) or `docker compose -f compose.yaml -f compose.prod.yaml up` to layer a production config on top. Use the [.env Example Checker](/env-example-checker) to validate that your `.env.example` stays in sync with your actual `.env` keys.
+> **Tip:** Keep secrets and environment-specific values out of the compose file. Put them in a `.env` file (auto-loaded by Compose for `${VAR}` substitution) and add `.env` to `.gitignore`. For per-environment tweaks, use a `compose.override.yaml` (auto-merged in dev) or `docker compose -f compose.yaml -f compose.prod.yaml up` to layer a production config on top. Use the [.env Example Checker](/env-example-checker/) to validate that your `.env.example` stays in sync with your actual `.env` keys.
 
 > **Note:** A new dev joining a team, instead of working through a half-day setup doc, can clone the repo, copy `.env.example` to `.env`, and run `docker compose up -d`. Sixty seconds later the API, database, and cache are running and wired together identically to every other machine — including CI.
 
-> **Tip:** Expect: "What does Compose actually do for you?" — declarative multi-container orchestration on a *single host*: networks, volumes, env, and start order in one file. Be ready for "Does depends_on wait for the service to be ready?" — No, only start order; for readiness add a healthcheck + `condition: service_healthy`. Note the scope: Compose is single-host; for multi-host/cluster orchestration you move to Kubernetes — see [Kubernetes for DevOps](/learn/guides/kubernetes-for-devops) for a full introduction. See also the [Kubernetes Resource Calculator](/kubernetes-resource-calculator) when you are ready to plan resource requests for a containerised workload running in a cluster. Mentioning this boundary shows you understand where Compose stops.
+> **Tip:** Expect: "What does Compose actually do for you?" — declarative multi-container orchestration on a *single host*: networks, volumes, env, and start order in one file. Be ready for "Does depends_on wait for the service to be ready?" — No, only start order; for readiness add a healthcheck + `condition: service_healthy`. Note the scope: Compose is single-host; for multi-host/cluster orchestration you move to Kubernetes — see [Kubernetes for DevOps](/learn/guides/kubernetes-for-devops/) for a full introduction. See also the [Kubernetes Resource Calculator](/kubernetes-resource-calculator/) when you are ready to plan resource requests for a containerised workload running in a cluster. Mentioning this boundary shows you understand where Compose stops.
 
 > **Caution:** `docker compose down -v` deletes named volumes — that `pgdata` volume holding your database goes with it. Great for a clean dev reset, catastrophic on anything you care about. Plain `docker compose down` (no `-v`) keeps volumes. Build the muscle memory now, before you run it on the wrong project.
 

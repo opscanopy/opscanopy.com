@@ -97,4 +97,4 @@ El ejemplo que demuestra que tu regex funciona rara vez es el ejemplo que demues
 
 Este es exactamente el bucle para el que está construido el **Regex Log Tester**: pega tu patrón y un bloque de líneas de log reales, y observa en vivo qué líneas coinciden, cuáles no, y qué capturó realmente cada grupo de captura y cada grupo con nombre, para que detectes el `.*` voraz o el `.` sin escapar antes de que llegue a producción. Todo se ejecuta en tu navegador; tus logs nunca salen de la página.
 
-[Abrir el Regex Log Tester →](/regex-log-tester)
+[Abrir el Regex Log Tester →](/regex-log-tester/)

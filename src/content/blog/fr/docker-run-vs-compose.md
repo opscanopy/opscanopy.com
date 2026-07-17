@@ -14,7 +14,7 @@ relatedTool:
 
 Vous avez lancé un conteneur Postgres il y a trois semaines avec une commande `docker run` sur une seule ligne. Ça marche. Puis vous redémarrez la machine, ou un collègue a besoin de la même configuration, ou vous voulez mettre la commande sous gestion de version — et vous réalisez que la seule copie de cette commande se trouve dans l'historique de votre shell, quelque part entre un `ls` et un `kubectl get pods`. C'est le moment où la question `docker run` face à `docker compose` cesse d'être théorique. Le conteneur fonctionne très bien ; c'est la façon dont vous l'avez lancé qui n'est pas reproductible.
 
-Ce guide parcourt les deux sens : quand `docker run` est le bon choix, quand passer à un `docker-compose.yml`, et comment reconvertir un service Compose en une seule ligne run lorsque vous en avez besoin. Chaque correspondance de flag présentée ici reflète ce que fait réellement le [convertisseur Docker Run to Compose](/docker-run-to-compose), vous pouvez donc vérifier vos propres commandes par rapport à lui.
+Ce guide parcourt les deux sens : quand `docker run` est le bon choix, quand passer à un `docker-compose.yml`, et comment reconvertir un service Compose en une seule ligne run lorsque vous en avez besoin. Chaque correspondance de flag présentée ici reflète ce que fait réellement le [convertisseur Docker Run to Compose](/docker-run-to-compose/), vous pouvez donc vérifier vos propres commandes par rapport à lui.
 
 ## Le même conteneur, deux écritures
 
@@ -101,7 +101,7 @@ services:
       - POSTGRES_DB=app
 ```
 
-Le service `api` atteint la base de données via le nom d'hôte `db` sans aucun câblage supplémentaire. C'est le réseau implicite par défaut qui fait son travail — nous y reviendrons plus bas. Et parce que l'ensemble est un fichier, vous pouvez linter la CI qui le construit et le livre ; si votre pipeline exécute `docker compose up` dans un job, le [GitLab CI Validator](/gitlab-ci-validator) détectera un `.gitlab-ci.yml` malformé avant que le runner ne le fasse.
+Le service `api` atteint la base de données via le nom d'hôte `db` sans aucun câblage supplémentaire. C'est le réseau implicite par défaut qui fait son travail — nous y reviendrons plus bas. Et parce que l'ensemble est un fichier, vous pouvez linter la CI qui le construit et le livre ; si votre pipeline exécute `docker compose up` dans un job, le [GitLab CI Validator](/gitlab-ci-validator/) détectera un `.gitlab-ci.yml` malformé avant que le runner ne le fasse.
 
 ![Illustration synthwave : une commande docker run sur une seule ligne affichée sur un ordinateur rétro migre le long d'une flèche néon vers une pile multi-conteneurs Docker Compose sur un autre](/blog/in-content/docker-run-vs-compose.webp)
 
@@ -217,7 +217,7 @@ services:
       - NODE_ENV=production    # l'emporte sur la même clé dans env_file
 ```
 
-Les valeurs en ligne sont visibles dans le fichier et dans `docker inspect` ; un `env_file` garde les valeurs porteuses de secrets hors du YAML et hors de l'historique de votre shell. Lorsque vous migrez, c'est le bon moment pour déplacer les secrets des flags `-e` vers un `env_file`. Tant que vous y êtes, assurez-vous que le `.env.example` committé correspond bien aux clés que votre service lit — l'[Env Example Checker](/env-example-checker) compare un vrai `.env` à son exemple pour qu'une clé manquante ne se manifeste pas sous forme de plantage lors d'un nouveau clonage.
+Les valeurs en ligne sont visibles dans le fichier et dans `docker inspect` ; un `env_file` garde les valeurs porteuses de secrets hors du YAML et hors de l'historique de votre shell. Lorsque vous migrez, c'est le bon moment pour déplacer les secrets des flags `-e` vers un `env_file`. Tant que vous y êtes, assurez-vous que le `.env.example` committé correspond bien aux clés que votre service lit — l'[Env Example Checker](/env-example-checker/) compare un vrai `.env` à son exemple pour qu'une clé manquante ne se manifeste pas sous forme de plantage lors d'un nouveau clonage.
 
 ### Mode détaché
 
@@ -227,6 +227,6 @@ Les valeurs en ligne sont visibles dans le fichier et dans `docker inspect` ; un
 
 Le faire à la main convient pour un seul conteneur. Cela cesse de convenir lorsque vous traduisez un mur de flags `-p`, `-v` et `-e` sous la pression du temps et qu'une liste mal imbriquée ou un port sans guillemets passe au travers.
 
-Le [convertisseur Docker Run to Compose](/docker-run-to-compose) prend en charge la partie mécanique dans les deux sens : collez une commande `docker run` pour obtenir le service `docker-compose.yml` équivalent, ou collez un service Compose pour reconstruire la ligne run — y compris les ports, volumes, variables d'environnement, réseaux, capacités, limites de ressources et healthchecks. Il vous signale les flags et les clés qui ne se mappent réellement pas plutôt que de les abandonner silencieusement, et il s'exécute entièrement dans votre navigateur, de sorte que les commandes nommant des registres privés ou portant des variables d'environnement contenant des secrets ne quittent jamais l'onglet.
+Le [convertisseur Docker Run to Compose](/docker-run-to-compose/) prend en charge la partie mécanique dans les deux sens : collez une commande `docker run` pour obtenir le service `docker-compose.yml` équivalent, ou collez un service Compose pour reconstruire la ligne run — y compris les ports, volumes, variables d'environnement, réseaux, capacités, limites de ressources et healthchecks. Il vous signale les flags et les clés qui ne se mappent réellement pas plutôt que de les abandonner silencieusement, et il s'exécute entièrement dans votre navigateur, de sorte que les commandes nommant des registres privés ou portant des variables d'environnement contenant des secrets ne quittent jamais l'onglet.
 
 Migrez la commande, lisez les avertissements, committez le fichier.

@@ -97,4 +97,4 @@ L'échantillon qui prouve que votre regex fonctionne est rarement l'échantillon
 
 C'est exactement la boucle pour laquelle le **Regex Log Tester** a été conçu : collez votre motif et un bloc de vraies lignes de log, et voyez en direct quelles lignes correspondent, lesquelles ne correspondent pas, et ce que chaque groupe de capture et groupe nommé a réellement capturé — afin que vous attrapiez le `.*` gourmand ou le `.` non échappé avant qu'il ne parte en production. Tout s'exécute dans votre navigateur ; vos logs ne quittent jamais la page.
 
-[Ouvrir le Regex Log Tester →](/regex-log-tester)
+[Ouvrir le Regex Log Tester →](/regex-log-tester/)

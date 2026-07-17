@@ -91,4 +91,4 @@ Sie müssen nicht darauf warten, dass Upstream dies ausliefert. **AlertLint** f�
 
 Wenn Sie jemals einen Loki-Alert ausgeliefert und gehofft haben, dass er funktioniert, ist dies der fehlende Schritt.
 
-[AlertLint ausprobieren – der Tester für Loki-Alert-Regeln →](/loki-alert-rule-tester)
+[AlertLint ausprobieren – der Tester für Loki-Alert-Regeln →](/loki-alert-rule-tester/)

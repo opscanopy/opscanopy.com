@@ -100,4 +100,4 @@ The honest way to read a cron expression is to not trust your reading of it. Dec
 
 The **Cron Expression Tester** does exactly that in your browser: paste any expression — ranges, steps, lists, `@macros` and all — and get a plain-English description alongside the next run times, with nothing uploaded anywhere. It turns “I think this is every weekday afternoon” into “here are the next ten times it fires,” which is the only reading that counts.
 
-[Try the Cron Expression Tester →](/cron-expression-tester)
+[Try the Cron Expression Tester →](/cron-expression-tester/)

@@ -129,7 +129,7 @@ deploy:
   script: ./deploy.sh
 ```
 
-Si tu bug es una variable de entorno que está vacía cuando esperabas un valor, eso es otra clase de problema — el [Env Example Checker](/env-example-checker) detecta la divergencia entre `.env` y `.env.example` que deja una variable sin definir desde el principio.
+Si tu bug es una variable de entorno que está vacía cuando esperabas un valor, eso es otra clase de problema — el [Env Example Checker](/env-example-checker/) detecta la divergencia entre `.env` y `.env.example` que deja una variable sin definir desde el principio.
 
 ## 5. extends de una plantilla que no existe, o un extends circular
 
@@ -221,8 +221,8 @@ Una advertencia que conviene conocer: resolver `include:` requiere obtener de ve
 
 Seis de estos siete errores son estructurales — residen en cómo encajan entre sí los jobs, los stages y las referencias, no en si el YAML se parsea. Esa es exactamente la brecha que se le escapa a un linter que solo comprueba sintaxis: un `.gitlab-ci.yml` puede ser YAML perfectamente válido y aun así ser un pipeline que GitLab se niega a arrancar.
 
-El [GitLab CI Validator](/gitlab-ci-validator) ejecuta estas comprobaciones en tu navegador. Pega un `.gitlab-ci.yml` y parsea el YAML, y luego señala los problemas estructurales de arriba — un stage sin definir, un job sin `script`/`run`/`trigger`/`extends`, referencias de `needs`/`dependencies`/`extends` que apuntan a jobs que no existen, un `when:` inválido, un `rules:` que no es lista, `only`/`except` heredados, y formas incorrectas de `image`/`services` — cada uno con la línea y una solución concreta. No se sube nada; toda la comprobación es del lado del cliente, así que puedes ejecutarla contra pipelines privados y configuración propietaria de runners sin enviar nada a ningún sitio.
+El [GitLab CI Validator](/gitlab-ci-validator/) ejecuta estas comprobaciones en tu navegador. Pega un `.gitlab-ci.yml` y parsea el YAML, y luego señala los problemas estructurales de arriba — un stage sin definir, un job sin `script`/`run`/`trigger`/`extends`, referencias de `needs`/`dependencies`/`extends` que apuntan a jobs que no existen, un `when:` inválido, un `rules:` que no es lista, `only`/`except` heredados, y formas incorrectas de `image`/`services` — cada uno con la línea y una solución concreta. No se sube nada; toda la comprobación es del lado del cliente, así que puedes ejecutarla contra pipelines privados y configuración propietaria de runners sin enviar nada a ningún sitio.
 
-Si tus pipelines también corren en GitHub, la misma idea de comprobar antes de hacer push aplica a los workflows — nuestro recorrido por las [configuraciones de seguridad incorrectas en GitHub Actions](/blog/github-actions-security-misconfigurations) cubre los equivalentes del lado de GitHub, desde permisos de token demasiado amplios hasta actions de terceros sin fijar (unpinned).
+Si tus pipelines también corren en GitHub, la misma idea de comprobar antes de hacer push aplica a los workflows — nuestro recorrido por las [configuraciones de seguridad incorrectas en GitHub Actions](/blog/github-actions-security-misconfigurations/) cubre los equivalentes del lado de GitHub, desde permisos de token demasiado amplios hasta actions de terceros sin fijar (unpinned).
 
 Un pipeline rojo que nunca llegó a ejecutarse es el fallo más barato que se puede prevenir. Detecta los errores estructurales antes del commit, y el único rojo que verás será el de un test que falló de verdad.

@@ -97,4 +97,4 @@ O exemplo que prova que sua regex funciona raramente é o exemplo que prova que 
 
 Esse é exatamente o ciclo para o qual o **Regex Log Tester** foi construído: cole seu padrão e um bloco de linhas de log reais, e veja ao vivo quais linhas correspondem, quais não correspondem, e o que cada grupo de captura e grupo nomeado de fato capturou — para que você pegue o `.*` guloso ou o `.` sem escape antes que ele vá para produção. Tudo roda no seu navegador; seus logs nunca saem da página.
 
-[Abrir o Regex Log Tester →](/regex-log-tester)
+[Abrir o Regex Log Tester →](/regex-log-tester/)

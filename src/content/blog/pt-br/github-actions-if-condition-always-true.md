@@ -55,7 +55,7 @@ Envolver a expressão em aspas faz com que o valor do YAML seja uma string simpl
 
 Regra prática: **em um `if:`, não há `${{ }}` e não há aspas ao redor.** Apenas a expressão. As chaves servem para interpolar valores em `run:`, `name:` e `with:` — não para condições.
 
-Você pode colar qualquer uma dessas no [Testador de Expressões e Gatilhos do GitHub Actions](/github-actions-expression-tester) e vê-lo sinalizar o vazamento de texto literal antes de você fazer o push — ele avisa exatamente sobre esse padrão (está registrado como [actions/runner#1173](https://github.com/actions/runner/issues/1173), o bug com mais reações no repositório do runner).
+Você pode colar qualquer uma dessas no [Testador de Expressões e Gatilhos do GitHub Actions](/github-actions-expression-tester/) e vê-lo sinalizar o vazamento de texto literal antes de você fazer o push — ele avisa exatamente sobre esse padrão (está registrado como [actions/runner#1173](https://github.com/actions/runner/issues/1173), o bug com mais reações no repositório do runner).
 
 ![Uma condição if do GitHub Actions que é sempre verdadeira porque retorna uma string truthy, ao lado da expressão booleana corrigida](/blog/github-actions-if-condition-always-true-diagram.svg)
 
@@ -196,8 +196,8 @@ Lembre-se de que tanto `contains` quanto `startsWith` fazem a comparação de st
 
 A razão pela qual esses bugs são tão persistentes é o ciclo de feedback: a única maneira de "testar" uma condição tradicionalmente foi fazer commit, push e ler os logs — depois adivinhar, editar e fazer push de novo. Cada suposição errada é uma ida e volta.
 
-O [Testador de Expressões e Gatilhos do GitHub Actions](/github-actions-expression-tester) fecha esse ciclo. Cole a sua expressão `if:`, defina um contexto fictício de `github` / `env` / `steps` / `needs` e veja o resultado avaliado com as regras exatas de operador, conversão e insensibilidade a maiúsculas/minúsculas do GitHub — além de um aviso explícito quando você deixou texto literal fora de `${{ }}` e acidentalmente construiu uma condição sempre truthy. Ele roda inteiramente no seu navegador; nada do seu workflow é enviado.
+O [Testador de Expressões e Gatilhos do GitHub Actions](/github-actions-expression-tester/) fecha esse ciclo. Cole a sua expressão `if:`, defina um contexto fictício de `github` / `env` / `steps` / `needs` e veja o resultado avaliado com as regras exatas de operador, conversão e insensibilidade a maiúsculas/minúsculas do GitHub — além de um aviso explícito quando você deixou texto literal fora de `${{ }}` e acidentalmente construiu uma condição sempre truthy. Ele roda inteiramente no seu navegador; nada do seu workflow é enviado.
 
 Se você já lançou um `if:` e torceu para que ele pulasse o passo, esta é a verificação que te avisa antes do runner.
 
-[Experimente o Testador de Expressões e Gatilhos do GitHub Actions →](/github-actions-expression-tester)
+[Experimente o Testador de Expressões e Gatilhos do GitHub Actions →](/github-actions-expression-tester/)

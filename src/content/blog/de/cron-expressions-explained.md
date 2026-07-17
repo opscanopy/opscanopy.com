@@ -99,4 +99,4 @@ Der ehrliche Weg, einen Cron-Ausdruck zu lesen, besteht darin, der eigenen Lesar
 
 Der **Cron Expression Tester** tut genau das in Ihrem Browser: Fügen Sie einen beliebigen Ausdruck ein — Bereiche, Schritte, Listen, `@macros` und alles Übrige — und erhalten Sie eine verständliche Beschreibung in Klartext zusammen mit den nächsten Ausführungszeiten, ohne dass irgendetwas irgendwohin hochgeladen wird. Es verwandelt „Ich glaube, das ist jeden Werktag-Nachmittag“ in „Hier sind die nächsten zehn Zeitpunkte, zu denen es auslöst“ — und das ist die einzige Lesart, die zählt.
 
-[Probieren Sie den Cron Expression Tester aus →](/cron-expression-tester)
+[Probieren Sie den Cron Expression Tester aus →](/cron-expression-tester/)

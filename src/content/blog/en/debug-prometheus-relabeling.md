@@ -153,7 +153,7 @@ curl -s 'localhost:9090/service-discovery' # the SD page shows pre-relabel label
 
 ### 2. Test the rules against those labels
 
-Now you have the input. Paste the `__meta_*` labels and your `relabel_configs` into [the Prometheus Relabel Tester](/prometheus-relabel-tester) and run them. It applies the rules exactly the way Prometheus does — anchored regex, `;` separator, `$1`/`${1}` expansion — and tells you, per label set, the resulting labels, which ones were added, changed, or removed, and whether the target was dropped (and by which rule).
+Now you have the input. Paste the `__meta_*` labels and your `relabel_configs` into [the Prometheus Relabel Tester](/prometheus-relabel-tester/) and run them. It applies the rules exactly the way Prometheus does — anchored regex, `;` separator, `$1`/`${1}` expansion — and tells you, per label set, the resulting labels, which ones were added, changed, or removed, and whether the target was dropped (and by which rule).
 
 ### 3. Bisect the rule list
 
@@ -211,6 +211,6 @@ While you're cleaning up, the same chain often promotes pod labels and prunes di
 
 The fastest debugging loop is the one that never reaches a live Prometheus. The reason relabeling is so easy to get wrong is that it fails silently: there's no parse error, no log line, just a target that isn't there. The only honest check is to run the rules against representative input and read the output — the same idea behind testing any behavioral config rather than trusting a schema lint.
 
-When you're staring at a "prometheus dropped target" mystery or a "prometheus label disappeared" report, grab the `discoveredLabels` from the API, paste them with your rules into [the Prometheus Relabel Tester](/prometheus-relabel-tester), and watch which rule does the damage — it runs entirely in your browser, so internal scrape configs and target metadata never leave your tab.
+When you're staring at a "prometheus dropped target" mystery or a "prometheus label disappeared" report, grab the `discoveredLabels` from the API, paste them with your rules into [the Prometheus Relabel Tester](/prometheus-relabel-tester/), and watch which rule does the damage — it runs entirely in your browser, so internal scrape configs and target metadata never leave your tab.
 
-Once the labels are right, the rest of the observability chain follows. Break down a query that depends on those labels with [the PromQL Explainer](/promql-explainer), or confirm an alert on the resulting series lands in the right place with [the Alertmanager Route Tester](/alertmanager-route-tester). Shape the labels first; everything downstream depends on getting that step correct.
+Once the labels are right, the rest of the observability chain follows. Break down a query that depends on those labels with [the PromQL Explainer](/promql-explainer/), or confirm an alert on the resulting series lands in the right place with [the Alertmanager Route Tester](/alertmanager-route-tester/). Shape the labels first; everything downstream depends on getting that step correct.

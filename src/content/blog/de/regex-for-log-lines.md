@@ -97,4 +97,4 @@ Das Beispiel, das beweist, dass Ihre Regex funktioniert, ist selten das Beispiel
 
 Genau das ist die Schleife, für die der **Regex Log Tester** gebaut ist: Fügen Sie Ihr Muster und einen Block echter Log-Zeilen ein und sehen Sie live, welche Zeilen treffen, welche nicht und was jede Capture-Gruppe und benannte Gruppe tatsächlich erfasst hat — sodass Sie das gierige `.*` oder das nicht maskierte `.` abfangen, bevor es ausgeliefert wird. Alles läuft in Ihrem Browser; Ihre Logs verlassen die Seite nie.
 
-[Regex Log Tester öffnen →](/regex-log-tester)
+[Regex Log Tester öffnen →](/regex-log-tester/)

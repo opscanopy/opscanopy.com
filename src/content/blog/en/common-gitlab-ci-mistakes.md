@@ -127,7 +127,7 @@ deploy:
   script: ./deploy.sh
 ```
 
-If your bug is an environment variable that is empty when you expected a value, that is a different class of problem — the [Env Example Checker](/env-example-checker) catches the `.env` versus `.env.example` drift that leaves a variable undefined in the first place.
+If your bug is an environment variable that is empty when you expected a value, that is a different class of problem — the [Env Example Checker](/env-example-checker/) catches the `.env` versus `.env.example` drift that leaves a variable undefined in the first place.
 
 ## 5. extends a template that does not exist, or a circular extends
 
@@ -219,8 +219,8 @@ One caveat worth knowing: resolving `include:` requires actually fetching the re
 
 Six of these seven mistakes are structural — they live in how the jobs, stages, and references fit together, not in whether the YAML parses. That is exactly the gap a syntax-only linter misses: a `.gitlab-ci.yml` can be perfectly valid YAML and still be a pipeline GitLab refuses to start.
 
-The [GitLab CI Validator](/gitlab-ci-validator) runs these checks in your browser. Paste a `.gitlab-ci.yml` and it parses the YAML, then flags the structural problems above — an undefined stage, a job with no `script`/`run`/`trigger`/`extends`, `needs`/`dependencies`/`extends` references that point at jobs that do not exist, an invalid `when:`, a non-list `rules:`, legacy `only`/`except`, and bad `image`/`services` shapes — each with the line and a concrete fix. Nothing is uploaded; the whole check is client-side, so you can run it against private pipelines and proprietary runner config without sending anything anywhere.
+The [GitLab CI Validator](/gitlab-ci-validator/) runs these checks in your browser. Paste a `.gitlab-ci.yml` and it parses the YAML, then flags the structural problems above — an undefined stage, a job with no `script`/`run`/`trigger`/`extends`, `needs`/`dependencies`/`extends` references that point at jobs that do not exist, an invalid `when:`, a non-list `rules:`, legacy `only`/`except`, and bad `image`/`services` shapes — each with the line and a concrete fix. Nothing is uploaded; the whole check is client-side, so you can run it against private pipelines and proprietary runner config without sending anything anywhere.
 
-If your pipelines also run on GitHub, the same before-you-push idea applies to workflows — our walkthrough of [GitHub Actions security misconfigurations](/blog/github-actions-security-misconfigurations) covers the GitHub-side equivalents, from over-broad token permissions to unpinned third-party actions.
+If your pipelines also run on GitHub, the same before-you-push idea applies to workflows — our walkthrough of [GitHub Actions security misconfigurations](/blog/github-actions-security-misconfigurations/) covers the GitHub-side equivalents, from over-broad token permissions to unpinned third-party actions.
 
 A red pipeline that never ran is the cheapest possible failure to prevent. Catch the structural mistakes before the commit, and the only red you see is a test that genuinely failed.

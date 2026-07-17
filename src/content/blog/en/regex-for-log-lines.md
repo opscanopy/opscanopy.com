@@ -98,4 +98,4 @@ The sample that proves your regex works is rarely the sample that proves it’s 
 
 This is exactly the loop the **Regex Log Tester** is built for: paste your pattern and a block of real log lines, and see live which lines match, which don’t, and what every capture group and named group actually captured — so you catch the greedy `.*` or the unescaped `.` before it ships. Everything runs in your browser; your logs never leave the page.
 
-[Open the Regex Log Tester →](/regex-log-tester)
+[Open the Regex Log Tester →](/regex-log-tester/)

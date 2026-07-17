@@ -50,7 +50,7 @@ deploy:
   script: ./deploy.sh
 ```
 
-Valid YAML is only half the job. The [GitLab CI Validator](/gitlab-ci-validator) checks both in one pass: it parses the YAML first, and only if that succeeds does it run the structural checks against your jobs. If the parse fails, you get a single line-referenced error and nothing else — there's no point reporting "undefined stage" on a document that didn't parse.
+Valid YAML is only half the job. The [GitLab CI Validator](/gitlab-ci-validator/) checks both in one pass: it parses the YAML first, and only if that succeeds does it run the structural checks against your jobs. If the parse fails, you get a single line-referenced error and nothing else — there's no point reporting "undefined stage" on a document that didn't parse.
 
 ![Illustration: a glowing .gitlab-ci.yml scanned by CI lint tools, yamllint and editor checks, with OK and error verdicts flowing toward a draft merge request](/blog/in-content/validate-gitlab-ci-yml.webp)
 
@@ -148,7 +148,7 @@ So what does an in-browser validator actually check? Based on the engine, the fl
 
 The honest framing: a clean result in the browser is strong pre-push confidence on *structure and syntax*. It catches the entire class of mistakes that fail a pipeline before any job runs. For absolute certainty on a config that uses `include:` or project variables, confirm with GitLab's own CI Lint once you've pushed to a project — but use the in-browser pass to make that push count.
 
-If you also run GitHub Actions, the same idea applies there: the [GitHub Actions Validator](/github-actions-validator) finds YAML and security issues in your workflow files, and the [GitHub Actions Expression Tester](/github-actions-expression-tester) evaluates those `${{ … }}` expressions before you push.
+If you also run GitHub Actions, the same idea applies there: the [GitHub Actions Validator](/github-actions-validator/) finds YAML and security issues in your workflow files, and the [GitHub Actions Expression Tester](/github-actions-expression-tester/) evaluates those `${{ … }}` expressions before you push.
 
 ## Wire it into your workflow
 
@@ -179,6 +179,6 @@ $ git push                        # green on the first try
 
 ## Validate it now
 
-The next time you touch `.gitlab-ci.yml`, don't let the runner be the first thing to read it. Paste the file into the [GitLab CI Validator](/gitlab-ci-validator) and you'll get the YAML errors and the structural mistakes — undefined stages, jobs with no script, broken `needs`/`extends`, invalid `when:` — in one pass, with the line and the fix for each. It runs entirely in your browser: no project, no login, and nothing uploaded, so it's safe for internal pipelines.
+The next time you touch `.gitlab-ci.yml`, don't let the runner be the first thing to read it. Paste the file into the [GitLab CI Validator](/gitlab-ci-validator/) and you'll get the YAML errors and the structural mistakes — undefined stages, jobs with no script, broken `needs`/`extends`, invalid `when:` — in one pass, with the line and the fix for each. It runs entirely in your browser: no project, no login, and nothing uploaded, so it's safe for internal pipelines.
 
 If you've ever pushed a CI change and hoped it worked, this is the step that was missing.

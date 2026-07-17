@@ -129,7 +129,7 @@ deploy:
   script: ./deploy.sh
 ```
 
-Se o seu bug é uma variável de ambiente vazia quando você esperava um valor, isso é uma classe diferente de problema — o [Env Example Checker](/env-example-checker) detecta o desvio entre `.env` e `.env.example` que, em primeiro lugar, deixa uma variável indefinida.
+Se o seu bug é uma variável de ambiente vazia quando você esperava um valor, isso é uma classe diferente de problema — o [Env Example Checker](/env-example-checker/) detecta o desvio entre `.env` e `.env.example` que, em primeiro lugar, deixa uma variável indefinida.
 
 ## 5. extends de um template que não existe, ou um extends circular
 
@@ -221,8 +221,8 @@ Uma ressalva que vale conhecer: resolver o `include:` exige de fato buscar os ar
 
 Seis desses sete erros são estruturais — eles vivem em como os jobs, stages e referências se encaixam, não em se o YAML é parseável. É exatamente essa a lacuna que um linter só de sintaxe deixa passar: um `.gitlab-ci.yml` pode ser um YAML perfeitamente válido e ainda assim ser um pipeline que o GitLab se recusa a iniciar.
 
-O [GitLab CI Validator](/gitlab-ci-validator) roda essas verificações no seu navegador. Cole um `.gitlab-ci.yml` e ele parseia o YAML e então sinaliza os problemas estruturais acima — um stage indefinido, um job sem `script`/`run`/`trigger`/`extends`, referências de `needs`/`dependencies`/`extends` que apontam para jobs que não existem, um `when:` inválido, um `rules:` que não é lista, `only`/`except` legados e formatos incorretos de `image`/`services` — cada um com a linha e uma correção concreta. Nada é enviado; a verificação inteira é client-side, então você pode rodá-la contra pipelines privados e configurações proprietárias de runner sem mandar nada para lugar nenhum.
+O [GitLab CI Validator](/gitlab-ci-validator/) roda essas verificações no seu navegador. Cole um `.gitlab-ci.yml` e ele parseia o YAML e então sinaliza os problemas estruturais acima — um stage indefinido, um job sem `script`/`run`/`trigger`/`extends`, referências de `needs`/`dependencies`/`extends` que apontam para jobs que não existem, um `when:` inválido, um `rules:` que não é lista, `only`/`except` legados e formatos incorretos de `image`/`services` — cada um com a linha e uma correção concreta. Nada é enviado; a verificação inteira é client-side, então você pode rodá-la contra pipelines privados e configurações proprietárias de runner sem mandar nada para lugar nenhum.
 
-Se os seus pipelines também rodam no GitHub, a mesma ideia de verificar antes do push se aplica aos workflows — nosso passo a passo sobre [configurações de segurança incorretas no GitHub Actions](/blog/github-actions-security-misconfigurations) cobre os equivalentes do lado do GitHub, de permissões de token amplas demais a third-party actions sem pin.
+Se os seus pipelines também rodam no GitHub, a mesma ideia de verificar antes do push se aplica aos workflows — nosso passo a passo sobre [configurações de segurança incorretas no GitHub Actions](/blog/github-actions-security-misconfigurations/) cobre os equivalentes do lado do GitHub, de permissões de token amplas demais a third-party actions sem pin.
 
 Um pipeline vermelho que nunca rodou é a falha mais barata possível de evitar. Detecte os erros estruturais antes do commit, e o único vermelho que você vai ver é o de um teste que genuinamente falhou.

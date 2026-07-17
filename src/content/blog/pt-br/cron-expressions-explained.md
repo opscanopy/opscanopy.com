@@ -99,4 +99,4 @@ O jeito honesto de ler uma expressão cron é não confiar na sua própria leitu
 
 O **Cron Expression Tester** faz exatamente isso no seu navegador: cole qualquer expressão — intervalos, passos, listas, `@macros` e tudo o mais — e obtenha uma descrição em português claro ao lado dos próximos horários de execução, sem nada sendo enviado para lugar nenhum. Ele transforma “acho que isso é toda tarde de dia útil” em “aqui estão os próximos dez horários em que ela dispara,” que é a única leitura que importa.
 
-[Experimente o Cron Expression Tester →](/cron-expression-tester)
+[Experimente o Cron Expression Tester →](/cron-expression-tester/)

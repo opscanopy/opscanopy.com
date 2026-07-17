@@ -12,7 +12,7 @@ relatedTool:
 
 A `severity=critical` alert fired last night and the on-call team never got paged. The alert was real, the receiver existed, the Slack webhook worked. The problem was three lines higher in the config: a broad catch-all route sat above the team route and quietly swallowed everything that reached it. Nobody touched the receiver — they touched the order.
 
-That is what makes Alertmanager routing easy to get wrong. The receivers are usually fine. The route tree is where the surprises live. Once you have a precise model of how the route tree is walked — how matchers are evaluated, when `continue` keeps an alert moving, and what each child inherits from its parent — "why did this alert go there?" stops being a guessing game. This post builds that model, and every rule here matches what the [Alertmanager Route Tester](/alertmanager-route-tester) actually does when it walks a tree against a sample alert.
+That is what makes Alertmanager routing easy to get wrong. The receivers are usually fine. The route tree is where the surprises live. Once you have a precise model of how the route tree is walked — how matchers are evaluated, when `continue` keeps an alert moving, and what each child inherits from its parent — "why did this alert go there?" stops being a guessing game. This post builds that model, and every rule here matches what the [Alertmanager Route Tester](/alertmanager-route-tester/) actually does when it walks a tree against a sample alert.
 
 ## Routing is a tree, not a list
 
@@ -71,7 +71,7 @@ Two details trip people up constantly:
 - **Regexes are fully anchored.** Alertmanager wraps every `=~`, `!~`, and `match_re` pattern as `^(?:…)$`. So `env=~"staging"` matches the value `staging` and nothing else — `env=staging-eu` does **not** match. You have to write `env=~"staging-.*"` to cover the rest of the value. This is the single most frequent cause of "my route matches nothing."
 - **A missing label is the empty string.** Alertmanager compares an absent label as `""`. So `foo=""` matches an alert that has no `foo` label at all, and `foo!=""` requires `foo` to be present and non-empty. Useful, and occasionally surprising.
 
-Getting those labels onto the alert in the first place is a separate job that happens at scrape time — if the label your matcher checks was never set, walk it back to your scrape config with the [Prometheus Relabel Tester](/prometheus-relabel-tester) before you blame the route tree.
+Getting those labels onto the alert in the first place is a separate job that happens at scrape time — if the label your matcher checks was never set, walk it back to your scrape config with the [Prometheus Relabel Tester](/prometheus-relabel-tester/) before you blame the route tree.
 
 ![Illustration: an incoming alert descends the Alertmanager route tree from the root route into child routes with matchers and continue: true, ending on the matched route](/blog/in-content/how-alertmanager-routing-works.webp)
 
@@ -205,12 +205,12 @@ Walking the tree, depth-first, in order:
 
 Final result: the alert reaches **two** receivers — `all-critical-audit` (via `continue`) and `web-team-pager` (the primary path). Flip `severity` to `warning` and the picture changes: `all-critical-audit` drops out, and inside `web-team` the alert falls to `web-team-slack` instead. Remove `service=web` and it never enters that subtree at all, falling through to `team-Y-mails` if `team=backend`, or to the root's `default-receiver` if nothing matches.
 
-If your alert rules themselves aren't firing the way you expect — wrong labels, wrong severity, wrong timing — that is upstream of routing entirely; prove the rule first with [AlertLint](/loki-alert-rule-tester), then trace where its output lands here.
+If your alert rules themselves aren't firing the way you expect — wrong labels, wrong severity, wrong timing — that is upstream of routing entirely; prove the rule first with [AlertLint](/loki-alert-rule-tester/), then trace where its output lands here.
 
 ## Test your tree
 
 You can do this walk by hand, and for a three-node tree it is worth doing once to internalize the model. But real trees nest five levels deep, mix `match`, `match_re`, and `matchers`, and sprinkle `continue` across siblings — and the cost of getting it wrong is a SEV-1 that pages nobody, or a routine warning that wakes the whole team.
 
-So make it cheap to check. Paste your route tree and a sample alert's labels into the [Alertmanager Route Tester](/alertmanager-route-tester) and it does exactly the walk above — entirely in your browser, nothing uploaded. It reports every receiver the alert reaches in evaluation order, the route-path breadcrumb from root to each matched node, a tag on any receiver reached only via `continue: true`, and the effective `group_by` after inheritance. It reproduces the semantics this post describes: anchored regexes, missing-label-as-empty-string, first-match-then-`continue`, and per-field inheritance.
+So make it cheap to check. Paste your route tree and a sample alert's labels into the [Alertmanager Route Tester](/alertmanager-route-tester/) and it does exactly the walk above — entirely in your browser, nothing uploaded. It reports every receiver the alert reaches in evaluation order, the route-path breadcrumb from root to each matched node, a tag on any receiver reached only via `continue: true`, and the effective `group_by` after inheritance. It reproduces the semantics this post describes: anchored regexes, missing-label-as-empty-string, first-match-then-`continue`, and per-field inheritance.
 
 The next time an alert lands somewhere unexpected, you do not have to fire a real one and watch. Paste the tree, paste the labels, and read off the path it actually took.

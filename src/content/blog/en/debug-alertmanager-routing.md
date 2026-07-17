@@ -115,7 +115,7 @@ route:
 
 All matchers on a route must hold for it to match — it is a logical AND. An alert with `env=staging-eu` and `severity=warning` reaches `staging-slack`: the anchored `staging-.*` matches and `severity` is not `info`. Change `severity` to `info` and the second matcher fails, so the whole route is skipped.
 
-If your alert rules carry the wrong labels in the first place — or are missing the ones your routes match on — fix that upstream. The [Prometheus Relabel Tester](/prometheus-relabel-tester) previews exactly what labels survive your relabel rules before they ever reach the route tree.
+If your alert rules carry the wrong labels in the first place — or are missing the ones your routes match on — fix that upstream. The [Prometheus Relabel Tester](/prometheus-relabel-tester/) previews exactly what labels survive your relabel rules before they ever reach the route tree.
 
 ![Synthwave illustration of debugging Alertmanager routing: an alert rides a neon route tree through a first-match-wins gate, past the classic traps — missing continue, matcher regex, catch-all defaults](/blog/in-content/debug-alertmanager-routing.webp)
 
@@ -254,10 +254,10 @@ Do that for the labels above against the docs tree and you land on `team-DB-page
 
 ## Find the matching receiver now: an Alertmanager route debugger in the browser
 
-When the tree is more than a few nodes, walk it with the [Alertmanager Route Tester](/alertmanager-route-tester) instead of in your head. Paste your route tree — a bare `route:` block or a full `alertmanager.yml`, of which only the `route` block is read — and the sample alert's labels, one `key=value` per line. It reproduces the semantics exactly: first-match-wins, `continue: true` fan-out, anchored regexes, missing-label-as-empty-string, and grouping inheritance.
+When the tree is more than a few nodes, walk it with the [Alertmanager Route Tester](/alertmanager-route-tester/) instead of in your head. Paste your route tree — a bare `route:` block or a full `alertmanager.yml`, of which only the `route` block is read — and the sample alert's labels, one `key=value` per line. It reproduces the semantics exactly: first-match-wins, `continue: true` fan-out, anchored regexes, missing-label-as-empty-string, and grouping inheritance.
 
 What you get back is every receiver the alert reaches, in evaluation order, each with its route-path breadcrumb from the root down to the matched node, a tag on any match reached only via `continue`, and the effective `group_by` after inheritance. It is a dry run of dispatch — no notification is sent, nothing is uploaded, and it all runs in your browser, so you can safely paste internal receiver names and private team labels.
 
-Once the labels are confirmed correct at the source with the [Prometheus Relabel Tester](/prometheus-relabel-tester) and your rules are proven to fire with [AlertLint](/loki-alert-rule-tester), the route tree is the last hop to get right. Walk it before it pages anyone — and the next time an alert reaches the wrong receiver, you will know which node sent it there.
+Once the labels are confirmed correct at the source with the [Prometheus Relabel Tester](/prometheus-relabel-tester/) and your rules are proven to fire with [AlertLint](/loki-alert-rule-tester/), the route tree is the last hop to get right. Walk it before it pages anyone — and the next time an alert reaches the wrong receiver, you will know which node sent it there.
 
-[Open the Alertmanager Route Tester →](/alertmanager-route-tester)
+[Open the Alertmanager Route Tester →](/alertmanager-route-tester/)

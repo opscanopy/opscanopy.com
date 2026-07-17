@@ -91,4 +91,4 @@ Vous n'avez pas à attendre que le projet amont livre cette fonctionnalité. **A
 
 Si vous avez déjà expédié une alerte Loki en espérant qu'elle fonctionne, voici l'étape qui manquait.
 
-[Essayez AlertLint — le testeur de règles d'alerte Loki →](/loki-alert-rule-tester)
+[Essayez AlertLint — le testeur de règles d'alerte Loki →](/loki-alert-rule-tester/)

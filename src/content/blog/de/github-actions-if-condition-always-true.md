@@ -55,7 +55,7 @@ Den Ausdruck in Anführungszeichen zu setzen, macht den YAML-Wert zu einer reine
 
 Faustregel: **In einem `if:` gibt es keine `${{ }}` und keine umschließenden Anführungszeichen.** Nur den Ausdruck. Die Klammern dienen dazu, Werte in `run:`, `name:` und `with:` zu interpolieren — nicht für Bedingungen.
 
-Sie können jedes dieser Beispiele in den [GitHub Actions Ausdrucks- & Trigger-Tester](/github-actions-expression-tester) einfügen und zusehen, wie er das Austreten von Literaltext markiert, bevor Sie pushen — er warnt vor genau diesem Muster (es wird als [actions/runner#1173](https://github.com/actions/runner/issues/1173) geführt, der Bug mit den meisten Reaktionen im Runner-Repository).
+Sie können jedes dieser Beispiele in den [GitHub Actions Ausdrucks- & Trigger-Tester](/github-actions-expression-tester/) einfügen und zusehen, wie er das Austreten von Literaltext markiert, bevor Sie pushen — er warnt vor genau diesem Muster (es wird als [actions/runner#1173](https://github.com/actions/runner/issues/1173) geführt, der Bug mit den meisten Reaktionen im Runner-Repository).
 
 ![Eine GitHub-Actions-if-Bedingung, die immer true ist, weil sie eine truthy Zeichenkette zurückgibt, neben dem korrigierten booleschen Ausdruck](/blog/github-actions-if-condition-always-true-diagram.svg)
 
@@ -196,8 +196,8 @@ Denken Sie daran, dass sowohl `contains` als auch `startsWith` Zeichenketten cas
 
 Der Grund, warum diese Bugs so hartnäckig sind, ist die Feedback-Schleife: Die einzige Möglichkeit, eine Bedingung zu „testen", bestand traditionell darin, zu committen, zu pushen und die Logs zu lesen — dann zu raten, zu bearbeiten und erneut zu pushen. Jeder falsche Versuch ist ein Hin und Her.
 
-Der [GitHub Actions Ausdrucks- & Trigger-Tester](/github-actions-expression-tester) schließt diese Schleife. Fügen Sie Ihren `if:`-Ausdruck ein, setzen Sie einen Mock-`github`-/`env`-/`steps`-/`needs`-Kontext und sehen Sie das ausgewertete Ergebnis mit GitHubs exakten Operator-, Casting- und Groß-/Kleinschreibungs-Regeln — dazu eine explizite Warnung, wenn Sie Literaltext außerhalb von `${{ }}` stehen gelassen und versehentlich eine immer-truthy Bedingung gebaut haben. Er läuft vollständig in Ihrem Browser; nichts über Ihren Workflow wird hochgeladen.
+Der [GitHub Actions Ausdrucks- & Trigger-Tester](/github-actions-expression-tester/) schließt diese Schleife. Fügen Sie Ihren `if:`-Ausdruck ein, setzen Sie einen Mock-`github`-/`env`-/`steps`-/`needs`-Kontext und sehen Sie das ausgewertete Ergebnis mit GitHubs exakten Operator-, Casting- und Groß-/Kleinschreibungs-Regeln — dazu eine explizite Warnung, wenn Sie Literaltext außerhalb von `${{ }}` stehen gelassen und versehentlich eine immer-truthy Bedingung gebaut haben. Er läuft vollständig in Ihrem Browser; nichts über Ihren Workflow wird hochgeladen.
 
 Wenn Sie jemals ein `if:` ausgeliefert und gehofft haben, dass es überspringt, ist dies die Prüfung, die es Ihnen sagt, bevor der Runner es tut.
 
-[Probieren Sie den GitHub Actions Ausdrucks- & Trigger-Tester aus →](/github-actions-expression-tester)
+[Probieren Sie den GitHub Actions Ausdrucks- & Trigger-Tester aus →](/github-actions-expression-tester/)

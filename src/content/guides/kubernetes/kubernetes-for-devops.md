@@ -25,7 +25,7 @@ faqs:
     a: "kubectl get/describe (inspect), kubectl apply -f (declarative changes), kubectl logs and kubectl exec (debugging), kubectl rollout status/undo (deployments), and kubectl get events."
 ---
 
-Kubernetes (K8s) has become the standard runtime fabric for containerised workloads. Whether you are deploying a single microservice or coordinating hundreds of them across multiple availability zones, K8s gives you a consistent, declarative API to describe what should run, where it should run, and how it should behave. This guide walks through the core concepts a DevOps engineer needs day-to-day — cluster architecture, workload primitives, networking, configuration, observability, and troubleshooting — with working YAML and `kubectl` commands throughout. To see where Kubernetes fits in the broader learning journey, check the [Kubernetes roadmap](/learn/roadmaps/kubernetes).
+Kubernetes (K8s) has become the standard runtime fabric for containerised workloads. Whether you are deploying a single microservice or coordinating hundreds of them across multiple availability zones, K8s gives you a consistent, declarative API to describe what should run, where it should run, and how it should behave. This guide walks through the core concepts a DevOps engineer needs day-to-day — cluster architecture, workload primitives, networking, configuration, observability, and troubleshooting — with working YAML and `kubectl` commands throughout. To see where Kubernetes fits in the broader learning journey, check the [Kubernetes roadmap](/learn/roadmaps/kubernetes/).
 
 ## Why Kubernetes?
 
@@ -170,7 +170,7 @@ Every node that runs workloads must have three components:
 
 ## Pods
 
-A Pod is the smallest schedulable unit in Kubernetes. It wraps one or more containers (built from [Docker for DevOps](/learn/guides/docker-for-devops) images) that share:
+A Pod is the smallest schedulable unit in Kubernetes. It wraps one or more containers (built from [Docker for DevOps](/learn/guides/docker-for-devops/) images) that share:
 
 - **Network namespace** — all containers in a Pod share the same IP address and port space.
 - **Storage** — volumes are declared at the Pod level and mounted into individual containers.
@@ -518,7 +518,7 @@ A Service of type `LoadBalancer` creates a separate cloud load balancer per serv
 An Ingress object is just a configuration resource. You also need an **Ingress controller** — a Pod that reads Ingress objects and programs a reverse proxy. Common choices:
 
 - **NGINX Ingress Controller** (most widely deployed)
-- **AWS Load Balancer Controller** (for ALB on EKS — see [AWS for DevOps Engineers](/learn/guides/aws-for-devops-engineers))
+- **AWS Load Balancer Controller** (for ALB on EKS — see [AWS for DevOps Engineers](/learn/guides/aws-for-devops-engineers/))
 - **Traefik** (dynamic config, good for smaller clusters)
 - **Istio Gateway** (service mesh, advanced traffic management)
 
@@ -939,7 +939,7 @@ Kubernetes assigns one of three Quality of Service classes to every Pod based on
 
 ### Setting the Right Numbers
 
-Right-sizing requests and limits requires profiling your actual workload under load. Size CPU/memory requests and limits with the [Kubernetes Resource Calculator](/kubernetes-resource-calculator).
+Right-sizing requests and limits requires profiling your actual workload under load. Size CPU/memory requests and limits with the [Kubernetes Resource Calculator](/kubernetes-resource-calculator/).
 
 Common mistakes:
 
@@ -1127,7 +1127,7 @@ Key scrape targets:
 - `cadvisor` — per-container CPU and memory (built into kubelet).
 - Your application's `/metrics` endpoint (expose Prometheus format).
 
-Understanding Prometheus query syntax is essential for writing alerts and dashboards. Use the [PromQL Explainer](/promql-explainer) to translate complex queries into plain English. When building scrape configurations and relabelling rules, the [Prometheus Relabel Tester](/prometheus-relabel-tester) lets you test rules against live label sets without touching production.
+Understanding Prometheus query syntax is essential for writing alerts and dashboards. Use the [PromQL Explainer](/promql-explainer/) to translate complex queries into plain English. When building scrape configurations and relabelling rules, the [Prometheus Relabel Tester](/prometheus-relabel-tester/) lets you test rules against live label sets without touching production.
 
 ### Events
 
@@ -1258,7 +1258,7 @@ kubectl describe pod <name> -n <ns>
 # Look for: Last State: Terminated Reason: OOMKilled
 ```
 
-**Fix:** Increase the memory limit (or request, to get a Guaranteed QoS). Profile the application's actual memory use under load. Use the [Kubernetes Resource Calculator](/kubernetes-resource-calculator) to size requests and limits based on observed usage.
+**Fix:** Increase the memory limit (or request, to get a Guaranteed QoS). Profile the application's actual memory use under load. Use the [Kubernetes Resource Calculator](/kubernetes-resource-calculator/) to size requests and limits based on observed usage.
 
 ### Debugging Toolkit
 
@@ -1316,6 +1316,6 @@ A: A Job creates one or more Pods and tracks their completion. It retries failed
 
 ## What's Next
 
-Coming from containers? See [Docker for DevOps](/learn/guides/docker-for-devops).
+Coming from containers? See [Docker for DevOps](/learn/guides/docker-for-devops/).
 
-Running on AWS (EKS)? See [AWS for DevOps Engineers](/learn/guides/aws-for-devops-engineers).
+Running on AWS (EKS)? See [AWS for DevOps Engineers](/learn/guides/aws-for-devops-engineers/).

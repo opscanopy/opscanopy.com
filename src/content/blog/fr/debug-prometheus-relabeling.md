@@ -155,7 +155,7 @@ curl -s 'localhost:9090/service-discovery' # the SD page shows pre-relabel label
 
 ### 2. Tester les règles sur ces labels
 
-Vous disposez maintenant de l'entrée. Collez les labels `__meta_*` et vos `relabel_configs` dans [le Prometheus Relabel Tester](/prometheus-relabel-tester) et exécutez-les. Il applique les règles exactement comme le fait Prometheus — regex ancrée, séparateur `;`, expansion `$1`/`${1}` — et vous indique, pour chaque ensemble de labels, les labels résultants, lesquels ont été ajoutés, modifiés ou supprimés, et si la cible a été supprimée (et par quelle règle).
+Vous disposez maintenant de l'entrée. Collez les labels `__meta_*` et vos `relabel_configs` dans [le Prometheus Relabel Tester](/prometheus-relabel-tester/) et exécutez-les. Il applique les règles exactement comme le fait Prometheus — regex ancrée, séparateur `;`, expansion `$1`/`${1}` — et vous indique, pour chaque ensemble de labels, les labels résultants, lesquels ont été ajoutés, modifiés ou supprimés, et si la cible a été supprimée (et par quelle règle).
 
 ### 3. Bissecter la liste de règles
 
@@ -213,6 +213,6 @@ Pendant que vous faites le ménage, la même chaîne fait souvent remonter les l
 
 La boucle de débogage la plus rapide est celle qui n'atteint jamais un Prometheus en production. Si le relabeling est si facile à rater, c'est qu'il échoue en silence : pas d'erreur de parsing, pas de ligne de log, juste une cible absente. La seule vérification honnête consiste à exécuter les règles sur une entrée représentative et à lire la sortie — la même idée que tester n'importe quelle configuration comportementale plutôt que de se fier à un lint de schéma.
 
-Quand vous fixez du regard un mystère « prometheus dropped target » ou un rapport « prometheus label disappeared », récupérez les `discoveredLabels` depuis l'API, collez-les avec vos règles dans [le Prometheus Relabel Tester](/prometheus-relabel-tester), et observez quelle règle fait des dégâts — il s'exécute entièrement dans votre navigateur, si bien que vos configurations de scrape internes et les métadonnées de vos cibles ne quittent jamais votre onglet.
+Quand vous fixez du regard un mystère « prometheus dropped target » ou un rapport « prometheus label disappeared », récupérez les `discoveredLabels` depuis l'API, collez-les avec vos règles dans [le Prometheus Relabel Tester](/prometheus-relabel-tester/), et observez quelle règle fait des dégâts — il s'exécute entièrement dans votre navigateur, si bien que vos configurations de scrape internes et les métadonnées de vos cibles ne quittent jamais votre onglet.
 
-Une fois les labels corrects, le reste de la chaîne d'observabilité suit. Décomposez une requête qui dépend de ces labels avec [le PromQL Explainer](/promql-explainer), ou vérifiez qu'une alerte sur les séries résultantes arrive au bon endroit avec [l'Alertmanager Route Tester](/alertmanager-route-tester). Mettez d'abord les labels en forme ; tout ce qui se trouve en aval dépend de la justesse de cette étape.
+Une fois les labels corrects, le reste de la chaîne d'observabilité suit. Décomposez une requête qui dépend de ces labels avec [le PromQL Explainer](/promql-explainer/), ou vérifiez qu'une alerte sur les séries résultantes arrive au bon endroit avec [l'Alertmanager Route Tester](/alertmanager-route-tester/). Mettez d'abord les labels en forme ; tout ce qui se trouve en aval dépend de la justesse de cette étape.

@@ -14,7 +14,7 @@ relatedTool:
 
 Um target que você esperava coletar simplesmente nunca aparece no Prometheus. Nenhum erro nos logs, nenhum scrape falho, nada vermelho na página de targets — a série simplesmente não está lá. Você adiciona `--log.level=debug`, reinicia, fica apertando os olhos diante da saída e, no fim, encontra: uma regra `keep` três linhas adentro do seu `relabel_configs` descartou o target silenciosamente porque a regex não casou da forma que você imaginava. Essa falha silenciosa é exatamente o motivo pelo qual `relabel_configs` merece uma leitura cuidadosa. O relabeling do Prometheus reescreve, mantém ou descarta targets e seus labels, e quando está errado ele não reclama — apenas joga fora suas métricas.
 
-Este guia percorre o relabeling do Prometheus do zero: o que ele faz, os campos que compõem cada regra e cada action com um pequeno exemplo. A semântica aqui é exatamente a mesma que o motor do [Prometheus Relabel Tester](/prometheus-relabel-tester) implementa, então você pode colar nele qualquer snippet abaixo e ver os labels mudarem.
+Este guia percorre o relabeling do Prometheus do zero: o que ele faz, os campos que compõem cada regra e cada action com um pequeno exemplo. A semântica aqui é exatamente a mesma que o motor do [Prometheus Relabel Tester](/prometheus-relabel-tester/) implementa, então você pode colar nele qualquer snippet abaixo e ver os labels mudarem.
 
 ## O que o relabeling realmente faz
 
@@ -269,6 +269,6 @@ A segunda regra mostra o idioma da origem combinada em ação: dois `source_labe
 
 O relabeling é a única parte de uma config do Prometheus em que estar quase certo não produz erro nem aviso — apenas séries ausentes ou erradas. A ancoragem da regex, a deleção por replacement vazio, o hashmod com MD5, a ordem de junção de múltiplos `source_labels`: cada um é fácil de errar de forma sutil, e um Prometheus em produção não vai te dizer qual deles te mordeu.
 
-Cole as receitas deste post, com um conjunto realista de labels `__meta_*`, no [Prometheus Relabel Tester](/prometheus-relabel-tester) e você verá o valor combinado, a regex que casou (ou não), o diff por label e uma sinalização clara — nomeando a regra e a action — sempre que um target for descartado. Ele roda inteiramente no seu navegador, então você pode colar scrape configs internas com segurança.
+Cole as receitas deste post, com um conjunto realista de labels `__meta_*`, no [Prometheus Relabel Tester](/prometheus-relabel-tester/) e você verá o valor combinado, a regex que casou (ou não), o diff por label e uma sinalização clara — nomeando a regra e a action — sempre que um target for descartado. Ele roda inteiramente no seu navegador, então você pode colar scrape configs internas com segurança.
 
-Depois que os labels estiverem no formato que você quer, as próximas perguntas são o que você consulta e como você alerta. Decomponha uma expressão com [o PromQL Explainer](/promql-explainer) ou, se você estiver movendo regras entre Loki e Prometheus, traduza-as com [o LogQL ↔ PromQL Helper](/logql-promql-helper). Acerte os labels primeiro — tudo a jusante depende deles.
+Depois que os labels estiverem no formato que você quer, as próximas perguntas são o que você consulta e como você alerta. Decomponha uma expressão com [o PromQL Explainer](/promql-explainer/) ou, se você estiver movendo regras entre Loki e Prometheus, traduza-as com [o LogQL ↔ PromQL Helper](/logql-promql-helper/). Acerte os labels primeiro — tudo a jusante depende deles.

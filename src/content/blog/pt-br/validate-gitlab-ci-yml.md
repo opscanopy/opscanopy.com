@@ -52,7 +52,7 @@ deploy:
   script: ./deploy.sh
 ```
 
-YAML válido é só metade do trabalho. O [GitLab CI Validator](/gitlab-ci-validator) verifica os dois em uma única passada: ele faz o parse do YAML primeiro, e só se isso der certo é que ele roda as checagens estruturais contra os seus jobs. Se o parse falhar, você recebe um único erro com referência de linha e nada mais — não faz sentido reportar "undefined stage" em um documento que nem passou no parse.
+YAML válido é só metade do trabalho. O [GitLab CI Validator](/gitlab-ci-validator/) verifica os dois em uma única passada: ele faz o parse do YAML primeiro, e só se isso der certo é que ele roda as checagens estruturais contra os seus jobs. Se o parse falhar, você recebe um único erro com referência de linha e nada mais — não faz sentido reportar "undefined stage" em um documento que nem passou no parse.
 
 ![Ilustração: um .gitlab-ci.yml brilhante examinado por ferramentas de CI lint, yamllint e checagens do editor, com vereditos de OK e de erro fluindo para um draft merge request](/blog/in-content/validate-gitlab-ci-yml.webp)
 
@@ -150,7 +150,7 @@ Então o que um validador no navegador realmente verifica? Com base no engine, o
 
 Sendo honesto: um resultado limpo no navegador é uma forte confiança pré-push sobre *estrutura e sintaxe*. Ele pega toda aquela classe de erros que fazem um pipeline falhar antes de qualquer job rodar. Para certeza absoluta numa config que usa `include:` ou variáveis de projeto, confirme com o próprio CI Lint do GitLab depois de dar push para um projeto — mas use a passada no navegador para fazer esse push valer a pena.
 
-Se você também roda GitHub Actions, a mesma ideia se aplica lá: o [GitHub Actions Validator](/github-actions-validator) encontra problemas de YAML e de segurança nos seus arquivos de workflow, e o [GitHub Actions Expression Tester](/github-actions-expression-tester) avalia aquelas expressões `${{ … }}` antes de você dar push.
+Se você também roda GitHub Actions, a mesma ideia se aplica lá: o [GitHub Actions Validator](/github-actions-validator/) encontra problemas de YAML e de segurança nos seus arquivos de workflow, e o [GitHub Actions Expression Tester](/github-actions-expression-tester/) avalia aquelas expressões `${{ … }}` antes de você dar push.
 
 ## Encaixe isso no seu fluxo de trabalho
 
@@ -181,6 +181,6 @@ $ git push                        # green on the first try
 
 ## Valide agora
 
-Da próxima vez que você mexer no `.gitlab-ci.yml`, não deixe o runner ser a primeira coisa a lê-lo. Cole o arquivo no [GitLab CI Validator](/gitlab-ci-validator) e você vai receber os erros de YAML e os erros estruturais — stages não declarados, jobs sem script, `needs`/`extends` quebrados, `when:` inválido — em uma única passada, com a linha e a correção de cada um. Ele roda inteiramente no seu navegador: sem projeto, sem login e sem nada enviado para fora, então é seguro para pipelines internos.
+Da próxima vez que você mexer no `.gitlab-ci.yml`, não deixe o runner ser a primeira coisa a lê-lo. Cole o arquivo no [GitLab CI Validator](/gitlab-ci-validator/) e você vai receber os erros de YAML e os erros estruturais — stages não declarados, jobs sem script, `needs`/`extends` quebrados, `when:` inválido — em uma única passada, com a linha e a correção de cada um. Ele roda inteiramente no seu navegador: sem projeto, sem login e sem nada enviado para fora, então é seguro para pipelines internos.
 
 Se você já deu push de uma mudança de CI e torceu para que funcionasse, este é o passo que estava faltando.

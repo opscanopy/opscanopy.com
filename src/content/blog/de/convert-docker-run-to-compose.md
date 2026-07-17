@@ -14,7 +14,7 @@ relatedTool:
 
 Du hast während einer Debugging-Session schnell mit einer `docker run`-Zeile einen Container gestartet. Es hat funktioniert. Jetzt möchte jemand das Ganze im Repo haben, in einem PR reviewbar, mit einem einzigen Befehl startbar – und du hast einen 200 Zeichen langen Einzeiler mit `-p`, drei `-v`-Mounts, einem halben Dutzend `-e`-Flags und einer `--restart`-Policy, den du nun in eine `docker-compose.yml` umwandeln musst. Das ist der Moment, in dem die meisten Leute zur Doku greifen und mit dem Übersetzen von Hand beginnen – und genau dort gehen Flags verloren, werden Ports falsch gequotet und Listen falsch verschachtelt.
 
-Diese Anleitung zeigt Schritt für Schritt, wie man einen `docker run`-Befehl Flag für Flag in eine `docker-compose.yml` umwandelt, inklusive der Stolperfallen, die einen erwischen, wenn man es von Hand macht. Jedes Mapping hier entspricht genau dem, was der [Docker Run to Compose converter](/docker-run-to-compose) tatsächlich ausgibt. So kannst du die Regeln nachlesen und dann deinen Befehl in das Tool einfügen, um dir den mechanischen Teil zu sparen.
+Diese Anleitung zeigt Schritt für Schritt, wie man einen `docker run`-Befehl Flag für Flag in eine `docker-compose.yml` umwandelt, inklusive der Stolperfallen, die einen erwischen, wenn man es von Hand macht. Jedes Mapping hier entspricht genau dem, was der [Docker Run to Compose converter](/docker-run-to-compose/) tatsächlich ausgibt. So kannst du die Regeln nachlesen und dann deinen Befehl in das Tool einfügen, um dir den mechanischen Teil zu sparen.
 
 ## Warum man von docker run zu Compose wechseln sollte
 
@@ -117,7 +117,7 @@ env_file:
   - .env
 ```
 
-Wenn du das Environment von der Kommandozeile in Dateien verlagerst, lohnt es sich zu prüfen, ob deine `.env` und `.env.example` nicht auseinandergedriftet sind – der [Env Example Checker](/env-example-checker) markiert Keys, die in der einen, aber nicht in der anderen Datei vorhanden sind, damit eine fehlende Variable nicht erst zur Laufzeit als Fehler auftaucht.
+Wenn du das Environment von der Kommandozeile in Dateien verlagerst, lohnt es sich zu prüfen, ob deine `.env` und `.env.example` nicht auseinandergedriftet sind – der [Env Example Checker](/env-example-checker/) markiert Keys, die in der einen, aber nicht in der anderen Datei vorhanden sind, damit eine fehlende Variable nicht erst zur Laufzeit als Fehler auftaucht.
 
 ### --restart, --name, -w, -u
 
@@ -185,7 +185,7 @@ mem_limit: 256m
 cpus: "1.5"
 ```
 
-Das sind die Limits im v2-Stil, die Compose direkt berücksichtigt. Wenn du diesen Container irgendwann zu Kubernetes verschiebst, werden aus diesen Zahlen Pod-Requests und -Limits – der [Kubernetes Resource Calculator](/kubernetes-resource-calculator) macht aus einem Speicher- und CPU-Wert sichere `requests`/`limits`-Werte, sodass du bei der Umrechnung nicht raten musst.
+Das sind die Limits im v2-Stil, die Compose direkt berücksichtigt. Wenn du diesen Container irgendwann zu Kubernetes verschiebst, werden aus diesen Zahlen Pod-Requests und -Limits – der [Kubernetes Resource Calculator](/kubernetes-resource-calculator/) macht aus einem Speicher- und CPU-Wert sichere `requests`/`limits`-Werte, sodass du bei der Umrechnung nicht raten musst.
 
 ### Die Flags ohne Compose-Äquivalent
 
@@ -250,7 +250,7 @@ volumes:
   pgdata:
 ```
 
-**Environment-Präzedenz.** Wenn du sowohl `environment` als auch `env_file` verwendest, gewinnen die Werte, die direkt in `environment` gesetzt sind, gegenüber demselben Key in einer Env-Datei. Und keiner von beiden überschreibt eine Variable, die bereits in der Shell gesetzt ist, wenn du `docker compose up` ausführst – es sei denn, du referenzierst sie. Halte Secrets aus `environment:` heraus (das wird committet) und in `env_file:` (gitignored) – und prüfe die Keys der Datei mit dem [Env Example Checker](/env-example-checker), bevor du sie ausrollst.
+**Environment-Präzedenz.** Wenn du sowohl `environment` als auch `env_file` verwendest, gewinnen die Werte, die direkt in `environment` gesetzt sind, gegenüber demselben Key in einer Env-Datei. Und keiner von beiden überschreibt eine Variable, die bereits in der Shell gesetzt ist, wenn du `docker compose up` ausführst – es sei denn, du referenzierst sie. Halte Secrets aus `environment:` heraus (das wird committet) und in `env_file:` (gitignored) – und prüfe die Keys der Datei mit dem [Env Example Checker](/env-example-checker/), bevor du sie ausrollst.
 
 **Die Netzwerk-Modi host und none.** Wie oben beschrieben sind `--network host` und `--network none` keine Netzwerke – sie sind Modi. `host` unter eine `networks:`-Liste zu setzen, ist ungültig; es muss `network_mode: host` heißen. So etwas übersieht man von Hand leicht, weil die Schreibweise des Flags identisch ist mit einem normalen `--network backend`.
 
@@ -260,6 +260,6 @@ volumes:
 
 Die obigen Regeln sind alles, was du brauchst, um das von Hand zu erledigen. Aber genau bei der Umwandlung von Hand geht ein Flag verloren, verliert ein Port seine Anführungszeichen oder landet `--network host` im falschen Key – und du merkst es erst, wenn sich der Container anders verhält als der ursprüngliche Befehl.
 
-Der [Docker Run to Compose converter](/docker-run-to-compose) übernimmt die mechanische Übersetzung für dich. Er tokenisiert den Befehl so, wie es eine Shell tun würde – unter Berücksichtigung von Anführungszeichen, gebündelten Kurz-Flags wie `-it` und Backslash-Zeilenumbrüchen –, bildet jedes Flag auf den passenden Compose-Key ab und gibt deterministisches YAML aus. Flags ohne Äquivalent (`--rm`, `-d`) kommen als Warnungen zurück, statt stillschweigend zu verschwinden, sodass nichts ohne dein Wissen wegfällt. Es funktioniert auch in umgekehrter Richtung: Füge einen Compose-Service ein und erhalte eine äquivalente `docker run`-Zeile zurück.
+Der [Docker Run to Compose converter](/docker-run-to-compose/) übernimmt die mechanische Übersetzung für dich. Er tokenisiert den Befehl so, wie es eine Shell tun würde – unter Berücksichtigung von Anführungszeichen, gebündelten Kurz-Flags wie `-it` und Backslash-Zeilenumbrüchen –, bildet jedes Flag auf den passenden Compose-Key ab und gibt deterministisches YAML aus. Flags ohne Äquivalent (`--rm`, `-d`) kommen als Warnungen zurück, statt stillschweigend zu verschwinden, sodass nichts ohne dein Wissen wegfällt. Es funktioniert auch in umgekehrter Richtung: Füge einen Compose-Service ein und erhalte eine äquivalente `docker run`-Zeile zurück.
 
 Alles passiert in deinem Browser, sodass du Befehle einfügen kannst, die private Registries benennen oder Secret-tragende `-e`-Werte enthalten, ohne dass irgendetwas den Tab verlässt. Füge deinen Befehl ein, lies die Warnungen und committe das Ergebnis.

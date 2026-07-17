@@ -155,7 +155,7 @@ curl -s 'localhost:9090/service-discovery' # the SD page shows pre-relabel label
 
 ### 2. Prueba las reglas contra esas etiquetas
 
-Ya tienes la entrada. Pega las etiquetas `__meta_*` y tus `relabel_configs` en [the Prometheus Relabel Tester](/prometheus-relabel-tester) y ejecútalas. Aplica las reglas exactamente como lo hace Prometheus —regex anclado, separator `;`, expansión `$1`/`${1}`— y te dice, por cada conjunto de etiquetas, cuáles son las etiquetas resultantes, cuáles se añadieron, cambiaron o se eliminaron, y si el target fue descartado (y por qué regla).
+Ya tienes la entrada. Pega las etiquetas `__meta_*` y tus `relabel_configs` en [the Prometheus Relabel Tester](/prometheus-relabel-tester/) y ejecútalas. Aplica las reglas exactamente como lo hace Prometheus —regex anclado, separator `;`, expansión `$1`/`${1}`— y te dice, por cada conjunto de etiquetas, cuáles son las etiquetas resultantes, cuáles se añadieron, cambiaron o se eliminaron, y si el target fue descartado (y por qué regla).
 
 ### 3. Bisecciona la lista de reglas
 
@@ -213,6 +213,6 @@ Mientras estás limpiando, la misma cadena suele promover etiquetas del pod y po
 
 El bucle de depuración más rápido es el que nunca llega a un Prometheus en vivo. La razón por la que el relabeling es tan fácil de equivocar es que falla en silencio: no hay error de parseo, ni línea de log, solo un target que no está. La única comprobación honesta es ejecutar las reglas contra una entrada representativa y leer la salida, la misma idea que hay detrás de probar cualquier configuración de comportamiento en lugar de fiarte de un lint de esquema.
 
-Cuando estés frente al misterio de un "prometheus dropped target" o un informe de "prometheus label disappeared", toma los `discoveredLabels` de la API, pégalos junto con tus reglas en [the Prometheus Relabel Tester](/prometheus-relabel-tester) y observa qué regla hace el daño: se ejecuta enteramente en tu navegador, así que las configuraciones de scrape internas y los metadatos de los targets nunca salen de tu pestaña.
+Cuando estés frente al misterio de un "prometheus dropped target" o un informe de "prometheus label disappeared", toma los `discoveredLabels` de la API, pégalos junto con tus reglas en [the Prometheus Relabel Tester](/prometheus-relabel-tester/) y observa qué regla hace el daño: se ejecuta enteramente en tu navegador, así que las configuraciones de scrape internas y los metadatos de los targets nunca salen de tu pestaña.
 
-Una vez que las etiquetas son correctas, el resto de la cadena de observabilidad va detrás. Desglosa una consulta que dependa de esas etiquetas con [the PromQL Explainer](/promql-explainer), o confirma que una alerta sobre las series resultantes acaba en el sitio correcto con [the Alertmanager Route Tester](/alertmanager-route-tester). Da forma primero a las etiquetas; todo lo que viene después depende de acertar en ese paso.
+Una vez que las etiquetas son correctas, el resto de la cadena de observabilidad va detrás. Desglosa una consulta que dependa de esas etiquetas con [the PromQL Explainer](/promql-explainer/), o confirma que una alerta sobre las series resultantes acaba en el sitio correcto con [the Alertmanager Route Tester](/alertmanager-route-tester/). Da forma primero a las etiquetas; todo lo que viene después depende de acertar en ese paso.

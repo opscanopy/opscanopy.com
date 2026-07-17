@@ -137,7 +137,7 @@ on:
       - 'release/**'
 ```
 
-And `pull_request` from a fork is restricted: a first-time contributor's PR may require manual approval before any workflow runs, which looks identical to "didn't trigger." If you switched to `pull_request_target` to get around fork restrictions, note that it reads the workflow and triggers from the **base** branch's version of the file — and carries real security risk, covered in our [GitHub Actions security misconfigurations](/blog/github-actions-security-misconfigurations) post.
+And `pull_request` from a fork is restricted: a first-time contributor's PR may require manual approval before any workflow runs, which looks identical to "didn't trigger." If you switched to `pull_request_target` to get around fork restrictions, note that it reads the workflow and triggers from the **base** branch's version of the file — and carries real security risk, covered in our [GitHub Actions security misconfigurations](/blog/github-actions-security-misconfigurations/) post.
 
 ## A copy-paste filter cheat-sheet
 
@@ -169,4 +169,4 @@ The **GitHub Actions Expression & Trigger Tester** closes that loop. Paste your 
 
 See exactly which jobs run before you push, not after.
 
-[Open the GitHub Actions Expression & Trigger Tester →](/github-actions-expression-tester)
+[Open the GitHub Actions Expression & Trigger Tester →](/github-actions-expression-tester/)

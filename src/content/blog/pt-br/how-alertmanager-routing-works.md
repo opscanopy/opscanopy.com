@@ -14,7 +14,7 @@ relatedTool:
 
 Um alerta `severity=critical` disparou ontem à noite e o time de plantão nunca foi acionado. O alerta era real, o receiver existia, o webhook do Slack funcionava. O problema estava três linhas acima na configuração: uma rota catch-all abrangente ficava acima da rota do time e engolia silenciosamente tudo que chegava até ela. Ninguém mexeu no receiver — mexeram na ordem.
 
-É isso que torna o roteamento do Alertmanager tão fácil de errar. Os receivers geralmente estão corretos. É na árvore de rotas que moram as surpresas. Quando você tem um modelo preciso de como a árvore de rotas é percorrida — como os matchers são avaliados, quando o `continue` mantém um alerta em movimento e o que cada filho herda do seu pai — "por que esse alerta foi parar ali?" deixa de ser um jogo de adivinhação. Este post constrói esse modelo, e cada regra aqui corresponde ao que o [Alertmanager Route Tester](/alertmanager-route-tester) realmente faz quando percorre uma árvore com um alerta de exemplo.
+É isso que torna o roteamento do Alertmanager tão fácil de errar. Os receivers geralmente estão corretos. É na árvore de rotas que moram as surpresas. Quando você tem um modelo preciso de como a árvore de rotas é percorrida — como os matchers são avaliados, quando o `continue` mantém um alerta em movimento e o que cada filho herda do seu pai — "por que esse alerta foi parar ali?" deixa de ser um jogo de adivinhação. Este post constrói esse modelo, e cada regra aqui corresponde ao que o [Alertmanager Route Tester](/alertmanager-route-tester/) realmente faz quando percorre uma árvore com um alerta de exemplo.
 
 ## Roteamento é uma árvore, não uma lista
 
@@ -73,7 +73,7 @@ Dois detalhes confundem as pessoas o tempo todo:
 - **As regexes são totalmente ancoradas.** O Alertmanager envolve todo padrão `=~`, `!~` e `match_re` como `^(?:…)$`. Então `env=~"staging"` corresponde ao valor `staging` e a mais nada — `env=staging-eu` **não** corresponde. Você precisa escrever `env=~"staging-.*"` para cobrir o restante do valor. Essa é a causa mais frequente de "minha rota não corresponde a nada".
 - **Um label ausente é a string vazia.** O Alertmanager compara um label ausente como `""`. Então `foo=""` corresponde a um alerta que não tem nenhum label `foo`, e `foo!=""` exige que `foo` esteja presente e não vazio. Útil e, de vez em quando, surpreendente.
 
-Colocar esses labels no alerta em primeiro lugar é um trabalho à parte, que acontece no momento do scrape — se o label que seu matcher verifica nunca foi definido, rastreie de volta até a sua configuração de scrape com o [Prometheus Relabel Tester](/prometheus-relabel-tester) antes de culpar a árvore de rotas.
+Colocar esses labels no alerta em primeiro lugar é um trabalho à parte, que acontece no momento do scrape — se o label que seu matcher verifica nunca foi definido, rastreie de volta até a sua configuração de scrape com o [Prometheus Relabel Tester](/prometheus-relabel-tester/) antes de culpar a árvore de rotas.
 
 ![Ilustração: um alerta de entrada desce pela árvore de rotas do Alertmanager, da rota raiz para rotas filhas com matchers e continue: true, até cair na rota correspondente](/blog/in-content/how-alertmanager-routing-works.webp)
 
@@ -207,12 +207,12 @@ Percorrendo a árvore, em profundidade, em ordem:
 
 Resultado final: o alerta alcança **dois** receivers — `all-critical-audit` (via `continue`) e `web-team-pager` (o caminho principal). Mude `severity` para `warning` e o quadro muda: `all-critical-audit` sai de cena, e dentro de `web-team` o alerta cai em `web-team-slack`. Remova `service=web` e ele nunca entra naquela subárvore, caindo em `team-Y-mails` se `team=backend`, ou no `default-receiver` da raiz se nada corresponder.
 
-Se as suas próprias regras de alerta não estiverem disparando como você espera — labels errados, severidade errada, timing errado — isso é a montante do roteamento por completo; comprove a regra primeiro com o [AlertLint](/loki-alert-rule-tester) e depois rastreie onde a saída dela cai aqui.
+Se as suas próprias regras de alerta não estiverem disparando como você espera — labels errados, severidade errada, timing errado — isso é a montante do roteamento por completo; comprove a regra primeiro com o [AlertLint](/loki-alert-rule-tester/) e depois rastreie onde a saída dela cai aqui.
 
 ## Teste sua árvore
 
 Você pode fazer esse percurso à mão e, para uma árvore de três nós, vale a pena fazer uma vez para internalizar o modelo. Mas árvores reais aninham cinco níveis de profundidade, misturam `match`, `match_re` e `matchers`, e espalham `continue` entre os irmãos — e o custo de errar é um SEV-1 que não aciona ninguém, ou um warning rotineiro que acorda o time inteiro.
 
-Então torne barato verificar. Cole sua árvore de rotas e os labels de um alerta de exemplo no [Alertmanager Route Tester](/alertmanager-route-tester) e ele faz exatamente o percurso acima — inteiramente no seu navegador, sem nada enviado. Ele relata cada receiver que o alerta alcança na ordem de avaliação, o breadcrumb do caminho da rota desde a raiz até cada nó correspondente, uma marca em qualquer receiver alcançado apenas via `continue: true`, e o `group_by` efetivo após a herança. Ele reproduz a semântica que este post descreve: regexes ancoradas, label-ausente-como-string-vazia, primeira-correspondência-depois-`continue`, e herança por campo.
+Então torne barato verificar. Cole sua árvore de rotas e os labels de um alerta de exemplo no [Alertmanager Route Tester](/alertmanager-route-tester/) e ele faz exatamente o percurso acima — inteiramente no seu navegador, sem nada enviado. Ele relata cada receiver que o alerta alcança na ordem de avaliação, o breadcrumb do caminho da rota desde a raiz até cada nó correspondente, uma marca em qualquer receiver alcançado apenas via `continue: true`, e o `group_by` efetivo após a herança. Ele reproduz a semântica que este post descreve: regexes ancoradas, label-ausente-como-string-vazia, primeira-correspondência-depois-`continue`, e herança por campo.
 
 Na próxima vez que um alerta cair em um lugar inesperado, você não precisa disparar um de verdade e ficar observando. Cole a árvore, cole os labels e leia o caminho que ele de fato percorreu.

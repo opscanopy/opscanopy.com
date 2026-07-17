@@ -53,7 +53,7 @@ Wrapping the expression in quotes makes the YAML value a plain string. GitHub fi
 
 Rule of thumb: **in an `if:`, there are no `${{ }}` and no surrounding quotes.** Just the expression. The braces are for interpolating values into `run:`, `name:`, and `with:` — not for conditions.
 
-You can paste either of these into the [GitHub Actions Expression & Trigger Tester](/github-actions-expression-tester) and watch it flag the literal-text leak before you push — it warns on exactly this pattern (it's tracked as [actions/runner#1173](https://github.com/actions/runner/issues/1173), the most-reacted bug in the runner repo).
+You can paste either of these into the [GitHub Actions Expression & Trigger Tester](/github-actions-expression-tester/) and watch it flag the literal-text leak before you push — it warns on exactly this pattern (it's tracked as [actions/runner#1173](https://github.com/actions/runner/issues/1173), the most-reacted bug in the runner repo).
 
 ![A GitHub Actions if condition that is always true because it returns a truthy string, next to the corrected boolean expression](/blog/github-actions-if-condition-always-true-diagram.svg)
 
@@ -194,8 +194,8 @@ Remember both `contains` and `startsWith` do string comparison case-insensitivel
 
 The reason these bugs are so persistent is the feedback loop: the only way to "test" a condition has traditionally been to commit, push, and read the logs — then guess, edit, and push again. Every wrong guess is a round-trip.
 
-The [GitHub Actions Expression & Trigger Tester](/github-actions-expression-tester) closes that loop. Paste your `if:` expression, set a mock `github` / `env` / `steps` / `needs` context, and see the evaluated result with GitHub's exact operator, coercion, and case-insensitivity rules — plus an explicit warning when you've left literal text outside `${{ }}` and accidentally built an always-truthy condition. It runs entirely in your browser; nothing about your workflow is uploaded.
+The [GitHub Actions Expression & Trigger Tester](/github-actions-expression-tester/) closes that loop. Paste your `if:` expression, set a mock `github` / `env` / `steps` / `needs` context, and see the evaluated result with GitHub's exact operator, coercion, and case-insensitivity rules — plus an explicit warning when you've left literal text outside `${{ }}` and accidentally built an always-truthy condition. It runs entirely in your browser; nothing about your workflow is uploaded.
 
 If you've ever shipped an `if:` and hoped it would skip, this is the check that tells you before the runner does.
 
-[Try the GitHub Actions Expression & Trigger Tester →](/github-actions-expression-tester)
+[Try the GitHub Actions Expression & Trigger Tester →](/github-actions-expression-tester/)

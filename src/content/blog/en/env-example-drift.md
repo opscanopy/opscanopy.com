@@ -110,4 +110,4 @@ The fastest way to know your example file is honest is to diff it against your a
 
 Before your next pull request, give the next developer a `.env.example` they can actually trust.
 
-[Check your .env.example for drift →](/env-example-checker)
+[Check your .env.example for drift →](/env-example-checker/)

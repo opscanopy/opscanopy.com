@@ -55,7 +55,7 @@ Envelopper l'expression entre guillemets transforme la valeur YAML en une simple
 
 Règle empirique : **dans un `if:`, il n'y a ni `${{ }}` ni guillemets autour.** Juste l'expression. Les accolades servent à interpoler des valeurs dans `run:`, `name:` et `with:` — pas dans les conditions.
 
-Vous pouvez coller n'importe lequel de ces exemples dans le [Testeur d'expressions et de déclencheurs GitHub Actions](/github-actions-expression-tester) et le voir signaler la fuite de texte littéral avant que vous ne poussiez — il avertit précisément sur ce schéma (il est répertorié sous [actions/runner#1173](https://github.com/actions/runner/issues/1173), le bug le plus réagi du dépôt du runner).
+Vous pouvez coller n'importe lequel de ces exemples dans le [Testeur d'expressions et de déclencheurs GitHub Actions](/github-actions-expression-tester/) et le voir signaler la fuite de texte littéral avant que vous ne poussiez — il avertit précisément sur ce schéma (il est répertorié sous [actions/runner#1173](https://github.com/actions/runner/issues/1173), le bug le plus réagi du dépôt du runner).
 
 ![Une condition if GitHub Actions qui est toujours vraie parce qu'elle renvoie une chaîne truthy, à côté de l'expression booléenne corrigée](/blog/github-actions-if-condition-always-true-diagram.svg)
 
@@ -196,8 +196,8 @@ Souvenez-vous que `contains` comme `startsWith` effectuent une comparaison de ch
 
 La raison pour laquelle ces bugs sont si tenaces, c'est la boucle de rétroaction : la seule façon de « tester » une condition a traditionnellement consisté à commiter, pousser et lire les logs — puis à deviner, modifier et pousser de nouveau. Chaque mauvaise supposition est un aller-retour.
 
-Le [Testeur d'expressions et de déclencheurs GitHub Actions](/github-actions-expression-tester) referme cette boucle. Collez votre expression `if:`, définissez un contexte fictif `github` / `env` / `steps` / `needs`, et observez le résultat évalué avec les règles exactes de GitHub en matière d'opérateurs, de conversion et d'insensibilité à la casse — ainsi qu'un avertissement explicite lorsque vous avez laissé du texte littéral en dehors de `${{ }}` et accidentellement construit une condition toujours truthy. Tout s'exécute entièrement dans votre navigateur ; rien de votre workflow n'est téléversé.
+Le [Testeur d'expressions et de déclencheurs GitHub Actions](/github-actions-expression-tester/) referme cette boucle. Collez votre expression `if:`, définissez un contexte fictif `github` / `env` / `steps` / `needs`, et observez le résultat évalué avec les règles exactes de GitHub en matière d'opérateurs, de conversion et d'insensibilité à la casse — ainsi qu'un avertissement explicite lorsque vous avez laissé du texte littéral en dehors de `${{ }}` et accidentellement construit une condition toujours truthy. Tout s'exécute entièrement dans votre navigateur ; rien de votre workflow n'est téléversé.
 
 Si vous avez déjà livré un `if:` en espérant qu'il sauterait l'étape, voici la vérification qui vous le dit avant que le runner ne le fasse.
 
-[Essayez le Testeur d'expressions et de déclencheurs GitHub Actions →](/github-actions-expression-tester)
+[Essayez le Testeur d'expressions et de déclencheurs GitHub Actions →](/github-actions-expression-tester/)

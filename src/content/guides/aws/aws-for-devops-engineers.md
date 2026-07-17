@@ -25,7 +25,7 @@ faqs:
     a: "Security groups are stateful, instance-level allow rules; network ACLs are stateless, subnet-level allow/deny rules. Use security groups for most cases and NACLs for coarse subnet controls."
 ---
 
-A focused, interview-ready guide built for a developer moving into DevOps. Depth on the services that actually show up in DevOps work and interviews — not all 200+ AWS offerings. This guide covers Regions and AZs, IAM, EC2, Lambda, containers, VPC networking, S3/EBS/EFS storage, RDS and DynamoDB, the AWS CLI, and cost and security guardrails. See the [AWS roadmap](/learn/roadmaps/aws) for a structured learning path through certifications and deeper specialisations.
+A focused, interview-ready guide built for a developer moving into DevOps. Depth on the services that actually show up in DevOps work and interviews — not all 200+ AWS offerings. This guide covers Regions and AZs, IAM, EC2, Lambda, containers, VPC networking, S3/EBS/EFS storage, RDS and DynamoDB, the AWS CLI, and cost and security guardrails. See the [AWS roadmap](/learn/roadmaps/aws/) for a structured learning path through certifications and deeper specialisations.
 
 ## AWS Fundamentals
 
@@ -475,7 +475,7 @@ First, separate two things: the **orchestrator** (decides where containers run, 
 
 ## Networking — VPC and Friends
 
-Networking is where a lot of DevOps engineers get stuck — and where interviewers love to probe. The good news: you already know networking basics (IPs, CIDR, routing). AWS just gives you software-defined versions of the same physical concepts. For a deeper treatment of subnets, CIDR design, and routing, see [Networking for DevOps](/learn/guides/networking-for-devops).
+Networking is where a lot of DevOps engineers get stuck — and where interviewers love to probe. The good news: you already know networking basics (IPs, CIDR, routing). AWS just gives you software-defined versions of the same physical concepts. For a deeper treatment of subnets, CIDR design, and routing, see [Networking for DevOps](/learn/guides/networking-for-devops/).
 
 <figure class="dgm" role="img" aria-label="VPC layout: public subnet containing an Internet Gateway and NAT Gateway, private subnet containing an EC2 instance, with traffic-flow arrows">
 <svg viewBox="0 0 680 310" width="680" height="310" xmlns="http://www.w3.org/2000/svg">
@@ -530,7 +530,7 @@ Networking is where a lot of DevOps engineers get stuck — and where interviewe
 
 ### VPC (Virtual Private Cloud)
 
-A VPC is your own isolated virtual network inside AWS. Nothing outside it can reach in unless you explicitly allow it. You define its IP range using a **CIDR block**, e.g. `10.0.0.0/16` — that gives you ~65,536 private IP addresses to carve up. Size your VPC subnets with the [Subnet Calculator](/subnet-calculator) and validate CIDR ranges with the [CIDR Checker](/cidr-checker).
+A VPC is your own isolated virtual network inside AWS. Nothing outside it can reach in unless you explicitly allow it. You define its IP range using a **CIDR block**, e.g. `10.0.0.0/16` — that gives you ~65,536 private IP addresses to carve up. Size your VPC subnets with the [Subnet Calculator](/subnet-calculator/) and validate CIDR ranges with the [CIDR Checker](/cidr-checker/).
 
 ### CIDR Blocks — Quick Refresher
 
@@ -1099,4 +1099,4 @@ aws s3control put-public-access-block \
 
 ---
 
-Running containers on AWS? Continue with [Kubernetes for DevOps](/learn/guides/kubernetes-for-devops).
+Running containers on AWS? Continue with [Kubernetes for DevOps](/learn/guides/kubernetes-for-devops/).

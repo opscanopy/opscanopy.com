@@ -121,4 +121,4 @@ El método de dentro hacia afuera funciona en toda expresión de PromQL que te e
 
 La próxima vez que un panel de un dashboard o una regla de alerta te deje entrecerrando los ojos, no lo adivines.
 
-[Explica una consulta de PromQL →](/promql-explainer)
+[Explica una consulta de PromQL →](/promql-explainer/)

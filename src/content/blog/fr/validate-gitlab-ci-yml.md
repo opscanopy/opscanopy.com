@@ -52,7 +52,7 @@ deploy:
   script: ./deploy.sh
 ```
 
-Un YAML valide ne représente que la moitié du travail. Le [GitLab CI Validator](/gitlab-ci-validator) vérifie les deux en une seule passe : il analyse d'abord le YAML, et ce n'est que si cette étape réussit qu'il exécute les contrôles structurels sur vos jobs. Si l'analyse échoue, vous obtenez une unique erreur avec un numéro de ligne, et rien d'autre — inutile de signaler un « stage non défini » sur un document qui ne s'est même pas analysé.
+Un YAML valide ne représente que la moitié du travail. Le [GitLab CI Validator](/gitlab-ci-validator/) vérifie les deux en une seule passe : il analyse d'abord le YAML, et ce n'est que si cette étape réussit qu'il exécute les contrôles structurels sur vos jobs. Si l'analyse échoue, vous obtenez une unique erreur avec un numéro de ligne, et rien d'autre — inutile de signaler un « stage non défini » sur un document qui ne s'est même pas analysé.
 
 ![Illustration : un .gitlab-ci.yml lumineux analysé par des outils de CI lint, yamllint et les vérifications de l'éditeur, avec des verdicts OK ou erreur qui convergent vers un draft merge request](/blog/in-content/validate-gitlab-ci-yml.webp)
 
@@ -81,7 +81,7 @@ Un validateur dans le navigateur analyse le fichier avec un véritable lecteur Y
 
 ## Les erreurs structurelles que GitLab détecte trop tard : stages non définis, jobs sans script, needs/extends erronés
 
-Ce sont celles qui vous font attendre un runner pour finalement vous annoncer que le pipeline n'a jamais démarré. Ce sont la vraie raison de valider la CI GitLab avant de pousser. Le validateur modélise les règles de la [référence des mots-clés `.gitlab-ci.yml`](/gitlab-ci-validator) de GitLab et signale chacune d'elles avec le job fautif, la ligne et la correction.
+Ce sont celles qui vous font attendre un runner pour finalement vous annoncer que le pipeline n'a jamais démarré. Ce sont la vraie raison de valider la CI GitLab avant de pousser. Le validateur modélise les règles de la [référence des mots-clés `.gitlab-ci.yml`](/gitlab-ci-validator/) de GitLab et signale chacune d'elles avec le job fautif, la ligne et la correction.
 
 ![Le déroulé d'un pipeline de validation : coller le .gitlab-ci.yml, analyser le YAML, exécuter les contrôles structurels, puis afficher « valide » ou une liste d'erreurs](/blog/validate-gitlab-ci-yml-diagram.svg)
 
@@ -150,7 +150,7 @@ Alors que vérifie réellement un validateur dans le navigateur ? D'après le mo
 
 Pour être honnête : un résultat propre dans le navigateur offre une forte confiance avant le push sur le plan de *la structure et de la syntaxe*. Il détecte toute la catégorie d'erreurs qui font échouer un pipeline avant même qu'un job ne s'exécute. Pour une certitude absolue sur une configuration qui utilise `include:` ou des variables de projet, confirmez avec le CI Lint de GitLab une fois que vous avez poussé sur un projet — mais servez-vous de la passe dans le navigateur pour faire en sorte que ce push compte.
 
-Si vous utilisez aussi GitHub Actions, la même idée s'applique : le [GitHub Actions Validator](/github-actions-validator) repère les problèmes YAML et de sécurité dans vos fichiers de workflow, et le [GitHub Actions Expression Tester](/github-actions-expression-tester) évalue ces expressions `${{ … }}` avant que vous ne poussiez.
+Si vous utilisez aussi GitHub Actions, la même idée s'applique : le [GitHub Actions Validator](/github-actions-validator/) repère les problèmes YAML et de sécurité dans vos fichiers de workflow, et le [GitHub Actions Expression Tester](/github-actions-expression-tester/) évalue ces expressions `${{ … }}` avant que vous ne poussiez.
 
 ## Intégrez-le à votre workflow
 
@@ -181,6 +181,6 @@ $ git push                        # green on the first try
 
 ## Validez-le maintenant
 
-La prochaine fois que vous toucherez à `.gitlab-ci.yml`, ne laissez pas le runner être le premier à le lire. Collez le fichier dans le [GitLab CI Validator](/gitlab-ci-validator) et vous obtiendrez les erreurs YAML et les erreurs structurelles — stages non définis, jobs sans script, `needs`/`extends` cassés, `when:` invalide — en une seule passe, avec la ligne et la correction pour chacune. Tout s'exécute entièrement dans votre navigateur : aucun projet, aucune connexion et rien n'est téléversé, l'outil est donc sûr pour les pipelines internes.
+La prochaine fois que vous toucherez à `.gitlab-ci.yml`, ne laissez pas le runner être le premier à le lire. Collez le fichier dans le [GitLab CI Validator](/gitlab-ci-validator/) et vous obtiendrez les erreurs YAML et les erreurs structurelles — stages non définis, jobs sans script, `needs`/`extends` cassés, `when:` invalide — en une seule passe, avec la ligne et la correction pour chacune. Tout s'exécute entièrement dans votre navigateur : aucun projet, aucune connexion et rien n'est téléversé, l'outil est donc sûr pour les pipelines internes.
 
 Si vous avez déjà poussé une modification de CI en espérant qu'elle fonctionne, c'est l'étape qui vous manquait.

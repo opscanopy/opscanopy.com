@@ -139,7 +139,7 @@ on:
       - 'release/**'
 ```
 
-E `pull_request` vindo de um fork é restrito: o PR de um colaborador de primeira viagem pode exigir aprovação manual antes que qualquer workflow rode, o que parece idêntico a "não foi acionado". Se você mudou para `pull_request_target` para contornar as restrições de fork, observe que ele lê o workflow e os gatilhos a partir da versão do arquivo da branch **base** — e carrega um risco de segurança real, abordado no nosso post sobre [erros de segurança no GitHub Actions](/blog/github-actions-security-misconfigurations).
+E `pull_request` vindo de um fork é restrito: o PR de um colaborador de primeira viagem pode exigir aprovação manual antes que qualquer workflow rode, o que parece idêntico a "não foi acionado". Se você mudou para `pull_request_target` para contornar as restrições de fork, observe que ele lê o workflow e os gatilhos a partir da versão do arquivo da branch **base** — e carrega um risco de segurança real, abordado no nosso post sobre [erros de segurança no GitHub Actions](/blog/github-actions-security-misconfigurations/).
 
 ## Uma folha de cola de filtros para copiar e colar
 
@@ -171,4 +171,4 @@ O **Testador de Expressões e Gatilhos do GitHub Actions** fecha esse ciclo. Col
 
 Veja exatamente quais jobs rodam antes de enviar, não depois.
 
-[Abra o Testador de Expressões e Gatilhos do GitHub Actions →](/github-actions-expression-tester)
+[Abra o Testador de Expressões e Gatilhos do GitHub Actions →](/github-actions-expression-tester/)

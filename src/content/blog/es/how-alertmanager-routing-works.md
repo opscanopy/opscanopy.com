@@ -14,7 +14,7 @@ relatedTool:
 
 Anoche se disparó una alerta `severity=critical` y al equipo de guardia nunca le llegó el aviso. La alerta era real, el receiver existía, el webhook de Slack funcionaba. El problema estaba tres líneas más arriba en la configuración: una ruta catch-all demasiado amplia se situaba por encima de la ruta del equipo y se tragaba en silencio todo lo que llegaba hasta ella. Nadie tocó el receiver — tocaron el orden.
 
-Eso es lo que hace que el enrutamiento de Alertmanager sea fácil de equivocar. Los receivers suelen estar bien. Es en el árbol de rutas donde viven las sorpresas. Una vez que tienes un modelo preciso de cómo se recorre el árbol de rutas — cómo se evalúan los matchers, cuándo `continue` mantiene a una alerta en movimiento y qué hereda cada hijo de su padre — la pregunta "¿por qué fue esta alerta ahí?" deja de ser un juego de adivinanzas. Este post construye ese modelo, y cada regla que aparece aquí coincide con lo que el [Alertmanager Route Tester](/alertmanager-route-tester) hace realmente cuando recorre un árbol frente a una alerta de ejemplo.
+Eso es lo que hace que el enrutamiento de Alertmanager sea fácil de equivocar. Los receivers suelen estar bien. Es en el árbol de rutas donde viven las sorpresas. Una vez que tienes un modelo preciso de cómo se recorre el árbol de rutas — cómo se evalúan los matchers, cuándo `continue` mantiene a una alerta en movimiento y qué hereda cada hijo de su padre — la pregunta "¿por qué fue esta alerta ahí?" deja de ser un juego de adivinanzas. Este post construye ese modelo, y cada regla que aparece aquí coincide con lo que el [Alertmanager Route Tester](/alertmanager-route-tester/) hace realmente cuando recorre un árbol frente a una alerta de ejemplo.
 
 ## El enrutamiento es un árbol, no una lista
 
@@ -73,7 +73,7 @@ Hay dos detalles que confunden constantemente a la gente:
 - **Las regexes están totalmente ancladas.** Alertmanager envuelve cada patrón `=~`, `!~` y `match_re` como `^(?:…)$`. Así que `env=~"staging"` coincide con el valor `staging` y nada más — `env=staging-eu` **no** coincide. Tienes que escribir `env=~"staging-.*"` para cubrir el resto del valor. Esta es la causa más frecuente de "mi ruta no coincide con nada".
 - **Una label ausente es la cadena vacía.** Alertmanager compara una label ausente como `""`. Así que `foo=""` coincide con una alerta que no tiene ninguna label `foo`, y `foo!=""` exige que `foo` esté presente y no vacía. Útil, y a veces sorprendente.
 
-Conseguir que esas labels lleguen a la alerta en primer lugar es una tarea aparte que ocurre en el momento del scrape — si la label que comprueba tu matcher nunca se asignó, rastréala hasta tu configuración de scrape con el [Prometheus Relabel Tester](/prometheus-relabel-tester) antes de echarle la culpa al árbol de rutas.
+Conseguir que esas labels lleguen a la alerta en primer lugar es una tarea aparte que ocurre en el momento del scrape — si la label que comprueba tu matcher nunca se asignó, rastréala hasta tu configuración de scrape con el [Prometheus Relabel Tester](/prometheus-relabel-tester/) antes de echarle la culpa al árbol de rutas.
 
 ![Ilustración: una alerta entrante desciende por el árbol de rutas de Alertmanager desde la ruta raíz hacia rutas hijas con matchers y continue: true, hasta aterrizar en la ruta coincidente](/blog/in-content/how-alertmanager-routing-works.webp)
 
@@ -207,12 +207,12 @@ Recorriendo el árbol, en profundidad y en orden:
 
 Resultado final: la alerta llega a **dos** receivers — `all-critical-audit` (vía `continue`) y `web-team-pager` (la ruta principal). Cambia `severity` a `warning` y el panorama cambia: `all-critical-audit` queda fuera, y dentro de `web-team` la alerta cae en `web-team-slack` en su lugar. Quita `service=web` y nunca entra en ese subárbol, cayendo hasta `team-Y-mails` si `team=backend`, o hasta el `default-receiver` de la raíz si nada coincide.
 
-Si tus propias reglas de alerta no se están disparando como esperas — labels equivocadas, severidad equivocada, momento equivocado — eso está aguas arriba del enrutamiento por completo; comprueba primero la regla con [AlertLint](/loki-alert-rule-tester), y luego traza dónde aterriza su salida aquí.
+Si tus propias reglas de alerta no se están disparando como esperas — labels equivocadas, severidad equivocada, momento equivocado — eso está aguas arriba del enrutamiento por completo; comprueba primero la regla con [AlertLint](/loki-alert-rule-tester/), y luego traza dónde aterriza su salida aquí.
 
 ## Pon a prueba tu árbol
 
 Puedes hacer este recorrido a mano, y para un árbol de tres nodos vale la pena hacerlo una vez para interiorizar el modelo. Pero los árboles reales se anidan cinco niveles de profundidad, mezclan `match`, `match_re` y `matchers`, y reparten `continue` entre los hermanos — y el coste de equivocarse es un SEV-1 que no avisa a nadie, o un warning rutinario que despierta a todo el equipo.
 
-Así que haz que comprobarlo sea barato. Pega tu árbol de rutas y las labels de una alerta de ejemplo en el [Alertmanager Route Tester](/alertmanager-route-tester) y hará exactamente el recorrido de arriba — íntegramente en tu navegador, sin subir nada. Informa de cada receiver al que llega la alerta en orden de evaluación, la miga de pan de la ruta desde la raíz hasta cada nodo coincidente, una etiqueta en cualquier receiver alcanzado solo vía `continue: true`, y el `group_by` efectivo tras la herencia. Reproduce la semántica que describe este post: regexes ancladas, label-ausente-como-cadena-vacía, primera-coincidencia-luego-`continue`, y herencia por campo.
+Así que haz que comprobarlo sea barato. Pega tu árbol de rutas y las labels de una alerta de ejemplo en el [Alertmanager Route Tester](/alertmanager-route-tester/) y hará exactamente el recorrido de arriba — íntegramente en tu navegador, sin subir nada. Informa de cada receiver al que llega la alerta en orden de evaluación, la miga de pan de la ruta desde la raíz hasta cada nodo coincidente, una etiqueta en cualquier receiver alcanzado solo vía `continue: true`, y el `group_by` efectivo tras la herencia. Reproduce la semántica que describe este post: regexes ancladas, label-ausente-como-cadena-vacía, primera-coincidencia-luego-`continue`, y herencia por campo.
 
 La próxima vez que una alerta aterrice en un lugar inesperado, no tendrás que disparar una de verdad y quedarte mirando. Pega el árbol, pega las labels, y lee la ruta que realmente tomó.

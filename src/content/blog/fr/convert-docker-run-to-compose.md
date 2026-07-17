@@ -14,7 +14,7 @@ relatedTool:
 
 Vous avez démarré un conteneur avec une rapide ligne `docker run` pendant une session de débogage. Ça a marché. Maintenant quelqu'un veut le voir dans le dépôt, relisible dans une PR, démarrable en une seule commande — et vous vous retrouvez avec une ligne unique de 200 caractères, truffée de `-p`, de trois montages `-v`, d'une demi-douzaine de drapeaux `-e` et d'une politique `--restart` qu'il faut désormais convertir en `docker-compose.yml`. C'est le moment où la plupart des gens ouvrent la documentation et commencent à traduire à la main, et c'est exactement là que des drapeaux passent à la trappe, que des ports sont mal mis entre guillemets et que des listes se retrouvent mal imbriquées.
 
-Ce guide explique comment convertir une commande `docker run` en `docker-compose.yml` drapeau par drapeau, y compris les pièges qui vous mordent quand vous le faites à la main. Chaque correspondance présentée ici reflète ce que le [convertisseur Docker Run to Compose](/docker-run-to-compose) produit réellement, vous pouvez donc lire les règles puis coller votre commande dans l'outil pour éviter la partie mécanique.
+Ce guide explique comment convertir une commande `docker run` en `docker-compose.yml` drapeau par drapeau, y compris les pièges qui vous mordent quand vous le faites à la main. Chaque correspondance présentée ici reflète ce que le [convertisseur Docker Run to Compose](/docker-run-to-compose/) produit réellement, vous pouvez donc lire les règles puis coller votre commande dans l'outil pour éviter la partie mécanique.
 
 ## Pourquoi passer de docker run à Compose
 
@@ -117,7 +117,7 @@ env_file:
   - .env
 ```
 
-Quand vous déplacez l'environnement de la ligne de commande vers des fichiers, il vaut la peine de vérifier que vos `.env` et `.env.example` n'ont pas divergé — l'[Env Example Checker](/env-example-checker) signale les clés présentes dans l'un mais pas dans l'autre, pour qu'une variable manquante ne se manifeste pas sous forme d'erreur à l'exécution.
+Quand vous déplacez l'environnement de la ligne de commande vers des fichiers, il vaut la peine de vérifier que vos `.env` et `.env.example` n'ont pas divergé — l'[Env Example Checker](/env-example-checker/) signale les clés présentes dans l'un mais pas dans l'autre, pour qu'une variable manquante ne se manifeste pas sous forme d'erreur à l'exécution.
 
 ### --restart, --name, -w, -u
 
@@ -185,7 +185,7 @@ mem_limit: 256m
 cpus: "1.5"
 ```
 
-Ce sont les limites de style v2 que Compose respecte directement. Lorsque vous finirez par migrer ce conteneur vers Kubernetes, ces chiffres deviendront les requests et limits du pod — le [Kubernetes Resource Calculator](/kubernetes-resource-calculator) transforme une valeur de mémoire et de CPU en valeurs `requests`/`limits` sûres, pour que vous n'ayez pas à deviner la conversion.
+Ce sont les limites de style v2 que Compose respecte directement. Lorsque vous finirez par migrer ce conteneur vers Kubernetes, ces chiffres deviendront les requests et limits du pod — le [Kubernetes Resource Calculator](/kubernetes-resource-calculator/) transforme une valeur de mémoire et de CPU en valeurs `requests`/`limits` sûres, pour que vous n'ayez pas à deviner la conversion.
 
 ### Les drapeaux sans équivalent Compose
 
@@ -250,7 +250,7 @@ volumes:
   pgdata:
 ```
 
-**Précédence de l'environnement.** Si vous utilisez à la fois `environment` et `env_file`, les valeurs définies en ligne dans `environment` l'emportent sur la même clé d'un fichier d'environnement. Et ni l'un ni l'autre ne remplace une variable déjà définie dans le shell au moment où vous lancez `docker compose up`, à moins que vous ne la référenciez. Gardez les secrets hors de `environment:` (qui est versionné) et dans `env_file:` (ignoré par git) — et vérifiez les clés du fichier avec l'[Env Example Checker](/env-example-checker) avant de livrer.
+**Précédence de l'environnement.** Si vous utilisez à la fois `environment` et `env_file`, les valeurs définies en ligne dans `environment` l'emportent sur la même clé d'un fichier d'environnement. Et ni l'un ni l'autre ne remplace une variable déjà définie dans le shell au moment où vous lancez `docker compose up`, à moins que vous ne la référenciez. Gardez les secrets hors de `environment:` (qui est versionné) et dans `env_file:` (ignoré par git) — et vérifiez les clés du fichier avec l'[Env Example Checker](/env-example-checker/) avant de livrer.
 
 **Modes réseau host et none.** Comme indiqué plus haut, `--network host` et `--network none` ne sont pas des réseaux — ce sont des modes. Mettre `host` dans une liste `networks:` est invalide ; il faut `network_mode: host`. C'est le genre de chose facile à manquer à la main, parce que l'orthographe du drapeau est identique à un `--network backend` normal.
 
@@ -260,6 +260,6 @@ volumes:
 
 Les règles ci-dessus sont tout ce dont vous avez besoin pour faire ça à la main. Mais la conversion manuelle est exactement l'endroit où un drapeau passe à la trappe, où un port perd ses guillemets, ou où `--network host` finit dans la mauvaise clé — et vous ne le découvrez que lorsque le conteneur se comporte différemment de la commande d'origine.
 
-Le [convertisseur Docker Run to Compose](/docker-run-to-compose) fait la traduction mécanique à votre place. Il découpe la commande en jetons comme le ferait un shell — en respectant les guillemets, les drapeaux courts groupés comme `-it` et les continuations antislash-saut de ligne —, fait correspondre chaque drapeau à la clé Compose adéquate, et produit un YAML déterministe. Les drapeaux sans équivalent (`--rm`, `-d`) reviennent sous forme d'avertissements au lieu de disparaître en silence, de sorte que rien ne s'évapore sans que vous le sachiez. Il fonctionne aussi en sens inverse : collez un service Compose et récupérez une ligne `docker run` équivalente.
+Le [convertisseur Docker Run to Compose](/docker-run-to-compose/) fait la traduction mécanique à votre place. Il découpe la commande en jetons comme le ferait un shell — en respectant les guillemets, les drapeaux courts groupés comme `-it` et les continuations antislash-saut de ligne —, fait correspondre chaque drapeau à la clé Compose adéquate, et produit un YAML déterministe. Les drapeaux sans équivalent (`--rm`, `-d`) reviennent sous forme d'avertissements au lieu de disparaître en silence, de sorte que rien ne s'évapore sans que vous le sachiez. Il fonctionne aussi en sens inverse : collez un service Compose et récupérez une ligne `docker run` équivalente.
 
 Tout se passe dans votre navigateur, vous pouvez donc coller des commandes qui nomment des registres privés ou qui transportent des valeurs `-e` porteuses de secrets sans que rien ne quitte l'onglet. Collez votre commande, lisez les avertissements et committez le résultat.

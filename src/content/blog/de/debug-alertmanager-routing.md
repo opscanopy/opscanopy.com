@@ -117,7 +117,7 @@ route:
 
 Alle Matcher einer Route müssen halten, damit sie matcht — es ist ein logisches UND. Ein Alert mit `env=staging-eu` und `severity=warning` erreicht `staging-slack`: Das verankerte `staging-.*` matcht und `severity` ist nicht `info`. Ändere `severity` auf `info`, und der zweite Matcher schlägt fehl, sodass die gesamte Route übersprungen wird.
 
-Wenn deine Alert-Regeln von vornherein die falschen Labels tragen — oder die fehlen, auf die deine Routes matchen — behebe das weiter oben in der Kette. Der [Prometheus Relabel Tester](/prometheus-relabel-tester) zeigt dir genau, welche Labels deine relabel_configs überleben, bevor sie überhaupt den Routing-Baum erreichen.
+Wenn deine Alert-Regeln von vornherein die falschen Labels tragen — oder die fehlen, auf die deine Routes matchen — behebe das weiter oben in der Kette. Der [Prometheus Relabel Tester](/prometheus-relabel-tester/) zeigt dir genau, welche Labels deine relabel_configs überleben, bevor sie überhaupt den Routing-Baum erreichen.
 
 ![Synthwave-Illustration zum Debuggen des Alertmanager-Routings: Ein Alert fährt einen neonfarbenen Routing-Baum entlang durch ein First-Match-Wins-Tor, vorbei an den klassischen Fallen — fehlendes continue, Matcher-Regex, Catch-all-Defaults](/blog/in-content/debug-alertmanager-routing.webp)
 
@@ -256,10 +256,10 @@ Mach das für die obigen Labels gegen den Docs-Baum, und du landest über `servi
 
 ## Finde jetzt den matchenden Receiver: ein Alertmanager-Route-Debugger im Browser
 
-Wenn der Baum mehr als ein paar Knoten hat, lauf ihn mit dem [Alertmanager Route Tester](/alertmanager-route-tester) durch statt im Kopf. Füge deinen Routing-Baum ein — einen nackten `route:`-Block oder eine vollständige `alertmanager.yml`, von der nur der `route`-Block gelesen wird — und die Labels des Beispiel-Alerts, ein `key=value` pro Zeile. Er reproduziert die Semantik exakt: first-match-wins, `continue: true`-Fan-out, verankerte Regexes, fehlendes-Label-als-leerer-String und Grouping-Vererbung.
+Wenn der Baum mehr als ein paar Knoten hat, lauf ihn mit dem [Alertmanager Route Tester](/alertmanager-route-tester/) durch statt im Kopf. Füge deinen Routing-Baum ein — einen nackten `route:`-Block oder eine vollständige `alertmanager.yml`, von der nur der `route`-Block gelesen wird — und die Labels des Beispiel-Alerts, ein `key=value` pro Zeile. Er reproduziert die Semantik exakt: first-match-wins, `continue: true`-Fan-out, verankerte Regexes, fehlendes-Label-als-leerer-String und Grouping-Vererbung.
 
 Zurück bekommst du jeden Receiver, den der Alert erreicht, in Auswertungsreihenfolge, jeweils mit seinem Route-Pfad als Breadcrumb von der Wurzel hinab zum gematchten Knoten, einem Tag für jeden Match, der nur über `continue` erreicht wurde, und dem effektiven `group_by` nach Vererbung. Es ist ein Trockenlauf des Dispatchs — es wird keine Benachrichtigung versendet, nichts wird hochgeladen, und alles läuft in deinem Browser, sodass du gefahrlos interne Receiver-Namen und private Team-Labels einfügen kannst.
 
-Sobald die Labels an der Quelle mit dem [Prometheus Relabel Tester](/prometheus-relabel-tester) als korrekt bestätigt sind und nachgewiesen ist, dass deine Regeln mit [AlertLint](/loki-alert-rule-tester) feuern, ist der Routing-Baum der letzte Hop, den es richtig zu machen gilt. Lauf ihn durch, bevor er irgendjemanden paged — und beim nächsten Mal, wenn ein Alert den falschen Receiver erreicht, wirst du wissen, welcher Knoten ihn dorthin geschickt hat.
+Sobald die Labels an der Quelle mit dem [Prometheus Relabel Tester](/prometheus-relabel-tester/) als korrekt bestätigt sind und nachgewiesen ist, dass deine Regeln mit [AlertLint](/loki-alert-rule-tester/) feuern, ist der Routing-Baum der letzte Hop, den es richtig zu machen gilt. Lauf ihn durch, bevor er irgendjemanden paged — und beim nächsten Mal, wenn ein Alert den falschen Receiver erreicht, wirst du wissen, welcher Knoten ihn dorthin geschickt hat.
 
-[Öffne den Alertmanager Route Tester →](/alertmanager-route-tester)
+[Öffne den Alertmanager Route Tester →](/alertmanager-route-tester/)

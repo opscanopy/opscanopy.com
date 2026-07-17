@@ -117,7 +117,7 @@ route:
 
 Todos os matchers de uma rota precisam se sustentar para que ela case — é um E lógico. Um alerta com `env=staging-eu` e `severity=warning` chega em `staging-slack`: o `staging-.*` ancorado casa e `severity` não é `info`. Mude `severity` para `info` e o segundo matcher falha, então a rota inteira é pulada.
 
-Se as suas regras de alerta carregam os labels errados já de início — ou estão sem os labels que as suas rotas usam para casar — corrija isso na origem. O [Prometheus Relabel Tester](/prometheus-relabel-tester) mostra uma prévia exata de quais labels sobrevivem às suas regras de relabel antes mesmo de chegarem à árvore de rotas.
+Se as suas regras de alerta carregam os labels errados já de início — ou estão sem os labels que as suas rotas usam para casar — corrija isso na origem. O [Prometheus Relabel Tester](/prometheus-relabel-tester/) mostra uma prévia exata de quais labels sobrevivem às suas regras de relabel antes mesmo de chegarem à árvore de rotas.
 
 ![Ilustração synthwave da depuração do roteamento do Alertmanager: um alerta percorre uma árvore de rotas neon através de um portão first-match-wins, passando pelas armadilhas clássicas — continue ausente, regex de matcher, defaults catch-all](/blog/in-content/debug-alertmanager-routing.webp)
 
@@ -256,10 +256,10 @@ Faça isso para os labels acima contra a árvore da documentação e você cai e
 
 ## Encontre o receiver correspondente agora: um depurador de rotas do Alertmanager no navegador
 
-Quando a árvore tem mais do que alguns nós, percorra-a com o [Alertmanager Route Tester](/alertmanager-route-tester) em vez de fazer isso de cabeça. Cole a sua árvore de rotas — um bloco `route:` isolado ou um `alertmanager.yml` completo, do qual apenas o bloco `route` é lido — e os labels do alerta de exemplo, um `key=value` por linha. Ele reproduz a semântica exatamente: primeiro-match-vence, fan-out com `continue: true`, regexes ancorados, label-ausente-como-string-vazia e herança de agrupamento.
+Quando a árvore tem mais do que alguns nós, percorra-a com o [Alertmanager Route Tester](/alertmanager-route-tester/) em vez de fazer isso de cabeça. Cole a sua árvore de rotas — um bloco `route:` isolado ou um `alertmanager.yml` completo, do qual apenas o bloco `route` é lido — e os labels do alerta de exemplo, um `key=value` por linha. Ele reproduz a semântica exatamente: primeiro-match-vence, fan-out com `continue: true`, regexes ancorados, label-ausente-como-string-vazia e herança de agrupamento.
 
 O que você recebe de volta é todo receiver que o alerta alcança, em ordem de avaliação, cada um com o seu breadcrumb de caminho de rota da raiz até o nó que casou, uma tag em qualquer match alcançado somente via `continue`, e o `group_by` efetivo após a herança. É um dry run do despacho — nenhuma notificação é enviada, nada é enviado para fora, e tudo roda no seu navegador, então você pode colar com segurança nomes internos de receivers e labels privados de times.
 
-Uma vez que os labels estejam confirmados como corretos na origem com o [Prometheus Relabel Tester](/prometheus-relabel-tester) e as suas regras estejam comprovadamente disparando com o [AlertLint](/loki-alert-rule-tester), a árvore de rotas é o último salto a acertar. Percorra-a antes que ela acione alguém — e na próxima vez que um alerta chegar ao receiver errado, você vai saber qual nó o mandou para lá.
+Uma vez que os labels estejam confirmados como corretos na origem com o [Prometheus Relabel Tester](/prometheus-relabel-tester/) e as suas regras estejam comprovadamente disparando com o [AlertLint](/loki-alert-rule-tester/), a árvore de rotas é o último salto a acertar. Percorra-a antes que ela acione alguém — e na próxima vez que um alerta chegar ao receiver errado, você vai saber qual nó o mandou para lá.
 
-[Abra o Alertmanager Route Tester →](/alertmanager-route-tester)
+[Abra o Alertmanager Route Tester →](/alertmanager-route-tester/)

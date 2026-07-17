@@ -129,7 +129,7 @@ deploy:
   script: ./deploy.sh
 ```
 
-Wenn dein Fehler eine Umgebungsvariable ist, die leer ist, wo du einen Wert erwartet hast, ist das eine andere Klasse von Problem — der [Env Example Checker](/env-example-checker) fängt die Abweichung zwischen `.env` und `.env.example` ab, die überhaupt erst dazu führt, dass eine Variable nicht definiert bleibt.
+Wenn dein Fehler eine Umgebungsvariable ist, die leer ist, wo du einen Wert erwartet hast, ist das eine andere Klasse von Problem — der [Env Example Checker](/env-example-checker/) fängt die Abweichung zwischen `.env` und `.env.example` ab, die überhaupt erst dazu führt, dass eine Variable nicht definiert bleibt.
 
 ## 5. extends auf ein Template, das nicht existiert, oder ein zirkuläres extends
 
@@ -221,8 +221,8 @@ Ein Vorbehalt, den man kennen sollte: Das Auflösen von `include:` erfordert, di
 
 Sechs dieser sieben Fehler sind strukturell — sie stecken darin, wie Jobs, Stages und Referenzen zusammenpassen, nicht darin, ob sich das YAML parsen lässt. Genau das ist die Lücke, die ein reiner Syntax-Linter übersieht: Eine `.gitlab-ci.yml` kann völlig gültiges YAML sein und trotzdem eine Pipeline, deren Start GitLab verweigert.
 
-Der [GitLab CI Validator](/gitlab-ci-validator) führt diese Prüfungen in deinem Browser aus. Füge eine `.gitlab-ci.yml` ein, und er parst das YAML und markiert dann die oben genannten strukturellen Probleme — eine nicht definierte Stage, einen Job ohne `script`/`run`/`trigger`/`extends`, `needs`/`dependencies`/`extends`-Referenzen, die auf nicht existierende Jobs zeigen, ein ungültiges `when:`, ein `rules:`, das keine Liste ist, veraltetes `only`/`except` sowie fehlerhafte `image`/`services`-Formen — jeweils mit der Zeile und einer konkreten Lösung. Es wird nichts hochgeladen; die gesamte Prüfung läuft clientseitig, sodass du sie gegen private Pipelines und proprietäre Runner-Konfigurationen laufen lassen kannst, ohne irgendetwas irgendwohin zu senden.
+Der [GitLab CI Validator](/gitlab-ci-validator/) führt diese Prüfungen in deinem Browser aus. Füge eine `.gitlab-ci.yml` ein, und er parst das YAML und markiert dann die oben genannten strukturellen Probleme — eine nicht definierte Stage, einen Job ohne `script`/`run`/`trigger`/`extends`, `needs`/`dependencies`/`extends`-Referenzen, die auf nicht existierende Jobs zeigen, ein ungültiges `when:`, ein `rules:`, das keine Liste ist, veraltetes `only`/`except` sowie fehlerhafte `image`/`services`-Formen — jeweils mit der Zeile und einer konkreten Lösung. Es wird nichts hochgeladen; die gesamte Prüfung läuft clientseitig, sodass du sie gegen private Pipelines und proprietäre Runner-Konfigurationen laufen lassen kannst, ohne irgendetwas irgendwohin zu senden.
 
-Wenn deine Pipelines auch auf GitHub laufen, gilt die gleiche Idee „vor dem Push" auch für Workflows — unsere Durchsprache der [GitHub-Actions-Sicherheitsfehlkonfigurationen](/blog/github-actions-security-misconfigurations) deckt die GitHub-seitigen Entsprechungen ab, von zu weit gefassten Token-Berechtigungen bis zu ungepinnten Drittanbieter-Actions.
+Wenn deine Pipelines auch auf GitHub laufen, gilt die gleiche Idee „vor dem Push" auch für Workflows — unsere Durchsprache der [GitHub-Actions-Sicherheitsfehlkonfigurationen](/blog/github-actions-security-misconfigurations/) deckt die GitHub-seitigen Entsprechungen ab, von zu weit gefassten Token-Berechtigungen bis zu ungepinnten Drittanbieter-Actions.
 
 Eine rote Pipeline, die nie gelaufen ist, ist der billigste Fehlschlag, den es zu verhindern gibt. Fang die strukturellen Fehler vor dem Commit ab, und das einzige Rot, das du siehst, ist ein Test, der wirklich fehlgeschlagen ist.

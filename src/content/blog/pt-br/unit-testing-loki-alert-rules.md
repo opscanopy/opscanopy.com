@@ -91,4 +91,4 @@ Você não precisa esperar o upstream entregar isso. O **AlertLint** roda exatam
 
 Se você já colocou um alerta do Loki em produção e torceu para que funcionasse, este é o passo que estava faltando.
 
-[Experimente o AlertLint — o testador de regras de alerta do Loki →](/loki-alert-rule-tester)
+[Experimente o AlertLint — o testador de regras de alerta do Loki →](/loki-alert-rule-tester/)

@@ -12,7 +12,7 @@ relatedTool:
 
 You started a container with a quick `docker run` line during a debugging session. It worked. Now someone wants it in the repo, reviewable in a PR, startable with one command — and you have a 200-character one-liner with `-p`, three `-v` mounts, half a dozen `-e` flags and a `--restart` policy that you now need to convert to `docker-compose.yml`. This is the moment most people reach for the docs and start hand-translating, and it's exactly where flags get dropped, ports get quoted wrong, and lists get mis-nested.
 
-This guide walks through how to convert a `docker run` command to `docker-compose.yml` flag by flag, including the gotchas that bite when you do it by hand. Every mapping here matches what the [Docker Run to Compose converter](/docker-run-to-compose) actually emits, so you can read the rules and then paste your command into the tool to skip the mechanical part.
+This guide walks through how to convert a `docker run` command to `docker-compose.yml` flag by flag, including the gotchas that bite when you do it by hand. Every mapping here matches what the [Docker Run to Compose converter](/docker-run-to-compose/) actually emits, so you can read the rules and then paste your command into the tool to skip the mechanical part.
 
 ## Why move from docker run to Compose
 
@@ -115,7 +115,7 @@ env_file:
   - .env
 ```
 
-When you're moving environment off the command line and into files, it's worth confirming your `.env` and `.env.example` haven't drifted apart — the [Env Example Checker](/env-example-checker) flags keys that exist in one but not the other so a missing variable doesn't surface as a runtime error.
+When you're moving environment off the command line and into files, it's worth confirming your `.env` and `.env.example` haven't drifted apart — the [Env Example Checker](/env-example-checker/) flags keys that exist in one but not the other so a missing variable doesn't surface as a runtime error.
 
 ### --restart, --name, -w, -u
 
@@ -183,7 +183,7 @@ mem_limit: 256m
 cpus: "1.5"
 ```
 
-These are the v2-style limits Compose honors directly. When you eventually move this container to Kubernetes, those numbers become pod requests and limits — the [Kubernetes Resource Calculator](/kubernetes-resource-calculator) turns a memory and CPU figure into safe `requests`/`limits` values so you're not guessing at the conversion.
+These are the v2-style limits Compose honors directly. When you eventually move this container to Kubernetes, those numbers become pod requests and limits — the [Kubernetes Resource Calculator](/kubernetes-resource-calculator/) turns a memory and CPU figure into safe `requests`/`limits` values so you're not guessing at the conversion.
 
 ### The flags with no Compose equivalent
 
@@ -248,7 +248,7 @@ volumes:
   pgdata:
 ```
 
-**Environment precedence.** If you use both `environment` and `env_file`, values set inline in `environment` win over the same key in an env file. And neither overrides a variable that's already set in the shell when you run `docker compose up` unless you reference it. Keep secrets out of `environment:` (it's committed) and in `env_file:` (gitignored) — and verify the file's keys with the [Env Example Checker](/env-example-checker) before you ship.
+**Environment precedence.** If you use both `environment` and `env_file`, values set inline in `environment` win over the same key in an env file. And neither overrides a variable that's already set in the shell when you run `docker compose up` unless you reference it. Keep secrets out of `environment:` (it's committed) and in `env_file:` (gitignored) — and verify the file's keys with the [Env Example Checker](/env-example-checker/) before you ship.
 
 **host and none network modes.** As covered above, `--network host` and `--network none` are not networks — they're modes. Putting `host` under a `networks:` list is invalid; it has to be `network_mode: host`. This is the kind of thing easy to miss by hand because the flag spelling is identical to a normal `--network backend`.
 
@@ -258,6 +258,6 @@ volumes:
 
 The rules above are everything you need to do this by hand. But hand-conversion is exactly where a flag gets dropped, a port loses its quotes, or `--network host` ends up in the wrong key — and you don't find out until the container behaves differently than the original command.
 
-The [Docker Run to Compose converter](/docker-run-to-compose) does the mechanical translation for you. It tokenizes the command the way a shell would — honoring quotes, bundled short flags like `-it`, and backslash-newline continuations — maps each flag onto the matching Compose key, and emits deterministic YAML. Flags with no equivalent (`--rm`, `-d`) come back as warnings instead of silently vanishing, so nothing disappears without you knowing. It also runs in reverse: paste a Compose service and get an equivalent `docker run` line back.
+The [Docker Run to Compose converter](/docker-run-to-compose/) does the mechanical translation for you. It tokenizes the command the way a shell would — honoring quotes, bundled short flags like `-it`, and backslash-newline continuations — maps each flag onto the matching Compose key, and emits deterministic YAML. Flags with no equivalent (`--rm`, `-d`) come back as warnings instead of silently vanishing, so nothing disappears without you knowing. It also runs in reverse: paste a Compose service and get an equivalent `docker run` line back.
 
 Everything happens in your browser, so you can paste commands that name private registries or carry secret-bearing `-e` values without anything leaving the tab. Paste your command, read the warnings, and commit the result.

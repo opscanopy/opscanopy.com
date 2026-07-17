@@ -25,9 +25,9 @@ faqs:
     a: "Three to four well-documented, end-to-end projects with READMEs and architecture notes are more convincing than many shallow ones."
 ---
 
-Four portfolio-worthy projects that progressively weave together Linux, Networking, Docker, and AWS. Every command is real and copy-pasteable — no placeholders, no hand-waving. The path: one container on one server → a multi-container stack behind nginx → an automated monitored deploy → a full mini CI/CD pipeline with rollback. By Project 4 you will see exactly how the four skills click together. Not sure where to start? Follow the [DevOps roadmap](/learn/roadmaps/devops) first.
+Four portfolio-worthy projects that progressively weave together Linux, Networking, Docker, and AWS. Every command is real and copy-pasteable — no placeholders, no hand-waving. The path: one container on one server → a multi-container stack behind nginx → an automated monitored deploy → a full mini CI/CD pipeline with rollback. By Project 4 you will see exactly how the four skills click together. Not sure where to start? Follow the [DevOps roadmap](/learn/roadmaps/devops/) first.
 
-New to the fundamentals? Start with [Docker for DevOps](/learn/guides/docker-for-devops) and [AWS for DevOps Engineers](/learn/guides/aws-for-devops-engineers).
+New to the fundamentals? Start with [Docker for DevOps](/learn/guides/docker-for-devops/) and [AWS for DevOps Engineers](/learn/guides/aws-for-devops-engineers/).
 
 > **Note:** Treat each project like a ticket you would get on the job: read "What you'll build", study the architecture, then work the steps top to bottom. Push every project to GitHub with the README template provided — that repo *is* your interview portfolio.
 
@@ -479,7 +479,7 @@ MIT
 
 > **Real-World Example:** This is the exact shape of 90% of early-stage SaaS products. Think of a tiny B2B dashboard: nginx is the front door (security guard + traffic cop), Flask is the office where work happens, Postgres is the locked filing room in the back. Customers walk up to the front door (port 80/443) — they never see the filing room. When the company grows, the filing room moves to a managed building (RDS) and you add more offices (horizontal scaling), but the front-door pattern stays.
 
-Want to automate converting your `docker run` commands to Compose? Try the [Docker run → Compose converter](/docker-run-to-compose).
+Want to automate converting your `docker run` commands to Compose? Try the [Docker run → Compose converter](/docker-run-to-compose/).
 
 ### What you'll build
 
@@ -1027,7 +1027,7 @@ MIT
 
 > **What you'll build:** A **one-command server bootstrap**: an idempotent `provision.sh` script that takes a fresh Ubuntu EC2 box from zero to "running my containerized app behind a firewall, backing itself up to S3, and reporting its own health" — with **no secrets stored on the machine**. You ship your app image to a registry (Docker Hub *and* AWS ECR), the box pulls it, runs it, health-checks it on a timer, and tars its data nightly to S3 using an **IAM instance role**. Re-running the script changes nothing that's already correct.
 
-For testing your Prometheus relabel rules when you add metrics later, use the [Prometheus Relabel Tester](/prometheus-relabel-tester).
+For testing your Prometheus relabel rules when you add metrics later, use the [Prometheus Relabel Tester](/prometheus-relabel-tester/).
 
 > **Real-world scenario:** Imagine your ops team gets a new server every time traffic spikes. Nobody wants to SSH in and run 30 commands by hand (and forget step 17). You hand them `./provision.sh`. They run it once. The box is identical to every other box. This is the gateway drug to Infrastructure-as-Code (Ansible/Terraform in Project 4) — doing it in plain bash first teaches you *why* those tools exist.
 
@@ -1545,7 +1545,7 @@ MIT
 
 A complete, hand-built **CI/CD pipeline** that takes a code change from your laptop all the way to a running container on an EC2 server — automatically, repeatably, and with a **rollback safety net**. You'll build it by hand first so you understand the magic, then see the exact same thing as a real GitHub Actions workflow.
 
-Validate your GitHub Actions YAML before pushing with the [GitHub Actions Validator](/github-actions-validator).
+Validate your GitHub Actions YAML before pushing with the [GitHub Actions Validator](/github-actions-validator/).
 
 > **Real-world scenario:** A real CI/CD pipeline (Vercel, GitHub Actions, Jenkins, GitLab CI) does five things on every push: **(1)** checkout code, **(2)** build an artifact (here: a Docker image), **(3)** store it somewhere versioned (here: Amazon ECR), **(4)** deploy it to servers, **(5)** verify it's healthy and roll back if not. Companies pay for this so a junior dev can ship safely at 5pm on a Friday. You're going to build all five stages from scratch — that's the difference between someone who *uses* CI and someone who can *fix* CI when it breaks at 2am.
 
@@ -2037,7 +2037,7 @@ Automatic on failed healthcheck. Manual:
 
 ### Level it up
 
-- **Managed orchestration:** move from a single EC2 to **ECS** or **EKS** — they give you rolling deploys, healthchecks, and rollback as built-in features instead of bash. See [Kubernetes for DevOps](/learn/guides/kubernetes-for-devops) for a full walkthrough.
+- **Managed orchestration:** move from a single EC2 to **ECS** or **EKS** — they give you rolling deploys, healthchecks, and rollback as built-in features instead of bash. See [Kubernetes for DevOps](/learn/guides/kubernetes-for-devops/) for a full walkthrough.
 - **GitOps:** **ArgoCD** watches a git repo and reconciles your cluster to match — deploy = merge a PR; rollback = revert the commit.
 - **Canary:** shift 5% of traffic to the new version via an ALB or service mesh, watch error rates, then ramp to 100%.
 - **IaC:** define the ECR repo, IAM roles, and EC2/ECS in **Terraform** so the whole platform is reproducible and code-reviewed.

@@ -122,4 +122,4 @@ The inside-out method works on every PromQL expression you’ll meet, but pullin
 
 Next time a dashboard panel or alert rule leaves you squinting, don’t guess at it.
 
-[Explain a PromQL query →](/promql-explainer)
+[Explain a PromQL query →](/promql-explainer/)

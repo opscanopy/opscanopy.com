@@ -92,4 +92,4 @@ You don’t have to wait for upstream to ship this. **AlertLint** runs exactly t
 
 If you’ve ever shipped a Loki alert and hoped it worked, this is the missing step.
 
-[Try AlertLint — the Loki alert rule tester →](/loki-alert-rule-tester)
+[Try AlertLint — the Loki alert rule tester →](/loki-alert-rule-tester/)

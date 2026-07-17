@@ -121,4 +121,4 @@ Die Von-innen-nach-außen-Methode funktioniert bei jedem PromQL-Ausdruck, der Ih
 
 Wenn Sie das nächste Mal ein Dashboard-Panel oder eine Alert-Regel zum Augenzusammenkneifen bringt, raten Sie nicht herum.
 
-[Eine PromQL-Abfrage erklären →](/promql-explainer)
+[Eine PromQL-Abfrage erklären →](/promql-explainer/)

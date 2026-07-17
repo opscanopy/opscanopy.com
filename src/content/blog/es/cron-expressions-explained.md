@@ -99,4 +99,4 @@ La forma honesta de leer una expresión cron es no fiarte de tu lectura de ella.
 
 El **Cron Expression Tester** hace exactamente eso en tu navegador: pega cualquier expresión — rangos, pasos, listas, `@macros` y todo lo demás — y obtén una descripción en lenguaje claro junto a las próximas horas de ejecución, sin que nada se suba a ningún sitio. Convierte "creo que esto es cada tarde entre semana" en "estas son las próximas diez veces que se dispara", que es la única lectura que cuenta.
 
-[Prueba el Cron Expression Tester →](/cron-expression-tester)
+[Prueba el Cron Expression Tester →](/cron-expression-tester/)

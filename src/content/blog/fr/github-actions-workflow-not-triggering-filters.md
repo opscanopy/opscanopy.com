@@ -139,7 +139,7 @@ on:
       - 'release/**'
 ```
 
-Et `pull_request` provenant d'un fork est restreint : la PR d'un contributeur pour la première fois peut nécessiter une approbation manuelle avant qu'un quelconque workflow ne s'exécute, ce qui ressemble exactement à « ne s'est pas déclenché ». Si vous êtes passé à `pull_request_target` pour contourner les restrictions des forks, notez qu'il lit le workflow et les déclencheurs depuis la version du fichier de la branche de **base** — et qu'il comporte un véritable risque de sécurité, traité dans notre article [Les erreurs de sécurité GitHub Actions](/blog/github-actions-security-misconfigurations).
+Et `pull_request` provenant d'un fork est restreint : la PR d'un contributeur pour la première fois peut nécessiter une approbation manuelle avant qu'un quelconque workflow ne s'exécute, ce qui ressemble exactement à « ne s'est pas déclenché ». Si vous êtes passé à `pull_request_target` pour contourner les restrictions des forks, notez qu'il lit le workflow et les déclencheurs depuis la version du fichier de la branche de **base** — et qu'il comporte un véritable risque de sécurité, traité dans notre article [Les erreurs de sécurité GitHub Actions](/blog/github-actions-security-misconfigurations/).
 
 ## Un aide-mémoire de filtres à copier-coller
 
@@ -171,4 +171,4 @@ Le **Testeur d'expressions et de déclencheurs GitHub Actions** referme cette bo
 
 Voyez exactement quels jobs s'exécutent avant de pousser, et non après.
 
-[Ouvrir le Testeur d'expressions et de déclencheurs GitHub Actions →](/github-actions-expression-tester)
+[Ouvrir le Testeur d'expressions et de déclencheurs GitHub Actions →](/github-actions-expression-tester/)

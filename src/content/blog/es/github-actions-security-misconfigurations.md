@@ -156,4 +156,4 @@ El **GitHub Actions Validator** comprueba los cinco, en el lado del cliente, en 
 
 Si alguna vez has publicado un workflow y has esperado que fuera seguro, este es el paso que se asegura de ello.
 
-[Prueba el GitHub Actions Validator →](/github-actions-validator)
+[Prueba el GitHub Actions Validator →](/github-actions-validator/)

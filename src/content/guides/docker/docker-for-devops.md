@@ -25,7 +25,7 @@ faqs:
     a: "Use named volumes for persistent data managed by Docker (databases, app state) and bind mounts for mounting host source code during local development."
 ---
 
-Docker is the tool that finally made "it works on my machine" a non-excuse. By packaging an application together with its exact dependencies into a portable image, Docker lets the same artifact run identically on a laptop, a CI runner, and a production server. This guide is a deep, practical tour for DevOps engineers: how images and layers actually work, how to write efficient and secure Dockerfiles, how containers talk to each other over networks, how to persist data with volumes, how to compose multi-service stacks, and how to take all of it to production. Work through it top to bottom, or jump to the part you need. For a structured learning path beyond this guide, see the [Docker roadmap](/learn/roadmaps/docker).
+Docker is the tool that finally made "it works on my machine" a non-excuse. By packaging an application together with its exact dependencies into a portable image, Docker lets the same artifact run identically on a laptop, a CI runner, and a production server. This guide is a deep, practical tour for DevOps engineers: how images and layers actually work, how to write efficient and secure Dockerfiles, how containers talk to each other over networks, how to persist data with volumes, how to compose multi-service stacks, and how to take all of it to production. Work through it top to bottom, or jump to the part you need. For a structured learning path beyond this guide, see the [Docker roadmap](/learn/roadmaps/docker/).
 
 ## The Problem Docker Solves
 
@@ -4451,7 +4451,7 @@ docker run -d \
 > 4. **Backups:** Automated cron + pg_dump/mongodump stored on separate storage
 > 5. **Never:** Store critical data only in the container's writable layer
 
-Also make sure your `.env` files are correctly structured — you can validate them with the [.env Example Checker](/env-example-checker) before deploying. Once your stack is wired up, put these skills to work with real scenarios in [Hands-on DevOps Projects](/learn/guides/devops-projects).
+Also make sure your `.env` files are correctly structured — you can validate them with the [.env Example Checker](/env-example-checker/) before deploying. Once your stack is wired up, put these skills to work with real scenarios in [Hands-on DevOps Projects](/learn/guides/devops-projects/).
 
 ---
 
@@ -4572,7 +4572,7 @@ docker compose up -d
 docker compose down
 ```
 
-Convert an existing command with the [Docker run → Compose converter](/docker-run-to-compose).
+Convert an existing command with the [Docker run → Compose converter](/docker-run-to-compose/).
 
 ### Compose v1 vs Compose v2 — What Is the Difference?
 
@@ -7826,7 +7826,7 @@ docker pull $REGISTRY/$IMAGE:v1.2.3
 
 ### Complete GitHub Actions Workflow — Build, Test, Push
 
-Before writing your pipeline, validate your workflow syntax with the [GitHub Actions Validator](/github-actions-validator) to catch errors early.
+Before writing your pipeline, validate your workflow syntax with the [GitHub Actions Validator](/github-actions-validator/) to catch errors early.
 
 ```yaml
 # .github/workflows/docker-build-push.yml
@@ -7935,7 +7935,7 @@ jobs:
           wait-for-service-stability: true   # Wait for deploy to complete
 ```
 
-If you are using GitLab CI instead, validate your `.gitlab-ci.yml` syntax with the [GitLab CI Validator](/gitlab-ci-validator) before pushing.
+If you are using GitLab CI instead, validate your `.gitlab-ci.yml` syntax with the [GitLab CI Validator](/gitlab-ci-validator/) before pushing.
 
 ### CI/CD Pipeline Flow
 
@@ -8067,7 +8067,7 @@ scrape_configs:
 
 ### Transition Path
 
-> **Tip:** Learning path: Docker basics → Docker Compose (multi-container) → Kubernetes (multi-host, production-grade). Each step builds on the previous one. Master Docker concepts and Kubernetes will feel natural. When you are ready to take the next step, the [Kubernetes for DevOps](/learn/guides/kubernetes-for-devops) guide picks up exactly where containers leave off.
+> **Tip:** Learning path: Docker basics → Docker Compose (multi-container) → Kubernetes (multi-host, production-grade). Each step builds on the previous one. Master Docker concepts and Kubernetes will feel natural. When you are ready to take the next step, the [Kubernetes for DevOps](/learn/guides/kubernetes-for-devops/) guide picks up exactly where containers leave off.
 
 ```bash
 # Docker Swarm quick demo (educational only)
@@ -9738,7 +9738,7 @@ Five key techniques:
 
 A well-optimized pipeline can reduce build times from 10 minutes to under 2 minutes.
 
-Prepping for interviews? See [Docker Interview Questions](/learn/guides/docker-interview-questions).
+Prepping for interviews? See [Docker Interview Questions](/learn/guides/docker-interview-questions/).
 
 ---
 
@@ -10424,7 +10424,7 @@ Every Docker concept has a direct Kubernetes equivalent. Your Docker knowledge i
 | `docker secret` | Kubernetes Secret | Kubernetes Secrets can be mounted as files or environment variables |
 | `--env-file` | ConfigMap + Secret | ConfigMaps for non-sensitive config, Secrets for sensitive values |
 
-Need to plan resource requests for Kubernetes? Use the [Kubernetes Resource Calculator](/kubernetes-resource-calculator).
+Need to plan resource requests for Kubernetes? Use the [Kubernetes Resource Calculator](/kubernetes-resource-calculator/).
 
 ### Portfolio Projects for Senior DevOps Roles
 
@@ -10448,4 +10448,4 @@ Your Docker knowledge is the foundation for everything in modern DevOps. The con
 
 > **Note:** Prefer a day-by-day path? This is covered in [**Mission 90 Days 22–30**](/mission-90/) — a free 90-day guided DevOps program with browser terminal missions.
 
-Ready to orchestrate at scale? Continue with [Kubernetes for DevOps](/learn/guides/kubernetes-for-devops).
+Ready to orchestrate at scale? Continue with [Kubernetes for DevOps](/learn/guides/kubernetes-for-devops/).

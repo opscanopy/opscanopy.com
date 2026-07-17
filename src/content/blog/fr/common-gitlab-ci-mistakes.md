@@ -129,7 +129,7 @@ deploy:
   script: ./deploy.sh
 ```
 
-Si votre bug est une variable d'environnement vide là où vous attendiez une valeur, c'est une autre catégorie de problème — l'[Env Example Checker](/env-example-checker) détecte la dérive entre `.env` et `.env.example` qui laisse une variable non définie en premier lieu.
+Si votre bug est une variable d'environnement vide là où vous attendiez une valeur, c'est une autre catégorie de problème — l'[Env Example Checker](/env-example-checker/) détecte la dérive entre `.env` et `.env.example` qui laisse une variable non définie en premier lieu.
 
 ## 5. extends d'un template inexistant, ou un extends circulaire
 
@@ -221,8 +221,8 @@ Une réserve qu'il vaut la peine de connaître : résoudre `include:` exige de r
 
 Six de ces sept erreurs sont structurelles — elles résident dans la manière dont les jobs, les stages et les références s'imbriquent, et non dans le fait que le YAML se parse ou non. C'est exactement la faille que rate un linter de syntaxe seul : un `.gitlab-ci.yml` peut être un YAML parfaitement valide tout en restant un pipeline que GitLab refuse de démarrer.
 
-Le [GitLab CI Validator](/gitlab-ci-validator) exécute ces contrôles dans votre navigateur. Collez un `.gitlab-ci.yml` : il parse le YAML, puis signale les problèmes structurels ci-dessus — un stage non déclaré, un job sans `script`/`run`/`trigger`/`extends`, des références `needs`/`dependencies`/`extends` qui pointent vers des jobs inexistants, un `when:` invalide, un `rules:` qui n'est pas une liste, des `only`/`except` hérités, et de mauvaises formes d'`image`/`services` — chacun avec la ligne et un correctif concret. Rien n'est téléversé ; tout le contrôle se fait côté client, vous pouvez donc l'exécuter sur des pipelines privés et une configuration de runner propriétaire sans rien envoyer où que ce soit.
+Le [GitLab CI Validator](/gitlab-ci-validator/) exécute ces contrôles dans votre navigateur. Collez un `.gitlab-ci.yml` : il parse le YAML, puis signale les problèmes structurels ci-dessus — un stage non déclaré, un job sans `script`/`run`/`trigger`/`extends`, des références `needs`/`dependencies`/`extends` qui pointent vers des jobs inexistants, un `when:` invalide, un `rules:` qui n'est pas une liste, des `only`/`except` hérités, et de mauvaises formes d'`image`/`services` — chacun avec la ligne et un correctif concret. Rien n'est téléversé ; tout le contrôle se fait côté client, vous pouvez donc l'exécuter sur des pipelines privés et une configuration de runner propriétaire sans rien envoyer où que ce soit.
 
-Si vos pipelines tournent aussi sur GitHub, la même idée d'« avant de pousser » s'applique aux workflows — notre tour d'horizon des [mauvaises configurations de sécurité de GitHub Actions](/blog/github-actions-security-misconfigurations) couvre les équivalents côté GitHub, des permissions de token trop larges aux actions tierces non épinglées.
+Si vos pipelines tournent aussi sur GitHub, la même idée d'« avant de pousser » s'applique aux workflows — notre tour d'horizon des [mauvaises configurations de sécurité de GitHub Actions](/blog/github-actions-security-misconfigurations/) couvre les équivalents côté GitHub, des permissions de token trop larges aux actions tierces non épinglées.
 
 Un pipeline rouge qui n'a jamais tourné est l'échec le moins coûteux possible à prévenir. Détectez les erreurs structurelles avant le commit, et le seul rouge que vous verrez sera celui d'un test qui a réellement échoué.

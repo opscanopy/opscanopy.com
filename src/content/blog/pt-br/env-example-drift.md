@@ -109,4 +109,4 @@ A forma mais rápida de saber que seu arquivo de exemplo está honesto é fazer 
 
 Antes do seu próximo pull request, entregue ao próximo desenvolvedor um `.env.example` em que ele realmente possa confiar.
 
-[Verifique o drift do seu .env.example →](/env-example-checker)
+[Verifique o drift do seu .env.example →](/env-example-checker/)
