@@ -23,6 +23,7 @@ import {
   markDaysDone,
   unmarkDays,
   markPhaseDone,
+  setPace,
   recordMissionRun,
   PROGRESS_KEY,
   type M90Progress,
@@ -342,6 +343,52 @@ describe('exportProgress() / importProgress()', () => {
     expect(p).not.toBeNull();
     expect(Object.keys(p!.days)).toEqual(['90']);
   });
+
+  it('rejects a code with only a saved pace and no real progress (pace is not content)', () => {
+    // A restore overwrites the local blob — a pace-only code (no days, no
+    // missions, no startedAt) must still read as invalid, exactly like the
+    // bare-EMPTY case above, or saving a pace before ever starting would
+    // silently become "restorable" in a way that can wipe real progress.
+    const raw = JSON.stringify({ days: {}, missions: {}, pace: { daysPerWeek: 5, startDate: '2026-01-01' } });
+    expect(importProgress(exportProgressOf(raw))).toBeNull();
+  });
+
+  it('round-trips pace alongside real progress', () => {
+    const p: M90Progress = {
+      days: { '1': day() },
+      missions: {},
+      pace: { daysPerWeek: 5, startDate: '2026-01-01' },
+    };
+    expect(importProgress(exportProgress(p))).toEqual(p);
+  });
+});
+
+describe('pace field salvage', () => {
+  it('parseProgress keeps a well-formed pace', () => {
+    const raw = JSON.stringify({ days: {}, missions: {}, pace: { daysPerWeek: 3, startDate: '2026-07-01' } });
+    expect(parseProgress(raw).pace).toEqual({ daysPerWeek: 3, startDate: '2026-07-01' });
+  });
+
+  it('drops pace when absent', () => {
+    expect(parseProgress(JSON.stringify({ days: {}, missions: {} })).pace).toBeUndefined();
+  });
+
+  it.each([0, 8, 1.5, -1, '5', null])('drops pace with an invalid daysPerWeek: %p', (bad) => {
+    const raw = JSON.stringify({ days: {}, missions: {}, pace: { daysPerWeek: bad, startDate: '2026-07-01' } });
+    expect(parseProgress(raw).pace).toBeUndefined();
+  });
+
+  it.each(['2026-7-1', '2026/07/01', 'not-a-date', 20260701, ''])(
+    'drops pace with an invalid startDate: %p',
+    (bad) => {
+      const raw = JSON.stringify({ days: {}, missions: {}, pace: { daysPerWeek: 5, startDate: bad } });
+      expect(parseProgress(raw).pace).toBeUndefined();
+    },
+  );
+
+  it('drops a non-object pace value', () => {
+    expect(parseProgress(JSON.stringify({ days: {}, missions: {}, pace: 'weekly' })).pace).toBeUndefined();
+  });
 });
 
 describe('day-key and lastVisitedDay clamping', () => {
@@ -503,6 +550,33 @@ describe('unmarkDays()', () => {
     const p: M90Progress = { days: { '21': day() }, missions: {} };
     unmarkDays(p, [21, 24]);
     expect(p.days).toEqual({ '21': day() });
+  });
+});
+
+describe('setPace()', () => {
+  it('sets the pace field', () => {
+    const p: M90Progress = { days: {}, missions: {} };
+    const next = setPace(p, { daysPerWeek: 5, startDate: '2026-07-10' });
+    expect(next.pace).toEqual({ daysPerWeek: 5, startDate: '2026-07-10' });
+  });
+
+  it('replaces an existing pace', () => {
+    const p: M90Progress = { days: {}, missions: {}, pace: { daysPerWeek: 3, startDate: '2026-01-01' } };
+    const next = setPace(p, { daysPerWeek: 7, startDate: '2026-07-10' });
+    expect(next.pace).toEqual({ daysPerWeek: 7, startDate: '2026-07-10' });
+  });
+
+  it('leaves days/missions/startedAt untouched', () => {
+    const p: M90Progress = { startedAt: '2026-01-01T00:00:00.000Z', days: { '1': day() }, missions: {} };
+    const next = setPace(p, { daysPerWeek: 5, startDate: '2026-07-10' });
+    expect(next.days).toEqual({ '1': day() });
+    expect(next.startedAt).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('never mutates the input', () => {
+    const p: M90Progress = { days: {}, missions: {} };
+    setPace(p, { daysPerWeek: 5, startDate: '2026-07-10' });
+    expect(p.pace).toBeUndefined();
   });
 });
 

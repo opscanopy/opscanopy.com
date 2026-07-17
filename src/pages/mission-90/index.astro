@@ -25,6 +25,7 @@ import M90ProgressCard from '../../components/mission90/M90ProgressCard.astro';
 import M90StateCta from '../../components/mission90/M90StateCta.astro';
 import M90DayTable from '../../components/mission90/M90DayTable.astro';
 import M90SkipAhead from '../../components/mission90/M90SkipAhead.astro';
+import M90PacePlanner from '../../components/mission90/M90PacePlanner.astro';
 import { site } from '../../data/site';
 import {
   program,
@@ -219,6 +220,10 @@ const constructionPath =
             <span aria-hidden="true" class="transition-transform duration-150 ease-out group-hover:translate-x-0.5">&rarr;</span>
             <span class="text-ink" data-m90-resume-text>Day 1</span>
           </a>
+          {/* Ambient forward-computed pace line — only ever a forward
+              projection from today, so it can never claim the learner is
+              "behind". Filled + revealed only when a pace is saved. */}
+          <p class="caption text-mute" data-m90-pace-line hidden></p>
         </div>
         <M90ProgressCard total={program.totalDays} />
       </div>
@@ -626,6 +631,10 @@ const constructionPath =
         </p>
       </div>
 
+      <div class="mx-auto mt-10 max-w-2xl">
+        <M90PacePlanner />
+      </div>
+
       <div class="mx-auto mt-10 max-w-3xl">
         <M90DayTable total={program.totalDays} />
       </div>
@@ -806,8 +815,11 @@ const constructionPath =
     importProgress,
     markPhaseDone,
     unmarkDays,
+    setPace,
     PROGRESS_KEY,
+    type M90Progress,
   } from '../../lib/mission90/progress';
+  import { sessionDate, projectedFinish, buildIcs, formatSessionDate } from '../../lib/mission90/pace';
   import { copyTextToClipboard } from '../../lib/clipboard';
   import { safeGtag } from '../../lib/gtag';
 
@@ -828,6 +840,20 @@ const constructionPath =
     return parseProgress(raw);
   }
 
+  /** Today's date as YYYY-MM-DD (UTC) — the anchor every pace projection is
+   *  computed forward from, so a projection can never claim to be "behind". */
+  function todayDateString(): string {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  /** Live days not yet marked complete, sorted ascending — the schedule the
+   *  pace planner and the resume banner's ambient line both project from. */
+  function incompleteLiveDays(p: M90Progress, liveDays: LiveDay[]): LiveDay[] {
+    return liveDays
+      .filter((d) => !Object.prototype.hasOwnProperty.call(p.days, String(d.day)))
+      .sort((a, b) => a.day - b.day);
+  }
+
   /** Parse a "21-45" data attribute into a [lo, hi] tuple, or null if malformed. */
   function parsePhaseRange(raw: string | undefined): [number, number] | null {
     const parts = (raw ?? '').split('-').map(Number);
@@ -843,6 +869,113 @@ const constructionPath =
     } catch {
       return empty;
     }
+  }
+
+  // ── Pace planner: state persists across render() calls within a page load,
+  // so completing a day elsewhere (skip-ahead, the day table) refreshes the
+  // projection without losing the learner's chip selection. ──
+  let selectedPace: number | null = null;
+
+  function updatePaceUI(): void {
+    const root = document.querySelector<HTMLElement>('[data-m90-pace]');
+    if (!root) return;
+    const result = root.querySelector<HTMLElement>('[data-pace-result]');
+    const icsBtn = root.querySelector<HTMLButtonElement>('[data-pace-ics]');
+    const saveBtn = root.querySelector<HTMLButtonElement>('[data-pace-save]');
+    if (!result || !icsBtn || !saveBtn) return;
+
+    const { liveDays } = getData();
+    const remaining = incompleteLiveDays(readProgress(), liveDays);
+
+    if (remaining.length === 0) {
+      result.textContent = "You've completed every available day — nothing left to plan.";
+      icsBtn.disabled = true;
+      saveBtn.disabled = true;
+      return;
+    }
+    if (selectedPace === null) {
+      result.textContent = 'Pick a pace above to see your projected finish date.';
+      icsBtn.disabled = true;
+      saveBtn.disabled = true;
+      return;
+    }
+    const finish = projectedFinish(todayDateString(), remaining.length, selectedPace);
+    const dayWord = remaining.length === 1 ? 'day' : 'days';
+    result.textContent = `At ${selectedPace}/week, you'd finish around ${formatSessionDate(finish)} (${remaining.length} ${dayWord} left).`;
+    icsBtn.disabled = false;
+    saveBtn.disabled = false;
+  }
+
+  function initPacePlanner(): void {
+    const root = document.querySelector<HTMLElement>('[data-m90-pace]');
+    if (!root || root.dataset.bound === 'true') return;
+    root.dataset.bound = 'true';
+
+    const chipsWrap = root.querySelector<HTMLElement>('[data-pace-chips]');
+    const icsBtn = root.querySelector<HTMLButtonElement>('[data-pace-ics]');
+    const saveBtn = root.querySelector<HTMLButtonElement>('[data-pace-save]');
+    const status = root.querySelector<HTMLElement>('[data-pace-status]');
+    if (!chipsWrap || !icsBtn || !saveBtn) return;
+
+    function selectChip(n: number): void {
+      selectedPace = n;
+      chipsWrap!.querySelectorAll<HTMLButtonElement>('[data-pace-value]').forEach((chip) => {
+        const isActive = Number(chip.dataset.paceValue) === n;
+        chip.classList.toggle('is-active', isActive);
+        chip.setAttribute('aria-pressed', String(isActive));
+      });
+      updatePaceUI();
+    }
+
+    chipsWrap.addEventListener('click', (e) => {
+      const chip = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-pace-value]');
+      if (!chip) return;
+      const n = Number(chip.dataset.paceValue);
+      if (Number.isFinite(n)) selectChip(n);
+    });
+
+    icsBtn.addEventListener('click', () => {
+      if (selectedPace === null) return;
+      const { liveDays } = getData();
+      const remaining = incompleteLiveDays(readProgress(), liveDays);
+      if (remaining.length === 0) return;
+      const today = todayDateString();
+      const events = remaining.map((d, i) => ({
+        day: d.day,
+        date: sessionDate(today, i, selectedPace!),
+        title: d.title,
+      }));
+      const ics = buildIcs(events, new Date().toISOString());
+      const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'mission-90-pace.ics';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      if (status) status.textContent = 'Calendar file downloaded — import it into your calendar app.';
+    });
+
+    saveBtn.addEventListener('click', () => {
+      if (selectedPace === null) return;
+      const next = setPace(readProgress(), { daysPerWeek: selectedPace, startDate: todayDateString() });
+      try {
+        localStorage.setItem(PROGRESS_KEY, JSON.stringify(next));
+      } catch {
+        if (status) status.textContent = "Couldn't save — this browser is blocking site storage.";
+        return;
+      }
+      if (status) status.textContent = 'Pace saved — this hub will remember it next time.';
+      document.dispatchEvent(new CustomEvent('m90:progress'));
+    });
+
+    // Pre-select a previously saved pace, if any; otherwise render the
+    // "nothing selected yet" / "all done" state.
+    const savedPace = readProgress().pace;
+    if (savedPace) selectChip(savedPace.daysPerWeek);
+    else updatePaceUI();
   }
 
   function render(): void {
@@ -879,6 +1012,8 @@ const constructionPath =
         btn.dataset.state = isDone ? 'done' : 'pending';
       }
     });
+
+    updatePaceUI();
 
     const first = document.querySelector<HTMLElement>('[data-m90-cta-first]');
     const returning = document.querySelector<HTMLElement>('[data-m90-cta-returning]');
@@ -954,6 +1089,21 @@ const constructionPath =
       if (pcCount) pcCount.textContent = `${done} of ${programTotal} days`;
       if (pcFill) pcFill.style.width = `${Math.round((done / programTotal) * 100)}%`;
       if (pcWrap) pcWrap.setAttribute('aria-valuenow', String(done));
+
+      // Ambient pace line — a forward projection from TODAY, never a
+      // comparison against the original plan, so it can never say "behind".
+      const paceLine = resume.querySelector<HTMLElement>('[data-m90-pace-line]');
+      if (paceLine) {
+        const remaining = incompleteLiveDays(p, liveDays);
+        if (p.pace && remaining.length > 0) {
+          const finish = projectedFinish(todayDateString(), remaining.length, p.pace.daysPerWeek);
+          paceLine.textContent = `At your saved pace (${p.pace.daysPerWeek}/week), you'd finish around ${formatSessionDate(finish)}.`;
+          paceLine.hidden = false;
+        } else {
+          paceLine.hidden = true;
+        }
+      }
+
       resume.hidden = false;
     }
   }
@@ -1081,6 +1231,7 @@ const constructionPath =
     render();
     initBackupRestore();
     initSkipAhead();
+    initPacePlanner();
     if (!bound) {
       bound = true;
       // The table re-fires this after a day is ticked so the hub re-syncs.

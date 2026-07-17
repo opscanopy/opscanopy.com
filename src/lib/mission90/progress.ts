@@ -30,6 +30,8 @@ export interface M90Progress {
   days: Record<string, { completedAt: string }>;
   /** Completed missions, keyed by mission id. */
   missions: Record<string, { completedAt: string; commands: number; hints: number; seconds: number }>;
+  /** Saved pace-planner selection — days/week and the anchor start date. */
+  pace?: { daysPerWeek: number; startDate: string };
 }
 
 /** True for plain-object JSON values (not null, not arrays). */
@@ -93,6 +95,24 @@ function parseMissions(value: unknown): M90Progress['missions'] {
   return missions;
 }
 
+/** True for a valid days/week selection: an integer 1–7. */
+function isDaysPerWeek(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 7;
+}
+
+/** True for a `YYYY-MM-DD` date string (format only, not calendar-validated —
+ *  matches the codec's other date fields' level of strictness). */
+function isDateString(value: unknown): value is string {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+/** Salvage a well-formed pace selection, or undefined if absent/malformed. */
+function parsePace(value: unknown): M90Progress['pace'] {
+  if (!isRecord(value)) return undefined;
+  if (!isDaysPerWeek(value.daysPerWeek) || !isDateString(value.startDate)) return undefined;
+  return { daysPerWeek: value.daysPerWeek, startDate: value.startDate };
+}
+
 /** Build a valid M90Progress from an already-parsed JSON record. Shared by
  *  `parseProgress` (raw string → record → this) and `importProgress` (which
  *  already needs the parsed record for its own isRecord check, so it calls
@@ -111,6 +131,8 @@ function fromRecord(parsed: Record<string, unknown>): M90Progress {
   ) {
     progress.lastVisitedDay = parsed.lastVisitedDay;
   }
+  const pace = parsePace(parsed.pace);
+  if (pace) progress.pace = pace;
   return progress;
 }
 
@@ -295,6 +317,12 @@ export function markPhaseDone(p: M90Progress, range: [number, number], nowIso: s
       ? candidate
       : marked.lastVisitedDay;
   return { ...marked, lastVisitedDay };
+}
+
+/** Save (or replace) the pace-planner selection, returning a new
+ *  M90Progress (never mutates `p`). */
+export function setPace(p: M90Progress, pace: { daysPerWeek: number; startDate: string }): M90Progress {
+  return { ...p, pace };
 }
 
 /**
