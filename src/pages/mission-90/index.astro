@@ -238,6 +238,28 @@ const constructionPath =
        the only way to move it. ───── */}
   <section class="border-t border-hairline bg-canvas-soft" data-m90-backup>
     <div class="container-page py-3">
+      {/* Backup nudge — revealed by the boot script only when there's
+          meaningful progress (≥5 days) and no fresh backup or dismissal
+          (10+ days old, or a whole phase completed since — see
+          lib/mission90/backup.ts). Its memo lives in oc-m90-backup-meta,
+          deliberately NOT inside the oc-m90-v1 blob. Text is set before
+          the element is unhidden so role=status announces a full sentence. */}
+      <div
+        data-m90-backup-nudge
+        role="status"
+        hidden
+        class="mx-auto mb-3 flex max-w-4xl flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-hairline bg-canvas px-4 py-2.5"
+      >
+        <p class="body-sm min-w-0 flex-1 text-body" data-m90-backup-nudge-text></p>
+        <div class="flex shrink-0 items-center gap-3">
+          <button type="button" data-m90-backup-nudge-download class="btn btn-secondary btn-sm" style="touch-action: manipulation;">
+            Download backup
+          </button>
+          <button type="button" data-m90-backup-nudge-dismiss class="body-sm text-mute underline underline-offset-4 hover:text-ink" style="touch-action: manipulation;">
+            Later
+          </button>
+        </div>
+      </div>
       <details class="mx-auto max-w-4xl">
         <summary
           class="body-sm inline-flex cursor-pointer items-center gap-1.5 text-mute [touch-action:manipulation] hover:text-ink"
@@ -247,14 +269,19 @@ const constructionPath =
         </summary>
         <div class="mt-3 flex flex-col gap-4 rounded-lg border border-hairline bg-canvas p-4 sm:flex-row sm:items-start">
           <div class="min-w-0 flex-1">
-            <p class="body-sm font-medium text-ink">Copy my progress code</p>
+            <p class="body-sm font-medium text-ink">Back up my progress</p>
             <p class="caption mt-1 text-mute">
               Progress is saved only in this browser. Copy a code before clearing site data or
               switching devices, then paste it back on the other side.
             </p>
-            <button type="button" data-m90-backup-copy class="btn btn-secondary btn-sm mt-3" style="touch-action: manipulation;">
-              Copy my code
-            </button>
+            <div class="mt-3 flex flex-wrap gap-2">
+              <button type="button" data-m90-backup-copy class="btn btn-secondary btn-sm" style="touch-action: manipulation;">
+                Copy my code
+              </button>
+              <button type="button" data-m90-backup-download class="btn btn-secondary btn-sm" style="touch-action: manipulation;">
+                Download backup file
+              </button>
+            </div>
             <p class="caption mt-1.5 text-mute" role="status" data-m90-backup-status></p>
             {/* Manual fallback — revealed only when the clipboard is blocked,
                 so the backup path is never a dead end. */}
@@ -837,6 +864,17 @@ const constructionPath =
   import { sessionDate, projectedFinish, buildIcs, formatSessionDate } from '../../lib/mission90/pace';
   import { copyTextToClipboard } from '../../lib/clipboard';
   import { safeGtag } from '../../lib/gtag';
+  import { downloadTextFile } from '../../lib/download';
+  import {
+    BACKUP_META_KEY,
+    parseBackupMeta,
+    serializeBackupMeta,
+    backupFileName,
+    backupFileText,
+    isRestorableProgress,
+    shouldNudgeBackup,
+    type BackupMeta,
+  } from '../../lib/mission90/backup';
 
   interface LiveDay {
     day: number;
@@ -859,6 +897,112 @@ const constructionPath =
    *  computed forward from, so a projection can never claim to be "behind". */
   function todayDateString(): string {
     return new Date().toISOString().slice(0, 10);
+  }
+
+  // ── Backup meta (oc-m90-backup-meta) — when the learner last backed up or
+  // dismissed the backup nudge. Parsed by lib/mission90/backup (pure, tested);
+  // kept out of the oc-m90-v1 blob on purpose — progress.ts owns that schema.
+  function readBackupMeta(): BackupMeta {
+    let raw: string | null = null;
+    try {
+      raw = localStorage.getItem(BACKUP_META_KEY);
+    } catch {
+      /* storage blocked */
+    }
+    return parseBackupMeta(raw);
+  }
+
+  function writeBackupMeta(patch: Partial<BackupMeta>): void {
+    try {
+      localStorage.setItem(BACKUP_META_KEY, serializeBackupMeta({ ...readBackupMeta(), ...patch }));
+    } catch {
+      /* storage blocked — the nudge may reappear; never break the page */
+    }
+  }
+
+  /** Fully-completed phase count, read from the journey cards' data ranges. */
+  function phasesDoneNow(p: M90Progress): number {
+    let n = 0;
+    document
+      .querySelectorAll<HTMLElement>('[data-m90-journey] [data-phase-card]')
+      .forEach((card) => {
+        const [lo, hi] = (card.dataset.phaseRange ?? '').split('-').map(Number);
+        if (!Number.isFinite(lo) || !Number.isFinite(hi)) return;
+        const { done, total } = phaseProgress(p, [lo, hi]);
+        if (total > 0 && done >= total) n += 1;
+      });
+    return n;
+  }
+
+  function recordBackup(p: M90Progress): void {
+    writeBackupMeta({ backedUpAt: new Date().toISOString(), backedUpPhases: phasesDoneNow(p) });
+  }
+
+  function doBackupDownload(): void {
+    const p = readProgress();
+    const ok = downloadTextFile(
+      backupFileName(todayDateString()),
+      backupFileText(exportProgress(p), isRestorableProgress(p)),
+    );
+    if (ok) {
+      recordBackup(p);
+      // Success-only, matching complete.astro's semantics — a dead click must
+      // not count as a backup download.
+      fireCta('backup_download');
+    } else {
+      // Blob/object-URL blocked: open the disclosure and say so next to the
+      // copy button — the copy path is the fallback.
+      const backupRoot = document.querySelector<HTMLElement>('[data-m90-backup]');
+      backupRoot?.querySelector('details')?.setAttribute('open', '');
+      const st = backupRoot?.querySelector<HTMLElement>('[data-m90-backup-status]');
+      if (st) st.textContent = "Couldn't start the download in this browser — copy the code instead.";
+    }
+    syncBackupNudge(p);
+  }
+
+  // ── Backup nudge — one polite line above the backup disclosure, never a
+  // modal. Visibility re-syncs on every render (boot, m90:progress, storage).
+  function syncBackupNudge(p: M90Progress): void {
+    const el = document.querySelector<HTMLElement>('[data-m90-backup-nudge]');
+    if (!el) return;
+    const done = doneCount(p);
+    const show = shouldNudgeBackup({
+      done,
+      phasesDone: phasesDoneNow(p),
+      nowIso: new Date().toISOString(),
+      meta: readBackupMeta(),
+    });
+    if (!show) {
+      el.hidden = true;
+      return;
+    }
+    const text = el.querySelector<HTMLElement>('[data-m90-backup-nudge-text]');
+    const next = `${done} days of progress live only in this browser — download a backup file so a cleared cache can't take them.`;
+    // Only touch the live region when something actually changed — render()
+    // re-runs on every progress event, and rewriting identical text would
+    // re-announce the whole role=status region on each day tick.
+    if (text && text.textContent !== next) text.textContent = next;
+    if (el.hidden) el.hidden = false;
+  }
+
+  function initBackupNudge(): void {
+    const el = document.querySelector<HTMLElement>('[data-m90-backup-nudge]');
+    if (!el || el.dataset.bound === 'true') return;
+    el.dataset.bound = 'true';
+    el.querySelector<HTMLButtonElement>('[data-m90-backup-nudge-download]')?.addEventListener(
+      'click',
+      doBackupDownload,
+    );
+    el.querySelector<HTMLButtonElement>('[data-m90-backup-nudge-dismiss]')?.addEventListener(
+      'click',
+      () => {
+        writeBackupMeta({
+          dismissedAt: new Date().toISOString(),
+          dismissedPhases: phasesDoneNow(readProgress()),
+        });
+        el.hidden = true;
+      },
+    );
   }
 
   /** Live days not yet marked complete, sorted ascending — the schedule the
@@ -1029,6 +1173,7 @@ const constructionPath =
     });
 
     updatePaceUI();
+    syncBackupNudge(p);
 
     const first = document.querySelector<HTMLElement>('[data-m90-cta-first]');
     const returning = document.querySelector<HTMLElement>('[data-m90-cta-returning]');
@@ -1161,8 +1306,14 @@ const constructionPath =
     const copyFallback = root.querySelector<HTMLTextAreaElement>('[data-m90-backup-code]');
 
     copyBtn?.addEventListener('click', () => {
-      const code = exportProgress(readProgress());
+      const p = readProgress();
+      const code = exportProgress(p);
       void copyTextToClipboard(code).then((ok) => {
+        // A successful copy IS a backup — remember it so the nudge stands down.
+        if (ok) {
+          recordBackup(p);
+          syncBackupNudge(p);
+        }
         if (copyStatus) {
           copyStatus.textContent = ok
             ? 'Copied — paste it somewhere safe, then paste it back here on the other device.'
@@ -1178,6 +1329,11 @@ const constructionPath =
         }
       });
     });
+
+    // File flavor of the same backup — GA fires via the button's data-cta.
+    root
+      .querySelector<HTMLButtonElement>('[data-m90-backup-download]')
+      ?.addEventListener('click', doBackupDownload);
 
     const restore = () => {
       const raw = restoreInput?.value ?? '';
@@ -1245,6 +1401,7 @@ const constructionPath =
   function boot(): void {
     render();
     initBackupRestore();
+    initBackupNudge();
     initSkipAhead();
     initPacePlanner();
     if (!bound) {

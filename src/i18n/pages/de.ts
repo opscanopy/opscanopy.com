@@ -1,6 +1,6 @@
 import type { PagesContent } from './en';
 
-const UPDATED = '2026-06-12';
+const UPDATED = '2026-07-18';
 
 const de: Partial<PagesContent> = {
   ui: {
@@ -40,6 +40,20 @@ const de: Partial<PagesContent> = {
         body: [
           'Wir erfassen nicht den Inhalt Ihrer Eingaben oder Ausgaben. Wir verwenden keine Werbe-Cookies, keine seitenübergreifenden Tracker und kein Fingerprinting. Wir verkaufen, vermieten oder teilen keine personenbezogenen Daten, weil wir sie gar nicht erst erheben. Unsere einzige Messung ist die unten beschriebene, standardmäßig cookielose Web-Analyse.',
           'Jede Einstellung, die sich die Website merkt — etwa Ihr helles/dunkles Theme oder Ihre Sprache —, wird im lokalen Speicher Ihres Browsers auf Ihrem Gerät abgelegt und niemals an uns übertragen.',
+        ],
+      },
+      {
+        heading: 'Was die Website auf Ihrem Gerät speichert',
+        body: [
+          'Alles, was sich OpsCanopy merkt, wird im lokalen Speicher Ihres Browsers auf Ihrem Gerät abgelegt, unter einer Handvoll benannter Schlüssel, die Sie jederzeit einsehen und löschen können. Nichts davon wird an uns übertragen. Aktuell sind das folgende Schlüssel:',
+          'theme — Ihre Wahl des hellen oder dunklen Themes.',
+          'oc-analytics-consent — Ihre Entscheidung zur Web-Analyse, festgelegt über den Schalter auf dieser Seite.',
+          'oc-m90-v1 — Ihr Fortschritt bei Mission 90 Days DevOps: welche Tage und Missionen Sie in diesem Browser als erledigt markiert haben.',
+          'oc-m90-backup-meta — wann Sie diesen Fortschritt zuletzt gesichert haben (und ob Sie die Backup-Erinnerung ausgeblendet haben), damit der Mission-90-Hub weiß, wann sich eine Erinnerung lohnt.',
+          'opscanopy:tools:sort — wie Sie den Tool-Katalog zuletzt sortiert haben.',
+          'oc-roadmap-… (ein Schlüssel pro Lern-Roadmap) — welche Themen Sie auf dieser Roadmap abgehakt haben.',
+          'oc-guide-…-pos (ein Schlüssel pro Guide) — Ihre letzte Leseposition in diesem Guide.',
+          'Das Löschen der Websitedaten in Ihrem Browser entfernt all diese Einträge. Der Mission-90-Fortschritt kann ein Löschen mithilfe der Backup-Datei oder des Backup-Codes aus dem Mission-90-Hub überstehen.',
         ],
       },
       {

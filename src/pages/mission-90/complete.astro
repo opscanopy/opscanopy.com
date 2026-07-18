@@ -100,6 +100,9 @@ const m90cData = {
             <button type="button" id="m90c-copy-blurb" class="btn btn-secondary btn-sm" style="touch-action: manipulation;">
               Copy share text
             </button>
+            <button type="button" id="m90c-backup" class="btn btn-secondary btn-sm" style="touch-action: manipulation;">
+              Download backup file
+            </button>
           </div>
           <p class="caption mt-2 text-center text-mute" role="status" id="m90c-status"></p>
           {/* Manual fallback — revealed only when the clipboard is blocked, so
@@ -140,8 +143,18 @@ const m90cData = {
 </Shell>
 
 <script>
-  import { parseProgress, doneCount, phaseProgress, PROGRESS_KEY } from '../../lib/mission90/progress';
+  import { parseProgress, doneCount, phaseProgress, exportProgress, PROGRESS_KEY } from '../../lib/mission90/progress';
   import { copyTextToClipboard } from '../../lib/clipboard';
+  import { safeGtag } from '../../lib/gtag';
+  import { downloadTextFile } from '../../lib/download';
+  import {
+    BACKUP_META_KEY,
+    parseBackupMeta,
+    serializeBackupMeta,
+    backupFileName,
+    backupFileText,
+    isRestorableProgress,
+  } from '../../lib/mission90/backup';
   import { escapeHtml } from '../../lib/escape-html';
   import { formatDuration, fmtDate } from '../../lib/mission90/format';
 
@@ -354,6 +367,43 @@ const m90cData = {
             fallback.select();
           }
         });
+      });
+    }
+    const backupBtn = document.getElementById('m90c-backup');
+    if (backupBtn && backupBtn.dataset.bound !== 'true') {
+      backupBtn.dataset.bound = 'true';
+      backupBtn.addEventListener('click', () => {
+        const p = readProgress();
+        const ok = downloadTextFile(
+          backupFileName(new Date().toISOString().slice(0, 10)),
+          backupFileText(exportProgress(p), isRestorableProgress(p)),
+        );
+        if (status) {
+          status.textContent = ok
+            ? 'Backup file downloaded — keep it somewhere safe.'
+            : "Couldn't start the download in this browser — use the backup code on the Mission 90 hub instead.";
+        }
+        if (!ok) return;
+        safeGtag('event', 'cta_click', { cta: 'backup_download' });
+        // Remember the backup so the hub's nudge stands down (same memo the
+        // hub writes — see lib/mission90/backup.ts; NOT part of oc-m90-v1).
+        try {
+          const data = getData();
+          const phasesDone = data.phaseRanges.filter((range) => {
+            const { done: pd, total } = phaseProgress(p, range);
+            return total > 0 && pd >= total;
+          }).length;
+          localStorage.setItem(
+            BACKUP_META_KEY,
+            serializeBackupMeta({
+              ...parseBackupMeta(localStorage.getItem(BACKUP_META_KEY)),
+              backedUpAt: new Date().toISOString(),
+              backedUpPhases: phasesDone,
+            }),
+          );
+        } catch {
+          /* storage blocked — the nudge may reappear; never break the page */
+        }
       });
     }
   }

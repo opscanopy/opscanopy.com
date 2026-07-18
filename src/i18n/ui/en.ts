@@ -44,6 +44,11 @@ const en = {
   'footer.disclaimer.trademark': 'and',
   'footer.disclaimer.tail': 'are trademarks of Raintank, Inc.',
 
+  // FAQ section (shared FaqList component — defaults; explicit props override)
+  'faq.eyebrow': 'FAQ',
+  'faq.heading': 'Questions, answered.',
+  'faq.tapHint': 'Tap a question to expand the answer.',
+
   // Language switcher
   'lang.switcherLabel': 'Language',
 

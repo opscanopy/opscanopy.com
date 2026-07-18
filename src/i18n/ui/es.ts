@@ -34,6 +34,11 @@ const es: Partial<UiDict> = {
   'footer.disclaimer.trademark': 'y',
   'footer.disclaimer.tail': 'son marcas comerciales de Raintank, Inc.',
 
+  // FAQ section (shared FaqList component — defaults; explicit props override)
+  'faq.eyebrow': 'FAQ',
+  'faq.heading': 'Tus preguntas, respondidas.',
+  'faq.tapHint': 'Toca una pregunta para desplegar la respuesta.',
+
   // Language switcher
   'lang.switcherLabel': 'Idioma',
 

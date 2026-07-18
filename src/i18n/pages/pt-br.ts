@@ -1,6 +1,6 @@
 import type { PagesContent } from './en';
 
-const UPDATED = '2026-06-12';
+const UPDATED = '2026-07-18';
 
 const ptBr: Partial<PagesContent> = {
   ui: {
@@ -40,6 +40,20 @@ const ptBr: Partial<PagesContent> = {
         body: [
           'Não coletamos o conteúdo das suas entradas nem das suas saídas. Não usamos cookies de publicidade, rastreadores entre sites ou fingerprinting. Não vendemos, alugamos nem compartilhamos dados pessoais, porque nem sequer os coletamos. Nossa única medição é a análise sem cookies por padrão descrita abaixo.',
           'Qualquer preferência que o site memoriza — como o tema claro/escuro ou o idioma — é armazenada no armazenamento local do seu navegador, no seu dispositivo, e nunca é transmitida para nós.',
+        ],
+      },
+      {
+        heading: 'O que o site armazena no seu dispositivo',
+        body: [
+          'Tudo o que o OpsCanopy memoriza fica no armazenamento local do seu navegador, no seu dispositivo, sob um punhado de chaves nomeadas que você pode inspecionar e excluir a qualquer momento. Nada disso é transmitido para nós. Hoje essas chaves são:',
+          'theme — sua escolha de tema claro ou escuro.',
+          'oc-analytics-consent — sua escolha de permitir cookies de análise, feita no controle desta página.',
+          'oc-m90-v1 — seu progresso no Mission 90 Days DevOps: quais dias e missões você marcou como concluídos neste navegador.',
+          'oc-m90-backup-meta — quando você fez o último backup desse progresso (e se você dispensou o lembrete de backup), para que o hub do Mission 90 saiba quando vale a pena mostrar um lembrete.',
+          'opscanopy:tools:sort — como você ordenou o catálogo de ferramentas pela última vez.',
+          'oc-roadmap-… (uma chave por roadmap de aprendizado) — quais tópicos você marcou como concluídos nesse roadmap.',
+          'oc-guide-…-pos (uma chave por guia) — sua última posição de leitura nesse guia.',
+          'Limpar os dados do site no seu navegador remove tudo isso. O progresso do Mission 90 pode sobreviver a uma limpeza por meio do arquivo de backup ou do código do hub do Mission 90.',
         ],
       },
       {

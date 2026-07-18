@@ -55,7 +55,7 @@ export interface PagesContent {
   };
 }
 
-const UPDATED = '2026-06-12';
+const UPDATED = '2026-07-18';
 
 const en: PagesContent = {
   ui: {
@@ -95,6 +95,20 @@ const en: PagesContent = {
         body: [
           'We do not collect the contents of your inputs or outputs. We do not use advertising cookies, cross-site trackers, or fingerprinting. We do not sell, rent, or share personal data, because we do not gather it in the first place. Our only measurement is the cookieless-by-default analytics described below.',
           'Any preference the site remembers — such as your light/dark theme or language — is stored in your browser’s local storage on your device and is never transmitted to us.',
+        ],
+      },
+      {
+        heading: 'What the site stores on your device',
+        body: [
+          'Everything OpsCanopy remembers is kept in your browser’s local storage on your device, under a handful of named keys you can inspect and delete at any time. None of it is transmitted to us. Today those keys are:',
+          'theme — your light or dark theme choice.',
+          'oc-analytics-consent — your analytics opt-in choice from the toggle on this page.',
+          'oc-m90-v1 — your Mission 90 Days DevOps progress: which days and missions you have marked done in this browser.',
+          'oc-m90-backup-meta — when you last backed up that progress (and whether you dismissed the backup reminder), so the Mission 90 hub knows when a reminder is worth showing.',
+          'opscanopy:tools:sort — how you last sorted the tools catalog.',
+          'oc-roadmap-… (one key per learning roadmap) — which topics you have checked off on that roadmap.',
+          'oc-guide-…-pos (one key per guide) — your last reading position in that guide.',
+          'Clearing your browser’s site data removes all of these. Mission 90 progress can survive a clear via the backup file or code from the Mission 90 hub.',
         ],
       },
       {

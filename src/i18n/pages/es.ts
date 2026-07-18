@@ -1,6 +1,6 @@
 import type { PagesContent } from './en';
 
-const UPDATED = '2026-06-12';
+const UPDATED = '2026-07-18';
 
 const es: Partial<PagesContent> = {
   ui: {
@@ -40,6 +40,20 @@ const es: Partial<PagesContent> = {
         body: [
           'No recopilamos el contenido de tus entradas ni de tus salidas. No usamos cookies publicitarias, rastreadores entre sitios ni fingerprinting. No vendemos, alquilamos ni compartimos datos personales, porque, para empezar, no los recopilamos. Nuestra única medición es la analítica sin cookies por defecto que se describe más abajo.',
           'Cualquier preferencia que el sitio recuerde —como tu tema claro/oscuro o tu idioma— se guarda en el almacenamiento local de tu navegador, en tu dispositivo, y nunca se nos transmite.',
+        ],
+      },
+      {
+        heading: 'Qué guarda el sitio en tu dispositivo',
+        body: [
+          'Todo lo que OpsCanopy recuerda se guarda en el almacenamiento local de tu navegador, en tu dispositivo, bajo un puñado de claves con nombre que puedes inspeccionar y eliminar en cualquier momento. Nada de esto se nos transmite. Hoy esas claves son:',
+          'theme — tu elección de tema claro u oscuro.',
+          'oc-analytics-consent — tu decisión sobre la analítica, establecida con el interruptor de esta página.',
+          'oc-m90-v1 — tu progreso de Mission 90 Days DevOps: qué días y misiones has marcado como completados en este navegador.',
+          'oc-m90-backup-meta — cuándo hiciste la última copia de seguridad de ese progreso (y si descartaste el recordatorio de copia de seguridad), para que el hub de Mission 90 sepa cuándo vale la pena mostrar un recordatorio.',
+          'opscanopy:tools:sort — cómo ordenaste por última vez el catálogo de herramientas.',
+          'oc-roadmap-… (una clave por cada hoja de ruta de aprendizaje) — qué temas has marcado en esa hoja de ruta.',
+          'oc-guide-…-pos (una clave por cada guía) — tu última posición de lectura en esa guía.',
+          'Borrar los datos del sitio en tu navegador elimina todo esto. El progreso de Mission 90 puede sobrevivir a un borrado mediante el archivo o código de copia de seguridad del hub de Mission 90.',
         ],
       },
       {

@@ -117,7 +117,7 @@ For runtime verification of playground changes (tests can't see the DOM), `.clau
 
 ### Site config
 
-**Header/footer nav lives in `src/i18n/site/{en,de,es,fr,pt-br}.ts`**, read via `getSiteContent(lang)` (Header.astro / Footer.astro). A nav change must ship to **all five** locale files. Sections that exist only in English (`/learn`, `/mission-90`) are listed in `ENGLISH_ONLY_SECTIONS` in `src/i18n/utils.ts` so `localizeNavHref` links them unprefixed from every locale (no `/de/learn`-style 404s). `/search` is NOT in that list — it has a real localized page per locale (see below), so it localizes like any other page.
+**Header/footer nav lives in `src/i18n/site/{en,de,es,fr,pt-br}.ts`**, read via `getSiteContent(lang)` (Header.astro / Footer.astro). A nav change must ship to **all five** locale files. Sections that exist only in English (`/learn`, `/mission-90`) are listed in `ENGLISH_ONLY_SECTIONS` in `src/i18n/utils.ts` so `localizeNavHref` links them unprefixed from every locale (no `/de/learn`-style 404s). Tool **category** pages (`/tools/<category>/`) are likewise English-only by design: the MegaMenu deliberately links them unprefixed from every locale (see the comment in `MegaMenu.astro`) — localized category copies were evaluated and rejected as thin near-duplicates. `/search` is NOT in that list — it has a real localized page per locale (see below), so it localizes like any other page.
 
 **`src/data/site.ts`** — brand constants (name, url, twitter, author). Its `navLinks` array is **legacy** — the Header does NOT read it; it only feeds a few in-page links on tool pages. Do not add nav entries there.
 

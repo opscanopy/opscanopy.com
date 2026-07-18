@@ -10,7 +10,7 @@
 
 import type { PagesContent } from './en';
 
-const UPDATED = '2026-06-12';
+const UPDATED = '2026-07-18';
 
 const fr: Partial<PagesContent> = {
   ui: {
@@ -50,6 +50,20 @@ const fr: Partial<PagesContent> = {
         body: [
           'Nous ne collectons pas le contenu de vos entrées ou de vos sorties. Nous n’utilisons pas de cookies publicitaires, de traceurs intersites ni d’empreinte numérique. Nous ne vendons, ne louons ni ne partageons aucune donnée personnelle, car nous ne la recueillons pas en premier lieu. Notre seule mesure d’audience est l’outil d’analyse sans cookies par défaut décrit ci-dessous.',
           'Toute préférence que le site mémorise — comme votre thème clair/sombre ou votre langue — est stockée dans le stockage local de votre navigateur, sur votre appareil, et ne nous est jamais transmise.',
+        ],
+      },
+      {
+        heading: 'Ce que le site stocke sur votre appareil',
+        body: [
+          'Tout ce qu’OpsCanopy mémorise est conservé dans le stockage local de votre navigateur, sur votre appareil, sous une poignée de clés nommées que vous pouvez consulter et supprimer à tout moment. Rien de tout cela ne nous est jamais transmis. Aujourd’hui, ces clés sont :',
+          'theme — votre choix de thème clair ou sombre.',
+          'oc-analytics-consent — votre choix de consentement à la mesure d’audience via l’interrupteur de cette page.',
+          'oc-m90-v1 — votre progression Mission 90 Days DevOps : les jours et missions que vous avez marqués comme terminés dans ce navigateur.',
+          'oc-m90-backup-meta — la date de votre dernière sauvegarde de cette progression (et si vous avez ignoré le rappel de sauvegarde), afin que le hub Mission 90 sache quand un rappel est pertinent.',
+          'opscanopy:tools:sort — votre dernier ordre de tri du catalogue d’outils.',
+          'oc-roadmap-… (une clé par roadmap d’apprentissage) — les sujets que vous avez cochés sur cette roadmap.',
+          'oc-guide-…-pos (une clé par guide) — votre dernière position de lecture dans ce guide.',
+          'Effacer les données de sites de votre navigateur supprime tout cela. La progression Mission 90 peut survivre à un effacement grâce au fichier ou au code de sauvegarde du hub Mission 90.',
         ],
       },
       {
