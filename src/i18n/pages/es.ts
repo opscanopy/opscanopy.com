@@ -53,6 +53,7 @@ const es: Partial<PagesContent> = {
           'opscanopy:tools:sort — cómo ordenaste por última vez el catálogo de herramientas.',
           'oc-roadmap-… (una clave por cada hoja de ruta de aprendizaje) — qué temas has marcado en esa hoja de ruta.',
           'oc-guide-…-pos (una clave por cada guía) — tu última posición de lectura en esa guía.',
+          'oc-tools-v1 — las herramientas que has fijado y las últimas que has usado, para que los apartados «Continúa donde lo dejaste» y «Tus herramientas» puedan mostrarlas.',
           'Borrar los datos del sitio en tu navegador elimina todo esto. El progreso de Mission 90 puede sobrevivir a un borrado mediante el archivo o código de copia de seguridad del hub de Mission 90.',
         ],
       },

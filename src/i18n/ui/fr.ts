@@ -121,6 +121,16 @@ const fr: Partial<UiDict> = {
   'tools.tryLabel': 'Essayer :',
   'tools.openTool': "Ouvrir l'outil",
   'tools.availableNow': 'Disponibles maintenant',
+  'tools.pinAdd': 'Épingler cet outil',
+  'tools.pinRemove': 'Désépingler cet outil',
+  'tools.yourTools': 'Vos outils',
+  'tools.jumpBackIn': 'Reprenez où vous en étiez',
+  'tools.jumpBackInCaption': 'Outils épinglés et récemment utilisés — enregistrés uniquement dans ce navigateur.',
+
+  // Tool page breadcrumb trail
+  'breadcrumb.home': 'Accueil',
+  'breadcrumb.tools': 'Outils',
+  'breadcrumb.allTools': 'Tous les outils',
   'tools.liveToolsHeading': 'Outils en service.',
   'tools.clientSideBadge': '100% côté client',
   'tools.browseByCategory': 'Parcourir par catégorie',

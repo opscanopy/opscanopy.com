@@ -120,6 +120,16 @@ const ptBr: Partial<UiDict> = {
   'tools.tryLabel': 'Testar:',
   'tools.openTool': 'Abrir ferramenta',
   'tools.availableNow': 'Disponíveis agora',
+  'tools.pinAdd': 'Fixar esta ferramenta',
+  'tools.pinRemove': 'Desafixar esta ferramenta',
+  'tools.yourTools': 'Suas ferramentas',
+  'tools.jumpBackIn': 'Continue de onde parou',
+  'tools.jumpBackInCaption': 'Ferramentas fixadas e usadas recentemente — salvas apenas neste navegador.',
+
+  // Tool page breadcrumb trail
+  'breadcrumb.home': 'Início',
+  'breadcrumb.tools': 'Ferramentas',
+  'breadcrumb.allTools': 'Todas as ferramentas',
   'tools.liveToolsHeading': 'Ferramentas no ar.',
   'tools.clientSideBadge': '100% no lado do cliente',
   'tools.browseByCategory': 'Navegar por categoria',

@@ -128,6 +128,16 @@ const en = {
   'tools.tryLabel': 'Try:',
   'tools.openTool': 'Open tool',
   'tools.availableNow': 'Available now',
+  'tools.pinAdd': 'Pin this tool',
+  'tools.pinRemove': 'Unpin this tool',
+  'tools.yourTools': 'Your tools',
+  'tools.jumpBackIn': 'Jump back in',
+  'tools.jumpBackInCaption': 'Pinned and recently used tools — saved only in this browser.',
+
+  // Tool page breadcrumb trail
+  'breadcrumb.home': 'Home',
+  'breadcrumb.tools': 'Tools',
+  'breadcrumb.allTools': 'All tools',
   'tools.liveToolsHeading': 'Live tools.',
   'tools.clientSideBadge': '100% client-side',
   'tools.browseByCategory': 'Browse by category',

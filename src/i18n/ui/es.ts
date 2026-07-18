@@ -118,6 +118,16 @@ const es: Partial<UiDict> = {
   'tools.tryLabel': 'Prueba:',
   'tools.openTool': 'Abrir herramienta',
   'tools.availableNow': 'Disponibles ahora',
+  'tools.pinAdd': 'Fijar esta herramienta',
+  'tools.pinRemove': 'Dejar de fijar esta herramienta',
+  'tools.yourTools': 'Tus herramientas',
+  'tools.jumpBackIn': 'Continúa donde lo dejaste',
+  'tools.jumpBackInCaption': 'Herramientas fijadas y usadas recientemente — guardadas solo en este navegador.',
+
+  // Tool page breadcrumb trail
+  'breadcrumb.home': 'Inicio',
+  'breadcrumb.tools': 'Herramientas',
+  'breadcrumb.allTools': 'Todas las herramientas',
   'tools.liveToolsHeading': 'Herramientas en activo.',
   'tools.clientSideBadge': '100% del lado del cliente',
   'tools.browseByCategory': 'Explorar por categoría',

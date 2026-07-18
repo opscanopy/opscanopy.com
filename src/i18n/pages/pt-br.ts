@@ -53,6 +53,7 @@ const ptBr: Partial<PagesContent> = {
           'opscanopy:tools:sort — como você ordenou o catálogo de ferramentas pela última vez.',
           'oc-roadmap-… (uma chave por roadmap de aprendizado) — quais tópicos você marcou como concluídos nesse roadmap.',
           'oc-guide-…-pos (uma chave por guia) — sua última posição de leitura nesse guia.',
+          'oc-tools-v1 — as ferramentas que você fixou e as últimas que usou, para que as seções "Continue de onde parou" e "Suas ferramentas" possam exibi-las.',
           'Limpar os dados do site no seu navegador remove tudo isso. O progresso do Mission 90 pode sobreviver a uma limpeza por meio do arquivo de backup ou do código do hub do Mission 90.',
         ],
       },

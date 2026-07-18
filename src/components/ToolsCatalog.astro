@@ -21,7 +21,7 @@
 import ToolCard from './ToolCard.astro';
 import { liveTools, categories, categoryAccent } from '../data/tools';
 import { DEFAULT_LOCALE, type Locale } from '../i18n/config';
-import { useTranslations } from '../i18n/utils';
+import { useTranslations, localizeKey } from '../i18n/utils';
 import type { UiKey } from '../i18n/ui/en';
 
 const lang: Locale = (Astro.currentLocale as Locale) ?? DEFAULT_LOCALE;
@@ -34,6 +34,30 @@ const catLabel = (cat: string) => t(`category.${cat}` as UiKey);
     <p class="eyebrow">{t('tools.availableNow')}</p>
     <h2 id="live-heading" class="display-lg mt-3 text-balance text-ink">{t('tools.liveToolsHeading')}</h2>
   </div>
+</div>
+
+{/* Pinned/recent shelf — every live tool gets a hidden tile so the client
+    script needs no metadata of its own; it only reveals + reorders. Stays
+    hidden entirely when there are no saved prefs (zero CLS) or storage is
+    blocked. */}
+<div id="tools-shelf" class="mt-6" hidden>
+  <p class="eyebrow">{t('tools.jumpBackIn')}</p>
+  <p class="caption mt-1 text-mute">{t('tools.jumpBackInCaption')}</p>
+  <ul id="tools-shelf-list" role="list" class="mt-3 flex flex-wrap gap-2">
+    {
+      liveTools.map((tool) => (
+        <li data-shelf-slug={tool.slug} hidden>
+          <a
+            href={localizeKey(`/${tool.slug}`, lang)}
+            class="badge inline-flex items-center gap-1.5 hover:bg-brand/10"
+          >
+            <span class="shelf-pin-dot hidden size-1.5 rounded-full bg-brand-strong" aria-hidden="true" />
+            {tool.name}
+          </a>
+        </li>
+      ))
+    }
+  </ul>
 </div>
 
 {
@@ -137,6 +161,44 @@ const catLabel = (cat: string) => t(`category.${cat}` as UiKey);
 }
 
 <script>
+  import { TOOL_PREFS_KEY, parseToolPrefs, unpinnedRecentSlugs } from '../lib/tool-prefs/prefs';
+
+  (function initShelf() {
+    var shelf = document.getElementById('tools-shelf');
+    var list = document.getElementById('tools-shelf-list');
+    if (!shelf || !list) return;
+    var prefs;
+    try {
+      prefs = parseToolPrefs(localStorage.getItem(TOOL_PREFS_KEY));
+    } catch (e) {
+      prefs = parseToolPrefs(null);
+    }
+    var order = prefs.pins.concat(unpinnedRecentSlugs(prefs));
+    if (order.length === 0) return; // stays hidden — zero CLS
+    // A Map, not a plain object: a tampered oc-tools-v1 blob (devtools, a
+    // shared computer) could otherwise contain a slug like "constructor"
+    // that collides with Object.prototype and throws when treated as an
+    // element, taking the whole catalog script (search/sort/filter) down
+    // with it.
+    var bySlug = new Map();
+    list.querySelectorAll('[data-shelf-slug]').forEach(function (li) {
+      bySlug.set(li.dataset.shelfSlug, li);
+    });
+    var shown = false;
+    order.forEach(function (slug) {
+      var li = bySlug.get(slug);
+      if (!li) return; // renamed/removed tool — silently skip
+      li.hidden = false;
+      shown = true;
+      if (prefs.pins.indexOf(slug) !== -1) {
+        var dot = li.querySelector('.shelf-pin-dot');
+        if (dot) dot.classList.remove('hidden');
+      }
+      list.appendChild(li); // moves the existing node, building the order
+    });
+    if (shown) shelf.hidden = false;
+  })();
+
   (function () {
     var search = document.getElementById('tool-search');
     var empty = document.getElementById('tool-empty');

@@ -108,6 +108,7 @@ const en: PagesContent = {
           'opscanopy:tools:sort — how you last sorted the tools catalog.',
           'oc-roadmap-… (one key per learning roadmap) — which topics you have checked off on that roadmap.',
           'oc-guide-…-pos (one key per guide) — your last reading position in that guide.',
+          'oc-tools-v1 — tools you have pinned, and the last few you have used, so the "Jump back in" and "Your tools" shelves can show them.',
           'Clearing your browser’s site data removes all of these. Mission 90 progress can survive a clear via the backup file or code from the Mission 90 hub.',
         ],
       },

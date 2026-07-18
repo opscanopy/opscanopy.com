@@ -18,7 +18,8 @@ import Badge from './Badge.astro';
 import { getTool, categoryToSlug } from '../data/tools';
 import { site } from '../data/site';
 import { breadcrumbLd } from '../lib/jsonld';
-import { DEFAULT_LOCALE } from '../i18n/config';
+import { DEFAULT_LOCALE, type Locale } from '../i18n/config';
+import { useTranslations, localizeKey } from '../i18n/utils';
 
 export interface Props {
   eyebrow: string;
@@ -37,22 +38,48 @@ export interface Props {
 
 const { eyebrow, badges = [], slug } = Astro.props;
 
+const lang = (Astro.currentLocale as Locale) ?? DEFAULT_LOCALE;
+const t = useTranslations(lang);
+
+const LOCALE_PREFIXES = ['de', 'es', 'fr', 'pt-br'];
+
+/** Derive the slug from the current path when the page didn't pass one
+ *  explicitly. Every localized tool page omits the `slug` prop (a
+ *  copy-paste gap across the whole locale tree, not a deliberate choice —
+ *  the English copies all pass it) — without this fallback, EVERY
+ *  localized tool page silently lost both the breadcrumb trail and the
+ *  pin-star button below. */
+function slugFromPath(pathname: string): string | undefined {
+  const parts = pathname.split('/').filter(Boolean);
+  if (parts.length === 0) return undefined;
+  return LOCALE_PREFIXES.includes(parts[0]) ? parts[1] : parts[0];
+}
+
+const resolvedSlug = slug ?? slugFromPath(Astro.url.pathname);
+
 // When a slug resolves to a registered tool, build the breadcrumb trail + LD.
 // Category pages exist for the default locale only (/tools/{slug}); on other
 // locales the category stays plain text so we never link a cross-locale URL.
-const tool = slug ? getTool(slug) : undefined;
+const tool = resolvedSlug ? getTool(resolvedSlug) : undefined;
 const isDefaultLocale = (Astro.currentLocale ?? DEFAULT_LOCALE) === DEFAULT_LOCALE;
 const categoryHref =
   tool && isDefaultLocale ? `/tools/${categoryToSlug(tool.category)}/` : null;
+const homeHref = localizeKey('/', lang);
+const toolsHref = localizeKey('/tools', lang);
+const toolHref = resolvedSlug ? localizeKey(`/${resolvedSlug}`, lang) : null;
+// Every crumb's LD item is the locale-correct URL (Home/Tools link cross-
+// locale on purpose for the default locale, but must reflect THIS page's
+// own locale on every other one) — the leaf specifically must be the
+// current page's own URL, not the default locale's.
 const breadcrumbJson = tool
   ? JSON.stringify(
       breadcrumbLd([
-        { name: 'Home', item: `${site.url}/` },
-        { name: 'Tools', item: `${site.url}/tools/` },
+        { name: t('breadcrumb.home'), item: `${site.url}${homeHref}` },
+        { name: t('breadcrumb.tools'), item: `${site.url}${toolsHref}` },
         ...(categoryHref
           ? [{ name: tool.category, item: `${site.url}${categoryHref}` }]
           : []),
-        { name: tool.name, item: `${site.url}/${slug}/` },
+        { name: tool.name, item: `${site.url}${toolHref}` },
       ]),
     )
   : null;
@@ -60,6 +87,44 @@ const breadcrumbJson = tool
 
 <section class="relative isolate overflow-hidden bg-canvas-soft">
   <MeshGradient class="pointer-events-none absolute inset-0 -z-10 h-full opacity-70" />
+  {
+    tool && (
+      <button
+        type="button"
+        id="tool-pin-btn"
+        class="tool-pin-btn absolute right-4 top-4 z-20 inline-flex size-10 items-center justify-center rounded-full bg-canvas/85 text-mute shadow-hairline backdrop-blur transition-colors hover:text-brand-strong sm:right-6 sm:top-6"
+        style="touch-action: manipulation;"
+        data-slug={resolvedSlug}
+        data-label-add={t('tools.pinAdd')}
+        data-label-remove={t('tools.pinRemove')}
+        aria-pressed="false"
+        aria-label={t('tools.pinAdd')}
+        hidden
+      >
+        <svg
+          class="tool-pin-icon-outline size-[18px]"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M12 3.5l2.47 5.18 5.72.55-4.3 3.9 1.2 5.63L12 15.9l-5.09 2.86 1.2-5.63-4.3-3.9 5.72-.55L12 3.5z" />
+        </svg>
+        <svg
+          class="tool-pin-icon-filled hidden size-[18px]"
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          stroke="none"
+          aria-hidden="true"
+        >
+          <path d="M12 3.5l2.47 5.18 5.72.55-4.3 3.9 1.2 5.63L12 15.9l-5.09 2.86 1.2-5.63-4.3-3.9 5.72-.55L12 3.5z" />
+        </svg>
+      </button>
+    )
+  }
   <!-- Soft top sheen + bottom fade frame the mesh so it reads as ambient light
        behind the masthead, keeping crisp ink contrast under the headline. -->
   <div
@@ -79,16 +144,16 @@ const breadcrumbJson = tool
           <nav aria-label="Breadcrumb" class="mb-4 flex justify-center text-sm text-mute">
             <ol class="flex flex-wrap items-center justify-center gap-1.5">
               <li>
-                <a href="/" class="hover:text-brand-strong transition-colors">
-                  Home
+                <a href={homeHref} class="hover:text-brand-strong transition-colors">
+                  {t('breadcrumb.home')}
                 </a>
               </li>
               <li aria-hidden="true" class="text-mute">
                 /
               </li>
               <li>
-                <a href="/tools/" class="hover:text-brand-strong transition-colors">
-                  Tools
+                <a href={toolsHref} class="hover:text-brand-strong transition-colors">
+                  {t('breadcrumb.tools')}
                 </a>
               </li>
               <li aria-hidden="true" class="text-mute">
@@ -113,7 +178,7 @@ const breadcrumbJson = tool
           </nav>
         ) : (
           <a
-            href="/tools/"
+            href={toolsHref}
             class="inline-flex items-center gap-1 text-sm text-mute hover:text-brand-strong mb-4 transition-colors"
           >
             <svg
@@ -130,7 +195,7 @@ const breadcrumbJson = tool
             >
               <path d="m15 18-6-6 6-6" />
             </svg>
-            All tools
+            {t('breadcrumb.allTools')}
           </a>
         )
       }
@@ -158,3 +223,65 @@ const breadcrumbJson = tool
     )
   }
 </section>
+
+{
+  tool && (
+    <script>
+      import { TOOL_PREFS_KEY, parseToolPrefs, serializeToolPrefs, togglePin, isPinned } from '../lib/tool-prefs/prefs';
+      import { safeGtag } from '../lib/gtag';
+
+      function readPrefs() {
+        try {
+          return parseToolPrefs(localStorage.getItem(TOOL_PREFS_KEY));
+        } catch {
+          return parseToolPrefs(null);
+        }
+      }
+
+      function boot(): void {
+        const btn = document.getElementById('tool-pin-btn') as HTMLButtonElement | null;
+        if (!btn || btn.dataset.pinWired === 'true') return;
+        const slug = btn.dataset.slug;
+        if (!slug) return;
+        btn.dataset.pinWired = 'true';
+
+        const outline = btn.querySelector<HTMLElement>('.tool-pin-icon-outline');
+        const filled = btn.querySelector<HTMLElement>('.tool-pin-icon-filled');
+        const addLabel = btn.dataset.labelAdd ?? 'Pin this tool';
+        const removeLabel = btn.dataset.labelRemove ?? 'Unpin this tool';
+
+        function render(pinned: boolean): void {
+          btn!.setAttribute('aria-pressed', String(pinned));
+          btn!.setAttribute('aria-label', pinned ? removeLabel : addLabel);
+          outline?.classList.toggle('hidden', pinned);
+          filled?.classList.toggle('hidden', !pinned);
+        }
+
+        // Storage-blocked browsers: readPrefs() safely falls back to empty
+        // prefs, so the button still renders (as "not pinned") instead of
+        // staying hidden forever.
+        render(isPinned(readPrefs(), slug));
+        btn.hidden = false;
+
+        btn.addEventListener('click', () => {
+          const next = togglePin(readPrefs(), slug);
+          const nowPinned = isPinned(next, slug);
+          // Render first: the toggle should feel instant even when storage is
+          // blocked (Safari private mode, a locked-down browser) — only the
+          // ACROSS-RELOAD persistence is at risk there, not this click's
+          // visible feedback.
+          render(nowPinned);
+          safeGtag('event', 'cta_click', { cta: nowPinned ? 'tool_pin' : 'tool_unpin' });
+          try {
+            localStorage.setItem(TOOL_PREFS_KEY, serializeToolPrefs(next));
+          } catch {
+            /* storage blocked — the toggle won't persist across reload */
+          }
+        });
+      }
+
+      boot();
+      document.addEventListener('astro:page-load', boot);
+    </script>
+  )
+}

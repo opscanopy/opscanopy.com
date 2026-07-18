@@ -1,0 +1,101 @@
+---
+/**
+ * JumpBackIn — the homepage's pinned/recent tools strip. A dedicated
+ * component (not hand-copied per locale) precisely BECAUSE the hand-copy
+ * approach already drifted once: the first version of this section was
+ * pasted into all 5 homepage files, but the reveal <script> only ever
+ * landed in the English copy, silently killing the feature on the other 4
+ * (see ToolsCatalog.astro's own header comment for the same lesson learned
+ * earlier, about a different shared section).
+ *
+ * Hidden until JS finds saved prefs — zero CLS, and storage-blocked visitors
+ * never see an empty strip. Tool hrefs are pre-localized server-side (baked
+ * into the JSON island) so the client script never needs to know about
+ * locales at all.
+ */
+import { liveTools } from '../data/tools';
+import { DEFAULT_LOCALE, type Locale } from '../i18n/config';
+import { localizeKey } from '../i18n/utils';
+
+export interface Props {
+  heading: string;
+  lang?: Locale;
+}
+
+const { heading, lang = DEFAULT_LOCALE } = Astro.props;
+const items = liveTools.map((t) => ({
+  slug: t.slug,
+  name: t.name,
+  href: localizeKey(`/${t.slug}`, lang),
+}));
+---
+
+<section id="jump-back-in" class="border-b border-hairline bg-canvas" hidden>
+  <div class="container-page py-6 sm:py-8">
+    <p class="eyebrow">{heading}</p>
+    <ul id="jbi-list" role="list" class="mt-3 flex flex-wrap gap-2"></ul>
+  </div>
+</section>
+<script type="application/json" id="jbi-data" set:html={JSON.stringify(items)} />
+
+<script>
+  import { TOOL_PREFS_KEY, parseToolPrefs, unpinnedRecentSlugs } from '../lib/tool-prefs/prefs';
+  import { escapeHtml } from '../lib/escape-html';
+
+  interface ToolMeta {
+    slug: string;
+    name: string;
+    href: string;
+  }
+
+  function getData(): ToolMeta[] {
+    const el = document.getElementById('jbi-data');
+    if (!el || !el.textContent) return [];
+    try {
+      return JSON.parse(el.textContent);
+    } catch {
+      return [];
+    }
+  }
+
+  function boot(): void {
+    const section = document.getElementById('jump-back-in');
+    const list = document.getElementById('jbi-list');
+    if (!section || !list || section.dataset.jbiWired === 'true') return;
+    section.dataset.jbiWired = 'true';
+
+    let prefs;
+    try {
+      prefs = parseToolPrefs(localStorage.getItem(TOOL_PREFS_KEY));
+    } catch {
+      prefs = parseToolPrefs(null);
+    }
+    const order = [...prefs.pins, ...unpinnedRecentSlugs(prefs)].slice(0, 8);
+    if (order.length === 0) return; // stays hidden — zero CLS
+
+    const bySlug = new Map(getData().map((t) => [t.slug, t]));
+    const html = order
+      .map((slug) => {
+        const meta = bySlug.get(slug);
+        if (!meta) return ''; // renamed/removed tool — silently skip
+        const pinned = prefs.pins.includes(slug);
+        const dot = pinned
+          ? '<span class="size-1.5 rounded-full bg-brand-strong" aria-hidden="true"></span>'
+          : '';
+        return (
+          `<li><a href="${escapeHtml(meta.href)}" class="badge inline-flex items-center gap-1.5 hover:bg-brand/10">` +
+          dot +
+          `${escapeHtml(meta.name)}</a></li>`
+        );
+      })
+      .filter(Boolean)
+      .join('');
+
+    if (!html) return; // every saved slug was renamed/removed — stay hidden
+    list.innerHTML = html;
+    section.hidden = false;
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

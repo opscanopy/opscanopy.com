@@ -53,6 +53,7 @@ const de: Partial<PagesContent> = {
           'opscanopy:tools:sort — wie Sie den Tool-Katalog zuletzt sortiert haben.',
           'oc-roadmap-… (ein Schlüssel pro Lern-Roadmap) — welche Themen Sie auf dieser Roadmap abgehakt haben.',
           'oc-guide-…-pos (ein Schlüssel pro Guide) — Ihre letzte Leseposition in diesem Guide.',
+          'oc-tools-v1 — Tools, die Sie angeheftet haben, sowie die zuletzt verwendeten — damit die Bereiche „Schnellzugriff" und „Ihre Tools" sie anzeigen können.',
           'Das Löschen der Websitedaten in Ihrem Browser entfernt all diese Einträge. Der Mission-90-Fortschritt kann ein Löschen mithilfe der Backup-Datei oder des Backup-Codes aus dem Mission-90-Hub überstehen.',
         ],
       },

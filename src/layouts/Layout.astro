@@ -174,6 +174,51 @@ const lang: Locale = (Astro.currentLocale as Locale) ?? DEFAULT_LOCALE;
         }
       })();
     </script>
+    {/* Recents capture — a REAL module (not is:inline, so it can import the
+        pure tool-prefs schema owner), mirroring the GA script's own
+        first-interaction-in-#playground gating above. No ClientRouter on
+        this site, so Layout re-executes fresh on every navigation — no
+        rebind guard needed the way soft-navigating islands require. */}
+    <script>
+      import { TOOL_PREFS_KEY, parseToolPrefs, serializeToolPrefs, recordRecent } from '../lib/tool-prefs/prefs';
+
+      const LOCALE_PREFIXES = ['de', 'es', 'fr', 'pt-br'];
+
+      function currentSlug(): string | null {
+        const parts = location.pathname.split('/').filter(Boolean);
+        if (parts.length === 0) return null;
+        const first = parts[0];
+        return LOCALE_PREFIXES.includes(first) ? (parts[1] ?? null) : first;
+      }
+
+      function inPlayground(node: EventTarget | null): boolean {
+        try {
+          const el = node as HTMLElement | null;
+          return !!(el && el.closest && el.closest('#playground'));
+        } catch {
+          return false;
+        }
+      }
+
+      let recorded = false;
+      function onFirstInteraction(e: Event): void {
+        if (recorded || !inPlayground(e.target)) return;
+        const slug = currentSlug();
+        if (!slug) return;
+        recorded = true;
+        try {
+          const prefs = parseToolPrefs(localStorage.getItem(TOOL_PREFS_KEY));
+          const next = recordRecent(prefs, slug, new Date().toISOString());
+          localStorage.setItem(TOOL_PREFS_KEY, serializeToolPrefs(next));
+        } catch {
+          /* storage blocked — never break the page */
+        }
+      }
+
+      (['input', 'change', 'keydown', 'click'] as const).forEach((type) => {
+        document.addEventListener(type, onFirstInteraction, true);
+      });
+    </script>
     <SEO
       title={fullTitle}
       description={description}

@@ -63,6 +63,7 @@ const fr: Partial<PagesContent> = {
           'opscanopy:tools:sort — votre dernier ordre de tri du catalogue d’outils.',
           'oc-roadmap-… (une clé par roadmap d’apprentissage) — les sujets que vous avez cochés sur cette roadmap.',
           'oc-guide-…-pos (une clé par guide) — votre dernière position de lecture dans ce guide.',
+          'oc-tools-v1 — les outils que vous avez épinglés et les derniers que vous avez utilisés, afin que les sections « Reprenez où vous en étiez » et « Vos outils » puissent les afficher.',
           'Effacer les données de sites de votre navigateur supprime tout cela. La progression Mission 90 peut survivre à un effacement grâce au fichier ou au code de sauvegarde du hub Mission 90.',
         ],
       },

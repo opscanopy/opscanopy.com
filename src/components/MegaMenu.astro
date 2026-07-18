@@ -68,6 +68,26 @@ for (const tool of liveTools) {
       </button>
     </div>
 
+    <!-- Your tools (pinned/recent) — hidden until JS finds saved prefs. -->
+    <div id="mega-shelf" class="mb-6" hidden>
+      <p class="eyebrow">{t('tools.yourTools')}</p>
+      <ul id="mega-shelf-list" role="list" class="mt-2.5 flex flex-wrap gap-2">
+        {
+          liveTools.map((tool) => (
+            <li data-shelf-slug={tool.slug} hidden>
+              <a
+                href={toolHref(tool.slug)}
+                class="badge inline-flex items-center gap-1.5 hover:bg-brand/10"
+              >
+                <span class="shelf-pin-dot hidden size-1.5 rounded-full bg-brand-strong" aria-hidden="true" />
+                {tool.name}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+
     <!-- Tools grid -->
     <div id="mega-grid" class="grid grid-cols-2 gap-x-6 gap-y-7 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
       {Array.from(grouped.entries()).map(([category, tools]) => (
@@ -181,6 +201,44 @@ for (const tool of liveTools) {
 </style>
 
 <script>
+import { TOOL_PREFS_KEY, parseToolPrefs, unpinnedRecentSlugs } from '../lib/tool-prefs/prefs';
+
+/**
+ * Reveal + reorder the "Your tools" shelf from saved prefs. Called on every
+ * menu OPEN (not just once at page-load wiring), so a pin/unpin earlier in
+ * the same page view is always reflected — which means every tile must be
+ * reset to hidden first: a tile left visible from a PREVIOUS call (now
+ * unpinned and no longer recent) would otherwise never re-hide itself.
+ */
+function initMegaShelf(): void {
+  const shelf = document.getElementById('mega-shelf') as HTMLElement | null;
+  const list = document.getElementById('mega-shelf-list') as HTMLElement | null;
+  if (!shelf || !list) return;
+  let prefs;
+  try {
+    prefs = parseToolPrefs(localStorage.getItem(TOOL_PREFS_KEY));
+  } catch {
+    prefs = parseToolPrefs(null);
+  }
+  const order = [...prefs.pins, ...unpinnedRecentSlugs(prefs)];
+  const bySlug = new Map<string, HTMLElement>();
+  list.querySelectorAll<HTMLElement>('[data-shelf-slug]').forEach((li) => {
+    li.hidden = true;
+    li.querySelector('.shelf-pin-dot')?.classList.add('hidden');
+    bySlug.set(li.dataset.shelfSlug ?? '', li);
+  });
+  let shown = false;
+  for (const slug of order) {
+    const li = bySlug.get(slug);
+    if (!li) continue; // renamed/removed tool — silently skip
+    li.hidden = false;
+    shown = true;
+    if (prefs.pins.includes(slug)) li.querySelector('.shelf-pin-dot')?.classList.remove('hidden');
+    list.appendChild(li);
+  }
+  shelf.hidden = !shown;
+}
+
 function initMegaMenu() {
   const menu    = document.getElementById("mega-menu") as HTMLElement | null;
   const trigger = document.getElementById("tools-trigger") as HTMLElement | null;
@@ -197,6 +255,11 @@ function initMegaMenu() {
   // by the playgrounds and Header; the element persists across soft navigations.
   if (menu.dataset.megaWired === "true") return;
   menu.dataset.megaWired = "true";
+
+  initMegaShelf();
+  menu.querySelectorAll<HTMLAnchorElement>("#mega-shelf a").forEach((link) => {
+    link.addEventListener("click", () => closeMenu());
+  });
 
   // ── Timers ──────────────────────────────────────────────────────────────────
   let hoverOpenTimer: ReturnType<typeof setTimeout> | null = null;
@@ -233,6 +296,16 @@ function initMegaMenu() {
     // 2. Clear button sits beside the search input, so keep it adjacent in Tab
     //    order (only when not hidden, i.e. the search has content).
     if (clearBtn && !clearBtn.hidden) items.push(clearBtn);
+
+    // 2b. "Your tools" shelf links, when the shelf is visible — sits visually
+    //      between the search row and the category grid.
+    const shelf = document.getElementById("mega-shelf") as HTMLElement | null;
+    if (shelf && !shelf.hidden) {
+      shelf.querySelectorAll<HTMLAnchorElement>("a").forEach((link) => {
+        const li = link.closest("li") as HTMLElement | null;
+        if (!li?.hidden) items.push(link);
+      });
+    }
 
     // 3 & 4. Walk each category column in DOM order: add the category heading
     //        link first, then all visible tool links in that column.
@@ -288,6 +361,10 @@ function initMegaMenu() {
     trigger!.setAttribute("aria-expanded", "true");
     chevron?.classList.add("rotate-180");
     document.body.style.overflow = "";
+    // Re-sync on every open (not just at page-load wiring) — the shelf is
+    // otherwise stale for the rest of the page view right after a pin/unpin
+    // on the SAME page, since initMegaShelf() only ran once at boot.
+    initMegaShelf();
     if (search) {
       setTimeout(() => search.focus(), 50);
     }
