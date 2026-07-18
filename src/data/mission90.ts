@@ -336,3 +336,20 @@ export function phaseForDay(n: number): Mission90Phase | undefined {
  * caption and the courseLd workload field.
  */
 export const totalCoreMinutes = days.reduce((sum, day) => sum + day.minutes, 0);
+
+const REPO_URL = 'https://github.com/opscanopy/opscanopy.com';
+
+/** Community discussion links — link-only, no embeds (CSP forbids them). */
+export const community = {
+  qaUrl: `${REPO_URL}/discussions/categories/mission-90-q-a`,
+  showAndTellUrl: `${REPO_URL}/discussions/categories/show-and-tell`,
+};
+
+/** Deep-link to a prefilled new Q&A discussion for a specific day's lesson. */
+export function newQuestion(day: number, title: string): string {
+  const params = new URLSearchParams({
+    category: 'mission-90-q-a',
+    title: `Day ${day} — ${title}`,
+  });
+  return `${REPO_URL}/discussions/new?${params.toString()}`;
+}
