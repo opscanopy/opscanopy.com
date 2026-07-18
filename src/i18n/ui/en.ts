@@ -40,6 +40,7 @@ const en = {
   // Footer
   'footer.copyright': 'Free & open.',
   'footer.builtBy': 'Built by',
+  'footer.openSource': 'Open source — read exactly what each tool computes.',
   'footer.disclaimer.lead': 'Not affiliated with or endorsed by Grafana Labs.',
   'footer.disclaimer.trademark': 'and',
   'footer.disclaimer.tail': 'are trademarks of Raintank, Inc.',
@@ -48,6 +49,10 @@ const en = {
   'faq.eyebrow': 'FAQ',
   'faq.heading': 'Questions, answered.',
   'faq.tapHint': 'Tap a question to expand the answer.',
+
+  // Tool cross-links footer (brand-recall band)
+  'crosslinks.hook':
+    '{count} free tools, every one offline-capable — opscanopy.com works with no signup and nothing uploaded.',
 
   // Language switcher
   'lang.switcherLabel': 'Language',

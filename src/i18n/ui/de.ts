@@ -30,6 +30,7 @@ const de: Partial<UiDict> = {
   // Footer
   'footer.copyright': 'Kostenlos & offen.',
   'footer.builtBy': 'Entwickelt von',
+  'footer.openSource': 'Open Source — lesen Sie genau nach, was jedes Tool berechnet.',
   'footer.disclaimer.lead': 'Nicht mit Grafana Labs verbunden oder von Grafana Labs unterstützt.',
   'footer.disclaimer.trademark': 'und',
   'footer.disclaimer.tail': 'sind Marken von Raintank, Inc.',
@@ -38,6 +39,10 @@ const de: Partial<UiDict> = {
   'faq.eyebrow': 'FAQ',
   'faq.heading': 'Fragen, beantwortet.',
   'faq.tapHint': 'Tippen Sie auf eine Frage, um die Antwort aufzuklappen.',
+
+  // Tool cross-links footer (brand-recall band)
+  'crosslinks.hook':
+    '{count} kostenlose Tools, jedes einzelne offlinefähig — opscanopy.com funktioniert ohne Registrierung, und nichts wird hochgeladen.',
 
   // Language switcher
   'lang.switcherLabel': 'Sprache',
