@@ -681,6 +681,36 @@ export function explain(expr: string): CronResult {
   };
 }
 
+// Single-entry memo for matchesAt's parse — the Verify-the-AI engine calls
+// this in a tight minute-by-minute scan (up to ~2.6M iterations for a 5-year
+// search) with the SAME expression every time; re-running the full parser on
+// every call measured ~6.7s for a never-firing expression. Caching only the
+// most recent expr costs nothing when callers use a fixed expr per scan (the
+// normal case) and is simply a cache miss — never a correctness issue — if
+// they alternate expressions.
+let lastMatchesAtExpr: string | null = null;
+let lastMatchesAtOutcome: ParseOutcome | null = null;
+
+/**
+ * Does the expression fire at the given local Date (minute resolution),
+ * honoring the Vixie-cron day-of-month/day-of-week OR rule? False for
+ * invalid expressions and `@reboot` (which has no schedulable times).
+ * Additive export for the Verify-the-AI engine — never throws.
+ */
+export function matchesAt(expr: string, at: Date): boolean {
+  const e = typeof expr === 'string' ? expr : '';
+  let outcome: ParseOutcome;
+  if (lastMatchesAtExpr === e && lastMatchesAtOutcome) {
+    outcome = lastMatchesAtOutcome;
+  } else {
+    outcome = parse(e);
+    lastMatchesAtExpr = e;
+    lastMatchesAtOutcome = outcome;
+  }
+  if (outcome.error || outcome.isReboot || !outcome.parsed) return false;
+  return matches(outcome.parsed, at);
+}
+
 /**
  * Compute the next `count` fire times for an expression, optionally relative to
  * a reference ISO timestamp instead of "now". Returns readable strings; an

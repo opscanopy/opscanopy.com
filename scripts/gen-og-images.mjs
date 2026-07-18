@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { liveTools, categoryAccent, accentGradients } from '../src/data/tools.ts';
 
 const publicDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
-const heroSrcDirs = [join(publicDir, 'blog'), join(publicDir, 'mission-90')];
+const heroSrcDirs = [join(publicDir, 'blog'), join(publicDir, 'mission-90'), join(publicDir, 'verify-ai')];
 const toolOgDir = join(publicDir, 'tools-og');
 
 const SANS = 'ui-sans-serif, system-ui, Segoe UI, Roboto, sans-serif';

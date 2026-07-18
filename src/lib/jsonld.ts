@@ -84,6 +84,24 @@ export function faqPageLd(faqs: { q: string; a: string }[]): Record<string, unkn
 }
 
 /**
+ * ItemList object for a page that curates an ordered set of other pages
+ * (e.g. the 4 tool cards on the /verify-ai hub). `items` is 1-based by array
+ * order, mirroring `breadcrumbLd`'s position convention.
+ */
+export function itemListLd(items: { name: string; url: string }[]): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    itemListElement: items.map((it, i) => ({
+      '@type': 'ListItem',
+      position: i + 1,
+      name: it.name,
+      url: it.url,
+    })),
+  };
+}
+
+/**
  * CollectionPage object for a page that aggregates content drawn from many
  * other pages (e.g. every Mission-90 day's interview Q&A) rather than being
  * a single article itself. Deliberately separate from faqPageLd: an

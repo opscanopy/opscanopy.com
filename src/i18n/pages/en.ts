@@ -203,6 +203,7 @@ const en: PagesContent = {
     links: [
       { label: 'OpsCanopy on GitHub', href: 'https://github.com/opscanopy/opscanopy.com', external: true },
       { label: 'Report an issue', href: 'https://github.com/opscanopy/opscanopy.com/issues', external: true },
+      { label: 'Verify the AI', href: '/verify-ai/' },
     ],
   },
 

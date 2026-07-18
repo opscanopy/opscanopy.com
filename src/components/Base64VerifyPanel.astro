@@ -1,0 +1,430 @@
+---
+/**
+ * Base64VerifyPanel — "Verify the AI" panel for the Base64 Encoder / Decoder.
+ *
+ * Rendered inside #playground directly below Base64Playground, as a
+ * collapsed <details id="verify-ai"> — it inherits the #playground
+ * tool_engaged/result_copied analytics listener for free (Layout.astro scopes
+ * both to any control inside #playground) and needs zero translation
+ * (playground-internal UI is English everywhere, by contract).
+ *
+ * Reads the text currently in the sibling playground's #b64-input, the
+ * active direction from #b64-mode (the .is-active button's data-mode) and
+ * the #b64-urlsafe checkbox (no duplicate fields) and checks a single
+ * claimed output via ../lib/base64-codec/verify (lazy-imported in the boot
+ * closure). Never writes to the URL hash (V1 has no shareable verify state).
+ */
+---
+
+<details id="verify-ai" class="bvp-panel mt-4 overflow-hidden rounded-lg border border-hairline bg-canvas">
+  <summary
+    class="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 sm:px-5"
+    style="touch-action: manipulation; min-height: 44px;"
+  >
+    <span class="flex items-center gap-2">
+      <svg
+        class="size-4 shrink-0 text-brand-strong"
+        viewBox="0 0 20 20"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.6"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M4 10.5l3.5 3.5L16 5.5"></path>
+      </svg>
+      <span class="body-sm font-medium text-ink">Verify an AI's answer</span>
+    </span>
+    <svg
+      class="bvp-chevron size-4 shrink-0 text-mute transition-transform duration-200"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <polyline points="6 9 12 15 18 9"></polyline>
+    </svg>
+  </summary>
+
+  <div class="border-t border-hairline px-4 py-4 sm:px-5">
+    <p class="caption text-mute">
+      Paste what ChatGPT or Claude told you — this recomputes it exactly, locally.
+      <a href="/verify-ai/" class="link-inline">Why AI needs checking &rarr;</a>
+    </p>
+
+    <div class="mt-3">
+      <button
+        type="button"
+        id="bvp-sample"
+        class="btn btn-secondary btn-sm"
+        style="touch-action: manipulation;"
+      >
+        Try a common AI mistake
+      </button>
+    </div>
+
+    <div id="bvp-fields" class="mt-4 grid grid-cols-1 gap-3">
+      <label class="block">
+        <span class="caption text-mute">Claimed output</span>
+        <input
+          type="text"
+          data-field="output"
+          class="bvp-input input-focus mt-1 w-full rounded-lg border border-hairline bg-canvas px-3 py-2 font-mono text-sm text-ink"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+          placeholder="paste what the AI gave you"
+        />
+      </label>
+    </div>
+
+    <p id="bvp-empty" class="caption mt-4 text-mute">
+      Enter text or Base64 above, then paste in what an AI told you to check it.
+    </p>
+
+    <div id="bvp-results" class="mt-4" hidden>
+      <div class="bvp-table-wrap overflow-x-auto rounded-lg border border-hairline">
+        <table class="bvp-table w-full border-collapse text-sm">
+          <thead>
+            <tr class="border-b border-hairline bg-canvas-soft text-left">
+              <th class="px-3 py-2 caption text-mute">Field</th>
+              <th class="px-3 py-2 caption text-mute">Claimed</th>
+              <th class="px-3 py-2 caption text-mute">Actual</th>
+              <th class="px-3 py-2 caption text-mute text-center">Verdict</th>
+            </tr>
+          </thead>
+          <tbody id="bvp-rows"></tbody>
+        </table>
+      </div>
+      <p id="bvp-summary" role="status" class="caption mt-2 text-mute"></p>
+    </div>
+  </div>
+</details>
+
+<style>
+  @reference "../styles/global.css";
+
+  .bvp-panel[open] > summary .bvp-chevron {
+    transform: rotate(180deg);
+  }
+  .bvp-input:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .bvp-table th,
+  .bvp-table td {
+    vertical-align: top;
+  }
+  .bvp-table tbody tr + tr {
+    border-top: 1px solid var(--color-hairline);
+  }
+  .bvp-table td {
+    padding: 8px 12px;
+  }
+  :global(.bvp-pill) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 9999px;
+  }
+  :global(.bvp-pill--match) {
+    background: var(--color-brand-soft);
+    color: var(--color-brand-strong);
+  }
+  :global(.bvp-pill--mismatch) {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
+  :global(.bvp-pill--unreadable) {
+    background: var(--color-hairline);
+    color: var(--color-mute);
+  }
+  :global(.bvp-note-row td) {
+    padding-top: 0;
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--color-mute);
+  }
+  :global(.bvp-copy) {
+    margin-left: 8px;
+    font-size: 11px;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    color: var(--color-mute);
+    touch-action: manipulation;
+  }
+  :global(.bvp-copy:hover) {
+    color: var(--color-brand-strong);
+  }
+  @media (pointer: coarse) {
+    :global(.bvp-copy) {
+      display: inline-flex;
+      min-height: 32px;
+      align-items: center;
+    }
+  }
+</style>
+
+<script>
+  import { escapeHtml } from '../lib/escape-html';
+  import { copyTextToClipboard } from '../lib/clipboard';
+  import { safeGtag } from '../lib/gtag';
+
+  type ClaimVerdict = 'match' | 'mismatch' | 'unreadable';
+  interface ClaimCheck {
+    field: string;
+    label: string;
+    claimed: string;
+    actual: string;
+    verdict: ClaimVerdict;
+    note?: string;
+  }
+  interface VerifyResult {
+    valid: boolean;
+    error?: string;
+    summary: string;
+    checks: ClaimCheck[];
+    mismatchCount: number;
+  }
+  type Mode = 'encode' | 'decode';
+  type EngineModule = {
+    verifyClaims: (
+      input: string,
+      mode: Mode,
+      urlSafe: boolean,
+      claims: Record<string, string>
+    ) => VerifyResult;
+  };
+
+  const DEBOUNCE_MS = 180;
+  const ANALYTICS_THROTTLE_MS = 2000;
+  const TOOL = 'base64-encoder-decoder';
+
+  const SAMPLE = {
+    input: 'hello world',
+    mode: 'encode' as Mode,
+    urlSafe: false,
+    claims: { output: 'aGVsbG8gd29ybGQ' },
+  };
+
+  function boot(): void {
+    document.querySelectorAll<HTMLDetailsElement>('#verify-ai.bvp-panel').forEach((root) => {
+      if (root.dataset.bvpWired === 'true') return;
+      root.dataset.bvpWired = 'true';
+      init(root);
+    });
+  }
+
+  function init(root: HTMLDetailsElement): void {
+    const fieldsWrap = root.querySelector<HTMLElement>('#bvp-fields');
+    const emptyEl = root.querySelector<HTMLElement>('#bvp-empty');
+    const resultsEl = root.querySelector<HTMLElement>('#bvp-results');
+    const rowsEl = root.querySelector<HTMLElement>('#bvp-rows');
+    const summaryEl = root.querySelector<HTMLElement>('#bvp-summary');
+    const sampleBtn = root.querySelector<HTMLButtonElement>('#bvp-sample');
+    const inputs = fieldsWrap
+      ? Array.from(fieldsWrap.querySelectorAll<HTMLInputElement>('input[data-field]'))
+      : [];
+    if (!fieldsWrap || !emptyEl || !resultsEl || !rowsEl || !summaryEl || !sampleBtn) return;
+
+    let engine: EngineModule | null = null;
+    let engineLoad: Promise<EngineModule> | null = null;
+    function loadEngine(): Promise<EngineModule> {
+      if (!engineLoad) {
+        engineLoad = import('../lib/base64-codec/verify').then((mod) => {
+          engine = mod as unknown as EngineModule;
+          return engine;
+        });
+      }
+      return engineLoad;
+    }
+
+    function mainInput(): HTMLTextAreaElement | null {
+      return document.querySelector<HTMLTextAreaElement>('#b64-input');
+    }
+
+    function currentMode(): Mode {
+      const active = document.querySelector<HTMLButtonElement>('#b64-mode .b64-seg__btn.is-active');
+      return active?.dataset.mode === 'decode' ? 'decode' : 'encode';
+    }
+
+    function currentUrlSafe(): boolean {
+      return document.querySelector<HTMLInputElement>('#b64-urlsafe')?.checked ?? false;
+    }
+
+    function currentClaims(): Record<string, string> {
+      const claims: Record<string, string> = {};
+      for (const el of inputs) {
+        const v = el.value.trim();
+        if (v) claims[el.dataset.field ?? ''] = v;
+      }
+      return claims;
+    }
+
+    function verdictPill(verdict: ClaimVerdict): string {
+      if (verdict === 'match') {
+        return (
+          '<span class="bvp-pill bvp-pill--match" role="img" aria-label="Match">' +
+          '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg></span>'
+        );
+      }
+      if (verdict === 'mismatch') {
+        return (
+          '<span class="bvp-pill bvp-pill--mismatch" role="img" aria-label="Mismatch">' +
+          '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></span>'
+        );
+      }
+      return (
+        '<span class="bvp-pill bvp-pill--unreadable" role="img" aria-label="Unreadable">' +
+        '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6.2c0-1.1.9-1.9 2-1.9s2 .8 2 1.7c0 1.2-1.3 1.4-1.7 2.3-.1.3-.2.5-.2.9"/><path d="M8 12v.01"/></svg></span>'
+      );
+    }
+
+    function renderRows(checks: ClaimCheck[]): void {
+      rowsEl!.innerHTML = checks
+        .map((c) => {
+          const noteRow = c.note
+            ? `<tr class="bvp-note-row"><td colspan="4">${escapeHtml(c.note)}</td></tr>`
+            : '';
+          return (
+            '<tr>' +
+            `<td class="body-sm text-ink">${escapeHtml(c.label)}</td>` +
+            `<td class="font-mono text-xs text-body">${escapeHtml(c.claimed)}</td>` +
+            `<td class="font-mono text-xs text-ink">${escapeHtml(c.actual)}` +
+            `<button type="button" class="bvp-copy" data-copy="${escapeHtml(c.actual)}">Copy</button></td>` +
+            `<td class="text-center">${verdictPill(c.verdict)}</td>` +
+            '</tr>' +
+            noteRow
+          );
+        })
+        .join('');
+    }
+
+    let lastAnalyticsAt = 0;
+    function maybeFireAnalytics(checks: number, mismatches: number): void {
+      const now = Date.now();
+      if (now - lastAnalyticsAt < ANALYTICS_THROTTLE_MS) return;
+      lastAnalyticsAt = now;
+      safeGtag('event', 'verify_run', { tool: TOOL, claims: checks, mismatches });
+    }
+
+    async function runVerify(): Promise<void> {
+      const input = mainInput()?.value ?? '';
+      if (!input.trim()) {
+        emptyEl!.hidden = false;
+        emptyEl!.textContent = 'Enter text or Base64 above, then paste in what an AI told you to check it.';
+        resultsEl!.hidden = true;
+        return;
+      }
+      const mode = currentMode();
+      const urlSafe = currentUrlSafe();
+      const claims = currentClaims();
+      let mod: EngineModule;
+      try {
+        mod = engine ?? (await loadEngine());
+      } catch {
+        emptyEl!.hidden = false;
+        emptyEl!.textContent = 'The verify engine failed to load. Reload the page to try again.';
+        resultsEl!.hidden = true;
+        return;
+      }
+      const result = mod.verifyClaims(input, mode, urlSafe, claims);
+      if (!result.valid) {
+        emptyEl!.hidden = false;
+        emptyEl!.textContent = result.error || 'Enter valid text or Base64 above to check claims against it.';
+        resultsEl!.hidden = true;
+        return;
+      }
+      if (result.checks.length === 0) {
+        emptyEl!.hidden = false;
+        emptyEl!.textContent = 'Fill in the claimed output above to check it against this input.';
+        resultsEl!.hidden = true;
+        return;
+      }
+      emptyEl!.hidden = true;
+      resultsEl!.hidden = false;
+      renderRows(result.checks);
+      summaryEl!.textContent = result.summary;
+      maybeFireAnalytics(result.checks.length, result.mismatchCount);
+    }
+
+    let timer: number | undefined;
+    function scheduleVerify(): void {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => void runVerify(), DEBOUNCE_MS);
+    }
+
+    inputs.forEach((el) => el.addEventListener('input', scheduleVerify));
+
+    // The text/base64, the direction and the url-safe flag all live in the
+    // sibling playground, not this panel — react to any of them changing so
+    // the checks always run against what's visible above.
+    document.addEventListener('input', (e) => {
+      if ((e.target as HTMLElement | null)?.id === 'b64-input') scheduleVerify();
+    });
+    document.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement | null)?.closest('#b64-mode .b64-seg__btn')) scheduleVerify();
+    });
+    document.addEventListener('change', (e) => {
+      if ((e.target as HTMLElement | null)?.id === 'b64-urlsafe') scheduleVerify();
+    });
+
+    sampleBtn.addEventListener('click', () => {
+      const main = mainInput();
+      if (main) {
+        main.value = SAMPLE.input;
+        main.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      const modeBtn = document.querySelector<HTMLButtonElement>(
+        `#b64-mode .b64-seg__btn[data-mode="${SAMPLE.mode}"]`
+      );
+      if (modeBtn && !modeBtn.classList.contains('is-active')) modeBtn.click();
+      const urlSafeBox = document.querySelector<HTMLInputElement>('#b64-urlsafe');
+      if (urlSafeBox) {
+        urlSafeBox.checked = SAMPLE.urlSafe;
+        urlSafeBox.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      for (const el of inputs) {
+        el.value = (SAMPLE.claims as Record<string, string>)[el.dataset.field ?? ''] ?? '';
+      }
+      root.open = true;
+      scheduleVerify();
+    });
+
+    root.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.bvp-copy');
+      if (!btn) return;
+      void copyTextToClipboard(btn.dataset.copy ?? '').then((ok) => {
+        if (ok) {
+          const prev = btn.textContent;
+          btn.textContent = 'Copied';
+          window.setTimeout(() => {
+            btn.textContent = prev;
+          }, 1500);
+        }
+      });
+    });
+
+    let openFired = false;
+    root.addEventListener('toggle', () => {
+      if (root.open && !openFired) {
+        openFired = true;
+        safeGtag('event', 'cta_click', { cta: 'verify_open' });
+        scheduleVerify();
+      }
+    });
+
+    if (location.hash === '#verify-ai') {
+      root.open = true;
+      root.scrollIntoView({ block: 'start' });
+    }
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>
