@@ -104,6 +104,16 @@ const es: Partial<PagesContent> = {
         body: [
           'Los ingenieros recurren a herramientas rápidas decenas de veces al día: validar un archivo de workflow, decodificar un token, probar una regex contra líneas de log, calcular una subred, convertir un archivo de supresión. Demasiadas de esas herramientas te piden pegar datos internos sensibles en un sitio web que silenciosamente los sube a un servidor.',
           'OpsCanopy adopta el enfoque opuesto. Las herramientas son rápidas, gratuitas y privadas por diseño: nada de lo que pegas se transmite jamás, porque no hay ningún lugar al que pueda ir.',
+          'Eso incluye a los asistentes de IA: una ventana de chat también es un tercero, y cualquier cosa que pegues en ella queda retenida en los servidores de un tercero. Una herramienta que calcula localmente nunca te pone en esa situación.',
+        ],
+      },
+      {
+        heading: 'Principios',
+        body: [
+          'Solo local por diseño. No hay ningún servidor que pueda recibir tu entrada: aquí la privacidad es arquitectura, no la promesa de una política.',
+          'Determinista, no plausible. Las herramientas calculan su salida con analizadores reales y aritmética exacta en lugar de predecir texto de aspecto verosímil.',
+          'Gratis para siempre, sin cuentas. Sin muro de pago, sin registro, sin captura de correo: abre una herramienta y úsala.',
+          'Código abierto, para que puedas auditarlo. El código completo es público en GitHub, y puedes leer exactamente qué calcula cada herramienta.',
         ],
       },
       {
@@ -113,9 +123,10 @@ const es: Partial<PagesContent> = {
         ],
       },
       {
-        heading: 'Gratuito y abierto',
+        heading: 'Cómo se construye y se prueba',
         body: [
-          'OpsCanopy es de uso gratuito, sin registro y sin muro de pago. Las herramientas se desarrollan contra especificaciones reales y vectores de prueba para que su salida sea fiable, y el catálogo sigue creciendo a medida que se publican nuevas utilidades.',
+          'Los motores son TypeScript puro. Allí donde la corrección tiene una autoridad a la que responder, las pruebas están ancladas a ella: el comportamiento de las subredes /31 del RFC 3021, los vectores de prueba de hash del NIST y un corpus de conformidad versionado para el probador de expresiones de GitHub Actions.',
+          'Los motores reciben texto y devuelven resultados — sin llamadas de red, sin nada oculto —, así que el comportamiento que una herramienta afirma es reproducible en una prueba.',
         ],
       },
       {
@@ -124,6 +135,19 @@ const es: Partial<PagesContent> = {
           'Está hecho para ingenieros de plataforma, SRE, profesionales de DevOps y cualquiera que viva cerca de la infraestructura, pero las herramientas son útiles para cualquier desarrollador que quiera una respuesta rápida y privada sin instalar nada.',
         ],
       },
+      {
+        heading: 'Quién lo construye',
+        body: [
+          'OpsCanopy está construido y mantenido por Pushkar Kumar y Asif Khan — ingenieros que se cansaron de pegar configuraciones sensibles en herramientas web aleatorias y decidieron construir en su lugar alternativas rápidas, privadas y del lado del cliente.',
+          'Pushkar Kumar — [PLACEHOLDER: real background in his own words; this page must not deploy until this is filled in].',
+          'Asif Khan — [PLACEHOLDER: real background in his own words; this page must not deploy until this is filled in].',
+          'El desarrollo ocurre de forma abierta en GitHub, así que puedes auditar exactamente cómo se comporta cada herramienta, reportar un error o sugerir la próxima utilidad que añadir.',
+        ],
+      },
+    ],
+    links: [
+      { label: 'OpsCanopy en GitHub', href: 'https://github.com/opscanopy/opscanopy.com', external: true },
+      { label: 'Informar de un problema', href: 'https://github.com/opscanopy/opscanopy.com/issues', external: true },
     ],
   },
 

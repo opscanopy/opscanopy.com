@@ -104,6 +104,16 @@ const de: Partial<PagesContent> = {
         body: [
           'Engineers greifen Dutzende Male am Tag zu schnellen Tools: eine Workflow-Datei validieren, ein Token decodieren, eine Regex gegen Logzeilen testen, ein Subnetz berechnen, eine Suppression-Datei konvertieren. Zu viele dieser Tools verlangen, dass Sie sensible interne Daten in eine Website einfügen, die sie heimlich auf einen Server hochlädt.',
           'OpsCanopy verfolgt den umgekehrten Ansatz. Die Tools sind schnell, kostenlos und durch ihre Bauweise privat — nichts, was Sie einfügen, wird jemals übertragen, weil es nirgendwo hingehen kann.',
+          'Das schließt KI-Assistenten ein: Auch ein Chat-Fenster ist ein Dritter, und alles, was Sie dort einfügen, landet auf den Servern eines Dritten. Ein Tool, das lokal rechnet, bringt Sie gar nicht erst in diese Lage.',
+        ],
+      },
+      {
+        heading: 'Prinzipien',
+        body: [
+          'Ausschließlich lokal — durch die Bauweise. Es gibt keinen Server, der Ihre Eingaben empfangen könnte — Datenschutz ist hier Architektur, kein Versprechen in einer Richtlinie.',
+          'Deterministisch statt plausibel. Die Tools berechnen ihre Ausgaben mit echten Parsern und exakter Arithmetik, statt plausibel aussehenden Text vorherzusagen.',
+          'Für immer kostenlos, ohne Konten. Keine Bezahlschranke, keine Registrierung, keine E-Mail-Erfassung — öffnen Sie ein Tool und nutzen Sie es.',
+          'Open Source, damit Sie es prüfen können. Der vollständige Code ist öffentlich auf GitHub, und Sie können genau nachlesen, was jedes Tool berechnet.',
         ],
       },
       {
@@ -113,9 +123,10 @@ const de: Partial<PagesContent> = {
         ],
       },
       {
-        heading: 'Kostenlos und offen',
+        heading: 'Wie es gebaut und getestet wird',
         body: [
-          'OpsCanopy ist kostenlos nutzbar — ohne Registrierung und ohne Bezahlschranke. Die Tools werden anhand realer Spezifikationen und Testvektoren entwickelt, damit ihre Ausgaben vertrauenswürdig sind, und der Katalog wächst stetig, während neue Werkzeuge erscheinen.',
+          'Die Engines sind reines TypeScript. Wo es für Korrektheit eine maßgebliche Instanz gibt, sind die Tests daran gebunden — das /31-Subnetzverhalten nach RFC 3021, NIST-Hash-Testvektoren und ein versioniertes Konformitätskorpus für den GitHub-Actions-Expression-Tester.',
+          'Die Engines nehmen Text entgegen und liefern Ergebnisse zurück — keine Netzwerkaufrufe, nichts Verstecktes —, sodass sich jedes Verhalten, das ein Tool für sich beansprucht, in einem Test reproduzieren lässt.',
         ],
       },
       {
@@ -124,6 +135,19 @@ const de: Partial<PagesContent> = {
           'Es ist für Plattform-Engineers, SREs, DevOps-Praktiker und alle gebaut, die nah an der Infrastruktur arbeiten — aber die Tools sind für jede Entwicklerin und jeden Entwickler nützlich, die schnell eine private Antwort möchten, ohne etwas installieren zu müssen.',
         ],
       },
+      {
+        heading: 'Wer es baut',
+        body: [
+          'OpsCanopy wird von Pushkar Kumar und Asif Khan entwickelt und gepflegt — Engineers, die es leid waren, sensible Konfigurationen in beliebige Web-Tools einzufügen, und sich stattdessen entschieden, schnelle, private, clientseitige Alternativen zu bauen.',
+          'Pushkar Kumar — [PLACEHOLDER: real background in his own words; this page must not deploy until this is filled in].',
+          'Asif Khan — [PLACEHOLDER: real background in his own words; this page must not deploy until this is filled in].',
+          'Die Entwicklung findet offen auf GitHub statt: Dort können Sie genau prüfen, wie sich jedes Tool verhält, einen Fehler melden oder das nächste Werkzeug vorschlagen.',
+        ],
+      },
+    ],
+    links: [
+      { label: 'OpsCanopy auf GitHub', href: 'https://github.com/opscanopy/opscanopy.com', external: true },
+      { label: 'Ein Problem melden', href: 'https://github.com/opscanopy/opscanopy.com/issues', external: true },
     ],
   },
 

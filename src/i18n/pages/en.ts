@@ -159,6 +159,16 @@ const en: PagesContent = {
         body: [
           'Engineers reach for quick tools dozens of times a day: validate a workflow file, decode a token, test a regex against log lines, work out a subnet, convert a suppression file. Too many of those tools ask you to paste sensitive internal data into a website that quietly uploads it to a server.',
           'OpsCanopy takes the opposite approach. The tools are fast, free, and private by construction — nothing you paste is ever transmitted, because there is nowhere for it to go.',
+          'That includes AI assistants: a chat box is a third party too, and anything you paste into one is retained on a third party’s servers. A tool that computes locally never puts you in that position.',
+        ],
+      },
+      {
+        heading: 'Principles',
+        body: [
+          'Local-only by construction. There is no server that could receive your input — privacy here is architecture, not a policy promise.',
+          'Deterministic, not plausible. Tools compute their output with real parsers and exact arithmetic instead of predicting likely-looking text.',
+          'Free forever, no accounts. No paywall, no signup, no email capture — open a tool and use it.',
+          'Open source, so you can audit it. The full code is public on GitHub, and you can read exactly what each tool computes.',
         ],
       },
       {
@@ -168,9 +178,10 @@ const en: PagesContent = {
         ],
       },
       {
-        heading: 'Free and open',
+        heading: 'How it’s built and tested',
         body: [
-          'OpsCanopy is free to use with no signup and no paywall. Tools are engineered against real specifications and test vectors so their output is trustworthy, and the catalog keeps growing as new utilities ship.',
+          'The engines are pure TypeScript. Where correctness has an authority to answer to, the tests are pinned to it — RFC 3021 /31 subnet behaviour, NIST hash test vectors, and a versioned conformance corpus for the GitHub Actions expression tester.',
+          'The engines take text in and return results — no network calls, nothing hidden — so the behaviour a tool claims is reproducible in a test.',
         ],
       },
       {
@@ -183,9 +194,15 @@ const en: PagesContent = {
         heading: 'Who builds it',
         body: [
           'OpsCanopy is built and maintained by Pushkar Kumar and Asif Khan — engineers who got tired of pasting sensitive config into random web tools and decided to build fast, private, client-side alternatives instead.',
+          'Pushkar Kumar — [PLACEHOLDER: real background in his own words; this page must not deploy until this is filled in].',
+          'Asif Khan — [PLACEHOLDER: real background in his own words; this page must not deploy until this is filled in].',
           'Development happens in the open on GitHub, so you can audit exactly how each tool behaves, report a bug, or suggest the next utility to add.',
         ],
       },
+    ],
+    links: [
+      { label: 'OpsCanopy on GitHub', href: 'https://github.com/opscanopy/opscanopy.com', external: true },
+      { label: 'Report an issue', href: 'https://github.com/opscanopy/opscanopy.com/issues', external: true },
     ],
   },
 
