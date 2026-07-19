@@ -179,6 +179,13 @@
           aria-live="polite"
         ></span>
       </div>
+      <div class="amr-snap-row mb-3 flex flex-wrap items-center gap-2">
+        <button id="amr-snap-save" type="button" class="amr-snap-btn">Save snapshot</button>
+        <select id="amr-snap-select" class="amr-snap-select" aria-label="Load a saved snapshot" disabled>
+          <option value="">No snapshots yet</option>
+        </select>
+        <button id="amr-snap-delete" type="button" class="amr-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
+      </div>
 
       <div id="amr-results" class="amr-results" aria-live="polite" aria-atomic="false">
         <p class="amr-empty body-sm text-mute">
@@ -295,6 +302,55 @@
     font-variant-numeric: tabular-nums;
     font-feature-settings: 'tnum';
     white-space: nowrap;
+  }
+  .amr-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .amr-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .amr-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .amr-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .amr-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .amr-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
   }
 
   /* ── Results (runtime-injected → :global) ───────────────────────────── */
@@ -548,6 +604,7 @@
   import type { EditorView } from '@codemirror/view';
   import { escapeHtml } from '../lib/escape-html';
   import { base64UrlEncode, base64UrlDecode } from '../lib/codec';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
 
   /* ---- Types mirrored from the engine contract (structural, not imported). -- */
   type Matcher = { name: string; op: string; value: string };
@@ -806,6 +863,9 @@
     const resultsBox = el<HTMLElement>(root, '#amr-results');
     const summaryEl = el<HTMLElement>(root, '#amr-summary');
     const announce = el<HTMLElement>(root, '#amr-announce');
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#amr-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#amr-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#amr-snap-delete');
 
     if (
       !configHost ||
@@ -815,7 +875,10 @@
       !copyBtn ||
       !shareBtn ||
       !resultsBox ||
-      !summaryEl
+      !summaryEl ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
     ) {
       return;
     }
@@ -864,17 +927,33 @@
       return;
     }
 
-    // Seed content: prefer a shared-state URL, else the first example.
+    // Seed priority: a shared-state URL > restored last input > the first example.
+    // Neither the share-URL nor the restored path counts as a user-initiated
+    // evaluation — only an explicit Run (click, ⌘/Ctrl+Enter, example pick, or
+    // snapshot restore) writes the hash / records a last input.
     const seedExample =
       examples[0] ?? { id: 'example', label: 'Example', config: '', labels: '' };
     let seedConfig = seedExample.config;
     let seedLabels = seedExample.labels;
     let fromShare = false;
+    let fromRestore = false;
     const shared = decodeShare();
     if (shared) {
       seedConfig = shared.config;
       seedLabels = shared.labels;
       fromShare = true;
+    } else {
+      const restored = getRestoredLastInput('alertmanager-route-tester');
+      if (restored) {
+        try {
+          const parsed = JSON.parse(restored) as { config?: unknown; labels?: unknown };
+          if (typeof parsed.config === 'string') seedConfig = parsed.config;
+          if (typeof parsed.labels === 'string') seedLabels = parsed.labels;
+          fromRestore = true;
+        } catch {
+          /* malformed restored value — fall back to the seeded example */
+        }
+      }
     }
 
     /* ---- Editor factory (CM symbols now in async scope) --------------------- */
@@ -927,10 +1006,10 @@
       select.appendChild(opt);
       select.disabled = true;
     } else {
-      if (fromShare) {
+      if (fromShare || fromRestore) {
         const opt = document.createElement('option');
         opt.value = '-1';
-        opt.textContent = 'Shared scenario';
+        opt.textContent = fromShare ? 'Shared scenario' : 'Restored session';
         select.appendChild(opt);
       }
       examples.forEach((ex, i) => {
@@ -939,7 +1018,7 @@
         opt.textContent = ex.label;
         select.appendChild(opt);
       });
-      select.value = fromShare ? '-1' : '0';
+      select.value = fromShare || fromRestore ? '-1' : '0';
     }
 
     // Swap both editors when a different example is chosen, then auto-run.
@@ -955,7 +1034,7 @@
     let running = false;
     const runLabel = runBtn.querySelector<HTMLElement>('.amr-run-label');
     let spinner: HTMLElement | null = null;
-    async function run(): Promise<void> {
+    async function run(userInitiated = true): Promise<void> {
       if (running) return;
       running = true;
       runBtn.classList.add('is-busy');
@@ -995,6 +1074,12 @@
           window.history.replaceState(null, '', encodeShare(cfg, lbl));
         } catch {
           /* non-fatal: sharing just won't update */
+        }
+        if (userInitiated && result && result.ok !== false && !result.error) {
+          recordToolLastInput(
+            'alertmanager-route-tester',
+            JSON.stringify({ config: cfg, labels: lbl }),
+          );
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Unexpected error while evaluating.';
@@ -1064,13 +1149,41 @@
       }, COPIED_RESET_MS);
     });
 
+    // Save-snapshot + auto-restore-last-input — a normal tool (unlike the 4
+    // secret-input tools), so both halves of tool-state/wire are wired here.
+    wireSnapshotUI({
+      slug: 'alertmanager-route-tester',
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: () =>
+        JSON.stringify({
+          config: configView.state.doc.toString(),
+          labels: labelsView.state.doc.toString(),
+        }),
+      setValue: (value) => {
+        let parsed: { config?: unknown; labels?: unknown };
+        try {
+          parsed = JSON.parse(value) as { config?: unknown; labels?: unknown };
+        } catch {
+          return;
+        }
+        const config = typeof parsed.config === 'string' ? parsed.config : '';
+        const labels = typeof parsed.labels === 'string' ? parsed.labels : '';
+        setEditorDoc(configView, config);
+        setEditorDoc(labelsView, labels);
+        void run();
+      },
+    });
+
     // Re-measure the editors after they mount inside the dark panes.
     configView.requestMeasure();
     labelsView.requestMeasure();
 
-    // Initial state — then auto-run the loaded scenario immediately.
+    // Initial state — then auto-run the loaded scenario immediately (seed
+    // path, not user-initiated: never writes a last-input record).
     renderEmpty(resultsBox, summaryEl);
-    void run();
+    void run(false);
   }
 
   boot();

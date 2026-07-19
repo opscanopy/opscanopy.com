@@ -68,6 +68,13 @@
         <span class="code-mono">2001:db8::1</span>. Add a prefix like
         <span class="code-mono">192.0.2.0/24</span> to get the reverse zone.
       </p>
+      <div class="ptr-snap-row mt-3 flex flex-wrap items-center gap-2">
+        <button id="ptr-snap-save" type="button" class="ptr-snap-btn">Save snapshot</button>
+        <select id="ptr-snap-select" class="ptr-snap-select" aria-label="Load a saved snapshot" disabled>
+          <option value="">No snapshots yet</option>
+        </select>
+        <button id="ptr-snap-delete" type="button" class="ptr-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
+      </div>
     </div>
 
     <div class="bg-canvas-soft px-4 py-4 sm:px-5">
@@ -184,6 +191,55 @@
   .ptr-hint {
     margin-top: 8px;
     text-wrap: pretty;
+  }
+  .ptr-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .ptr-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .ptr-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .ptr-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .ptr-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .ptr-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
   }
   .ptr-summary {
     white-space: nowrap;
@@ -335,6 +391,7 @@
   import { escapeHtml } from '../lib/escape-html';
   import { readIpHash } from '../lib/ip-hash';
   import { copyTextToClipboard } from '../lib/clipboard';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
 
   type Row = { label: string; value: string; mono?: boolean };
   type Result = { valid: boolean; error?: string; version?: 4 | 6; rows: Row[] };
@@ -449,7 +506,20 @@
     const exampleSel = el<HTMLSelectElement>(root, '#ptr-example');
     const resultsBox = el<HTMLElement>(root, '#ptr-results');
     const summaryEl = el<HTMLElement>(root, '#ptr-summary');
-    if (!input || !exampleSel || !resultsBox || !summaryEl) return;
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#ptr-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#ptr-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#ptr-snap-delete');
+    if (
+      !input ||
+      !exampleSel ||
+      !resultsBox ||
+      !summaryEl ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
+    ) {
+      return;
+    }
 
     let engine: EngineModule;
     let examples: Example[] = [];
@@ -501,6 +571,7 @@
       }
       input!.classList.remove('ptr-input--error');
       renderResult(resultsBox!, summaryEl!, result);
+      recordToolLastInput('reverse-dns-ptr', value);
     }
 
     let timer: number | undefined;
@@ -523,12 +594,33 @@
       evaluate();
     });
 
-    // Deep link: #ip=<address> (written by the IP Address Converter) prefills
-    // the input and replaces the default seeded example.
+    wireSnapshotUI({
+      slug: 'reverse-dns-ptr',
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: () => input!.value.trim(),
+      setValue: (value) => {
+        input!.value = value;
+        exampleSel!.value = '-1';
+        if (sampleCue) sampleCue.classList.add('is-hidden');
+        window.clearTimeout(timer);
+        evaluate();
+      },
+    });
+
+    // Seed priority: #ip=<address> deep link (written by the IP Address
+    // Converter) > restored last input > seeded example.
     const shared = readIpHash();
+    const restored = getRestoredLastInput('reverse-dns-ptr');
     const seed = examples[0];
     if (shared) {
       input.value = shared;
+      exampleSel.value = '-1';
+      if (sampleCue) sampleCue.classList.add('is-hidden');
+      evaluate();
+    } else if (restored) {
+      input.value = restored;
       exampleSel.value = '-1';
       if (sampleCue) sampleCue.classList.add('is-hidden');
       evaluate();

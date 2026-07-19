@@ -38,6 +38,13 @@
         Blank lines and <span class="code-mono">#</span> comments are ignored.
       </p>
       <p id="cdc-run-hint" class="cdc-hint caption text-mute">Results update as you type — press Enter to run now.</p>
+      <div class="cdc-snap-row mt-3 flex flex-wrap items-center gap-2">
+        <button id="cdc-snap-save" type="button" class="cdc-snap-btn">Save snapshot</button>
+        <select id="cdc-snap-select" class="cdc-snap-select" aria-label="Load a saved snapshot" disabled>
+          <option value="">No snapshots yet</option>
+        </select>
+        <button id="cdc-snap-delete" type="button" class="cdc-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
+      </div>
     </div>
 
     <div class="bg-canvas-soft px-4 py-4 sm:px-5">
@@ -169,6 +176,55 @@
   }
   .cdc-hint .code-mono {
     font-size: 12px;
+  }
+  .cdc-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .cdc-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .cdc-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .cdc-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .cdc-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .cdc-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
   }
   .cdc-summary {
     min-width: 0;
@@ -474,6 +530,7 @@
   import { escapeHtml } from '../lib/escape-html';
   import { readIpHash, readListHash, buildListHash } from '../lib/ip-hash';
   import { copyTextToClipboard } from '../lib/clipboard';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
 
   type Entry = {
     line: string;
@@ -759,7 +816,21 @@
     const summaryEl = el<HTMLElement>(root, '#cdc-summary');
     const shareBtn = el<HTMLButtonElement>(root, '#cdc-share');
     const copyStatus = el<HTMLElement>(root, '#cdc-copy-status');
-    if (!input || !chipsWrap || !resultsBox || !summaryEl || !shareBtn || !copyStatus) return;
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#cdc-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#cdc-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#cdc-snap-delete');
+    if (
+      !input ||
+      !chipsWrap ||
+      !resultsBox ||
+      !summaryEl ||
+      !shareBtn ||
+      !copyStatus ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
+    )
+      return;
 
     let engine: EngineModule;
     let examples: Example[] = [];
@@ -913,6 +984,7 @@
         shareBtn!.hidden = false;
         shareBtn!.dataset.copy = location.origin + location.pathname + location.search + hash;
         if (userInitiated) writeHash(value);
+        if (userInitiated) recordToolLastInput('cidr-checker', value);
       }
     }
 
@@ -962,13 +1034,29 @@
       }, 0);
     });
 
+    wireSnapshotUI({
+      slug: 'cidr-checker',
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: () => input!.value,
+      setValue: (value) => {
+        input!.value = value;
+        setActiveChip(null);
+        window.clearTimeout(timer);
+        evaluate(true);
+      },
+    });
+
     /* ------------------------------------------------------------------ */
-    /* First load: typed value → #list= → #ip= (seeded) → first example.    */
-    /* None of these write the hash — only user-initiated evaluations do.   */
+    /* First load: typed value → #list= → #ip= (seeded) → restored last     */
+    /* input → first example. None of these write the hash — only          */
+    /* user-initiated evaluations do.                                       */
     /* ------------------------------------------------------------------ */
 
     const listShared = readListHash();
     const ipShared = readIpHash();
+    const restored = getRestoredLastInput('cidr-checker');
 
     if (input.value.trim()) {
       evaluate(false);
@@ -978,6 +1066,9 @@
     } else if (ipShared) {
       // Deep link from the IP Address Converter — the '#' hint line is inert.
       input.value = ipShared + '\n# add the CIDR ranges to check this IP against';
+      evaluate(false);
+    } else if (restored) {
+      input.value = restored;
       evaluate(false);
     } else if (examples[0]) {
       input.value = examples[0].input;

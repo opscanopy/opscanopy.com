@@ -179,6 +179,15 @@
       </p>
     </div>
 
+    {/* ── Snapshot row (covers both editors: rules + label sets) ───────── */}
+    <div class="prt-snap-row flex flex-wrap items-center gap-2 border-t border-hairline px-4 py-2.5 sm:px-5">
+      <button id="prt-snap-save" type="button" class="prt-snap-btn">Save snapshot</button>
+      <select id="prt-snap-select" class="prt-snap-select" aria-label="Load a saved snapshot" disabled>
+        <option value="">No snapshots yet</option>
+      </select>
+      <button id="prt-snap-delete" type="button" class="prt-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
+    </div>
+
     {/* ── Results panel ────────────────────────────────────────────────── */}
     <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
       <div class="mb-3 flex items-center justify-between gap-3">
@@ -250,6 +259,56 @@
   }
   .prt-select-wrap:hover .prt-select-caret {
     color: var(--color-body);
+  }
+
+  .prt-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .prt-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .prt-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .prt-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .prt-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .prt-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
   }
 
   /* CodeMirror hosts — fill the dark panes, scroll internally. */
@@ -590,6 +649,7 @@
   import type { EditorView } from '@codemirror/view';
   import { escapeHtml } from '../lib/escape-html';
   import { base64UrlEncode, base64UrlDecode } from '../lib/codec';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
 
   /* ---- Types mirrored from the engine contract (structural, not imported). -- */
   type ChangeKind = 'added' | 'changed' | 'removed';
@@ -623,6 +683,7 @@
   const ROOT_SEL = '.prt';
   const COPIED_RESET_MS = 1800;
   const SHARE_KEY = 'prt';
+  const SLUG = 'prometheus-relabel-tester';
 
   /** Boot every (so far un-hydrated) playground instance on the page. */
   function boot(): void {
@@ -878,10 +939,14 @@
     const resultsBox = el<HTMLElement>(root, '#prt-results');
     const summaryEl = el<HTMLElement>(root, '#prt-summary');
     const announce = el<HTMLElement>(root, '#prt-announce');
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#prt-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#prt-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#prt-snap-delete');
 
     if (
       !configsHost || !labelsHost || !select || !runBtn ||
-      !copyBtn || !shareBtn || !resultsBox || !summaryEl
+      !copyBtn || !shareBtn || !resultsBox || !summaryEl ||
+      !snapSaveBtn || !snapSelect || !snapDeleteBtn
     ) {
       return;
     }
@@ -930,16 +995,32 @@
       return;
     }
 
-    // Seed content: prefer a shared-state URL, else the first example.
+    // Seed priority: a shared `#prt=` deep link > the last remembered input
+    // for this tool > the first example.
     const seed = examples[0] ?? { id: 'example', label: 'Example', configs: '', labels: '' };
     let seedConfigs = seed.configs;
     let seedLabels = seed.labels;
     let fromShare = false;
+    let fromRestored = false;
     const shared = decodeShare();
     if (shared) {
       seedConfigs = shared.configs;
       seedLabels = shared.labels;
       fromShare = true;
+    } else {
+      const restored = getRestoredLastInput(SLUG);
+      if (restored) {
+        try {
+          const parsed = JSON.parse(restored) as { configs?: unknown; labels?: unknown };
+          if (typeof parsed.configs === 'string' && typeof parsed.labels === 'string') {
+            seedConfigs = parsed.configs;
+            seedLabels = parsed.labels;
+            fromRestored = true;
+          }
+        } catch {
+          /* malformed restore — keep the example seed */
+        }
+      }
     }
 
     /* ---- Editor factory (CM symbols now in async scope) --------------------- */
@@ -990,10 +1071,10 @@
       select.appendChild(opt);
       select.disabled = true;
     } else {
-      if (fromShare) {
+      if (fromShare || fromRestored) {
         const opt = document.createElement('option');
         opt.value = '-1';
-        opt.textContent = 'Shared input';
+        opt.textContent = fromShare ? 'Shared input' : 'Restored input';
         select.appendChild(opt);
       }
       examples.forEach((ex, i) => {
@@ -1002,7 +1083,7 @@
         opt.textContent = ex.label;
         select.appendChild(opt);
       });
-      select.value = fromShare ? '-1' : '0';
+      select.value = fromShare || fromRestored ? '-1' : '0';
     }
 
     // Swap both editors when a different example is chosen.
@@ -1054,6 +1135,7 @@
         const labels = labelsView.state.doc.toString();
         const result = await Promise.resolve(engine.applyRelabel(configs, labels));
         renderResults(resultsBox!, summaryEl!, result);
+        recordToolLastInput(SLUG, JSON.stringify({ configs, labels }));
         try {
           window.history.replaceState(null, '', encodeShare(configs, labels));
         } catch {
@@ -1133,6 +1215,31 @@
     // panes, so CodeMirror does not cache a stale (zero/clipped) viewport.
     configsView.requestMeasure();
     labelsView.requestMeasure();
+
+    // Snapshot save/restore — stores BOTH editors as one JSON blob (this tool
+    // has two input fields, not one), parsed back defensively on restore.
+    wireSnapshotUI({
+      slug: SLUG,
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: () =>
+        JSON.stringify({
+          configs: configsView.state.doc.toString(),
+          labels: labelsView.state.doc.toString(),
+        }),
+      setValue: (value) => {
+        try {
+          const parsed = JSON.parse(value) as { configs?: unknown; labels?: unknown };
+          if (typeof parsed.configs === 'string') setEditorDoc(configsView, parsed.configs);
+          if (typeof parsed.labels === 'string') setEditorDoc(labelsView, parsed.labels);
+        } catch {
+          /* malformed snapshot — ignore, leave current editors as-is */
+          return;
+        }
+        void run();
+      },
+    });
 
     // Initial results state — then auto-run the loaded content immediately.
     renderEmpty(resultsBox, summaryEl);

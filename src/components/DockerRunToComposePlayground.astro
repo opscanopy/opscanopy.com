@@ -116,6 +116,13 @@
         Tip: press <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd>
         to release keyboard focus from the editor.
       </p>
+      <div class="drc-snap-row mt-1 mb-3 flex flex-wrap items-center gap-2" style="padding: 0 16px;">
+        <button id="drc-snap-save" type="button" class="drc-snap-btn">Save snapshot</button>
+        <select id="drc-snap-select" class="drc-snap-select" aria-label="Load a saved snapshot" disabled>
+          <option value="">No snapshots yet</option>
+        </select>
+        <button id="drc-snap-delete" type="button" class="drc-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
+      </div>
     </div>
 
     {/* ── Output pane ──────────────────────────────────────────────────── */}
@@ -276,6 +283,56 @@
   }
   .drc-select-wrap:hover .drc-select-caret {
     color: var(--color-body);
+  }
+
+  .drc-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .drc-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .drc-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .drc-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .drc-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .drc-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
   }
 
   /* CodeMirror host — fills the dark pane, scrolls internally. */
@@ -535,6 +592,7 @@
   import type { EditorView } from '@codemirror/view';
   import { escapeHtml } from '../lib/escape-html';
   import { buildMarkdownBlock } from '../lib/share-md';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
 
   /* ---- Types mirrored from the engine contract (structural, not imported). -- */
   type RunResult = { ok: boolean; yaml?: string; warnings?: string[]; error?: string };
@@ -553,6 +611,7 @@
 
   const ROOT_SEL = '.drc';
   const COPIED_RESET_MS = 1800;
+  const SLUG = 'docker-run-to-compose';
 
   function boot(): void {
     document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
@@ -681,11 +740,15 @@
     const modeComposeBtn = el<HTMLButtonElement>(root, '#drc-mode-compose');
     const inputName = el<HTMLElement>(root, '#drc-input-name');
     const outputLabel = el<HTMLElement>(root, '#drc-output-label');
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#drc-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#drc-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#drc-snap-delete');
 
     if (
       !editorHost || !select || !runBtn || !copyBtn || !shareBtn || !mdBtn ||
       !outputBox || !warningsBox ||
-      !statusEl || !modeRunBtn || !modeComposeBtn || !inputName || !outputLabel
+      !statusEl || !modeRunBtn || !modeComposeBtn || !inputName || !outputLabel ||
+      !snapSaveBtn || !snapSelect || !snapDeleteBtn
     ) {
       return;
     }
@@ -791,9 +854,9 @@
 
     const seedExample = examples[0] ?? { id: 'example', label: 'Example', run: '', compose: '' };
 
-    // Seed content: prefer a shared `#s=` URL, else the first example. Neither
-    // seed path writes the hash — only user-initiated evaluations do (see
-    // run()'s `userInitiated` gate below).
+    // Seed content: prefer a shared `#s=` URL, else a restored last input,
+    // else the first example. Neither seed path writes the hash — only
+    // user-initiated evaluations do (see run()'s `userInitiated` gate below).
     let seedText = seedExample.run;
     let fromShare = false;
     try {
@@ -805,6 +868,30 @@
       }
     } catch {
       /* malformed hash — fall back to the example seed */
+    }
+
+    // Restored last-input tier — only consulted when there's no `#s=` deep
+    // link. Validates `dir` against the known directions the same way
+    // engine.decodeState() does, and never throws on malformed JSON.
+    let fromRestored = false;
+    if (!fromShare) {
+      const raw = getRestoredLastInput(SLUG);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw) as Partial<ShareState>;
+          if (
+            (parsed.dir === 'run' || parsed.dir === 'compose') &&
+            typeof parsed.text === 'string' &&
+            parsed.text.length > 0
+          ) {
+            mode = parsed.dir;
+            seedText = parsed.text;
+            fromRestored = true;
+          }
+        } catch {
+          /* malformed stored value — ignore, fall back to the example seed */
+        }
+      }
     }
 
     const view = makeEditor(editorHost, seedText);
@@ -829,7 +916,7 @@
         opt.textContent = ex.label;
         select.appendChild(opt);
       });
-      select.value = fromShare ? '-1' : '0';
+      select.value = fromShare || fromRestored ? '-1' : '0';
     }
 
     /** Seed the editor for the current mode from the selected example. Leaves
@@ -990,6 +1077,7 @@
             renderResult(outputBox!, warningsBox!, statusEl!, 'docker-compose.yml', lastOutput, res.warnings ?? []);
             showShare(input, 'docker run → Compose');
             if (userInitiated) writeShareHash();
+            if (userInitiated) recordToolLastInput(SLUG, JSON.stringify({ dir: mode, text: input }));
           }
         } else {
           const res = engine.composeToRun(input);
@@ -1003,6 +1091,7 @@
             renderResult(outputBox!, warningsBox!, statusEl!, 'docker run', lastOutput, res.warnings ?? []);
             showShare(input, 'Compose → docker run');
             if (userInitiated) writeShareHash();
+            if (userInitiated) recordToolLastInput(SLUG, JSON.stringify({ dir: mode, text: input }));
           }
         }
       } catch (err) {
@@ -1078,6 +1167,30 @@
           if (mdLabel) mdLabel.textContent = 'Copy as Markdown';
         }, COPIED_RESET_MS);
       });
+    });
+
+    wireSnapshotUI({
+      slug: SLUG,
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: () => JSON.stringify({ dir: mode, text: view.state.doc.toString() }),
+      setValue: (value) => {
+        let parsed: Partial<ShareState> | null = null;
+        try {
+          parsed = JSON.parse(value) as Partial<ShareState>;
+        } catch {
+          return;
+        }
+        if (!parsed || (parsed.dir !== 'run' && parsed.dir !== 'compose') || typeof parsed.text !== 'string') {
+          return;
+        }
+        mode = parsed.dir;
+        applyModeChrome();
+        setEditorDoc(view, parsed.text);
+        select!.value = '-1';
+        void run();
+      },
     });
 
     // Initial chrome + auto-convert the seeded example/shared state. Passing

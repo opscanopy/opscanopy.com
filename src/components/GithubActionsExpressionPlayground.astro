@@ -191,6 +191,15 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
       </div>
     </div>
 
+    {/* Snapshot row — applies to whichever tab (expr / trig) is active. */}
+    <div class="ga-snap-row flex flex-wrap items-center gap-2 border-t border-hairline px-4 py-2.5 sm:px-5">
+      <button id="ga-snap-save" type="button" class="ga-snap-btn">Save snapshot</button>
+      <select id="ga-snap-select" class="ga-snap-select" aria-label="Load a saved snapshot" disabled>
+        <option value="">No snapshots yet</option>
+      </select>
+      <button id="ga-snap-delete" type="button" class="ga-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
+    </div>
+
     {/* Footer: semantics version */}
     <div class="flex items-center justify-between gap-3 border-t border-hairline px-4 py-2.5 sm:px-5">
       <span class="caption text-mute">100% in your browser · no signup</span>
@@ -245,6 +254,56 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
     box-shadow: var(--shadow-hairline);
   }
   .ga-textarea { resize: vertical; min-height: 80px; }
+
+  .ga-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .ga-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .ga-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .ga-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .ga-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .ga-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
 
   /* Context preset chips on the dark bar */
   .ga-preset {
@@ -334,6 +393,7 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
   import { escapeHtml } from '../lib/escape-html';
   import { copyTextToClipboard } from '../lib/clipboard';
   import { base64UrlEncode, base64UrlDecode } from '../lib/codec';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
 
   // CodeMirror is loaded via dynamic import inside init() so its ~200KB runtime
   // code-splits into its own chunk instead of shipping in the page's initial JS.
@@ -343,6 +403,7 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
   type ExamplesModule = typeof import('../lib/github-actions-expression-tester/examples');
 
   const ROOT_SEL = '.ga-pg';
+  const SLUG = 'github-actions-expression-tester';
 
   function boot(): void {
     document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
@@ -598,6 +659,7 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
         ? `<ul class="ga-breakdown">${result.breakdown.map((p) => `<li class="ga-part"><code class="ga-part__token">${escapeHtml(p.token)}</code><span class="ga-part__meaning">${escapeHtml(p.meaning)}</span></li>`).join('')}</ul>`
         : '';
       exprResults.innerHTML = verdict + ctxErr + warns + explanation + breakdown;
+      recordToolLastInput(SLUG, JSON.stringify({ t: 'expr', e: raw, c: ctxView.state.doc.toString() }));
     }
 
     function runSim(): void {
@@ -625,6 +687,7 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
         ? `<div class="ga-jobs-wrap"><table class="ga-jobs"><thead><tr><th>Job</th><th>Decision</th><th>Reason</th></tr></thead><tbody>${rows}</tbody></table></div>`
         : '<p class="ga-empty body-sm text-mute">No jobs found in this workflow.</p>';
       trigResults.innerHTML = banner + warns + table;
+      recordToolLastInput(SLUG, JSON.stringify({ t: 'trig', w: wf, v: ev }));
     }
 
     // ── Wire actions ──
@@ -654,7 +717,47 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
     wireShare('#ga-share-expr', () => ({ t: 'expr', e: exprView.state.doc.toString(), c: ctxView.state.doc.toString() }));
     wireShare('#ga-share-trig', () => ({ t: 'trig', w: wfView.state.doc.toString(), v: readEvent() }));
 
+    // ── Snapshot save/restore — applies to whichever tab is active ──
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#ga-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#ga-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#ga-snap-delete');
+    function applyRestoredState(raw: string): void {
+      try {
+        const st = JSON.parse(raw) as Record<string, unknown>;
+        if (st && st.t === 'expr') {
+          if (typeof st.e === 'string') setDoc(exprView, st.e);
+          if (typeof st.c === 'string') setDoc(ctxView, st.c);
+          activate('expr');
+          runExpr();
+        } else if (st && st.t === 'trig') {
+          if (typeof st.w === 'string') setDoc(wfView, st.w);
+          if (st.v) applyEventToForm(st.v as never);
+          activate('trig');
+          runSim();
+        }
+      } catch {
+        /* malformed snapshot/restore payload — leave current state as-is */
+      }
+    }
+    if (snapSaveBtn && snapSelect && snapDeleteBtn) {
+      wireSnapshotUI({
+        slug: SLUG,
+        saveBtn: snapSaveBtn,
+        snapshotSelect: snapSelect,
+        deleteBtn: snapDeleteBtn,
+        getValue: () =>
+          panelExpr?.classList.contains('is-active')
+            ? JSON.stringify({ t: 'expr', e: exprView.state.doc.toString(), c: ctxView.state.doc.toString() })
+            : JSON.stringify({ t: 'trig', w: wfView.state.doc.toString(), v: readEvent() }),
+        setValue: applyRestoredState,
+      });
+    }
+
     // ── Restore from hash ──
+    // Seed priority: #s= deep link > restored last input > seeded example
+    // (already populated into the editors above). Only the #s= tier is a
+    // deliberate user share; the restored-last-input tier is the new,
+    // net-new-for-this-tool auto-restore.
     if (location.hash.startsWith('#s=')) {
       const st = decodeState(location.hash.slice(3));
       if (st && st.t === 'expr') {
@@ -666,6 +769,9 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
         if (st.v) applyEventToForm(st.v as never);
         activate('trig'); runSim();
       }
+    } else {
+      const restored = getRestoredLastInput(SLUG);
+      if (restored) applyRestoredState(restored);
     }
   }
 

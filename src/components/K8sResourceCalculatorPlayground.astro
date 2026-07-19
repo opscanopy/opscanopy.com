@@ -115,6 +115,13 @@
         <span class="code-mono">4Gi</span>) or decimal (<span class="code-mono">1G</span>) suffixes, or bytes.
         Leave a field blank to skip it.
       </p>
+      <div class="k8s-snap-row mt-3 flex flex-wrap items-center gap-2">
+        <button id="k8s-snap-save" type="button" class="k8s-snap-btn">Save snapshot</button>
+        <select id="k8s-snap-select" class="k8s-snap-select" aria-label="Load a saved snapshot" disabled>
+          <option value="">No snapshots yet</option>
+        </select>
+        <button id="k8s-snap-delete" type="button" class="k8s-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
+      </div>
     </div>
 
     <div class="bg-canvas-soft px-4 py-4 sm:px-5">
@@ -258,6 +265,55 @@
   .k8s-hint {
     margin-top: 12px;
     text-wrap: pretty;
+  }
+  .k8s-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .k8s-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .k8s-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .k8s-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .k8s-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .k8s-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
   }
   .k8s-summary {
     white-space: nowrap;
@@ -436,6 +492,7 @@
   import { escapeHtml } from '../lib/escape-html';
   import { copyTextToClipboard } from '../lib/clipboard';
   import { buildMarkdownBlock } from '../lib/share-md';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
 
   type Row = { label: string; value: string; mono?: boolean };
   type Result = {
@@ -601,6 +658,9 @@
     const summaryEl = el<HTMLElement>(root, '#k8s-summary');
     const shareBtn = el<HTMLButtonElement>(root, '#k8s-share');
     const mdBtn = el<HTMLButtonElement>(root, '#k8s-copy-md');
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#k8s-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#k8s-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#k8s-snap-delete');
     if (
       !cpuReqInput ||
       !cpuLimInput ||
@@ -611,7 +671,10 @@
       !resultsBox ||
       !summaryEl ||
       !shareBtn ||
-      !mdBtn
+      !mdBtn ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
     )
       return;
 
@@ -769,7 +832,10 @@
         shareBtn!.hidden = false;
         shareBtn!.dataset.copy =
           window.location.origin + window.location.pathname + window.location.search + frag;
-        if (userInitiated) writeHash(frag);
+        if (userInitiated) {
+          writeHash(frag);
+          recordToolLastInput('kubernetes-resource-calculator', JSON.stringify(input));
+        }
       } else {
         hideShare();
       }
@@ -837,8 +903,41 @@
       evaluate();
     });
 
-    // Seed priority: a valid #s= share link > the first bundled example.
-    // Neither seed path writes the hash — only user-initiated evaluations do.
+    wireSnapshotUI({
+      slug: 'kubernetes-resource-calculator',
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: () =>
+        JSON.stringify({
+          cpuRequest: cpuReqInput!.value,
+          cpuLimit: cpuLimInput!.value,
+          memRequest: memReqInput!.value,
+          memLimit: memLimInput!.value,
+          replicas: replicasInput!.value,
+        }),
+      setValue: (value) => {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(value);
+        } catch {
+          return;
+        }
+        const obj = (parsed ?? {}) as Record<string, unknown>;
+        cpuReqInput!.value = typeof obj.cpuRequest === 'string' ? obj.cpuRequest : '';
+        cpuLimInput!.value = typeof obj.cpuLimit === 'string' ? obj.cpuLimit : '';
+        memReqInput!.value = typeof obj.memRequest === 'string' ? obj.memRequest : '';
+        memLimInput!.value = typeof obj.memLimit === 'string' ? obj.memLimit : '';
+        replicasInput!.value = typeof obj.replicas === 'string' ? obj.replicas : '';
+        if (exampleSel!.value !== '-1') exampleSel!.value = '-1';
+        window.clearTimeout(timer);
+        evaluate();
+      },
+    });
+
+    // Seed priority: a valid #s= share link > a restored last input > the
+    // first bundled example. Neither non-user seed path writes the hash or
+    // records a last-input — only user-initiated evaluations do.
     let seedRow: Input | null = null;
     try {
       const decoded = engine.decodeState();
@@ -853,6 +952,31 @@
       }
     } catch {
       /* malformed hash — fall back to the example seed */
+    }
+
+    if (!seedRow) {
+      const restored = getRestoredLastInput('kubernetes-resource-calculator');
+      if (restored) {
+        try {
+          const parsed = JSON.parse(restored) as unknown;
+          const obj = (parsed ?? {}) as Record<string, unknown>;
+          const row: ExampleInput = {
+            cpuRequest: typeof obj.cpuRequest === 'string' ? obj.cpuRequest : '',
+            cpuLimit: typeof obj.cpuLimit === 'string' ? obj.cpuLimit : '',
+            memRequest: typeof obj.memRequest === 'string' ? obj.memRequest : '',
+            memLimit: typeof obj.memLimit === 'string' ? obj.memLimit : '',
+            replicas: typeof obj.replicas === 'string' ? obj.replicas : '',
+          };
+          const hasContent =
+            row.cpuRequest.trim().length > 0 ||
+            row.cpuLimit.trim().length > 0 ||
+            row.memRequest.trim().length > 0 ||
+            row.memLimit.trim().length > 0;
+          if (hasContent) seedRow = row;
+        } catch {
+          /* malformed restored value — fall back to the example seed */
+        }
+      }
     }
 
     if (seedRow) {

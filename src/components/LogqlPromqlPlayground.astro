@@ -119,6 +119,15 @@
       </div>
     </div>
 
+    {/* ── Snapshot row (save / restore / delete a saved query) ─────────── */}
+    <div class="lp-snap-row flex flex-wrap items-center gap-2 border-b border-hairline px-4 py-2 sm:px-5">
+      <button id="lp-snap-save" type="button" class="lp-snap-btn">Save snapshot</button>
+      <select id="lp-snap-select" class="lp-snap-select" aria-label="Load a saved snapshot" disabled>
+        <option value="">No snapshots yet</option>
+      </select>
+      <button id="lp-snap-delete" type="button" class="lp-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
+    </div>
+
     {/* ── Mobile tab switch (single-pane on small screens) ─────────────── */}
     <div
       class="lp-tabs flex gap-1 border-b border-hairline px-4 py-2 md:hidden"
@@ -364,6 +373,56 @@
   }
   .lp-select-wrap:hover .lp-select-caret {
     color: var(--color-body);
+  }
+
+  .lp-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .lp-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .lp-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .lp-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .lp-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .lp-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
   }
 
   /* Mobile tab pills (square in-app scale; never the 100px marketing pill). */
@@ -739,6 +798,7 @@
   import { buildHashValue } from '../lib/hash-state';
   import type { EditorView } from '@codemirror/view';
   import { escapeHtml } from '../lib/escape-html';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
 
   // CodeMirror is loaded via dynamic import inside init() so its ~200KB runtime
   // code-splits into its own chunk instead of shipping in the page's initial JS.
@@ -895,6 +955,9 @@
     const mdBtn = el<HTMLButtonElement>(root, '#lp-copy-md');
     const explainChip = el<HTMLAnchorElement>(root, '#lp-explain-chip');
     const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('.lp-tab'));
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#lp-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#lp-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#lp-snap-delete');
 
     if (
       !inputHost ||
@@ -907,7 +970,10 @@
       !summaryEl ||
       !shareBtn ||
       !mdBtn ||
-      !explainChip
+      !explainChip ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
     ) {
       return;
     }
@@ -1008,7 +1074,10 @@
       return;
     }
 
-    // Seed priority: a valid #s= deep link > the first example > LogQL → PromQL.
+    // Seed priority: a valid #s= deep link > a restored last input > the
+    // first example > LogQL → PromQL. Neither non-user seed path itself
+    // rewrites the URL hash or records a last-input — only a user-initiated
+    // convert (including the automatic one that fires for a shared link) does.
     let sharedState: ShareState | null = null;
     try {
       sharedState = engine.decodeState();
@@ -1017,10 +1086,29 @@
     }
     const fromShare = !!sharedState && sharedState.query.length > 0;
 
+    let restoredState: ShareState | null = null;
+    if (!fromShare) {
+      const restored = getRestoredLastInput('logql-promql-helper');
+      if (restored) {
+        try {
+          const parsed = JSON.parse(restored) as unknown;
+          const obj = (parsed ?? {}) as Record<string, unknown>;
+          const rQuery = typeof obj.query === 'string' ? obj.query : '';
+          const rDirection = isDirection(obj.direction) ? obj.direction : 'logql-to-promql';
+          if (rQuery.length > 0) restoredState = { direction: rDirection, query: rQuery };
+        } catch {
+          restoredState = null;
+        }
+      }
+    }
+    const fromRestored = !!restoredState;
+
     const seed = examples[0];
     let direction: Direction = fromShare
       ? (sharedState as ShareState).direction
-      : seed?.direction ?? 'logql-to-promql';
+      : fromRestored
+        ? (restoredState as ShareState).direction
+        : seed?.direction ?? 'logql-to-promql';
 
     // Build the segmented direction toggle.
     dirGroup.innerHTML = '';
@@ -1060,13 +1148,18 @@
       opt.textContent = ex.label;
       exampleSel.appendChild(opt);
     });
-    exampleSel.value = fromShare ? '-1' : examples.length ? '0' : '-1';
+    exampleSel.value = fromShare || fromRestored ? '-1' : examples.length ? '0' : '-1';
     if (!examples.length) exampleSel.disabled = true;
 
-    // Editors — seed the input from the shared link, else the first example.
+    // Editors — seed the input from the shared link, else a restored last
+    // input, else the first example.
     const inputView = makeInputEditor(
       inputHost,
-      fromShare ? (sharedState as ShareState).query : seed?.query ?? ''
+      fromShare
+        ? (sharedState as ShareState).query
+        : fromRestored
+          ? (restoredState as ShareState).query
+          : seed?.query ?? ''
     );
     const outputView = makeOutputEditor(outputHost, '');
 
@@ -1102,6 +1195,9 @@
       } catch {
         // Fall back to the current URL; sharing degrades gracefully.
         shareBtn!.dataset.copy = window.location.href;
+      }
+      if (userInitiated) {
+        recordToolLastInput('logql-promql-helper', JSON.stringify({ direction: dir, query }));
       }
       shareBtn!.hidden = false;
       mdBtn!.hidden = false;
@@ -1370,9 +1466,33 @@
       }, COPIED_RESET_MS);
     });
 
-    // Initial results state: a #s= deep link converts immediately (that's the
-    // point of sharing); otherwise wait for the user's explicit Convert action.
-    if (fromShare) {
+    wireSnapshotUI({
+      slug: 'logql-promql-helper',
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: () => JSON.stringify({ direction, query: inputView.state.doc.toString() }),
+      setValue: (value) => {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(value);
+        } catch {
+          return;
+        }
+        const obj = (parsed ?? {}) as Record<string, unknown>;
+        const query = typeof obj.query === 'string' ? obj.query : '';
+        if (isDirection(obj.direction)) direction = obj.direction;
+        syncDirection();
+        setEditorDoc(inputView, query);
+        markCustom();
+        void convertNow();
+      },
+    });
+
+    // Initial results state: a #s= deep link or a restored last input both
+    // convert immediately (that's the point of sharing / of restoring your
+    // last work); otherwise wait for the user's explicit Convert action.
+    if (fromShare || fromRestored) {
       void convertNow(false);
     } else {
       renderEmpty(notesBox, summaryEl);

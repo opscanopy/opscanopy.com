@@ -167,6 +167,13 @@
         >
         </div>
         <p class="text-xs text-white/55 px-4 mt-1">Tip: press <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd> to release focus.</p>
+        <div class="al-snap-row mt-2 mb-2 flex flex-wrap items-center gap-2" style="padding: 0 16px;">
+          <button id="al-snap-save" type="button" class="al-snap-btn">Save snapshot</button>
+          <select id="al-snap-select" class="al-snap-select" aria-label="Load a saved snapshot" disabled>
+            <option value="">No snapshots yet</option>
+          </select>
+          <button id="al-snap-delete" type="button" class="al-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
+        </div>
       </div>
 
       <div
@@ -264,6 +271,56 @@
   }
   .al-select-wrap:hover .al-select-caret {
     color: var(--color-body);
+  }
+
+  .al-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .al-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .al-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .al-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .al-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .al-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
   }
 
   /* Mobile tab pills (square in-app scale; never the 100px marketing pill). */
@@ -613,6 +670,7 @@
   import { copyTextToClipboard as copyText } from '../lib/clipboard';
   import type { EditorView } from '@codemirror/view';
   import { escapeHtml } from '../lib/escape-html';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
 
   // CodeMirror is loaded via dynamic import inside init() so its ~200KB runtime
   // code-splits into its own chunk instead of shipping in the page's initial JS.
@@ -646,6 +704,7 @@
 
   const ROOT_SEL = '.playground';
   const COPIED_RESET_MS = 1800;
+  const SLUG = 'loki-alert-rule-tester';
 
   /** Boot every (so far un-hydrated) playground instance on the page. */
   function boot(): void {
@@ -810,8 +869,22 @@
     const summaryEl = el<HTMLElement>(root, '#al-summary');
     const announce = el<HTMLElement>(root, '#al-announce');
     const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('.al-tab'));
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#al-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#al-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#al-snap-delete');
 
-    if (!rulesHost || !testHost || !select || !runBtn || !shareBtn || !resultsBox || !summaryEl) {
+    if (
+      !rulesHost ||
+      !testHost ||
+      !select ||
+      !runBtn ||
+      !shareBtn ||
+      !resultsBox ||
+      !summaryEl ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
+    ) {
       return;
     }
 
@@ -887,7 +960,8 @@
       return;
     }
 
-    // Seed content: prefer a shared-state URL, else the first example.
+    // Seed content: prefer a shared-state URL, else a restored last input,
+    // else the first example.
     const seedExample = examples[0] ?? { name: 'Example', rules: '', test: '' };
     let seedRules = seedExample.rules;
     let seedTest = seedExample.test;
@@ -901,6 +975,25 @@
       }
     } catch {
       /* malformed hash — fall back to the example seed */
+    }
+
+    // Restored last-input tier — only consulted when there's no shared-state
+    // URL. Defensive JSON parse: bails silently on anything malformed.
+    let fromRestored = false;
+    if (!fromShare) {
+      const raw = getRestoredLastInput(SLUG);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw) as Partial<{ rules: string; test: string }>;
+          if (typeof parsed.rules === 'string' && typeof parsed.test === 'string' && (parsed.rules || parsed.test)) {
+            seedRules = parsed.rules;
+            seedTest = parsed.test;
+            fromRestored = true;
+          }
+        } catch {
+          /* malformed stored value — ignore, fall back to the example seed */
+        }
+      }
     }
 
     const rulesView = makeEditor(rulesHost, seedRules);
@@ -920,6 +1013,11 @@
         opt.value = '-1';
         opt.textContent = 'Shared snippet';
         select.appendChild(opt);
+      } else if (fromRestored) {
+        const opt = document.createElement('option');
+        opt.value = '-1';
+        opt.textContent = 'Restored input';
+        select.appendChild(opt);
       }
       examples.forEach((ex, i) => {
         const opt = document.createElement('option');
@@ -927,7 +1025,7 @@
         opt.textContent = ex.name;
         select.appendChild(opt);
       });
-      select.value = fromShare ? '-1' : '0';
+      select.value = fromShare || fromRestored ? '-1' : '0';
     }
 
     // Swap both editors when a different example is chosen.
@@ -983,7 +1081,7 @@
     let running = false;
     const runLabel = runBtn.querySelector<HTMLElement>('.al-run-label');
     let spinner: HTMLElement | null = null;
-    async function run(): Promise<void> {
+    async function run(userInitiated = true): Promise<void> {
       if (running) return;
       running = true;
       runBtn.classList.add('is-busy');
@@ -1026,15 +1124,21 @@
         const result = await Promise.resolve(engine.runTests(rulesDoc, testDoc));
         renderResults(resultsBox!, summaryEl!, result);
         // Persist current state into the URL hash without a history entry.
+        // Only a user-initiated run (button click / ⌘⏎) rewrites the address
+        // bar and records the last input — the initial seed-from-hash/
+        // restored/example run never does either.
         try {
           const hash = engine.encodeState(rulesDoc, testDoc);
           if (typeof hash === 'string') {
             const url = hash.startsWith('#') ? hash : `#${hash}`;
             // window.history — the CM `history` import no longer shadows the global.
-            window.history.replaceState(null, '', url);
+            if (userInitiated) window.history.replaceState(null, '', url);
           }
         } catch {
           /* non-fatal: sharing just won't update */
+        }
+        if (userInitiated) {
+          recordToolLastInput(SLUG, JSON.stringify({ rules: rulesDoc, test: testDoc }));
         }
       } catch (err) {
         const msg =
@@ -1095,8 +1199,34 @@
       }, COPIED_RESET_MS);
     });
 
-    // Auto-run on load so the output panel is populated immediately.
-    void run();
+    wireSnapshotUI({
+      slug: SLUG,
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: () =>
+        JSON.stringify({ rules: rulesView.state.doc.toString(), test: testView.state.doc.toString() }),
+      setValue: (value) => {
+        let parsed: Partial<{ rules: string; test: string }> | null = null;
+        try {
+          parsed = JSON.parse(value) as Partial<{ rules: string; test: string }>;
+        } catch {
+          return;
+        }
+        if (!parsed || typeof parsed.rules !== 'string' || typeof parsed.test !== 'string') {
+          return;
+        }
+        setEditorDoc(rulesView, parsed.rules);
+        setEditorDoc(testView, parsed.test);
+        void run();
+      },
+    });
+
+    // Auto-run on load so the output panel is populated immediately. Passing
+    // `false` means this first run never rewrites the URL hash or records a
+    // last-input — only subsequent user-initiated runs do (see the
+    // `userInitiated` gate in run() above).
+    void run(false);
   }
 
   boot();

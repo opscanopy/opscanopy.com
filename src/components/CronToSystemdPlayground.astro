@@ -122,6 +122,13 @@
       >
       </div>
       <p class="text-xs text-mute mt-1 px-4 pb-2">Tip: press <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd> to release focus.</p>
+      <div class="cs-snap-row flex flex-wrap items-center gap-2 px-4 pb-3">
+        <button id="cs-snap-save" type="button" class="cs-snap-btn">Save snapshot</button>
+        <select id="cs-snap-select" class="cs-snap-select" aria-label="Load a saved snapshot" disabled>
+          <option value="">No snapshots yet</option>
+        </select>
+        <button id="cs-snap-delete" type="button" class="cs-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
+      </div>
     </div>
 
     {/* ── On-calendar summary strip ────────────────────────────────────── */}
@@ -372,6 +379,56 @@
   .cs-text:hover {
     box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
   }
+  .cs-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .cs-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .cs-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .cs-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .cs-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .cs-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
+
   /* OnCalendar summary chip. */
   .cs-oncalendar {
     min-width: 0;
@@ -735,6 +792,7 @@
   import type { EditorView } from '@codemirror/view';
   import { escapeHtml } from '../lib/escape-html';
   import { createHashState } from '../lib/hash-state';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
 
   // CodeMirror is loaded via dynamic import inside init() so its ~200KB runtime
   // code-splits into its own chunk instead of shipping in the page's initial JS.
@@ -884,6 +942,9 @@
     const timerNameEl = el<HTMLElement>(root, '#cs-timer-name');
     const serviceNameEl = el<HTMLElement>(root, '#cs-service-name');
     const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('.cs-tab'));
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#cs-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#cs-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#cs-snap-delete');
 
     if (
       !inputHost ||
@@ -896,7 +957,10 @@
       !copyServiceBtn ||
       !onCalendarEl ||
       !notesBox ||
-      !summaryEl
+      !summaryEl ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
     ) {
       return;
     }
@@ -989,10 +1053,11 @@
 
     // Seed priority: #cron= deep link (shared with cron-expression-tester —
     // same key, free interop, read-only here: this tool has no share button
-    // of its own) > first example.
+    // of its own) > restored last input > first example.
     const hashValue = hashState.read();
+    const restored = getRestoredLastInput('cron-to-systemd');
     const seed = examples[0];
-    const inputView = makeInputEditor(inputHost, hashValue ?? seed?.cron ?? '');
+    const inputView = makeInputEditor(inputHost, hashValue ?? restored ?? seed?.cron ?? '');
     const timerView = makeOutputEditor(timerHost, '');
     const serviceView = makeOutputEditor(serviceHost, '');
 
@@ -1008,7 +1073,7 @@
       opt.textContent = ex.label;
       exampleSel.appendChild(opt);
     });
-    exampleSel.value = hashValue ? '-1' : examples.length ? '0' : '-1';
+    exampleSel.value = hashValue || restored ? '-1' : examples.length ? '0' : '-1';
     if (!examples.length) exampleSel.disabled = true;
 
     /** Current sanitised unit base name, defaulting to "cron-job". */
@@ -1088,7 +1153,7 @@
     const convertLabel = convertBtn.querySelector<HTMLElement>('.cs-convert-label');
     let spinner: HTMLElement | null = null;
 
-    async function convertNow(): Promise<void> {
+    async function convertNow(userInitiated = true): Promise<void> {
       if (running) return;
       running = true;
       convertBtn.classList.add('is-busy');
@@ -1145,6 +1210,7 @@
         setEditorDoc(serviceView, serviceUnit);
         copyTimerBtn!.disabled = timerUnit.length === 0;
         copyServiceBtn!.disabled = serviceUnit.length === 0;
+        if (userInitiated) recordToolLastInput('cron-to-systemd', cronLine);
         if (onCalendarEl) {
           onCalendarEl.textContent =
             typeof result.onCalendar === 'string' && result.onCalendar ? result.onCalendar : '—';
@@ -1218,11 +1284,26 @@
     wireCopy(copyTimerBtn, timerView, 'Timer');
     wireCopy(copyServiceBtn, serviceView, 'Service');
 
+    wireSnapshotUI({
+      slug: 'cron-to-systemd',
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: () => inputView.state.doc.toString(),
+      setValue: (value) => {
+        setEditorDoc(inputView, value);
+        exampleSel!.value = '-1';
+        void convertNow();
+      },
+    });
+
     // Initial state: a #cron= deep link (from cron-expression-tester's share
-    // link) converts immediately; otherwise wait for the user's explicit
-    // Convert action.
+    // link) or a restored last input converts immediately; otherwise wait for
+    // the user's explicit Convert action.
     if (hashValue) {
-      void convertNow();
+      void convertNow(false);
+    } else if (restored) {
+      void convertNow(false);
     } else {
       renderEmpty(notesBox, summaryEl);
     }

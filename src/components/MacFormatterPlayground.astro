@@ -69,6 +69,13 @@
         <span class="code-mono">00-1A-2B-3C-4D-5E</span>, Cisco dot
         <span class="code-mono">001a.2b3c.4d5e</span>, or bare <span class="code-mono">001a2b3c4d5e</span>.
       </p>
+      <div class="mac-snap-row mt-3 flex flex-wrap items-center gap-2">
+        <button id="mac-snap-save" type="button" class="mac-snap-btn">Save snapshot</button>
+        <select id="mac-snap-select" class="mac-snap-select" aria-label="Load a saved snapshot" disabled>
+          <option value="">No snapshots yet</option>
+        </select>
+        <button id="mac-snap-delete" type="button" class="mac-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
+      </div>
     </div>
 
     <div class="bg-canvas-soft px-4 py-4 sm:px-5">
@@ -225,6 +232,55 @@
   .mac-hint {
     margin-top: 8px;
     text-wrap: pretty;
+  }
+  .mac-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .mac-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .mac-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .mac-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .mac-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .mac-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
   }
   .mac-summary {
     white-space: nowrap;
@@ -439,6 +495,7 @@
   import { createHashState } from '../lib/hash-state';
   import { buildMarkdownBlock } from '../lib/share-md';
   import { buildIpHash } from '../lib/ip-hash';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
 
   type Row = { label: string; value: string; mono?: boolean };
   type Result = { valid: boolean; error?: string; rows: Row[] };
@@ -569,7 +626,22 @@
     const summaryEl = el<HTMLElement>(root, '#mac-summary');
     const shareBtn = el<HTMLButtonElement>(root, '#mac-share');
     const mdBtn = el<HTMLButtonElement>(root, '#mac-md');
-    if (!input || !exampleSel || !resultsBox || !summaryEl || !shareBtn || !mdBtn) return;
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#mac-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#mac-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#mac-snap-delete');
+    if (
+      !input ||
+      !exampleSel ||
+      !resultsBox ||
+      !summaryEl ||
+      !shareBtn ||
+      !mdBtn ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
+    ) {
+      return;
+    }
 
     const hashState = createHashState('mac');
 
@@ -670,6 +742,7 @@
       shareBtn!.hidden = false;
       shareBtn!.dataset.copy = location.origin + location.pathname + location.search + hashState.build(value);
       if (userInitiated) hashState.write(value);
+      if (userInitiated) recordToolLastInput('mac-address-formatter', value);
 
       mdBtn!.hidden = false;
       const rows = Array.isArray(result.rows) ? result.rows : [];
@@ -699,11 +772,33 @@
       evaluate();
     });
 
-    // Seed priority: #mac= deep link > seeded example. Neither seed path
-    // writes the hash — only user-initiated evaluations do.
+    wireSnapshotUI({
+      slug: 'mac-address-formatter',
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: () => input!.value.trim(),
+      setValue: (value) => {
+        input!.value = value;
+        exampleSel!.value = '-1';
+        const cue = root.querySelector<HTMLElement>('.mac-sample-cue');
+        if (cue) cue.classList.add('is-hidden');
+        window.clearTimeout(timer);
+        evaluate();
+      },
+    });
+
+    // Seed priority: #mac= deep link > restored last input > seeded example.
+    // Neither seed path writes the hash or records a last-input — only
+    // user-initiated evaluations do.
     const hashValue = hashState.read();
+    const restored = getRestoredLastInput('mac-address-formatter');
     if (hashValue) {
       input.value = hashValue;
+      exampleSel.value = '-1';
+      evaluate(false);
+    } else if (restored) {
+      input.value = restored;
       exampleSel.value = '-1';
       evaluate(false);
     } else {

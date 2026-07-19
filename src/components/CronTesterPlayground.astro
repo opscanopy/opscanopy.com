@@ -145,6 +145,13 @@
         Five fields — minute, hour, day of month, month, day of week. Macros like
         <span class="code-mono">@daily</span> are supported too.
       </p>
+      <div class="cron-snap-row mt-3 flex flex-wrap items-center gap-2">
+        <button id="cron-snap-save" type="button" class="cron-snap-btn">Save snapshot</button>
+        <select id="cron-snap-select" class="cron-snap-select" aria-label="Load a saved snapshot" disabled>
+          <option value="">No snapshots yet</option>
+        </select>
+        <button id="cron-snap-delete" type="button" class="cron-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
+      </div>
     </div>
 
     {/* ── Results panel (description + next runs) ──────────────────────── */}
@@ -376,6 +383,55 @@
   .cron-hint {
     margin-top: 8px;
     text-wrap: pretty;
+  }
+  .cron-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .cron-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .cron-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .cron-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .cron-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .cron-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
   }
 
   /* Summary — right-aligned counts use tabular figures so they don't jitter. */
@@ -650,6 +706,7 @@
   import { createHashState, buildHashValue } from '../lib/hash-state';
   import { copyTextToClipboard } from '../lib/clipboard';
   import { buildMarkdownBlock } from '../lib/share-md';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
 
   /* ---- Types mirrored from the engine contract (structural, not imported). -- */
   type CronFields = {
@@ -849,6 +906,9 @@
     const summaryEl = el<HTMLElement>(root, '#cron-summary');
     const shareBtn = el<HTMLButtonElement>(root, '#cron-share');
     const mdBtn = el<HTMLButtonElement>(root, '#cron-md');
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#cron-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#cron-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#cron-snap-delete');
 
     if (
       !exprInput ||
@@ -859,7 +919,10 @@
       !resultsBox ||
       !summaryEl ||
       !shareBtn ||
-      !mdBtn
+      !mdBtn ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
     ) {
       return;
     }
@@ -980,6 +1043,7 @@
       shareBtn!.hidden = false;
       shareBtn!.dataset.copy = location.origin + location.pathname + location.search + hashState.build(expr);
       if (userInitiated) hashState.write(expr);
+      if (userInitiated) recordToolLastInput('cron-expression-tester', expr);
 
       mdBtn!.hidden = false;
       mdBtn!.dataset.copy = buildMarkdownBlock('Cron Expression Tester', [
@@ -1071,13 +1135,32 @@
       evaluate();
     });
 
-    // Seed priority: #cron= deep link > first example. Normalise the count
-    // control once. Neither seed path writes the hash — only user-initiated
-    // evaluations do.
+    wireSnapshotUI({
+      slug: 'cron-expression-tester',
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: () => exprInput!.value.trim(),
+      setValue: (value) => {
+        exprInput!.value = value;
+        exampleSel!.value = '-1';
+        window.clearTimeout(timer);
+        evaluate();
+      },
+    });
+
+    // Seed priority: #cron= deep link > restored last input > first example.
+    // Normalise the count control once. Neither seed path writes the hash or
+    // records a last-input — only user-initiated evaluations do.
     setCount(DEFAULT_COUNT);
     const hashValue = hashState.read();
+    const restored = getRestoredLastInput('cron-expression-tester');
     if (hashValue) {
       exprInput.value = hashValue;
+      exampleSel.value = '-1';
+      evaluate(false);
+    } else if (restored) {
+      exprInput.value = restored;
       exampleSel.value = '-1';
       evaluate(false);
     } else {

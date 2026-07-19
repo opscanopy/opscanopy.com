@@ -87,6 +87,13 @@
         <span class="code-mono">#</span> comments are ignored. Add a "split into /N" to see every
         equal-size subnet.
       </p>
+      <div class="spl-snap-row mt-3 flex flex-wrap items-center gap-2">
+        <button id="spl-snap-save" type="button" class="spl-snap-btn">Save snapshot</button>
+        <select id="spl-snap-select" class="spl-snap-select" aria-label="Load a saved snapshot" disabled>
+          <option value="">No snapshots yet</option>
+        </select>
+        <button id="spl-snap-delete" type="button" class="spl-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
+      </div>
     </div>
 
     <div class="bg-canvas-soft px-4 py-4 sm:px-5">
@@ -218,6 +225,55 @@
   .spl-hint {
     margin-top: 8px;
     text-wrap: pretty;
+  }
+  .spl-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .spl-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .spl-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .spl-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .spl-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .spl-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
   }
   .spl-summary {
     white-space: nowrap;
@@ -373,6 +429,7 @@
 <script>
   import { escapeHtml } from '../lib/escape-html';
   import { readIpHash } from '../lib/ip-hash';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
 
   type Allocation = { cidr: string; ok: boolean; note?: string };
   type Subnet = { cidr: string; status: 'free' | 'used' | 'partial' };
@@ -532,7 +589,22 @@
     const exampleSel = el<HTMLSelectElement>(root, '#spl-example');
     const resultsBox = el<HTMLElement>(root, '#spl-results');
     const summaryEl = el<HTMLElement>(root, '#spl-summary');
-    if (!parentInput || !prefixInput || !allocatedInput || !exampleSel || !resultsBox || !summaryEl) return;
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#spl-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#spl-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#spl-snap-delete');
+    if (
+      !parentInput ||
+      !prefixInput ||
+      !allocatedInput ||
+      !exampleSel ||
+      !resultsBox ||
+      !summaryEl ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
+    ) {
+      return;
+    }
 
     let engine: EngineModule;
     let examples: Example[] = [];
@@ -619,6 +691,7 @@
         return;
       }
       renderResult(resultsBox!, summaryEl!, result);
+      recordToolLastInput('subnet-splitter', parent.trim());
     }
 
     let timer: number | undefined;
@@ -646,12 +719,38 @@
       evaluate();
     });
 
-    // Deep link: #ip=<cidr> (written by the Subnet Calculator's "Split this
-    // subnet" chip) prefills the parent block and replaces the seeded example.
+    wireSnapshotUI({
+      slug: 'subnet-splitter',
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: () => parentInput!.value.trim(),
+      setValue: (value) => {
+        parentInput!.value = value;
+        prefixInput!.value = '';
+        allocatedInput!.value = '';
+        exampleSel!.value = '-1';
+        window.clearTimeout(timer);
+        evaluate();
+      },
+    });
+
+    // Seed priority: #ip=<cidr> deep link (written by the Subnet Calculator's
+    // "Split this subnet" chip) > restored last input > seeded example. Only
+    // the parent block is restored/recorded, matching the existing #ip= deep
+    // link's scope — prefix and allocated lines are cleared just like the
+    // deep-link path already does.
     const shared = readIpHash();
+    const restored = getRestoredLastInput('subnet-splitter');
     const seed = examples[0];
     if (shared) {
       parentInput.value = shared;
+      prefixInput.value = '';
+      allocatedInput.value = '';
+      exampleSel.value = '-1';
+      evaluate();
+    } else if (restored) {
+      parentInput.value = restored;
       prefixInput.value = '';
       allocatedInput.value = '';
       exampleSel.value = '-1';

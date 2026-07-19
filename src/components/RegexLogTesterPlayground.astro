@@ -60,6 +60,13 @@
         <p id="rx-pattern-hint" class="sr-only">
           JavaScript regular expression syntax. Matching updates as you type.
         </p>
+        <div class="rx-snap-row mt-2 flex flex-wrap items-center gap-2">
+          <button id="rx-snap-save" type="button" class="rx-snap-btn">Save snapshot</button>
+          <select id="rx-snap-select" class="rx-snap-select" aria-label="Load a saved snapshot" disabled>
+            <option value="">No snapshots yet</option>
+          </select>
+          <button id="rx-snap-delete" type="button" class="rx-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
+        </div>
       </div>
 
       <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -350,6 +357,56 @@
   }
   .rx-pattern-wrap.rx-pattern-wrap--error:focus-within {
     box-shadow: inset 0 0 0 1px var(--color-error), 0 0 0 3px var(--color-error-soft);
+  }
+
+  .rx-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .rx-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .rx-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .rx-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .rx-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .rx-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
   }
 
   /* Flag toggle chips — selectable mono glyph + label. */
@@ -845,6 +902,7 @@
   import { escapeHtml } from '../lib/escape-html';
   import { copyTextToClipboard } from '../lib/clipboard';
   import { buildMarkdownBlock } from '../lib/share-md';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
 
   /* ---- Types mirrored from the engine contract (structural, not imported). -- */
   type RegexMatch = {
@@ -1072,6 +1130,9 @@
       root.querySelectorAll<HTMLInputElement>('.rx-flag-input')
     );
     const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('.rx-tab'));
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#rx-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#rx-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#rx-snap-delete');
 
     if (
       !editorHost ||
@@ -1082,7 +1143,10 @@
       !resultsBox ||
       !summaryEl ||
       !shareBtn ||
-      !mdBtn
+      !mdBtn ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
     ) {
       return;
     }
@@ -1257,6 +1321,7 @@
         } catch {
           /* ignore — Safari's replaceState throttle must never break input */
         }
+        recordToolLastInput('regex-log-tester', JSON.stringify({ pattern, flags, text }));
       }
     }
 
@@ -1267,7 +1332,9 @@
       debounceTimer = window.setTimeout(runNow, DEBOUNCE_MS);
     }
 
-    // Seed content: prefer a shared-state URL hash, else the first example.
+    // Seed content: prefer a shared-state URL hash, then a restored last
+    // input, else the first example. Neither non-user seed path writes the
+    // hash or records a last-input — only a user-initiated runNow() does.
     let seed = examples[0] ?? { id: '', label: '', pattern: '', flags: '', text: '' };
     let fromShare = false;
     try {
@@ -1284,6 +1351,26 @@
       }
     } catch {
       /* malformed hash — fall back to the example seed */
+    }
+
+    let fromRestored = false;
+    if (!fromShare) {
+      const restored = getRestoredLastInput('regex-log-tester');
+      if (restored) {
+        try {
+          const parsed = JSON.parse(restored) as unknown;
+          const obj = (parsed ?? {}) as Record<string, unknown>;
+          const rPattern = typeof obj.pattern === 'string' ? obj.pattern : '';
+          const rFlags = typeof obj.flags === 'string' ? obj.flags : '';
+          const rText = typeof obj.text === 'string' ? obj.text : '';
+          if (rPattern || rText) {
+            seed = { id: '', label: 'Restored input', pattern: rPattern, flags: rFlags, text: rText };
+            fromRestored = true;
+          }
+        } catch {
+          /* malformed restored value — fall back to the example seed */
+        }
+      }
     }
 
     const editorView = makeEditor(editorHost, seed.text, scheduleRun);
@@ -1303,10 +1390,10 @@
       select.appendChild(opt);
       select.disabled = true;
     } else {
-      if (fromShare) {
+      if (fromShare || fromRestored) {
         const opt = document.createElement('option');
         opt.value = '-1';
-        opt.textContent = 'Shared snippet';
+        opt.textContent = fromShare ? 'Shared snippet' : 'Restored input';
         select.appendChild(opt);
       }
       examples.forEach((ex, i) => {
@@ -1315,12 +1402,12 @@
         opt.textContent = ex.label;
         select.appendChild(opt);
       });
-      select.value = fromShare ? '-1' : '0';
+      select.value = fromShare || fromRestored ? '-1' : '0';
     }
 
-    // A shared/custom seed isn't a bundled "sample" — don't advertise it as one.
-    let sampleCueDismissed = fromShare;
-    if (fromShare && sampleCue) sampleCue.hidden = true;
+    // A shared/restored/custom seed isn't a bundled "sample" — don't advertise it as one.
+    let sampleCueDismissed = fromShare || fromRestored;
+    if ((fromShare || fromRestored) && sampleCue) sampleCue.hidden = true;
 
     // Swap pattern + flags + sample text when a different example is chosen.
     select.addEventListener('change', () => {
@@ -1454,6 +1541,40 @@
         e.preventDefault();
         activateTab(tabs[next], true);
       });
+    });
+
+    wireSnapshotUI({
+      slug: 'regex-log-tester',
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: () =>
+        JSON.stringify({
+          pattern: patternInput!.value,
+          flags: currentFlags(),
+          text: editorView.state.doc.toString(),
+        }),
+      setValue: (value) => {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(value);
+        } catch {
+          return;
+        }
+        const obj = (parsed ?? {}) as Record<string, unknown>;
+        const pattern = typeof obj.pattern === 'string' ? obj.pattern : '';
+        const flags = typeof obj.flags === 'string' ? obj.flags : '';
+        const text = typeof obj.text === 'string' ? obj.text : '';
+        patternInput!.value = pattern;
+        const want = new Set(flags.split(''));
+        flagInputs.forEach((c) => {
+          c.checked = want.has(c.value);
+        });
+        syncFlagMirror();
+        setEditorDoc(editorView, text); // triggers scheduleRun via updateListener
+        dismissSampleCue();
+        runNow();
+      },
     });
 
     // Initial paint — seeding (example or shared link) must never itself

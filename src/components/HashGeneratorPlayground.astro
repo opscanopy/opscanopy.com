@@ -56,6 +56,13 @@
         Hashed as UTF-8. The empty string is valid — its digests are well-known (MD5
         <span class="code-mono">d41d8cd9…</span>).
       </p>
+      <div class="hash-snap-row mt-3 flex flex-wrap items-center gap-2">
+        <button id="hash-snap-save" type="button" class="hash-snap-btn">Save snapshot</button>
+        <select id="hash-snap-select" class="hash-snap-select" aria-label="Load a saved snapshot" disabled>
+          <option value="">No snapshots yet</option>
+        </select>
+        <button id="hash-snap-delete" type="button" class="hash-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
+      </div>
     </div>
 
     <div class="border-b border-hairline px-4 py-4 sm:px-5">
@@ -231,6 +238,55 @@
     margin-top: 8px;
     text-wrap: pretty;
   }
+  .hash-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .hash-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .hash-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .hash-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .hash-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .hash-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
   .hash-summary {
     white-space: nowrap;
   }
@@ -378,11 +434,38 @@
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
   }
+
+  :global(.hash-chips) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  :global(.hash-chip) {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border-radius: 9999px;
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-brand-strong);
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  :global(.hash-chip:hover) {
+    background: var(--color-brand-soft);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+  }
 </style>
 
 <script>
   import { copyTextToClipboard as copyText } from '../lib/clipboard';
   import { escapeHtml } from '../lib/escape-html';
+  import { writeHandoff, readHandoffOnce } from '../lib/tool-state/handoff';
+  import { wireSnapshotUI } from '../lib/tool-state/wire';
 
   type Row = { label: string; value: string; mono?: boolean };
   type HashResult = { valid: boolean; error?: string; rows: Row[] };
@@ -464,11 +547,26 @@
     );
   }
 
+  /** Secret-safe handoff chip — never a #-fragment (see src/lib/tool-state/handoff.ts). */
+  function localePath(p: string): string {
+    const m = window.location.pathname.match(/^\/(de|es|fr|pt-br)\//);
+    return m ? `/${m[1]}${p}` : p;
+  }
+
+  function chainHtml(rawInput: string): string {
+    if (rawInput.length === 0) return '';
+    return (
+      '<div class="hash-chips"><button type="button" class="hash-chip" ' +
+      'data-handoff-to="/base64-encoder-decoder/">View as Base64 &rarr;</button></div>'
+    );
+  }
+
   function renderResult(
     container: HTMLElement,
     summary: HTMLElement,
     result: HashResult,
-    hmacRow: Row | null
+    hmacRow: Row | null,
+    rawInput: string
   ): void {
     const rows = Array.isArray(result.rows) ? result.rows : [];
     const baseCount = rows.length;
@@ -477,7 +575,7 @@
     summary.classList.add('text-mute');
     const rowsHtml = rows.map((r) => rowHtml(r, false)).join('');
     const hmacHtml = hmacRow ? rowHtml(hmacRow, true) : '';
-    container.innerHTML = '<div class="hash-card">' + rowsHtml + hmacHtml + '</div>';
+    container.innerHTML = '<div class="hash-card">' + rowsHtml + hmacHtml + '</div>' + chainHtml(rawInput);
   }
 
   async function init(root: HTMLElement): Promise<void> {
@@ -488,7 +586,22 @@
     const resultsBox = el<HTMLElement>(root, '#hash-results');
     const summaryEl = el<HTMLElement>(root, '#hash-summary');
     const announce = el<HTMLElement>(root, '#hash-announce');
-    if (!input || !keyInput || !algoSel || !exampleSel || !resultsBox || !summaryEl) return;
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#hash-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#hash-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#hash-snap-delete');
+    if (
+      !input ||
+      !keyInput ||
+      !algoSel ||
+      !exampleSel ||
+      !resultsBox ||
+      !summaryEl ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
+    ) {
+      return;
+    }
 
     let engine: EngineModule;
     let examples: Example[] = [];
@@ -565,7 +678,7 @@
         }
       }
       if (id !== reqId) return;
-      renderResult(resultsBox!, summaryEl!, result, hmacRow);
+      renderResult(resultsBox!, summaryEl!, result, hmacRow, value);
     }
 
     let timer: number | undefined;
@@ -589,6 +702,32 @@
       input.value = examples[idx].input;
       window.clearTimeout(timer);
       void evaluate();
+    });
+
+    // Save-snapshot only — this tool is hard-excluded from auto-restore-last-input
+    // (its input may be a secret), so there is no getRestoredLastInput() seed here.
+    wireSnapshotUI({
+      slug: 'hash-generator',
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: () => input!.value,
+      setValue: (value) => {
+        input!.value = value;
+        exampleSel!.value = '-1';
+        window.clearTimeout(timer);
+        void evaluate();
+      },
+    });
+
+    // Handoff chip — hand off the raw input (never a #-fragment; it may be a secret).
+    resultsBox.addEventListener('click', (e) => {
+      const chip = (e.target as HTMLElement | null)?.closest<HTMLButtonElement>('[data-handoff-to]');
+      if (!chip) return;
+      const to = chip.dataset.handoffTo;
+      if (!to) return;
+      writeHandoff(input!.value);
+      window.location.href = localePath(to);
     });
 
     // Copy any digest via event delegation on the results container.
@@ -617,9 +756,16 @@
       })();
     });
 
-    // Seed the first example (the catalog "abc" vector). Empty-string examples
-    // are kept, so seed on presence rather than non-empty input.
-    if (examples.length > 0) {
+    // Seed priority: a secret-safe handoff (e.g. from Base64's "Hash this
+    // text" chip) > the first example (the catalog "abc" vector). Empty-
+    // string examples are kept, so seed on presence rather than non-empty
+    // input. A handoff is a one-time read — it never lingers for a later visit.
+    const handoff = readHandoffOnce();
+    if (handoff !== null) {
+      input.value = handoff;
+      exampleSel.value = '-1';
+      void evaluate();
+    } else if (examples.length > 0) {
       input.value = examples[0].input;
       exampleSel.value = '0';
       void evaluate();

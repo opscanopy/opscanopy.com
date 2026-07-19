@@ -150,6 +150,13 @@
       >
       </div>
       <p class="text-xs text-white/45 mt-1">Tip: press <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd> to release keyboard focus from the editor.</p>
+      <div class="glci-snap-row mt-2 flex flex-wrap items-center gap-2 px-4 pb-3">
+        <button id="glci-snap-save" type="button" class="glci-snap-btn">Save snapshot</button>
+        <select id="glci-snap-select" class="glci-snap-select" aria-label="Load a saved snapshot" disabled>
+          <option value="">No snapshots yet</option>
+        </select>
+        <button id="glci-snap-delete" type="button" class="glci-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
+      </div>
     </div>
 
     {/* ── Results panel ────────────────────────────────────────────────── */}
@@ -224,6 +231,56 @@
   }
   .glci-select-wrap:hover .glci-select-caret {
     color: var(--color-body);
+  }
+
+  .glci-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .glci-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .glci-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .glci-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .glci-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .glci-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
   }
 
   /* CodeMirror host — fills the dark pane, scrolls internally. */
@@ -612,6 +669,7 @@
   import type { EditorView } from '@codemirror/view';
   import { escapeHtml } from '../lib/escape-html';
   import { base64UrlEncode, base64UrlDecode } from '../lib/codec';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
 
   /* ---- Types mirrored from the engine contract (structural, not imported). -- */
   type Severity = 'error' | 'warning' | 'info';
@@ -640,6 +698,7 @@
   const ROOT_SEL = '.glci';
   const COPIED_RESET_MS = 1800;
   const SHARE_KEY = 'glci';
+  const SLUG = 'gitlab-ci-validator';
 
   /** Boot every (so far un-hydrated) playground instance on the page. */
   function boot(): void {
@@ -881,8 +940,22 @@
     const resultsBox = el<HTMLElement>(root, '#glci-results');
     const summaryEl = el<HTMLElement>(root, '#glci-summary');
     const announce = el<HTMLElement>(root, '#glci-announce');
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#glci-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#glci-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#glci-snap-delete');
 
-    if (!editorHost || !select || !runBtn || !copyBtn || !shareBtn || !resultsBox || !summaryEl) {
+    if (
+      !editorHost ||
+      !select ||
+      !runBtn ||
+      !copyBtn ||
+      !shareBtn ||
+      !resultsBox ||
+      !summaryEl ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
+    ) {
       return;
     }
 
@@ -930,14 +1003,22 @@
       return;
     }
 
-    // Seed content: prefer a shared-state URL, else the first example.
+    // Seed priority: a shared `#glci=` deep link > the last remembered input
+    // for this tool > the first example.
     const seedExample = examples[0] ?? { id: 'example', label: 'Example', yaml: '' };
     let seedYaml = seedExample.yaml;
     let fromShare = false;
+    let fromRestored = false;
     const shared = decodeShare();
     if (shared) {
       seedYaml = shared;
       fromShare = true;
+    } else {
+      const restored = getRestoredLastInput(SLUG);
+      if (restored) {
+        seedYaml = restored;
+        fromRestored = true;
+      }
     }
 
     /* ---- Editor factory (CM symbols now in async scope) --------------------- */
@@ -987,10 +1068,10 @@
       select.appendChild(opt);
       select.disabled = true;
     } else {
-      if (fromShare) {
+      if (fromShare || fromRestored) {
         const opt = document.createElement('option');
         opt.value = '-1';
-        opt.textContent = 'Shared pipeline';
+        opt.textContent = fromShare ? 'Shared pipeline' : 'Restored input';
         select.appendChild(opt);
       }
       examples.forEach((ex, i) => {
@@ -999,7 +1080,7 @@
         opt.textContent = ex.label;
         select.appendChild(opt);
       });
-      select.value = fromShare ? '-1' : '0';
+      select.value = fromShare || fromRestored ? '-1' : '0';
     }
 
     // Swap the editor when a different example is chosen.
@@ -1052,6 +1133,7 @@
         const doc = view.state.doc.toString();
         const result = await Promise.resolve(engine.validate(doc));
         renderResults(resultsBox!, summaryEl!, result);
+        recordToolLastInput(SLUG, doc);
         // Persist current state into the URL hash without a history entry.
         try {
           window.history.replaceState(null, '', encodeShare(doc));
@@ -1125,6 +1207,20 @@
       shareTimer = window.setTimeout(() => {
         if (shareLabel) shareLabel.textContent = shareBtn.dataset.defaultLabel ?? 'Share Link';
       }, COPIED_RESET_MS);
+    });
+
+    // Snapshot save/restore — reuses the editor's own YAML text as the
+    // stored value, same as the share-link serializer above.
+    wireSnapshotUI({
+      slug: SLUG,
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: () => view.state.doc.toString(),
+      setValue: (value) => {
+        setEditorDoc(view, value);
+        void run();
+      },
     });
 
     // Initial results state — then auto-validate the loaded content immediately.

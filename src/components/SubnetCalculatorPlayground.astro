@@ -79,6 +79,13 @@ import { examples } from '../lib/subnet-calculator/examples';
       <p id="snc-input-live" class="snc-hint snc-hint--live caption text-mute">
         Results update as you type — press Enter to run now.
       </p>
+      <div class="snc-snap-row mt-3 flex flex-wrap items-center gap-2">
+        <button id="snc-snap-save" type="button" class="snc-snap-btn">Save snapshot</button>
+        <select id="snc-snap-select" class="snc-snap-select" aria-label="Load a saved snapshot" disabled>
+          <option value="">No snapshots yet</option>
+        </select>
+        <button id="snc-snap-delete" type="button" class="snc-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
+      </div>
     </div>
 
     {/* ── Results panel ────────────────────────────────────────────────── */}
@@ -282,6 +289,55 @@ import { examples } from '../lib/subnet-calculator/examples';
   }
   .snc-hint--live {
     margin-top: 2px;
+  }
+  .snc-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .snc-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .snc-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .snc-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .snc-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .snc-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
   }
   .snc-summary {
     min-width: 0;
@@ -595,6 +651,7 @@ import { examples } from '../lib/subnet-calculator/examples';
   import { escapeHtml } from '../lib/escape-html';
   import { readIpHash, buildIpHash } from '../lib/ip-hash';
   import { copyTextToClipboard } from '../lib/clipboard';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
 
   type Stat = { label: string; value: string; display?: string; caption?: string; mono?: boolean };
   type Row = { label: string; value: string; display?: string; gloss?: string; mono?: boolean };
@@ -778,7 +835,21 @@ import { examples } from '../lib/subnet-calculator/examples';
     const copyAllBtn = el<HTMLButtonElement>(root, '#snc-copy-all');
     const copyStatus = el<HTMLElement>(root, '#snc-copy-status');
     const chips = Array.from(root.querySelectorAll<HTMLButtonElement>('#snc-chips .snc-chip'));
-    if (!input || !resultsBox || !summaryEl || !shareBtn || !copyAllBtn || !copyStatus) return;
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#snc-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#snc-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#snc-snap-delete');
+    if (
+      !input ||
+      !resultsBox ||
+      !summaryEl ||
+      !shareBtn ||
+      !copyAllBtn ||
+      !copyStatus ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
+    )
+      return;
 
     /* ------------------------------------------------------------------ */
     /* Copy plumbing (row buttons, Copy link, Copy all)                    */
@@ -954,6 +1025,7 @@ import { examples } from '../lib/subnet-calculator/examples';
         copyAllBtn!.dataset.copy = buildCopyAll(result);
         syncChips(value);
         if (source !== 'seed') writeHash(normalized);
+        if (source !== 'seed') recordToolLastInput('subnet-calculator', value);
         return;
       }
 
@@ -1006,18 +1078,35 @@ import { examples } from '../lib/subnet-calculator/examples';
       });
     });
 
+    wireSnapshotUI({
+      slug: 'subnet-calculator',
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: () => input!.value.trim(),
+      setValue: (value) => {
+        input!.value = value;
+        evaluate('commit');
+      },
+    });
+
     /* ------------------------------------------------------------------ */
-    /* First load: existing value → #ip= deep link → seeded first chip.    */
-    /* Seeding never writes the hash — only user actions do.               */
+    /* First load: existing value → #ip= deep link → restored last input   */
+    /* → seeded first chip. Seeding never writes the hash — only user      */
+    /* actions do.                                                          */
     /* ------------------------------------------------------------------ */
 
     const hashValue = readIpHash();
+    const restored = getRestoredLastInput('subnet-calculator');
     const seed = chips[0]?.dataset.input ?? '';
 
     if (input.value.trim()) {
       evaluate('seed');
     } else if (hashValue) {
       input.value = hashValue;
+      evaluate('seed');
+    } else if (restored) {
+      input.value = restored;
       evaluate('seed');
     } else if (seed) {
       input.value = seed;

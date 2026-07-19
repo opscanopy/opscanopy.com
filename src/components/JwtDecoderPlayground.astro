@@ -70,6 +70,13 @@
         Everything stays in your browser — nothing is sent anywhere. HS256/384/512 verify against a
         shared secret; RS256/384/512 need a PEM <span class="code-mono">BEGIN PUBLIC KEY</span>.
       </p>
+      <div class="jwt-snap-row mt-3 flex flex-wrap items-center gap-2">
+        <button id="jwt-snap-save" type="button" class="jwt-snap-btn">Save snapshot</button>
+        <select id="jwt-snap-select" class="jwt-snap-select" aria-label="Load a saved snapshot" disabled>
+          <option value="">No snapshots yet</option>
+        </select>
+        <button id="jwt-snap-delete" type="button" class="jwt-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
+      </div>
     </div>
 
     <div class="bg-canvas-soft px-4 py-4 sm:px-5">
@@ -175,6 +182,55 @@
   .jwt-hint {
     margin-top: 8px;
     text-wrap: pretty;
+  }
+  .jwt-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .jwt-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .jwt-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .jwt-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .jwt-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .jwt-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
   }
   .jwt-summary {
     white-space: nowrap;
@@ -427,6 +483,8 @@
 
 <script>
   import { escapeHtml } from '../lib/escape-html';
+  import { readHandoffOnce } from '../lib/tool-state/handoff';
+  import { wireSnapshotUI } from '../lib/tool-state/wire';
 
   type ClaimTone = 'ok' | 'warn' | 'error';
   type ClaimRow = { label: string; value: string; mono?: boolean; tone?: ClaimTone };
@@ -667,7 +725,21 @@
     const exampleSel = el<HTMLSelectElement>(root, '#jwt-example');
     const resultsBox = el<HTMLElement>(root, '#jwt-results');
     const summaryEl = el<HTMLElement>(root, '#jwt-summary');
-    if (!input || !secretInput || !exampleSel || !resultsBox || !summaryEl) return;
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#jwt-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#jwt-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#jwt-snap-delete');
+    if (
+      !input ||
+      !secretInput ||
+      !exampleSel ||
+      !resultsBox ||
+      !summaryEl ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
+    ) {
+      return;
+    }
 
     let engine: EngineModule;
     let examples: Example[] = [];
@@ -819,13 +891,39 @@
       evaluate();
     });
 
-    const seed = examples[0];
-    if (seed) {
-      input.value = seed.token;
-      exampleSel.value = '0';
+    // Save-snapshot only — this tool is hard-excluded from auto-restore-last-input
+    // (its input may be a secret), so there is no getRestoredLastInput() seed here.
+    wireSnapshotUI({
+      slug: 'jwt-decoder',
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: () => input!.value.trim(),
+      setValue: (value) => {
+        input!.value = value;
+        exampleSel!.value = '-1';
+        window.clearTimeout(timer);
+        evaluate();
+      },
+    });
+
+    // Seed priority: a secret-safe handoff (e.g. from Base64's "Decode as
+    // JWT" chip) > the first example. A handoff is a one-time read — it
+    // never lingers for a later visit.
+    const handoff = readHandoffOnce();
+    if (handoff) {
+      input.value = handoff;
+      exampleSel.value = '-1';
       evaluate();
     } else {
-      renderEmpty(resultsBox, summaryEl);
+      const seed = examples[0];
+      if (seed) {
+        input.value = seed.token;
+        exampleSel.value = '0';
+        evaluate();
+      } else {
+        renderEmpty(resultsBox, summaryEl);
+      }
     }
   }
 

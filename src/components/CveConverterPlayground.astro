@@ -215,6 +215,13 @@
         >
         </div>
         <p class="text-xs text-mute mt-1" style="padding: 0 16px 8px;">Tip: press <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd> to release focus.</p>
+        <div class="cv-snap-row mt-3 flex flex-wrap items-center gap-2" style="padding: 0 16px 12px;">
+          <button id="cv-snap-save" type="button" class="cv-snap-btn">Save snapshot</button>
+          <select id="cv-snap-select" class="cv-snap-select" aria-label="Load a saved snapshot" disabled>
+            <option value="">No snapshots yet</option>
+          </select>
+          <button id="cv-snap-delete" type="button" class="cv-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
+        </div>
       </div>
 
       <div
@@ -356,6 +363,56 @@
   }
   .cv-select-wrap:hover .cv-select-caret {
     color: var(--color-body);
+  }
+
+  .cv-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .cv-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .cv-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .cv-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .cv-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .cv-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
   }
 
   /* Mobile tab pills (square in-app scale; never the 100px marketing pill). */
@@ -711,6 +768,7 @@
   import { buildMarkdownBlock } from '../lib/share-md';
   import type { EditorView } from '@codemirror/view';
   import { escapeHtml } from '../lib/escape-html';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
 
   /* ---- Types mirrored from the engine contract (structural, not imported). -- */
   type Format = string;
@@ -728,6 +786,7 @@
   const ROOT_SEL = '.cv-pg';
   const COPIED_RESET_MS = 1800;
   const SHARE_COPIED_RESET_MS = 1500;
+  const SLUG = 'cve-ignore-converter';
 
   /** Boot every (so far un-hydrated) playground instance on the page. */
   function boot(): void {
@@ -872,6 +931,9 @@
     const inputNameEl = el<HTMLElement>(root, '#cv-input-name');
     const outputNameEl = el<HTMLElement>(root, '#cv-output-name');
     const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('.cv-tab'));
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#cv-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#cv-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#cv-snap-delete');
 
     if (
       !inputHost ||
@@ -884,7 +946,10 @@
       !shareBtn ||
       !shareMdBtn ||
       !messagesBox ||
-      !summaryEl
+      !summaryEl ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
     ) {
       return;
     }
@@ -959,9 +1024,9 @@
       if (formats.some((f) => f.value === selected)) sel.value = selected;
     }
 
-    // Seed priority: a shared `#s=` link > the first example > sensible format
-    // defaults. Neither seed path writes the hash — only user-initiated
-    // conversions do (see convertNow()).
+    // Seed priority: a shared `#s=` link > a restored last-input > the first
+    // example > sensible format defaults. Neither seed path writes the hash —
+    // only user-initiated conversions do (see convertNow()).
     const seed = examples[0];
     let shared: ShareState | null = null;
     try {
@@ -971,23 +1036,51 @@
     }
     const fromShare = shared !== null;
 
+    // Restored last-input tier — only consulted when there's no `#s=` deep
+    // link. Validates `src`/`dst` against the known formats the same way
+    // engine.decodeState() does, and never throws on malformed JSON.
+    let restored: ShareState | null = null;
+    if (!fromShare) {
+      const raw = getRestoredLastInput(SLUG);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw) as Partial<ShareState>;
+          if (
+            parsed &&
+            typeof parsed.text === 'string' &&
+            formats.some((f) => f.value === parsed.src) &&
+            formats.some((f) => f.value === parsed.dst)
+          ) {
+            restored = { src: parsed.src as string, dst: parsed.dst as string, text: parsed.text };
+          }
+        } catch {
+          /* malformed stored value — ignore, fall back to the example seed */
+        }
+      }
+    }
+    const fromRestored = restored !== null;
+
     const defaultFrom = fromShare && shared && formats.some((f) => f.value === shared!.src)
       ? shared.src
-      : seed?.from && formats.some((f) => f.value === seed.from)
-        ? seed.from
-        : formats[0].value;
+      : fromRestored && restored
+        ? restored.src
+        : seed?.from && formats.some((f) => f.value === seed.from)
+          ? seed.from
+          : formats[0].value;
     const defaultTo = fromShare && shared && formats.some((f) => f.value === shared!.dst)
       ? shared.dst
-      : seed?.to && formats.some((f) => f.value === seed.to)
-        ? seed.to
-        : (formats.find((f) => f.value !== defaultFrom)?.value ?? formats[0].value);
+      : fromRestored && restored
+        ? restored.dst
+        : seed?.to && formats.some((f) => f.value === seed.to)
+          ? seed.to
+          : (formats.find((f) => f.value !== defaultFrom)?.value ?? formats[0].value);
 
     fillFormatSelect(fromSel, defaultFrom);
     fillFormatSelect(toSel, defaultTo);
 
     // Populate the example picker (with a leading "Custom" sentinel — also
-    // used to mark a shared/deep-linked input, same convention as any other
-    // hand-edited input).
+    // used to mark a shared/deep-linked or restored input, same convention as
+    // any other hand-edited input).
     exampleSel.innerHTML = '';
     const customOpt = document.createElement('option');
     customOpt.value = '-1';
@@ -999,7 +1092,7 @@
       opt.textContent = ex.label + ' (sample)';
       exampleSel.appendChild(opt);
     });
-    exampleSel.value = fromShare ? '-1' : examples.length ? '0' : '-1';
+    exampleSel.value = fromShare || fromRestored ? '-1' : examples.length ? '0' : '-1';
     if (!examples.length) exampleSel.disabled = true;
 
     /* ---- Editor factory (CM symbols now in async scope) --------------------- */
@@ -1059,7 +1152,11 @@
     }
 
     // Editors.
-    const seedText = fromShare && shared ? shared.text : seed?.text ?? '';
+    const seedText = fromShare && shared
+      ? shared.text
+      : fromRestored && restored
+        ? restored.text
+        : seed?.text ?? '';
     const inputView = makeInputEditor(inputHost, seedText);
     const outputView = makeOutputEditor(outputHost, '');
     let lastWarnings: string[] = [];
@@ -1243,6 +1340,12 @@
               // Only a user-initiated conversion (button click / ⌘⏎) rewrites
               // the address bar — the initial seed-from-hash/example never does.
               if (userInitiated) window.history.replaceState(null, '', frag);
+              if (userInitiated) {
+                recordToolLastInput(
+                  SLUG,
+                  JSON.stringify({ src: fromSel!.value, dst: toSel!.value, text })
+                );
+              }
             }
           } catch {
             /* non-fatal: sharing just won't reflect the latest state */
@@ -1364,6 +1467,41 @@
         shareMdBtn.classList.remove('cv-share-btn--copied');
         if (shareMdLabel) shareMdLabel.textContent = 'Copy as Markdown';
       }, SHARE_COPIED_RESET_MS);
+    });
+
+    wireSnapshotUI({
+      slug: SLUG,
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: () =>
+        JSON.stringify({
+          src: fromSel!.value,
+          dst: toSel!.value,
+          text: inputView.state.doc.toString(),
+        }),
+      setValue: (value) => {
+        let parsed: Partial<ShareState> | null = null;
+        try {
+          parsed = JSON.parse(value) as Partial<ShareState>;
+        } catch {
+          return;
+        }
+        if (
+          !parsed ||
+          typeof parsed.text !== 'string' ||
+          !formats.some((f) => f.value === parsed!.src) ||
+          !formats.some((f) => f.value === parsed!.dst)
+        ) {
+          return;
+        }
+        fromSel!.value = parsed.src as string;
+        toSel!.value = parsed.dst as string;
+        syncNames();
+        setEditorDoc(inputView, parsed.text);
+        markCustom();
+        void convertNow();
+      },
     });
 
     // Initial state.

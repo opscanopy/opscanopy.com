@@ -103,6 +103,13 @@
         <span class="code-mono">-_</span> alphabets, with or without <span class="code-mono">=</span>
         padding; whitespace is ignored.
       </p>
+      <div class="b64-snap-row mt-3 flex flex-wrap items-center gap-2">
+        <button id="b64-snap-save" type="button" class="b64-snap-btn">Save snapshot</button>
+        <select id="b64-snap-select" class="b64-snap-select" aria-label="Load a saved snapshot" disabled>
+          <option value="">No snapshots yet</option>
+        </select>
+        <button id="b64-snap-delete" type="button" class="b64-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
+      </div>
     </div>
 
     {/* ── Output ───────────────────────────────────────────────────────── */}
@@ -292,6 +299,55 @@
     margin-top: 8px;
     text-wrap: pretty;
   }
+  .b64-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .b64-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .b64-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .b64-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .b64-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .b64-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
 
   .b64-summary {
     white-space: nowrap;
@@ -457,11 +513,38 @@
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
   }
+
+  :global(.b64-chips) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  :global(.b64-chip) {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border-radius: 9999px;
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-brand-strong);
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  :global(.b64-chip:hover) {
+    background: var(--color-brand-soft);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+  }
 </style>
 
 <script>
   import { copyTextToClipboard as copyText } from '../lib/clipboard';
   import { escapeHtml } from '../lib/escape-html';
+  import { writeHandoff, readHandoffOnce } from '../lib/tool-state/handoff';
+  import { wireSnapshotUI } from '../lib/tool-state/wire';
 
   type Mode = 'encode' | 'decode';
   type Result = { valid: boolean; error?: string; output: string; bytes?: number; note?: string };
@@ -506,6 +589,30 @@
   const EMPTY_HTML =
     '<p class="b64-empty body-sm text-mute">Type or paste on the left, then flip Encode / Decode — the result appears here, ready to copy.</p>';
 
+  /**
+   * Secret-safe handoff chains (never a #-fragment — a JWT or arbitrary text
+   * here may be a secret, which is exactly why this tool is excluded from
+   * URL-hash sharing; see src/lib/tool-state/handoff.ts).
+   */
+  const JWT_SHAPE = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/;
+
+  function localePath(p: string): string {
+    const m = window.location.pathname.match(/^\/(de|es|fr|pt-br)\//);
+    return m ? `/${m[1]}${p}` : p;
+  }
+
+  function chainsHtml(rawInput: string): string {
+    const trimmed = rawInput.trim();
+    const chips: string[] = [];
+    if (JWT_SHAPE.test(trimmed)) {
+      chips.push('<button type="button" class="b64-chip" data-handoff-to="/jwt-decoder/">Decode as JWT &rarr;</button>');
+    }
+    if (trimmed.length > 0) {
+      chips.push('<button type="button" class="b64-chip" data-handoff-to="/hash-generator/">Hash this text &rarr;</button>');
+    }
+    return chips.length > 0 ? `<div class="b64-chips">${chips.join('')}</div>` : '';
+  }
+
   async function init(root: HTMLElement): Promise<void> {
     const input = el<HTMLTextAreaElement>(root, '#b64-input');
     const inputLabel = el<HTMLElement>(root, '#b64-input-label');
@@ -518,6 +625,9 @@
     const copyBtn = el<HTMLButtonElement>(root, '#b64-copy');
     const clearBtn = el<HTMLButtonElement>(root, '#b64-clear');
     const announce = el<HTMLElement>(root, '#b64-announce');
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#b64-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#b64-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#b64-snap-delete');
     if (
       !input ||
       !inputLabel ||
@@ -528,7 +638,10 @@
       !outputBox ||
       !summaryEl ||
       !copyBtn ||
-      !clearBtn
+      !clearBtn ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
     ) {
       return;
     }
@@ -590,7 +703,7 @@
       setOutputEnabled(false);
     }
 
-    function renderResult(result: Result): void {
+    function renderResult(result: Result, rawInput: string): void {
       const out = typeof result.output === 'string' ? result.output : '';
       lastOutput = out;
       const bytes = typeof result.bytes === 'number' ? result.bytes : null;
@@ -614,7 +727,8 @@
         '<div class="b64-result">' +
         `<pre class="${bodyCls}"><code>${escapeHtml(bodyText)}</code></pre>` +
         meta +
-        '</div>';
+        '</div>' +
+        chainsHtml(rawInput);
       setOutputEnabled(out.length > 0);
     }
 
@@ -645,8 +759,17 @@
         return;
       }
       input!.classList.remove('b64-input--error');
-      renderResult(result);
+      renderResult(result, value);
     }
+
+    outputBox.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-handoff-to]');
+      if (!btn) return;
+      const to = btn.dataset.handoffTo;
+      if (!to) return;
+      writeHandoff(input!.value.trim());
+      window.location.href = localePath(to);
+    });
 
     // ── Example picker ────────────────────────────────────────────────────────
     exampleSel.innerHTML = '';
@@ -723,6 +846,23 @@
       input.focus();
     });
 
+    // Save-snapshot only — this tool is hard-excluded from auto-restore-last-input
+    // (its input may be a secret), so there is no getRestoredLastInput() seed here.
+    // Mode/urlSafe are not part of the snapshot — only the raw input text.
+    wireSnapshotUI({
+      slug: 'base64-encoder-decoder',
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: () => input!.value,
+      setValue: (value) => {
+        input!.value = value;
+        markCustom();
+        window.clearTimeout(timer);
+        evaluate();
+      },
+    });
+
     // ── Copy ──────────────────────────────────────────────────────────────────
     const copyLabel = copyBtn.querySelector<HTMLElement>('.b64-copy-label');
     let copyTimer: number | undefined;
@@ -741,20 +881,32 @@
       }, COPIED_RESET_MS);
     });
 
-    // ── Seed from the first example (or an empty custom state) ──────────────────
-    const seed = examples[0];
-    if (seed) {
-      applyMode(seed.mode);
-      urlSafeBox.checked = seed.urlSafe;
-      input.value = seed.input;
-      exampleSel.value = '0';
-      // Mark the first option with a "(sample)" cue so users know it is pre-filled.
-      const firstOpt = exampleSel.querySelector<HTMLOptionElement>('option[value="0"]');
-      if (firstOpt) firstOpt.textContent = `${seed.label} (sample)`;
+    // ── Seed priority: a secret-safe handoff (e.g. from "Hash this text" on
+    // another tool) > the first example. A handoff is a one-time read — it
+    // never lingers for a later visit.
+    const handoff = readHandoffOnce();
+    if (handoff) {
+      // The only incoming handoff today is raw text from Hash Generator's
+      // "View as Base64" chip — encode it, not decode.
+      applyMode('encode');
+      input.value = handoff;
+      exampleSel.value = '-1';
       evaluate();
     } else {
-      applyMode('encode');
-      renderEmpty();
+      const seed = examples[0];
+      if (seed) {
+        applyMode(seed.mode);
+        urlSafeBox.checked = seed.urlSafe;
+        input.value = seed.input;
+        exampleSel.value = '0';
+        // Mark the first option with a "(sample)" cue so users know it is pre-filled.
+        const firstOpt = exampleSel.querySelector<HTMLOptionElement>('option[value="0"]');
+        if (firstOpt) firstOpt.textContent = `${seed.label} (sample)`;
+        evaluate();
+      } else {
+        applyMode('encode');
+        renderEmpty();
+      }
     }
   }
 

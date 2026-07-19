@@ -150,6 +150,13 @@
       >
       </div>
       <p class="text-xs text-mute mt-1">Tip: press <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd> to release keyboard focus from the editor.</p>
+      <div class="gha-snap-row mt-3 flex flex-wrap items-center gap-2">
+        <button id="gha-snap-save" type="button" class="gha-snap-btn">Save snapshot</button>
+        <select id="gha-snap-select" class="gha-snap-select" aria-label="Load a saved snapshot" disabled>
+          <option value="">No snapshots yet</option>
+        </select>
+        <button id="gha-snap-delete" type="button" class="gha-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
+      </div>
     </div>
 
     {/* ── Results panel ────────────────────────────────────────────────── */}
@@ -283,6 +290,56 @@
     font-variant-numeric: tabular-nums;
     font-feature-settings: 'tnum';
     white-space: nowrap;
+  }
+
+  .gha-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .gha-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .gha-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .gha-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .gha-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .gha-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
   }
 
   /* ── Results container + finding rows (runtime-injected → :global) ───── */
@@ -612,6 +669,7 @@
   import type { EditorView } from '@codemirror/view';
   import { escapeHtml } from '../lib/escape-html';
   import { base64UrlEncode, base64UrlDecode } from '../lib/codec';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
 
   // CodeMirror is loaded via dynamic import inside init() so its ~200KB runtime
   // code-splits into its own chunk instead of shipping in the page's initial JS.
@@ -885,8 +943,22 @@
     const resultsBox = el<HTMLElement>(root, '#gha-results');
     const summaryEl = el<HTMLElement>(root, '#gha-summary');
     const announce = el<HTMLElement>(root, '#gha-announce');
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#gha-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#gha-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#gha-snap-delete');
 
-    if (!editorHost || !select || !runBtn || !copyBtn || !shareBtn || !resultsBox || !summaryEl) {
+    if (
+      !editorHost ||
+      !select ||
+      !runBtn ||
+      !copyBtn ||
+      !shareBtn ||
+      !resultsBox ||
+      !summaryEl ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
+    ) {
       return;
     }
 
@@ -961,14 +1033,20 @@
       return;
     }
 
-    // Seed content: prefer a shared-state URL, else the first example.
+    // Seed priority: #gha=<base64 yaml> deep link (Share Link button) >
+    // restored last input > the first example.
     const seedExample = examples[0] ?? { id: 'example', label: 'Example', yaml: '' };
     let seedYaml = seedExample.yaml;
     let fromShare = false;
+    let fromRestored = false;
     const shared = decodeShare();
+    const restored = getRestoredLastInput('github-actions-validator');
     if (shared) {
       seedYaml = shared;
       fromShare = true;
+    } else if (restored) {
+      seedYaml = restored;
+      fromRestored = true;
     }
 
     const view = makeEditor(editorHost, seedYaml);
@@ -982,10 +1060,10 @@
       select.appendChild(opt);
       select.disabled = true;
     } else {
-      if (fromShare) {
+      if (fromShare || fromRestored) {
         const opt = document.createElement('option');
         opt.value = '-1';
-        opt.textContent = 'Shared workflow';
+        opt.textContent = fromShare ? 'Shared workflow' : 'Restored workflow';
         select.appendChild(opt);
       }
       examples.forEach((ex, i) => {
@@ -994,7 +1072,7 @@
         opt.textContent = ex.label;
         select.appendChild(opt);
       });
-      select.value = fromShare ? '-1' : '0';
+      select.value = fromShare || fromRestored ? '-1' : '0';
     }
 
     // Swap the editor when a different example is chosen.
@@ -1047,6 +1125,7 @@
         const doc = view.state.doc.toString();
         const result = await Promise.resolve(engine.validate(doc));
         renderResults(resultsBox!, summaryEl!, result);
+        recordToolLastInput('github-actions-validator', doc);
         // Persist current state into the URL hash without a history entry.
         try {
           window.history.replaceState(null, '', encodeShare(doc));
@@ -1120,6 +1199,18 @@
       shareTimer = window.setTimeout(() => {
         if (shareLabel) shareLabel.textContent = shareBtn.dataset.defaultLabel ?? 'Share Link';
       }, COPIED_RESET_MS);
+    });
+
+    wireSnapshotUI({
+      slug: 'github-actions-validator',
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: () => view.state.doc.toString(),
+      setValue: (value) => {
+        setEditorDoc(view, value);
+        void run();
+      },
     });
 
     // Initial results state — then auto-validate the loaded content immediately.
