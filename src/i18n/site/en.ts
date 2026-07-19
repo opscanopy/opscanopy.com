@@ -65,6 +65,7 @@ const en: SiteContent = {
       title: 'Resources',
       links: [
         { href: '/blog', label: 'Blog' },
+        { href: '/changelog', label: 'Changelog' },
         { href: '/rss.xml', label: 'RSS feed' },
         { href: '/#why', label: 'Why OpsCanopy' },
         { href: 'https://github.com/opscanopy/opscanopy.com', label: 'Source on GitHub' },

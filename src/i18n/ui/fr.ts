@@ -55,6 +55,10 @@ const fr: Partial<UiDict> = {
   'palette.hintSelect': 'Sélectionner',
   'palette.hintClose': 'Fermer',
 
+  // Tool changelog
+  'tools.updatedBadge': 'Mis à jour le {date}',
+  'changelog.metaTitle': 'Changelog',
+
   // Language switcher
   'lang.switcherLabel': 'Langue',
 

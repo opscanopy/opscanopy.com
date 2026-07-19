@@ -35,6 +35,7 @@ const fr: Partial<SiteContent> = {
       title: 'Ressources',
       links: [
         { href: '/blog', label: 'Blog' },
+        { href: '/changelog', label: 'Changelog' },
         { href: '/#why', label: 'Pourquoi OpsCanopy' },
         { href: 'https://github.com/opscanopy/opscanopy.com', label: 'Code source sur GitHub' },
       ],

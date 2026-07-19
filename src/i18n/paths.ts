@@ -56,8 +56,10 @@ export function localizeKey(pageKey: string, locale: Locale): string {
  * Locale headers link these unprefixed so e.g. /de/learn never 404s.
  * '/search' is NOT here — it has a real localized page per locale (see
  * src/pages/{locale}/search.astro), so it localizes like any other page.
+ * '/changelog' (WS-R R6) joined this list for the same reason: tool names/
+ * dates are English-only content, not worth a 5x-duplicated page tree.
  */
-export const ENGLISH_ONLY_SECTIONS = ['/learn', '/mission-90'];
+export const ENGLISH_ONLY_SECTIONS = ['/learn', '/mission-90', '/changelog'];
 
 /**
  * localizeKey for nav / footer / menu CHROME links. English-only sections are

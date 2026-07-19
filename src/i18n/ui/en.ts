@@ -64,6 +64,10 @@ const en = {
   'palette.hintSelect': 'Select',
   'palette.hintClose': 'Close',
 
+  // Tool changelog
+  'tools.updatedBadge': 'Updated {date}',
+  'changelog.metaTitle': 'Changelog',
+
   // Language switcher
   'lang.switcherLabel': 'Language',
 
