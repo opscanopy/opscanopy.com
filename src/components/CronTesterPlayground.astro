@@ -606,6 +606,30 @@
     word-break: break-word;
   }
 
+  :global(.cron-chips) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  :global(.cron-chip) {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border-radius: 9999px;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-brand-strong);
+    text-decoration: none;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  :global(.cron-chip:hover) {
+    background: var(--color-brand-soft);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+  }
+
   /* Empty state — generous, centered frame. */
   :global(.cron-empty) {
     display: flex;
@@ -623,7 +647,7 @@
 
 <script>
   import { escapeHtml } from '../lib/escape-html';
-  import { createHashState } from '../lib/hash-state';
+  import { createHashState, buildHashValue } from '../lib/hash-state';
   import { copyTextToClipboard } from '../lib/clipboard';
   import { buildMarkdownBlock } from '../lib/share-md';
 
@@ -646,6 +670,7 @@
   type EngineModule = {
     explain: (expr: string) => CronResult;
     nextRuns: (expr: string, count?: number, fromIso?: string) => string[];
+    nextRunEpochSeconds: (expr: string, count?: number, fromIso?: string) => number[];
   };
 
   const ROOT_SEL = '.cron-pg';
@@ -763,11 +788,31 @@
     );
   }
 
+  /** Cross-tool chain chips — Cron Expression Tester → Cron-to-systemd + Timestamp Converter. */
+  function localePath(p: string): string {
+    const m = window.location.pathname.match(/^\/(de|es|fr|pt-br)\//);
+    return m ? `/${m[1]}${p}` : p;
+  }
+
+  function chainsHtml(expr: string, firstRunEpoch: number | undefined): string {
+    const chips: string[] = [
+      `<a class="cron-chip" href="${escapeHtml(localePath('/cron-to-systemd/') + buildHashValue('cron', expr))}">Convert to systemd timer</a>`,
+    ];
+    if (typeof firstRunEpoch === 'number') {
+      chips.push(
+        `<a class="cron-chip" href="${escapeHtml(localePath('/timestamp-converter/') + buildHashValue('t', String(firstRunEpoch)))}">View next run in Timestamp Converter</a>`
+      );
+    }
+    return `<div class="cron-chips">${chips.join('')}</div>`;
+  }
+
   function renderResult(
     container: HTMLElement,
     summary: HTMLElement,
     result: CronResult,
-    runs: string[]
+    runs: string[],
+    expr: string,
+    firstRunEpoch: number | undefined
   ): void {
     summary.textContent = 'Valid';
     summary.classList.remove('text-error');
@@ -788,7 +833,8 @@
       `<p class="cron-desc__text">${escapeHtml(desc)}</p>` +
       fieldsHtml(fields) +
       '</div>' +
-      runsHtml(runs);
+      runsHtml(runs) +
+      chainsHtml(expr, firstRunEpoch);
   }
 
   /* ---- Instance init -------------------------------------------------------- */
@@ -923,7 +969,14 @@
           .slice(0, getCount());
       }
 
-      renderResult(resultsBox!, summaryEl!, result, runs);
+      let firstRunEpoch: number | undefined;
+      try {
+        firstRunEpoch = engine.nextRunEpochSeconds(expr, 1)[0];
+      } catch {
+        firstRunEpoch = undefined;
+      }
+
+      renderResult(resultsBox!, summaryEl!, result, runs, expr, firstRunEpoch);
       shareBtn!.hidden = false;
       shareBtn!.dataset.copy = location.origin + location.pathname + location.search + hashState.build(expr);
       if (userInitiated) hashState.write(expr);

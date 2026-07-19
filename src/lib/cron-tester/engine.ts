@@ -726,6 +726,21 @@ export function nextRuns(expr: string, count = 5, fromIso?: string): string[] {
   return dates.map((d) => formatRun(d, from));
 }
 
+/**
+ * Same computation as nextRuns(), but raw Unix epoch seconds instead of
+ * display-formatted strings — for chaining the first next run into
+ * Timestamp Converter's `#t=` deep link. Additive export; never throws.
+ */
+export function nextRunEpochSeconds(expr: string, count = 5, fromIso?: string): number[] {
+  const outcome = parse(typeof expr === 'string' ? expr : '');
+  if (outcome.error || outcome.isReboot || !outcome.parsed) return [];
+
+  const from = resolveFrom(fromIso);
+  const n = clampCount(count);
+  const dates = computeNextDates(outcome.parsed, n, from);
+  return dates.map((d) => Math.floor(d.getTime() / 1000));
+}
+
 /* ------------------------------------------------------------------------- *
  * Raw-field echo (best-effort, for display)
  * ------------------------------------------------------------------------- */
