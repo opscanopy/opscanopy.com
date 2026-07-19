@@ -219,6 +219,61 @@ const lang: Locale = (Astro.currentLocale as Locale) ?? DEFAULT_LOCALE;
         document.addEventListener(type, onFirstInteraction, true);
       });
     </script>
+    {
+      import.meta.env.PROD && (
+        <script>
+          // Kill-switch mirror — keep in sync BY HAND with scripts/sw.template.js's
+          // own copy. This one only decides whether to stop registering / actively
+          // unregister; the SW's own copy governs its actual fetch behavior. Flip
+          // both to true and ship a deploy to fully retire the service worker.
+          const SW_DISABLED = false;
+
+          if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+              if (SW_DISABLED) {
+                navigator.serviceWorker.getRegistrations().then((regs) => {
+                  regs.forEach((reg) => reg.unregister());
+                });
+                return;
+              }
+              navigator.serviceWorker.register('/sw.js').catch(() => {
+                /* registration failure just degrades to normal (non-offline) browsing */
+              });
+            });
+          }
+
+          // PWA install CTA — reveal every [data-install-cta] button once the
+          // browser signals installability (MegaMenu's footer row, /about),
+          // and wire it to the deferred prompt. Safari/iOS never fires this
+          // event, so those buttons simply stay hidden there — no dead CTA.
+          let deferredInstallPrompt: Event & { prompt?: () => void; userChoice?: Promise<unknown> } | null = null;
+
+          window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredInstallPrompt = e as typeof deferredInstallPrompt;
+            document.querySelectorAll<HTMLElement>('[data-install-cta]').forEach((el) => {
+              el.hidden = false;
+            });
+          });
+
+          window.addEventListener('appinstalled', () => {
+            deferredInstallPrompt = null;
+            document.querySelectorAll<HTMLElement>('[data-install-cta]').forEach((el) => {
+              el.hidden = true;
+            });
+          });
+
+          document.addEventListener('click', (e) => {
+            const btn = (e.target as HTMLElement | null)?.closest?.('[data-install-cta]');
+            if (!btn || !deferredInstallPrompt?.prompt) return;
+            deferredInstallPrompt.prompt();
+            void deferredInstallPrompt.userChoice?.finally(() => {
+              deferredInstallPrompt = null;
+            });
+          });
+        </script>
+      )
+    }
     <SEO
       title={fullTitle}
       description={description}

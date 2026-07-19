@@ -37,6 +37,7 @@ export default defineConfig({
         !page.includes('/alertlint-wasm-demo') &&
         !page.includes('/404') &&
         !page.includes('/500') &&
+        !page.includes('/offline') &&
         !/\/search\/?$/.test(page) &&
         !/\/mission-90\/complete\/?$/.test(page),
     }),
