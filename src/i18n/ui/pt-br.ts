@@ -26,6 +26,12 @@ const ptBr: Partial<UiDict> = {
   'megamenu.browseAll': 'Explorar todas as ferramentas',
   'megamenu.footerCount': '{count} ferramentas — 100% no navegador, nada é enviado',
   'megamenu.viewAll': 'Ver todas as ferramentas',
+  'megamenu.explore': 'Explore',
+  'megamenu.learnStrip': 'Learn — trilhas e guias',
+  'megamenu.installApp': 'Instalar o app',
+
+  // PWA install CTA (revealed by beforeinstallprompt — see Layout.astro)
+  'install.appCta': 'Instale o OpsCanopy como aplicativo',
 
   // Footer
   'footer.copyright': 'Gratuito e aberto.',

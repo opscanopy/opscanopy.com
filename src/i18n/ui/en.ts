@@ -36,6 +36,12 @@ const en = {
   'megamenu.browseAll': 'Browse all tools',
   'megamenu.footerCount': '{count} tools — 100% browser-based, nothing uploaded',
   'megamenu.viewAll': 'View all tools',
+  'megamenu.explore': 'Explore',
+  'megamenu.learnStrip': 'Learn — roadmaps & guides',
+  'megamenu.installApp': 'Install app',
+
+  // PWA install CTA (revealed by beforeinstallprompt — see Layout.astro)
+  'install.appCta': 'Install OpsCanopy as an app',
 
   // Footer
   'footer.copyright': 'Free & open.',
