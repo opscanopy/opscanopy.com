@@ -78,8 +78,29 @@
     </div>
 
     <div class="bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex items-center justify-between gap-3">
-        <span class="eyebrow">Result</span>
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <span class="flex items-center gap-2">
+          <span class="eyebrow">Result</span>
+          <button id="ts-share" type="button" class="ts-share-btn" data-copy="" hidden>
+            <svg
+              class="ts-share-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6.75 9.25l2.5-2.5"></path>
+              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
+              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
+            </svg>
+            <span class="ts-share-label">Copy link</span>
+          </button>
+        </span>
         <span id="ts-summary" class="ts-summary code-mono text-mute" role="status" aria-live="polite"></span>
       </div>
       <div id="ts-results" class="ts-results" aria-live="polite" aria-atomic="false">
@@ -218,6 +239,43 @@
   }
   .ts-summary {
     white-space: nowrap;
+  }
+  .ts-share-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-mute);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease;
+  }
+  .ts-share-btn:hover {
+    color: var(--color-brand-strong);
+    background: var(--color-hairline);
+  }
+  .ts-share-btn:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  .ts-share-btn.ts-share-btn--copied {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+  @media (pointer: coarse) {
+    .ts-share-btn {
+      height: auto;
+      min-height: 36px;
+    }
   }
   .ts-results {
     min-height: 44px;
@@ -384,6 +442,7 @@
 <script>
   import { escapeHtml } from '../lib/escape-html';
   import { copyTextToClipboard } from '../lib/clipboard';
+  import { createHashState } from '../lib/hash-state';
 
   type Row = { label: string; value: string; mono?: boolean };
   type Result = { valid: boolean; error?: string; detected?: string; rows: Row[] };
@@ -497,7 +556,10 @@
     const resultsBox = el<HTMLElement>(root, '#ts-results');
     const summaryEl = el<HTMLElement>(root, '#ts-summary');
     const sampleBadge = el<HTMLElement>(root, '#ts-sample-badge');
-    if (!input || !exampleSel || !nowBtn || !resultsBox || !summaryEl) return;
+    const shareBtn = el<HTMLButtonElement>(root, '#ts-share');
+    if (!input || !exampleSel || !nowBtn || !resultsBox || !summaryEl || !shareBtn) return;
+
+    const hashState = createHashState('t');
 
     wireResultCopyClicks(resultsBox);
 
@@ -529,11 +591,34 @@
     });
     if (!examples.length) exampleSel.disabled = true;
 
-    function evaluate(): void {
+    function hideShare(): void {
+      shareBtn!.hidden = true;
+      shareBtn!.dataset.copy = '';
+    }
+
+    let shareCopyTimer: number | undefined;
+    shareBtn.addEventListener('click', () => {
+      const text = shareBtn.dataset.copy ?? '';
+      void copyTextToClipboard(text).then((ok) => {
+        if (!ok) return;
+        shareBtn.classList.add('ts-share-btn--copied');
+        const label = shareBtn.querySelector('.ts-share-label');
+        if (label) label.textContent = 'Copied';
+        window.clearTimeout(shareCopyTimer);
+        shareCopyTimer = window.setTimeout(() => {
+          shareBtn.classList.remove('ts-share-btn--copied');
+          if (label) label.textContent = 'Copy link';
+        }, 1500);
+      });
+    });
+
+    function evaluate(userInitiated = true): void {
       const value = input!.value.trim();
       if (value.length === 0) {
         input!.classList.remove('ts-input--error');
+        hideShare();
         renderEmpty(resultsBox!, summaryEl!);
+        if (userInitiated) hashState.write(null);
         return;
       }
       let result: Result | null = null;
@@ -541,16 +626,23 @@
         result = engine.convert(value);
       } catch {
         input!.classList.add('ts-input--error');
+        hideShare();
         renderError(resultsBox!, summaryEl!, 'Unexpected error while converting.');
+        if (userInitiated) hashState.write(null);
         return;
       }
       if (!result || result.valid === false) {
         input!.classList.add('ts-input--error');
+        hideShare();
         renderError(resultsBox!, summaryEl!, result?.error ?? 'This is not a valid timestamp.');
+        if (userInitiated) hashState.write(null);
         return;
       }
       input!.classList.remove('ts-input--error');
       renderResult(resultsBox!, summaryEl!, result);
+      shareBtn!.hidden = false;
+      shareBtn!.dataset.copy = location.origin + location.pathname + location.search + hashState.build(value);
+      if (userInitiated) hashState.write(value);
     }
 
     let timer: number | undefined;
@@ -581,14 +673,24 @@
       input.focus();
     });
 
-    const seed = examples[0];
-    if (seed) {
-      input.value = seed.input;
-      exampleSel.value = '0';
-      if (sampleBadge) sampleBadge.hidden = false;
-      evaluate();
+    // Seed priority: #t= deep link > seeded example. Neither seed path writes
+    // the hash — only user-initiated evaluations do.
+    const hashValue = hashState.read();
+    if (hashValue) {
+      input.value = hashValue;
+      exampleSel.value = '-1';
+      if (sampleBadge) sampleBadge.hidden = true;
+      evaluate(false);
     } else {
-      renderEmpty(resultsBox, summaryEl);
+      const seed = examples[0];
+      if (seed) {
+        input.value = seed.input;
+        exampleSel.value = '0';
+        if (sampleBadge) sampleBadge.hidden = false;
+        evaluate(false);
+      } else {
+        renderEmpty(resultsBox, summaryEl);
+      }
     }
   }
 

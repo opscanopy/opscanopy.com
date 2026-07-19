@@ -100,8 +100,29 @@
 
     {/* ── Explanation panel ────────────────────────────────────────────── */}
     <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex items-center justify-between gap-3">
-        <span class="eyebrow">Explanation</span>
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <span class="flex items-center gap-2">
+          <span class="eyebrow">Explanation</span>
+          <button id="pq-share" type="button" class="pq-share-btn" data-copy="" hidden>
+            <svg
+              class="pq-share-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6.75 9.25l2.5-2.5"></path>
+              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
+              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
+            </svg>
+            <span class="pq-share-label">Copy link</span>
+          </button>
+        </span>
         <span
           id="pq-summary"
           class="pq-summary code-mono text-mute"
@@ -226,6 +247,43 @@
     font-variant-numeric: tabular-nums;
     font-feature-settings: 'tnum';
     white-space: nowrap;
+  }
+  .pq-share-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-mute);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease;
+  }
+  .pq-share-btn:hover {
+    color: var(--color-brand-strong);
+    background: var(--color-hairline);
+  }
+  .pq-share-btn:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  .pq-share-btn.pq-share-btn--copied {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+  @media (pointer: coarse) {
+    .pq-share-btn {
+      height: auto;
+      min-height: 36px;
+    }
   }
 
   /* Results region. */
@@ -420,6 +478,8 @@
 <script>
   import type { EditorView } from '@codemirror/view';
   import { escapeHtml } from '../lib/escape-html';
+  import { createHashState } from '../lib/hash-state';
+  import { copyTextToClipboard } from '../lib/clipboard';
 
   /* ---- Types mirrored from the engine contract (structural, not imported). -- */
   type ExplainPart = { token: string; meaning: string };
@@ -561,10 +621,34 @@
     const explainBtn = el<HTMLButtonElement>(root, '#pq-explain');
     const resultsBox = el<HTMLElement>(root, '#pq-results');
     const summaryEl = el<HTMLElement>(root, '#pq-summary');
+    const shareBtn = el<HTMLButtonElement>(root, '#pq-share');
 
-    if (!editorHost || !select || !explainBtn || !resultsBox || !summaryEl) {
+    if (!editorHost || !select || !explainBtn || !resultsBox || !summaryEl || !shareBtn) {
       return;
     }
+
+    const hashState = createHashState('q');
+
+    function hideShare(): void {
+      shareBtn!.hidden = true;
+      shareBtn!.dataset.copy = '';
+    }
+
+    let shareCopyTimer: number | undefined;
+    shareBtn.addEventListener('click', () => {
+      const text = shareBtn.dataset.copy ?? '';
+      void copyTextToClipboard(text).then((ok) => {
+        if (!ok) return;
+        shareBtn.classList.add('pq-share-btn--copied');
+        const label = shareBtn.querySelector('.pq-share-label');
+        if (label) label.textContent = 'Copied';
+        window.clearTimeout(shareCopyTimer);
+        shareCopyTimer = window.setTimeout(() => {
+          shareBtn.classList.remove('pq-share-btn--copied');
+          if (label) label.textContent = 'Copy link';
+        }, 1500);
+      });
+    });
 
     // Lazily load the sibling engine + examples + CodeMirror (kept out of the
     // initial path so CM code-splits into its own chunk).
@@ -646,9 +730,10 @@
       view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
     }
 
-    // Seed content from the first example when present.
+    // Seed priority: #q= deep link > first example.
+    const hashValue = hashState.read();
     const seedExample = examples[0] ?? { id: 'empty', label: 'Example', query: '' };
-    const view = makeEditor(editorHost, seedExample.query);
+    const view = makeEditor(editorHost, hashValue ?? seedExample.query);
 
     // Populate the example picker.
     select.innerHTML = '';
@@ -673,6 +758,8 @@
       const idx = Number(select.value);
       if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
       setEditorDoc(view, examples[idx].query);
+      hideShare();
+      hashState.write(null);
       renderEmpty(resultsBox, summaryEl);
     });
 
@@ -681,7 +768,7 @@
     const explainLabel = explainBtn.querySelector<HTMLElement>('.pq-explain-label');
     let spinner: HTMLElement | null = null;
 
-    async function explainNow(): Promise<void> {
+    async function explainNow(userInitiated = true): Promise<void> {
       if (running) return;
       running = true;
       explainBtn.classList.add('is-busy');
@@ -717,10 +804,23 @@
         const query = view.state.doc.toString();
         const result = await Promise.resolve(engine.explain(query));
         renderResult(resultsBox!, summaryEl!, result);
+        const breakdown = normaliseBreakdown(result?.breakdown);
+        const explanation = typeof result?.explanation === 'string' ? result.explanation : '';
+        if (result && !result.error && (explanation || breakdown.length > 0)) {
+          shareBtn!.hidden = false;
+          shareBtn!.dataset.copy =
+            location.origin + location.pathname + location.search + hashState.build(query);
+          if (userInitiated) hashState.write(query);
+        } else {
+          hideShare();
+          if (userInitiated) hashState.write(null);
+        }
       } catch (err) {
         const msg =
           err instanceof Error ? err.message : 'Unexpected error while explaining the query.';
         renderError(resultsBox!, summaryEl!, msg);
+        hideShare();
+        if (userInitiated) hashState.write(null);
       } finally {
         running = false;
         explainBtn.classList.remove('is-busy');
@@ -744,8 +844,13 @@
       }
     });
 
-    // Initial results state.
-    renderEmpty(resultsBox, summaryEl);
+    // Initial results state: a #q= deep link explains immediately (that's the
+    // point of sharing); otherwise wait for the user's explicit Explain action.
+    if (hashValue) {
+      void explainNow(false);
+    } else {
+      renderEmpty(resultsBox, summaryEl);
+    }
   }
 
   boot();

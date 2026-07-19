@@ -149,8 +149,29 @@
 
     {/* ── Results panel (description + next runs) ──────────────────────── */}
     <div class="bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex items-center justify-between gap-3">
-        <span class="eyebrow">Result</span>
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <span class="flex items-center gap-2">
+          <span class="eyebrow">Result</span>
+          <button id="cron-share" type="button" class="cron-share-btn" data-copy="" hidden>
+            <svg
+              class="cron-share-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6.75 9.25l2.5-2.5"></path>
+              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
+              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
+            </svg>
+            <span class="cron-share-label">Copy link</span>
+          </button>
+        </span>
         <span
           id="cron-summary"
           class="cron-summary code-mono text-mute"
@@ -343,6 +364,44 @@
     font-variant-numeric: tabular-nums;
     font-feature-settings: 'tnum';
     white-space: nowrap;
+  }
+
+  .cron-share-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-mute);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease;
+  }
+  .cron-share-btn:hover {
+    color: var(--color-brand-strong);
+    background: var(--color-hairline);
+  }
+  .cron-share-btn:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  .cron-share-btn.cron-share-btn--copied {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+  @media (pointer: coarse) {
+    .cron-share-btn {
+      height: auto;
+      min-height: 36px;
+    }
   }
 
   .cron-results {
@@ -545,6 +604,8 @@
 
 <script>
   import { escapeHtml } from '../lib/escape-html';
+  import { createHashState } from '../lib/hash-state';
+  import { copyTextToClipboard } from '../lib/clipboard';
 
   /* ---- Types mirrored from the engine contract (structural, not imported). -- */
   type CronFields = {
@@ -720,6 +781,7 @@
     const exampleSel = el<HTMLSelectElement>(root, '#cron-example');
     const resultsBox = el<HTMLElement>(root, '#cron-results');
     const summaryEl = el<HTMLElement>(root, '#cron-summary');
+    const shareBtn = el<HTMLButtonElement>(root, '#cron-share');
 
     if (
       !exprInput ||
@@ -728,10 +790,13 @@
       !incBtn ||
       !exampleSel ||
       !resultsBox ||
-      !summaryEl
+      !summaryEl ||
+      !shareBtn
     ) {
       return;
     }
+
+    const hashState = createHashState('cron');
 
     // Lazily load the sibling engine + examples (kept out of the initial path).
     let engine: EngineModule;
@@ -773,12 +838,19 @@
       return clampCount(Number(countInput!.value));
     }
 
+    function hideShare(): void {
+      shareBtn!.hidden = true;
+      shareBtn!.dataset.copy = '';
+    }
+
     /** Re-evaluate the current expression and re-render the results panel. */
-    function evaluate(): void {
+    function evaluate(userInitiated = true): void {
       const expr = exprInput!.value.trim();
       if (expr.length === 0) {
         exprInput!.classList.remove('cron-input--error');
+        hideShare();
         renderEmpty(resultsBox!, summaryEl!);
+        if (userInitiated) hashState.write(null);
         return;
       }
 
@@ -789,17 +861,21 @@
         const msg =
           err instanceof Error ? err.message : 'Unexpected error while parsing the expression.';
         exprInput!.classList.add('cron-input--error');
+        hideShare();
         renderError(resultsBox!, summaryEl!, msg);
+        if (userInitiated) hashState.write(null);
         return;
       }
 
       if (!result || result.valid === false) {
         exprInput!.classList.add('cron-input--error');
+        hideShare();
         renderError(
           resultsBox!,
           summaryEl!,
           result?.error ?? 'This is not a valid cron expression.'
         );
+        if (userInitiated) hashState.write(null);
         return;
       }
 
@@ -825,7 +901,26 @@
       }
 
       renderResult(resultsBox!, summaryEl!, result, runs);
+      shareBtn!.hidden = false;
+      shareBtn!.dataset.copy = location.origin + location.pathname + location.search + hashState.build(expr);
+      if (userInitiated) hashState.write(expr);
     }
+
+    let shareCopyTimer: number | undefined;
+    shareBtn.addEventListener('click', () => {
+      const text = shareBtn.dataset.copy ?? '';
+      void copyTextToClipboard(text).then((ok) => {
+        if (!ok) return;
+        shareBtn.classList.add('cron-share-btn--copied');
+        const label = shareBtn.querySelector('.cron-share-label');
+        if (label) label.textContent = 'Copied';
+        window.clearTimeout(shareCopyTimer);
+        shareCopyTimer = window.setTimeout(() => {
+          shareBtn.classList.remove('cron-share-btn--copied');
+          if (label) label.textContent = 'Copy link';
+        }, 1500);
+      });
+    });
 
     // Debounced live evaluation on input (keeps typing smooth).
     let timer: number | undefined;
@@ -877,15 +972,24 @@
       evaluate();
     });
 
-    // Seed from the first example; normalise the count control once.
+    // Seed priority: #cron= deep link > first example. Normalise the count
+    // control once. Neither seed path writes the hash — only user-initiated
+    // evaluations do.
     setCount(DEFAULT_COUNT);
-    const seed = examples[0];
-    if (seed) {
-      exprInput.value = seed.expr;
-      exampleSel.value = '0';
-      evaluate();
+    const hashValue = hashState.read();
+    if (hashValue) {
+      exprInput.value = hashValue;
+      exampleSel.value = '-1';
+      evaluate(false);
     } else {
-      renderEmpty(resultsBox, summaryEl);
+      const seed = examples[0];
+      if (seed) {
+        exprInput.value = seed.expr;
+        exampleSel.value = '0';
+        evaluate(false);
+      } else {
+        renderEmpty(resultsBox, summaryEl);
+      }
     }
   }
 
