@@ -7,6 +7,11 @@
  *  - stripLocale(path): remove a leading locale prefix → the locale-neutral
  *    "page key" used to compute canonical/hreflang/equivalent-page URLs.
  *  - localizeKey(path, locale): inverse — turn a page key into a localized path.
+ *
+ * localizeKey/localizeNavHref/ENGLISH_ONLY_SECTIONS/withTrailingSlash live in
+ * the leaf module ./paths (no UI-dictionary dependency, so client code that
+ * only needs hrefs — the command palette's lazy chunk — can import just that)
+ * and are re-exported below for every existing call site.
  */
 import { DEFAULT_LOCALE, LOCALES, isLocale, type Locale } from './config';
 import en, { type UiKey } from './ui/en';
@@ -63,55 +68,6 @@ export function stripLocale(pathname: string): string {
   return '/' + parts.join('/');
 }
 
-/**
- * Append the trailing slash that canonical/hreflang URLs always carry
- * (SEO.astro's getAbsoluteLocaleUrl, driven by the astro.config build.format
- * default of "directory"), UNLESS the key is an in-page anchor ("/#why"),
- * already ends in "/", or points at a FILE (last segment has an extension,
- * e.g. "/rss.xml", "/mission-90/feed.xml") — files are served at their exact
- * path on the static host, so "/rss.xml/" would 404.
- */
-function withTrailingSlash(key: string): string {
-  if (key.endsWith('/') || key.includes('#')) return key;
-  const lastSegment = key.slice(key.lastIndexOf('/') + 1);
-  if (lastSegment.includes('.')) return key;
-  return `${key}/`;
-}
-
-/**
- * Turn a locale-neutral page key into a localized path. en stays un-prefixed.
- * "/tools" + "de" → "/de/tools/"; "/tools" + "en" → "/tools/"; "/" + "de" → "/de/"
- * (slashed like every other canonical — "/de" would 308-hop on the static host).
- */
-export function localizeKey(pageKey: string, locale: Locale): string {
-  const key = pageKey.startsWith('/') ? pageKey : '/' + pageKey;
-  const path = key === '/' ? key : withTrailingSlash(key);
-  if (locale === DEFAULT_LOCALE) return path;
-  return path === '/' ? `/${locale}/` : `/${locale}${path}`;
-}
-
-/**
- * Top-level sections that exist ONLY in English — no localized page tree is
- * built for them (verified: no src/pages/{locale}/learn or .../mission-90).
- * Locale headers link these unprefixed so e.g. /de/learn never 404s.
- * '/search' is NOT here — it has a real localized page per locale (see
- * src/pages/{locale}/search.astro), so it localizes like any other page.
- */
-const ENGLISH_ONLY_SECTIONS = ['/learn', '/mission-90'];
-
-/**
- * localizeKey for nav / footer / menu CHROME links. English-only sections are
- * never locale-prefixed, so their links resolve to the real English page from
- * every locale instead of a `/de/learn`-style 404. Every other key localizes as
- * usual, so Tools and Blog (which do have localized pages) are unaffected.
- */
-export function localizeNavHref(pageKey: string, locale: Locale): string {
-  const key = pageKey.startsWith('/') ? pageKey : '/' + pageKey;
-  const isEnglishOnly = ENGLISH_ONLY_SECTIONS.some(
-    (p) => key === p || key === `${p}/` || key.startsWith(`${p}/`),
-  );
-  return isEnglishOnly ? withTrailingSlash(key) : localizeKey(key, locale);
-}
-
+export { localizeKey, localizeNavHref, ENGLISH_ONLY_SECTIONS, withTrailingSlash } from './paths';
 export { LOCALES, DEFAULT_LOCALE, isLocale };
 export type { Locale };

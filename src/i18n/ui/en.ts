@@ -53,6 +53,16 @@ const en = {
   // Tool cross-links footer (brand-recall band)
   'crosslinks.hook':
     '{count} free tools, every one offline-capable — opscanopy.com works with no signup and nothing uploaded.',
+  'crosslinks.paletteHint': '{count} tools, one shortcut — press Ctrl/⌘+K to jump to any of them.',
+
+  // Command palette (Ctrl/⌘+K)
+  'palette.dialogLabel': 'Command palette',
+  'palette.placeholder': 'Jump to a tool…',
+  'palette.searchLabel': 'Search tools',
+  'palette.empty': 'No tools match your search.',
+  'palette.hintNav': 'Navigate',
+  'palette.hintSelect': 'Select',
+  'palette.hintClose': 'Close',
 
   // Language switcher
   'lang.switcherLabel': 'Language',

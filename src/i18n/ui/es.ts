@@ -43,6 +43,17 @@ const es: Partial<UiDict> = {
   // Tool cross-links footer (brand-recall band)
   'crosslinks.hook':
     '{count} herramientas gratuitas, todas pueden funcionar sin conexión — opscanopy.com funciona sin registro y sin subir nada.',
+  'crosslinks.paletteHint':
+    '{count} herramientas, un atajo — pulsa Ctrl/⌘+K para ir a cualquiera de ellas.',
+
+  // Paleta de comandos (Ctrl/⌘+K)
+  'palette.dialogLabel': 'Paleta de comandos',
+  'palette.placeholder': 'Ir a una herramienta…',
+  'palette.searchLabel': 'Buscar herramientas',
+  'palette.empty': 'Ninguna herramienta coincide con tu búsqueda.',
+  'palette.hintNav': 'Navegar',
+  'palette.hintSelect': 'Seleccionar',
+  'palette.hintClose': 'Cerrar',
 
   // Language switcher
   'lang.switcherLabel': 'Idioma',

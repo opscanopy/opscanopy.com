@@ -43,6 +43,17 @@ const ptBr: Partial<UiDict> = {
   // Tool cross-links footer (brand-recall band)
   'crosslinks.hook':
     '{count} ferramentas gratuitas, todas capazes de funcionar offline — o opscanopy.com não exige cadastro e não envia nada.',
+  'crosslinks.paletteHint':
+    '{count} ferramentas, um atalho — pressione Ctrl/⌘+K para acessar qualquer uma delas.',
+
+  // Paleta de comandos (Ctrl/⌘+K)
+  'palette.dialogLabel': 'Paleta de comandos',
+  'palette.placeholder': 'Ir para uma ferramenta…',
+  'palette.searchLabel': 'Buscar ferramentas',
+  'palette.empty': 'Nenhuma ferramenta corresponde à sua busca.',
+  'palette.hintNav': 'Navegar',
+  'palette.hintSelect': 'Selecionar',
+  'palette.hintClose': 'Fechar',
 
   // Language switcher
   'lang.switcherLabel': 'Idioma',
