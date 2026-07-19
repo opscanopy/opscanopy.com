@@ -4,19 +4,24 @@
  *
  * A no-framework, server-rendered shell hydrated by a single module <script>
  * that lazily boots a CodeMirror 6 editor for the sample log text, wires a
- * pattern input, five flag toggles (g i m s u) and an example picker. Matching
- * is live and debounced — every edit re-runs the engine, updates a match count,
- * a highlighted rendering of the text and a table of matches with their capture
- * and named groups. It runs entirely client-side — no upload, no network.
+ * pattern input, five flag toggles (g i m s u), an example picker, a
+ * shareable-URL encoder ("Copy link") and a "Copy as Markdown" action.
+ * Matching is live and debounced — every edit re-runs the engine, updates a
+ * match count, a highlighted rendering of the text and a table of matches
+ * with their capture and named groups. It runs entirely client-side — no
+ * upload, no network.
  *
  * Runtime contract (built by sibling agents — imported lazily in the script):
  *   ../lib/regex-tester/engine →
  *     run(pattern: string, flags: string, text: string): RegexResult
+ *     encodeState(pattern: string, flags: string, text: string): string  // hash fragment
+ *     decodeState(): ShareState | null
  *   ../lib/regex-tester/types →
  *     RegexMatch  { index: number; length: number; match: string;
  *                   groups: string[]; named: Record<string, string> }
  *     RegexResult { valid: boolean; error?: string; matchCount: number;
  *                   matches: RegexMatch[] }
+ *     ShareState  { pattern: string; flags: string; text: string }
  *   ../lib/regex-tester/examples →
  *     examples: { id: string; label: string; pattern: string; flags: string;
  *                 text: string }[]
@@ -222,8 +227,59 @@
 
     {/* ── Results panel (count + per-match groups table) ───────────────── */}
     <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex items-center justify-between gap-3">
-        <span class="eyebrow">Matches</span>
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <span class="flex flex-wrap items-center gap-2">
+          <span class="eyebrow">Matches</span>
+          <button
+            id="rx-share"
+            type="button"
+            class="rx-share-btn rx-tap"
+            data-copy=""
+            hidden
+          >
+            <svg
+              class="rx-share-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6.75 9.25l2.5-2.5"></path>
+              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
+              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
+            </svg>
+            <span class="rx-share-label">Copy link</span>
+          </button>
+          <button
+            id="rx-copy-md"
+            type="button"
+            class="rx-share-btn rx-tap"
+            hidden
+          >
+            <svg
+              class="rx-share-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 2.5h6.5l3 3v7.75a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-9.75a1 1 0 0 1 1-1z"></path>
+              <path d="M9.5 2.5v3h3"></path>
+              <path d="M4.5 9h7M4.5 11.25h4.5"></path>
+            </svg>
+            <span class="rx-md-label">Copy as Markdown</span>
+          </button>
+        </span>
         <span
           id="rx-summary"
           class="rx-summary code-mono text-mute"
@@ -551,6 +607,46 @@
     white-space: nowrap;
   }
 
+  /* Share-link / Copy-as-Markdown pill buttons next to the "Matches" eyebrow.
+     Only shown once a valid, non-empty result exists (see runNow()). */
+  .rx-share-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-mute);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease;
+  }
+  .rx-share-btn:hover {
+    color: var(--color-brand-strong);
+    background: var(--color-hairline);
+  }
+  .rx-share-btn:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  .rx-share-btn.rx-share-btn--copied {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+  @media (pointer: coarse) {
+    .rx-share-btn {
+      height: auto;
+      min-height: 36px;
+    }
+  }
+
   /* Results region. */
   .rx-results {
     min-height: 44px;
@@ -747,6 +843,8 @@
 <script>
   import type { EditorView } from '@codemirror/view';
   import { escapeHtml } from '../lib/escape-html';
+  import { copyTextToClipboard } from '../lib/clipboard';
+  import { buildMarkdownBlock } from '../lib/share-md';
 
   /* ---- Types mirrored from the engine contract (structural, not imported). -- */
   type RegexMatch = {
@@ -762,8 +860,11 @@
     matchCount: number;
     matches: RegexMatch[];
   };
+  type ShareState = { pattern: string; flags: string; text: string };
   type EngineModule = {
     run: (pattern: string, flags: string, text: string) => RegexResult;
+    encodeState: (pattern: string, flags: string, text: string) => string;
+    decodeState: () => ShareState | null;
   };
   type Example = {
     id: string;
@@ -775,6 +876,7 @@
 
   const ROOT_SEL = '.rx-pg';
   const DEBOUNCE_MS = 160;
+  const COPIED_RESET_MS = 1500;
   const FLAG_ORDER = ['g', 'i', 'm', 's', 'u'] as const;
 
   /** Boot every (so far un-hydrated) playground instance on the page. */
@@ -963,6 +1065,9 @@
     const highlightBox = el<HTMLElement>(root, '#rx-highlight');
     const resultsBox = el<HTMLElement>(root, '#rx-results');
     const summaryEl = el<HTMLElement>(root, '#rx-summary');
+    const shareBtn = el<HTMLButtonElement>(root, '#rx-share');
+    const mdBtn = el<HTMLButtonElement>(root, '#rx-copy-md');
+    const sampleCue = el<HTMLElement>(root, '#rx-sample-cue');
     const flagInputs = Array.from(
       root.querySelectorAll<HTMLInputElement>('.rx-flag-input')
     );
@@ -975,7 +1080,9 @@
       !select ||
       !highlightBox ||
       !resultsBox ||
-      !summaryEl
+      !summaryEl ||
+      !shareBtn ||
+      !mdBtn
     ) {
       return;
     }
@@ -1076,8 +1183,30 @@
       if (flagMirror) flagMirror.textContent = `/${currentFlags()}`;
     }
 
-    /** Run the engine and repaint the highlight + table. Never throws. */
-    function runNow(): void {
+    /** Hide + reset both share affordances (error/empty states never show them). */
+    function hideShareAndMd(): void {
+      shareBtn!.hidden = true;
+      shareBtn!.dataset.copy = '';
+      mdBtn!.hidden = true;
+    }
+
+    /** Drop the `#s=...` share fragment without adding a history entry. */
+    function clearHash(): void {
+      try {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      } catch {
+        /* ignore — Safari's replaceState throttle must never break input */
+      }
+    }
+
+    /**
+     * Run the engine and repaint the highlight + table. Never throws.
+     * `userInitiated` gates whether the URL hash is written — seeding from a
+     * bundled example or a shared link must never itself rewrite the address
+     * bar; only an explicit user action (typing, toggling a flag, choosing an
+     * example, pressing Test) does.
+     */
+    function runNow(userInitiated = true): void {
       const pattern = patternInput!.value;
       const flags = currentFlags();
       const text = editorView.state.doc.toString();
@@ -1086,6 +1215,8 @@
         patternWrap!.classList.remove('rx-pattern-wrap--error');
         highlightBox!.innerHTML = buildHighlight(text, []);
         renderEmpty(resultsBox!, summaryEl!);
+        hideShareAndMd();
+        if (userInitiated) clearHash();
         return;
       }
 
@@ -1108,6 +1239,25 @@
       const matches = ok && Array.isArray(result.matches) ? result.matches : [];
       highlightBox!.innerHTML = buildHighlight(text, matches);
       renderResults(resultsBox!, summaryEl!, result);
+
+      if (!ok) {
+        hideShareAndMd();
+        if (userInitiated) clearHash();
+        return;
+      }
+
+      const hash = engine.encodeState(pattern, flags, text);
+      shareBtn!.hidden = false;
+      shareBtn!.dataset.copy =
+        window.location.origin + window.location.pathname + window.location.search + hash;
+      mdBtn!.hidden = false;
+      if (userInitiated) {
+        try {
+          window.history.replaceState(null, '', hash);
+        } catch {
+          /* ignore — Safari's replaceState throttle must never break input */
+        }
+      }
     }
 
     // Debounce so heavy patterns/large text don't thrash on every keystroke.
@@ -1117,8 +1267,25 @@
       debounceTimer = window.setTimeout(runNow, DEBOUNCE_MS);
     }
 
-    // Seed from the first example.
-    const seed = examples[0] ?? { id: '', label: '', pattern: '', flags: '', text: '' };
+    // Seed content: prefer a shared-state URL hash, else the first example.
+    let seed = examples[0] ?? { id: '', label: '', pattern: '', flags: '', text: '' };
+    let fromShare = false;
+    try {
+      const decoded = engine.decodeState();
+      if (decoded && (decoded.pattern || decoded.text)) {
+        seed = {
+          id: '',
+          label: 'Shared snippet',
+          pattern: decoded.pattern,
+          flags: decoded.flags,
+          text: decoded.text,
+        };
+        fromShare = true;
+      }
+    } catch {
+      /* malformed hash — fall back to the example seed */
+    }
+
     const editorView = makeEditor(editorHost, seed.text, scheduleRun);
     patternInput.value = seed.pattern;
     const seedFlags = new Set(seed.flags.split(''));
@@ -1136,14 +1303,24 @@
       select.appendChild(opt);
       select.disabled = true;
     } else {
+      if (fromShare) {
+        const opt = document.createElement('option');
+        opt.value = '-1';
+        opt.textContent = 'Shared snippet';
+        select.appendChild(opt);
+      }
       examples.forEach((ex, i) => {
         const opt = document.createElement('option');
         opt.value = String(i);
         opt.textContent = ex.label;
         select.appendChild(opt);
       });
-      select.value = '0';
+      select.value = fromShare ? '-1' : '0';
     }
+
+    // A shared/custom seed isn't a bundled "sample" — don't advertise it as one.
+    let sampleCueDismissed = fromShare;
+    if (fromShare && sampleCue) sampleCue.hidden = true;
 
     // Swap pattern + flags + sample text when a different example is chosen.
     select.addEventListener('change', () => {
@@ -1170,14 +1347,69 @@
     }
 
     // Dismiss the "(sample)" cue once the user edits the pattern.
-    const sampleCue = el<HTMLElement>(root, '#rx-sample-cue');
-    let sampleCueDismissed = false;
     function dismissSampleCue(): void {
       if (!sampleCueDismissed && sampleCue) {
         sampleCueDismissed = true;
         sampleCue.hidden = true;
       }
     }
+
+    // Share — copy a URL encoding the full pattern/flags/log state.
+    const shareLabel = shareBtn.querySelector<HTMLElement>('.rx-share-label');
+    let shareCopyTimer: number | undefined;
+    shareBtn.addEventListener('click', () => {
+      const text = shareBtn.dataset.copy ?? '';
+      void copyTextToClipboard(text).then((ok) => {
+        if (!ok) return;
+        shareBtn.classList.add('rx-share-btn--copied');
+        if (shareLabel) shareLabel.textContent = 'Copied';
+        window.clearTimeout(shareCopyTimer);
+        shareCopyTimer = window.setTimeout(() => {
+          shareBtn.classList.remove('rx-share-btn--copied');
+          if (shareLabel) shareLabel.textContent = 'Copy link';
+        }, COPIED_RESET_MS);
+      });
+    });
+
+    // Copy as Markdown — a fenced summary of the current pattern/flags/log/result.
+    const mdLabel = mdBtn.querySelector<HTMLElement>('.rx-md-label');
+    let mdCopyTimer: number | undefined;
+    mdBtn.addEventListener('click', () => {
+      const pattern = patternInput.value;
+      const flags = currentFlags();
+      const text = editorView.state.doc.toString();
+
+      let result: RegexResult;
+      try {
+        result = engine.run(pattern, flags, text);
+      } catch {
+        return;
+      }
+      if (!result || result.valid === false) return;
+
+      const count = Number.isFinite(result.matchCount) ? result.matchCount : 0;
+      const matchSummary = count === 0 ? 'No matches' : count === 1 ? '1 match' : `${count} matches`;
+      const first = Array.isArray(result.matches) ? result.matches[0] : undefined;
+
+      const md = buildMarkdownBlock('Regex & Log Line Tester', [
+        { label: 'Pattern', value: pattern },
+        { label: 'Flags', value: flags },
+        { label: 'Log', value: text },
+        { label: 'Result', value: matchSummary },
+        { label: 'First match', value: first ? first.match : '' },
+      ]);
+
+      void copyTextToClipboard(md).then((ok) => {
+        if (!ok) return;
+        mdBtn.classList.add('rx-share-btn--copied');
+        if (mdLabel) mdLabel.textContent = 'Copied';
+        window.clearTimeout(mdCopyTimer);
+        mdCopyTimer = window.setTimeout(() => {
+          mdBtn.classList.remove('rx-share-btn--copied');
+          if (mdLabel) mdLabel.textContent = 'Copy as Markdown';
+        }, COPIED_RESET_MS);
+      });
+    });
 
     // Pattern edits + flag toggles re-run (debounced for typing, immediate for flags).
     patternInput.addEventListener('input', () => { dismissSampleCue(); scheduleRun(); });
@@ -1224,8 +1456,9 @@
       });
     });
 
-    // Initial paint.
-    runNow();
+    // Initial paint — seeding (example or shared link) must never itself
+    // rewrite the address bar; only user-initiated evaluations do.
+    runNow(false);
   }
 
   boot();

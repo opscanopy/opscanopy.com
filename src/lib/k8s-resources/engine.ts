@@ -12,7 +12,8 @@
  * { valid:false, error } that names the offending field, and a missing limit is
  * reported as a non-fatal warning rather than an error.
  */
-import type { K8sInput, K8sResult, K8sRow } from './types';
+import { base64UrlEncode, base64UrlDecode } from '../codec';
+import type { K8sInput, K8sResult, K8sRow, K8sShareState } from './types';
 
 const ERR_EMPTY =
   'Enter at least one resource value, e.g. cpuRequest 500m and memRequest 256Mi.';
@@ -206,4 +207,68 @@ export function calculate(input: K8sInput): K8sResult {
   }
 
   return { valid: true, rows, warnings };
+}
+
+/* ────────────────────────────────────────────────────────────────────────── *
+ *  Shareable-URL state (base64url in the location hash).
+ * ────────────────────────────────────────────────────────────────────────── */
+
+const SHARE_ROW_FIELDS = ['cpuRequest', 'cpuLimit', 'memRequest', 'memLimit', 'replicas'] as const;
+
+/**
+ * Validate/sanitize one parsed row from untrusted JSON. Mirrors this
+ * codebase's house style for defensive parsing (see tool-prefs/prefs.ts's
+ * parseToolPrefs): drop malformed rows rather than throwing or letting
+ * garbage through. A row survives only when it is a plain object, every
+ * present field is a string, and at least one field is non-blank — an
+ * all-blank row carries no information and is dropped just like a
+ * type-mismatched one.
+ */
+function sanitizeShareRow(raw: unknown): K8sInput | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  const row: K8sInput = {};
+  let hasContent = false;
+  for (const field of SHARE_ROW_FIELDS) {
+    const v = o[field];
+    if (v === undefined) continue;
+    if (typeof v !== 'string') return null; // wrong field type -> drop the whole row
+    row[field] = v;
+    if (v.trim().length > 0) hasContent = true;
+  }
+  return hasContent ? row : null;
+}
+
+/**
+ * Encode the current resource row(s) into a URL hash fragment, e.g.
+ * "#s=eyJyb3dzIjpbey4uLn1dfQ". `rows` mirrors the array-of-rows share-link
+ * convention used elsewhere in this codebase; this playground currently
+ * calls it with exactly one row (its single Pod-spec form).
+ */
+export function encodeState(rows: K8sInput[]): string {
+  const payload: K8sShareState = { rows };
+  return '#s=' + base64UrlEncode(JSON.stringify(payload));
+}
+
+/**
+ * Decode the current `location.hash` into a K8sShareState, or null when
+ * absent, malformed, or containing no valid rows. SSR-safe: returns null
+ * when `window` is undefined. Never throws.
+ */
+export function decodeState(): K8sShareState | null {
+  if (typeof window === 'undefined') return null;
+  const hash = window.location.hash ?? '';
+  const m = hash.match(/[#&]s=([^&]+)/);
+  if (!m) return null;
+  try {
+    const json = base64UrlDecode(m[1]);
+    const parsed = JSON.parse(json) as Partial<K8sShareState>;
+    if (!Array.isArray(parsed.rows)) return null;
+    const rows = parsed.rows
+      .map(sanitizeShareRow)
+      .filter((r): r is K8sInput => r !== null);
+    return rows.length > 0 ? { rows } : null;
+  } catch {
+    return null;
+  }
 }

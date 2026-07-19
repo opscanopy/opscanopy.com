@@ -45,3 +45,18 @@ export interface ComposeToRunResult {
  * it — the engine never assumes a key has the "right" type.
  */
 export type ComposeService = Record<string, unknown>;
+
+/** The two conversion directions the playground toggles between. */
+export type Direction = 'run' | 'compose';
+
+/**
+ * Shareable editor state encoded into the `#s=` URL hash fragment (see
+ * `encodeState`/`decodeState` in `engine.ts`).
+ */
+export interface ShareState {
+  /** Which direction was active: 'run' (docker run → Compose) or 'compose'
+   *  (Compose → docker run). */
+  dir: Direction;
+  /** The pasted docker run command or Compose YAML text for that direction. */
+  text: string;
+}

@@ -30,7 +30,8 @@
  *     series — the user must point it at a real log stream.
  */
 
-import type { ConvertResult, Direction } from './types';
+import { base64UrlEncode, base64UrlDecode } from '../codec';
+import type { ConvertResult, Direction, ShareState } from './types';
 
 /* ────────────────────────────────────────────────────────────────────────
  * Small shared helpers
@@ -555,4 +556,41 @@ export function convert(direction: Direction, query: string): ConvertResult {
   const out = translateRange(trimmed);
   if (typeof out !== 'string') return fail(out.error, notes);
   return { output: out, notes };
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Shareable-URL state (base64url in the location hash)
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Encode the current direction + query into a URL hash fragment, e.g.
+ *   "#s=eyJkaXJlY3Rpb24iOiJsb2dxbC10by1wcm9tcWwiLCJxdWVyeSI6Ii4uLiJ9".
+ */
+export function encodeState(direction: Direction, query: string): string {
+  const payload: ShareState = { direction, query };
+  return '#s=' + base64UrlEncode(JSON.stringify(payload));
+}
+
+/**
+ * Decode the current `location.hash` into a ShareState, or null when absent /
+ * malformed. SSR-safe: returns null when `window` is undefined.
+ */
+export function decodeState(): ShareState | null {
+  if (typeof window === 'undefined') return null;
+  const hash = window.location.hash ?? '';
+  const m = hash.match(/[#&]s=([^&]+)/);
+  if (!m) return null;
+  try {
+    const json = base64UrlDecode(m[1]);
+    const parsed = JSON.parse(json) as Partial<ShareState>;
+    if (
+      (parsed.direction === 'logql-to-promql' || parsed.direction === 'promql-to-logql') &&
+      typeof parsed.query === 'string'
+    ) {
+      return { direction: parsed.direction, query: parsed.query };
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }

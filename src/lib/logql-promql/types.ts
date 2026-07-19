@@ -47,3 +47,11 @@ export const DIRECTIONS: { value: Direction; label: string; from: string; to: st
   { value: 'logql-to-promql', label: 'LogQL → PromQL', from: 'LogQL', to: 'PromQL' },
   { value: 'promql-to-logql', label: 'PromQL → LogQL', from: 'PromQL', to: 'LogQL' },
 ];
+
+/** The minimal state captured in a shareable URL hash. */
+export interface ShareState {
+  /** Which way the query is being converted. */
+  direction: Direction;
+  /** The source query text. */
+  query: string;
+}

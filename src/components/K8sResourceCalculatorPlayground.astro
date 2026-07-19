@@ -118,8 +118,47 @@
     </div>
 
     <div class="bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex items-center justify-between gap-3">
-        <span class="eyebrow">Result</span>
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <span class="flex flex-wrap items-center gap-2">
+          <span class="eyebrow">Result</span>
+          <button id="k8s-share" type="button" class="k8s-share-btn" data-copy="" hidden>
+            <svg
+              class="k8s-share-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6.75 9.25l2.5-2.5"></path>
+              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
+              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
+            </svg>
+            <span class="k8s-share-label">Copy link</span>
+          </button>
+          <button id="k8s-copy-md" type="button" class="k8s-share-btn" hidden>
+            <svg
+              class="k8s-share-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="3.25" y="3.25" width="7" height="9" rx="1.25"></rect>
+              <path d="M6.25 3.25V2.75A1.25 1.25 0 0 1 7.5 1.5h3.25a1.25 1.25 0 0 1 1.25 1.25V10a1.25 1.25 0 0 1-1.25 1.25h-.5"></path>
+            </svg>
+            <span class="k8s-copy-md-label">Copy as Markdown</span>
+          </button>
+        </span>
         <span id="k8s-summary" class="k8s-summary code-mono text-mute" role="status" aria-live="polite"></span>
       </div>
       <div id="k8s-results" class="k8s-results" aria-live="polite" aria-atomic="false">
@@ -225,6 +264,45 @@
   }
   .k8s-results {
     min-height: 44px;
+  }
+
+  .k8s-share-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-mute);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: color 0.12s ease, background 0.12s ease;
+  }
+  .k8s-share-btn:hover {
+    color: var(--color-brand-strong);
+    background: var(--color-hairline);
+  }
+  .k8s-share-btn:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  .k8s-share-btn.k8s-share-btn--copied {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+  @media (pointer: coarse) {
+    .k8s-share-btn {
+      height: auto;
+      min-height: 36px;
+    }
   }
 
   /* ── Runtime-injected markup ─────────────────────────────────────────── */
@@ -356,6 +434,8 @@
 
 <script>
   import { escapeHtml } from '../lib/escape-html';
+  import { copyTextToClipboard } from '../lib/clipboard';
+  import { buildMarkdownBlock } from '../lib/share-md';
 
   type Row = { label: string; value: string; mono?: boolean };
   type Result = {
@@ -379,7 +459,11 @@
     replicas: string;
   };
   type Example = { id: string; label: string; input: ExampleInput };
-  type EngineModule = { calculate: (input: Input) => Result };
+  type EngineModule = {
+    calculate: (input: Input) => Result;
+    encodeState: (rows: Input[]) => string;
+    decodeState: () => { rows: Input[] } | null;
+  };
 
   const ROOT_SEL = '.k8s-pg';
   const DEBOUNCE_MS = 220;
@@ -489,6 +573,23 @@
     container.innerHTML = rowsHtml(result.rows ?? [], replicas) + warningsHtml(result.warnings ?? []);
   }
 
+  /**
+   * Build the {label, value} fields for "Copy as Markdown" — the same rows
+   * the results table shows (per-pod values + totals, with totals hidden
+   * when replicas <= 1, matching rowsHtml's own filtering) plus any advisory
+   * warnings, so the pasted block matches what's on screen.
+   */
+  function markdownFields(result: Result, replicas: number): Array<{ label: string; value: string }> {
+    const hideTotals = replicas <= 1;
+    const fields = (result.rows ?? [])
+      .filter((r) => !(hideTotals && TOTAL_LABELS.has(r.label)))
+      .map((r) => ({ label: r.label, value: r.value }));
+    for (const w of result.warnings ?? []) {
+      fields.push({ label: 'Warning', value: w });
+    }
+    return fields;
+  }
+
   async function init(root: HTMLElement): Promise<void> {
     const cpuReqInput = el<HTMLInputElement>(root, '#k8s-cpu-req');
     const cpuLimInput = el<HTMLInputElement>(root, '#k8s-cpu-lim');
@@ -498,6 +599,8 @@
     const exampleSel = el<HTMLSelectElement>(root, '#k8s-example');
     const resultsBox = el<HTMLElement>(root, '#k8s-results');
     const summaryEl = el<HTMLElement>(root, '#k8s-summary');
+    const shareBtn = el<HTMLButtonElement>(root, '#k8s-share');
+    const mdBtn = el<HTMLButtonElement>(root, '#k8s-copy-md');
     if (
       !cpuReqInput ||
       !cpuLimInput ||
@@ -506,9 +609,29 @@
       !replicasInput ||
       !exampleSel ||
       !resultsBox ||
-      !summaryEl
+      !summaryEl ||
+      !shareBtn ||
+      !mdBtn
     )
       return;
+
+    const shareLabel = shareBtn.querySelector<HTMLElement>('.k8s-share-label');
+    const mdLabel = mdBtn.querySelector<HTMLElement>('.k8s-copy-md-label');
+    let lastMarkdownFields: Array<{ label: string; value: string }> = [];
+
+    function hideShare(): void {
+      shareBtn!.hidden = true;
+      shareBtn!.dataset.copy = '';
+    }
+    function hideMarkdown(): void {
+      mdBtn!.hidden = true;
+    }
+    /** Replace the URL hash without adding a history entry; null clears it. */
+    function writeHash(hash: string | null): void {
+      const base = window.location.pathname + window.location.search;
+      const url = hash ? `${base}${hash.startsWith('#') ? hash : `#${hash}`}` : base;
+      window.history.replaceState(null, '', url);
+    }
 
     let engine: EngineModule;
     let examples: Example[] = [];
@@ -583,7 +706,13 @@
       return match ? match[1] : null;
     }
 
-    function evaluate(): void {
+    /**
+     * Re-evaluate the current fields and re-render the results panel.
+     * `userInitiated` gates whether this call writes the URL hash — only
+     * user-driven recalculations do; the initial default/example/share seed
+     * render never does (see the boot sequence at the end of init()).
+     */
+    function evaluate(userInitiated = true): void {
       clearFieldErrors();
       const input: Input = {
         cpuRequest: cpuReqInput!.value,
@@ -599,6 +728,9 @@
         input.memLimit!.trim().length === 0
       ) {
         renderEmpty(resultsBox!, summaryEl!);
+        hideShare();
+        hideMarkdown();
+        if (userInitiated) writeHash(null);
         return;
       }
       let result: Result | null = null;
@@ -606,6 +738,9 @@
         result = engine.calculate(input);
       } catch {
         renderError(resultsBox!, summaryEl!, 'Unexpected error while calculating resources.');
+        hideShare();
+        hideMarkdown();
+        if (userInitiated) writeHash(null);
         return;
       }
       if (!result || result.valid === false) {
@@ -613,11 +748,65 @@
         renderError(resultsBox!, summaryEl!, errMsg);
         const fieldName = parseErrorField(errMsg);
         if (fieldName) setFieldError(fieldName, errMsg);
+        hideShare();
+        hideMarkdown();
+        if (userInitiated) writeHash(null);
         return;
       }
       const replicas = Number(input.replicas) || 1;
       renderResult(resultsBox!, summaryEl!, result, replicas);
+
+      // Share link + Markdown export are only ever shown for a valid,
+      // non-empty result (mirrors CronTesterPlayground's hideShare discipline).
+      let hash = '';
+      try {
+        hash = engine.encodeState([input]);
+      } catch {
+        hash = '';
+      }
+      if (hash) {
+        const frag = hash.startsWith('#') ? hash : `#${hash}`;
+        shareBtn!.hidden = false;
+        shareBtn!.dataset.copy =
+          window.location.origin + window.location.pathname + window.location.search + frag;
+        if (userInitiated) writeHash(frag);
+      } else {
+        hideShare();
+      }
+
+      mdBtn!.hidden = false;
+      lastMarkdownFields = markdownFields(result, replicas);
     }
+
+    let shareCopyTimer: number | undefined;
+    shareBtn.addEventListener('click', () => {
+      const text = shareBtn!.dataset.copy ?? '';
+      void copyTextToClipboard(text).then((ok) => {
+        if (!ok) return;
+        shareBtn!.classList.add('k8s-share-btn--copied');
+        if (shareLabel) shareLabel.textContent = 'Copied';
+        window.clearTimeout(shareCopyTimer);
+        shareCopyTimer = window.setTimeout(() => {
+          shareBtn!.classList.remove('k8s-share-btn--copied');
+          if (shareLabel) shareLabel.textContent = 'Copy link';
+        }, 1500);
+      });
+    });
+
+    let mdCopyTimer: number | undefined;
+    mdBtn.addEventListener('click', () => {
+      const text = buildMarkdownBlock('Kubernetes Resource Calculator', lastMarkdownFields);
+      void copyTextToClipboard(text).then((ok) => {
+        if (!ok) return;
+        mdBtn!.classList.add('k8s-share-btn--copied');
+        if (mdLabel) mdLabel.textContent = 'Copied';
+        window.clearTimeout(mdCopyTimer);
+        mdCopyTimer = window.setTimeout(() => {
+          mdBtn!.classList.remove('k8s-share-btn--copied');
+          if (mdLabel) mdLabel.textContent = 'Copy as Markdown';
+        }, 1500);
+      });
+    });
 
     let timer: number | undefined;
     function scheduleEvaluate(): void {
@@ -648,17 +837,45 @@
       evaluate();
     });
 
-    const seed = examples[0];
-    if (seed) {
-      cpuReqInput.value = seed.input.cpuRequest;
-      cpuLimInput.value = seed.input.cpuLimit;
-      memReqInput.value = seed.input.memRequest;
-      memLimInput.value = seed.input.memLimit;
-      replicasInput.value = seed.input.replicas;
-      exampleSel.value = '0';
-      evaluate();
+    // Seed priority: a valid #s= share link > the first bundled example.
+    // Neither seed path writes the hash — only user-initiated evaluations do.
+    let seedRow: Input | null = null;
+    try {
+      const decoded = engine.decodeState();
+      if (decoded && Array.isArray(decoded.rows) && decoded.rows.length > 0) {
+        const first = decoded.rows[0];
+        const hasContent =
+          (first.cpuRequest ?? '').trim().length > 0 ||
+          (first.cpuLimit ?? '').trim().length > 0 ||
+          (first.memRequest ?? '').trim().length > 0 ||
+          (first.memLimit ?? '').trim().length > 0;
+        if (hasContent) seedRow = first;
+      }
+    } catch {
+      /* malformed hash — fall back to the example seed */
+    }
+
+    if (seedRow) {
+      cpuReqInput.value = seedRow.cpuRequest ?? '';
+      cpuLimInput.value = seedRow.cpuLimit ?? '';
+      memReqInput.value = seedRow.memRequest ?? '';
+      memLimInput.value = seedRow.memLimit ?? '';
+      replicasInput.value = seedRow.replicas ?? '';
+      exampleSel.value = '-1';
+      evaluate(false);
     } else {
-      renderEmpty(resultsBox, summaryEl);
+      const seed = examples[0];
+      if (seed) {
+        cpuReqInput.value = seed.input.cpuRequest;
+        cpuLimInput.value = seed.input.cpuLimit;
+        memReqInput.value = seed.input.memRequest;
+        memLimInput.value = seed.input.memLimit;
+        replicasInput.value = seed.input.replicas;
+        exampleSel.value = '0';
+        evaluate(false);
+      } else {
+        renderEmpty(resultsBox, summaryEl);
+      }
     }
   }
 

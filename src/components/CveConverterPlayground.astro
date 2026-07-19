@@ -11,6 +11,8 @@
  *   ../lib/cve-ignore/engine →
  *     convert(from: Format, to: Format, text: string) =>
  *       { output: string; warnings: string[]; error?: string }
+ *     encodeState(src: Format, dst: Format, text: string) => string  // hash fragment
+ *     decodeState() => { src: Format; dst: Format; text: string } | null
  *   ../lib/cve-ignore/types →
  *     FORMATS: { value: Format; label: string; filename: string }[]
  *     type Format = string  (opaque format id, e.g. "trivy" | "grype" | …)
@@ -244,8 +246,48 @@
 
     {/* ── Messages panel (warnings + errors) ───────────────────────────── */}
     <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex items-center justify-between gap-3">
-        <span class="eyebrow">Notes</span>
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <span class="flex items-center gap-2">
+          <span class="eyebrow">Notes</span>
+          <button id="cv-share" type="button" class="cv-share-btn" data-copy="" hidden>
+            <svg
+              class="cv-share-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6.75 9.25l2.5-2.5"></path>
+              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
+              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
+            </svg>
+            <span class="cv-share-label">Copy link</span>
+          </button>
+          <button id="cv-share-md" type="button" class="cv-share-btn" hidden>
+            <svg
+              class="cv-share-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M4 2.5h5.5L12 5v8.5a1 1 0 01-1 1H4a1 1 0 01-1-1v-10a1 1 0 011-1z"></path>
+              <path d="M9.5 2.5V5H12"></path>
+              <path d="M5 8h5M5 10.5h5M5 5.5h2"></path>
+            </svg>
+            <span class="cv-share-md-label">Copy as Markdown</span>
+          </button>
+        </span>
         <span
           id="cv-summary"
           class="cv-summary code-mono text-mute"
@@ -423,6 +465,45 @@
     font-variant-numeric: tabular-nums;
     font-feature-settings: 'tnum';
     white-space: nowrap;
+  }
+
+  /* Share / Copy-as-Markdown pills, next to the "Notes" eyebrow. */
+  .cv-share-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-mute);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease;
+  }
+  .cv-share-btn:hover {
+    color: var(--color-brand-strong);
+    background: var(--color-hairline);
+  }
+  .cv-share-btn:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  .cv-share-btn.cv-share-btn--copied {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+  @media (pointer: coarse) {
+    .cv-share-btn {
+      height: auto;
+      min-height: 36px;
+    }
   }
 
   /* Messages list (warnings / success / empty). */
@@ -627,6 +708,7 @@
 
 <script>
   import { copyTextToClipboard as copyText } from '../lib/clipboard';
+  import { buildMarkdownBlock } from '../lib/share-md';
   import type { EditorView } from '@codemirror/view';
   import { escapeHtml } from '../lib/escape-html';
 
@@ -634,14 +716,18 @@
   type Format = string;
   type FormatDescriptor = { value: Format; label: string; filename: string };
   type ConvertResult = { output: string; warnings?: string[]; error?: string };
+  type ShareState = { src: Format; dst: Format; text: string };
   type EngineModule = {
     convert: (from: Format, to: Format, text: string) => ConvertResult | Promise<ConvertResult>;
+    encodeState: (src: Format, dst: Format, text: string) => string;
+    decodeState: () => ShareState | null;
   };
   type TypesModule = { FORMATS?: unknown };
   type Example = { id: string; label: string; from: Format; to: Format; text: string };
 
   const ROOT_SEL = '.cv-pg';
   const COPIED_RESET_MS = 1800;
+  const SHARE_COPIED_RESET_MS = 1500;
 
   /** Boot every (so far un-hydrated) playground instance on the page. */
   function boot(): void {
@@ -778,6 +864,8 @@
     const exampleSel = el<HTMLSelectElement>(root, '#cv-example');
     const convertBtn = el<HTMLButtonElement>(root, '#cv-convert');
     const copyBtn = el<HTMLButtonElement>(root, '#cv-copy');
+    const shareBtn = el<HTMLButtonElement>(root, '#cv-share');
+    const shareMdBtn = el<HTMLButtonElement>(root, '#cv-share-md');
     const messagesBox = el<HTMLElement>(root, '#cv-messages');
     const summaryEl = el<HTMLElement>(root, '#cv-summary');
     const announce = el<HTMLElement>(root, '#cv-announce');
@@ -793,6 +881,8 @@
       !exampleSel ||
       !convertBtn ||
       !copyBtn ||
+      !shareBtn ||
+      !shareMdBtn ||
       !messagesBox ||
       !summaryEl
     ) {
@@ -869,19 +959,35 @@
       if (formats.some((f) => f.value === selected)) sel.value = selected;
     }
 
-    // Seed from the first example when present, else sensible format defaults.
+    // Seed priority: a shared `#s=` link > the first example > sensible format
+    // defaults. Neither seed path writes the hash — only user-initiated
+    // conversions do (see convertNow()).
     const seed = examples[0];
-    const defaultFrom = seed?.from && formats.some((f) => f.value === seed.from)
-      ? seed.from
-      : formats[0].value;
-    const defaultTo = seed?.to && formats.some((f) => f.value === seed.to)
-      ? seed.to
-      : (formats.find((f) => f.value !== defaultFrom)?.value ?? formats[0].value);
+    let shared: ShareState | null = null;
+    try {
+      shared = engine.decodeState();
+    } catch {
+      /* malformed hash — fall back to the example seed */
+    }
+    const fromShare = shared !== null;
+
+    const defaultFrom = fromShare && shared && formats.some((f) => f.value === shared!.src)
+      ? shared.src
+      : seed?.from && formats.some((f) => f.value === seed.from)
+        ? seed.from
+        : formats[0].value;
+    const defaultTo = fromShare && shared && formats.some((f) => f.value === shared!.dst)
+      ? shared.dst
+      : seed?.to && formats.some((f) => f.value === seed.to)
+        ? seed.to
+        : (formats.find((f) => f.value !== defaultFrom)?.value ?? formats[0].value);
 
     fillFormatSelect(fromSel, defaultFrom);
     fillFormatSelect(toSel, defaultTo);
 
-    // Populate the example picker (with a leading "Custom" sentinel).
+    // Populate the example picker (with a leading "Custom" sentinel — also
+    // used to mark a shared/deep-linked input, same convention as any other
+    // hand-edited input).
     exampleSel.innerHTML = '';
     const customOpt = document.createElement('option');
     customOpt.value = '-1';
@@ -893,7 +999,7 @@
       opt.textContent = ex.label + ' (sample)';
       exampleSel.appendChild(opt);
     });
-    exampleSel.value = examples.length ? '0' : '-1';
+    exampleSel.value = fromShare ? '-1' : examples.length ? '0' : '-1';
     if (!examples.length) exampleSel.disabled = true;
 
     /* ---- Editor factory (CM symbols now in async scope) --------------------- */
@@ -953,8 +1059,30 @@
     }
 
     // Editors.
-    const inputView = makeInputEditor(inputHost, seed?.text ?? '');
+    const seedText = fromShare && shared ? shared.text : seed?.text ?? '';
+    const inputView = makeInputEditor(inputHost, seedText);
     const outputView = makeOutputEditor(outputHost, '');
+    let lastWarnings: string[] = [];
+
+    function hideShare(): void {
+      shareBtn!.hidden = true;
+      shareBtn!.dataset.copy = '';
+      shareBtn!.classList.remove('cv-share-btn--copied');
+    }
+
+    function hideShareMd(): void {
+      shareMdBtn!.hidden = true;
+      shareMdBtn!.classList.remove('cv-share-btn--copied');
+    }
+
+    /** Clear the `#s=` fragment without leaving a new history entry. */
+    function clearHash(): void {
+      try {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      } catch {
+        /* Safari's replaceState throttle must never break input */
+      }
+    }
 
     /** Sync the dark editor chrome filenames to the chosen formats. */
     function syncNames(): void {
@@ -967,6 +1095,9 @@
     function resetOutput(): void {
       setEditorDoc(outputView, '');
       copyBtn.disabled = true;
+      lastWarnings = [];
+      hideShare();
+      hideShareMd();
       renderEmpty(messagesBox!, summaryEl!);
     }
 
@@ -1035,7 +1166,7 @@
     const convertLabel = convertBtn.querySelector<HTMLElement>('.cv-convert-label');
     let spinner: HTMLElement | null = null;
 
-    async function convertNow(): Promise<void> {
+    async function convertNow(userInitiated = true): Promise<void> {
       if (running) return;
       running = true;
       convertBtn.classList.add('is-busy');
@@ -1080,6 +1211,9 @@
             summaryEl!,
             result?.error ?? 'Unknown error while converting.'
           );
+          hideShare();
+          hideShareMd();
+          if (userInitiated) clearHash();
           return;
         }
 
@@ -1096,11 +1230,39 @@
               ? `Converted with ${warnings.length} ${warnings.length === 1 ? 'note' : 'notes'}.`
               : 'Converted successfully.';
         }
+
+        if (output.length > 0) {
+          // A valid, non-empty result — surface the share + markdown actions.
+          lastWarnings = warnings;
+          let shareUrl = window.location.href.split('#')[0];
+          try {
+            const hash = engine.encodeState(fromSel!.value, toSel!.value, text);
+            if (typeof hash === 'string') {
+              const frag = hash.startsWith('#') ? hash : `#${hash}`;
+              shareUrl = `${shareUrl}${frag}`;
+              // Only a user-initiated conversion (button click / ⌘⏎) rewrites
+              // the address bar — the initial seed-from-hash/example never does.
+              if (userInitiated) window.history.replaceState(null, '', frag);
+            }
+          } catch {
+            /* non-fatal: sharing just won't reflect the latest state */
+          }
+          shareBtn!.hidden = false;
+          shareBtn!.dataset.copy = shareUrl;
+          shareMdBtn!.hidden = false;
+        } else {
+          hideShare();
+          hideShareMd();
+          if (userInitiated) clearHash();
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Unexpected error while converting.';
         setEditorDoc(outputView, '');
         copyBtn!.disabled = true;
         renderError(messagesBox!, summaryEl!, msg);
+        hideShare();
+        hideShareMd();
+        if (userInitiated) clearHash();
       } finally {
         running = false;
         convertBtn.classList.remove('is-busy');
@@ -1141,6 +1303,67 @@
       copyTimer = window.setTimeout(() => {
         if (copyLabel) copyLabel.textContent = copyBtn.dataset.defaultLabel ?? 'Copy Output';
       }, COPIED_RESET_MS);
+    });
+
+    // Copy link — copies the full `#s=` share URL computed by the last
+    // successful conversion (stored in data-copy by convertNow()).
+    const shareLabel = shareBtn.querySelector<HTMLElement>('.cv-share-label');
+    let shareTimer: number | undefined;
+    shareBtn.addEventListener('click', async () => {
+      const url = shareBtn.dataset.copy ?? '';
+      if (!url) return;
+      const ok = await copyText(url);
+      if (ok) shareBtn.classList.add('cv-share-btn--copied');
+      if (shareLabel) shareLabel.textContent = ok ? 'Copied' : 'Copy Failed';
+      if (announce) {
+        announce.textContent = ok
+          ? 'Share link copied to your clipboard.'
+          : 'Could not copy the link. Copy the URL from your address bar instead.';
+      }
+      window.clearTimeout(shareTimer);
+      shareTimer = window.setTimeout(() => {
+        shareBtn.classList.remove('cv-share-btn--copied');
+        if (shareLabel) shareLabel.textContent = 'Copy link';
+      }, SHARE_COPIED_RESET_MS);
+    });
+
+    // Copy as Markdown — builds a small fenced summary from the CURRENT
+    // formats + converted output, for pasting into a PR description or
+    // security-review ticket.
+    const shareMdLabel = shareMdBtn.querySelector<HTMLElement>('.cv-share-md-label');
+    let shareMdTimer: number | undefined;
+    shareMdBtn.addEventListener('click', async () => {
+      const fromDesc = formats.find((f) => f.value === fromSel!.value);
+      const toDesc = formats.find((f) => f.value === toSel!.value);
+      const fromLabel = fromDesc
+        ? fromDesc.filename
+          ? `${fromDesc.label} (${fromDesc.filename})`
+          : fromDesc.label
+        : fromSel!.value;
+      const toLabel = toDesc
+        ? toDesc.filename
+          ? `${toDesc.label} (${toDesc.filename})`
+          : toDesc.label
+        : toSel!.value;
+      const md = buildMarkdownBlock('CVE-Ignore Converter', [
+        { label: 'Source format', value: fromLabel },
+        { label: 'Destination format', value: toLabel },
+        { label: 'Converted output', value: outputView.state.doc.toString() },
+        { label: 'Lossy-conversion notes', value: lastWarnings.join('; ') },
+      ]);
+      const ok = await copyText(md);
+      if (ok) shareMdBtn.classList.add('cv-share-btn--copied');
+      if (shareMdLabel) shareMdLabel.textContent = ok ? 'Copied' : 'Copy Failed';
+      if (announce) {
+        announce.textContent = ok
+          ? 'Markdown summary copied to your clipboard.'
+          : 'Could not copy. Select the output text and copy it manually.';
+      }
+      window.clearTimeout(shareMdTimer);
+      shareMdTimer = window.setTimeout(() => {
+        shareMdBtn.classList.remove('cv-share-btn--copied');
+        if (shareMdLabel) shareMdLabel.textContent = 'Copy as Markdown';
+      }, SHARE_COPIED_RESET_MS);
     });
 
     // Initial state.

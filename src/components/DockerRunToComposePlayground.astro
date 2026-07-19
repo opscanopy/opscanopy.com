@@ -120,8 +120,48 @@
 
     {/* ── Output pane ──────────────────────────────────────────────────── */}
     <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex items-center justify-between gap-3">
-        <span class="eyebrow" id="drc-output-label">Output</span>
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <span class="flex items-center gap-2">
+          <span class="eyebrow" id="drc-output-label">Output</span>
+          <button id="drc-share" type="button" class="drc-share-btn" data-copy="" hidden>
+            <svg
+              class="drc-share-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6.75 9.25l2.5-2.5"></path>
+              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
+              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
+            </svg>
+            <span class="drc-share-label">Copy link</span>
+          </button>
+          <button id="drc-md" type="button" class="drc-share-btn" data-copy="" hidden>
+            <svg
+              class="drc-share-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M2.5 4.5h11v7h-11z"></path>
+              <path d="M4.5 10V6l1.75 2L8 6v4"></path>
+              <path d="M9.75 6.5v3.25M9.75 9.75l1.25-1.25M9.75 9.75l-1.25-1.25"></path>
+            </svg>
+            <span class="drc-md-label">Copy as Markdown</span>
+          </button>
+        </span>
         <div class="flex items-center gap-3">
           <span id="drc-status" class="drc-status code-mono text-mute" role="status" aria-live="polite"></span>
           <button
@@ -294,6 +334,49 @@
     white-space: nowrap;
   }
 
+  /* Share / Copy-as-Markdown pills — small ghost pills next to the Output
+     eyebrow, shown only once there's a valid result (see hideShare() in the
+     script). Mirrors CronTesterPlayground's `.cron-share-btn`. */
+  .drc-share-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-mute);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition:
+      color 0.12s ease,
+      background 0.12s ease;
+  }
+  .drc-share-btn:hover {
+    color: var(--color-brand-strong);
+    background: var(--color-hairline);
+  }
+  .drc-share-btn:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  .drc-share-btn.drc-share-btn--copied {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+  @media (pointer: coarse) {
+    .drc-share-btn {
+      height: auto;
+      min-height: 36px;
+    }
+  }
+
   .drc-output {
     min-height: 44px;
   }
@@ -451,14 +534,18 @@
   import { copyTextToClipboard as copyText } from '../lib/clipboard';
   import type { EditorView } from '@codemirror/view';
   import { escapeHtml } from '../lib/escape-html';
+  import { buildMarkdownBlock } from '../lib/share-md';
 
   /* ---- Types mirrored from the engine contract (structural, not imported). -- */
   type RunResult = { ok: boolean; yaml?: string; warnings?: string[]; error?: string };
   type ComposeResult = { ok: boolean; command?: string; warnings?: string[]; error?: string };
+  type ShareState = { dir: Mode; text: string };
 
   type EngineModule = {
     runToCompose: (cmd: string) => RunResult;
     composeToRun: (yamlText: string) => ComposeResult;
+    encodeState: (dir: Mode, text: string) => string;
+    decodeState: () => ShareState | null;
   };
   type ExampleRaw = Record<string, unknown>;
   type Example = { id: string; label: string; run: string; compose: string };
@@ -584,6 +671,8 @@
     const select = el<HTMLSelectElement>(root, '#drc-example');
     const runBtn = el<HTMLButtonElement>(root, '#drc-run');
     const copyBtn = el<HTMLButtonElement>(root, '#drc-copy');
+    const shareBtn = el<HTMLButtonElement>(root, '#drc-share');
+    const mdBtn = el<HTMLButtonElement>(root, '#drc-md');
     const outputBox = el<HTMLElement>(root, '#drc-output');
     const warningsBox = el<HTMLElement>(root, '#drc-warnings');
     const statusEl = el<HTMLElement>(root, '#drc-status');
@@ -594,7 +683,8 @@
     const outputLabel = el<HTMLElement>(root, '#drc-output-label');
 
     if (
-      !editorHost || !select || !runBtn || !copyBtn || !outputBox || !warningsBox ||
+      !editorHost || !select || !runBtn || !copyBtn || !shareBtn || !mdBtn ||
+      !outputBox || !warningsBox ||
       !statusEl || !modeRunBtn || !modeComposeBtn || !inputName || !outputLabel
     ) {
       return;
@@ -700,9 +790,27 @@
     }
 
     const seedExample = examples[0] ?? { id: 'example', label: 'Example', run: '', compose: '' };
-    const view = makeEditor(editorHost, seedExample.run);
 
-    // Populate the example picker.
+    // Seed content: prefer a shared `#s=` URL, else the first example. Neither
+    // seed path writes the hash — only user-initiated evaluations do (see
+    // run()'s `userInitiated` gate below).
+    let seedText = seedExample.run;
+    let fromShare = false;
+    try {
+      const decoded = engine.decodeState();
+      if (decoded && decoded.text.length > 0) {
+        mode = decoded.dir;
+        seedText = decoded.text;
+        fromShare = true;
+      }
+    } catch {
+      /* malformed hash — fall back to the example seed */
+    }
+
+    const view = makeEditor(editorHost, seedText);
+
+    // Populate the example picker, with a leading "Custom input" sentinel that
+    // is selected only when the editor was seeded from a shared link.
     select.innerHTML = '';
     if (examples.length === 0) {
       const opt = document.createElement('option');
@@ -711,17 +819,24 @@
       select.appendChild(opt);
       select.disabled = true;
     } else {
+      const customOpt = document.createElement('option');
+      customOpt.value = '-1';
+      customOpt.textContent = 'Custom input';
+      select.appendChild(customOpt);
       examples.forEach((ex, i) => {
         const opt = document.createElement('option');
         opt.value = String(i);
         opt.textContent = ex.label;
         select.appendChild(opt);
       });
-      select.value = '0';
+      select.value = fromShare ? '-1' : '0';
     }
 
-    /** Seed the editor for the current mode from the selected example. */
+    /** Seed the editor for the current mode from the selected example. Leaves
+     *  the editor untouched while "Custom input" (shared/pasted text) is
+     *  selected, so toggling mode doesn't silently discard it. */
     function seedFromExample(): void {
+      if (select!.value === '-1') return;
       const idx = Number(select!.value);
       const ex = Number.isInteger(idx) && idx >= 0 && idx < examples.length ? examples[idx] : seedExample;
       setEditorDoc(view, mode === 'run' ? ex.run : ex.compose);
@@ -788,10 +903,68 @@
       void run();
     });
 
-    // Convert — non-blocking; yield a frame before (cheap) work.
+    // Share / Copy-as-Markdown — hidden until there's a valid, non-empty
+    // result; cleared on every empty/error path (mirrors CronTesterPlayground's
+    // hideShare() discipline).
+    function hideShare(): void {
+      shareBtn!.hidden = true;
+      shareBtn!.dataset.copy = '';
+      mdBtn!.hidden = true;
+      mdBtn!.dataset.copy = '';
+    }
+
+    /** Populate both buttons' dataset.copy from the just-produced result. */
+    function showShare(input: string, directionLabel: string): void {
+      let shareUrl = window.location.href;
+      try {
+        const hash = engine.encodeState(mode, input);
+        if (typeof hash === 'string') {
+          const frag = hash.startsWith('#') ? hash : `#${hash}`;
+          const base = window.location.href.split('#')[0];
+          shareUrl = `${base}${frag}`;
+        }
+      } catch {
+        /* fall back to the current URL */
+      }
+      shareBtn!.hidden = false;
+      shareBtn!.dataset.copy = shareUrl;
+
+      mdBtn!.hidden = false;
+      mdBtn!.dataset.copy = buildMarkdownBlock('Docker Run → Compose Converter', [
+        { label: 'Direction', value: directionLabel },
+        { label: 'Input', value: input },
+        { label: 'Output', value: lastOutput },
+      ]);
+    }
+
+    /** Write the current state into the `#s=` hash without a history entry. */
+    function writeShareHash(): void {
+      try {
+        const hash = engine.encodeState(mode, view.state.doc.toString());
+        if (typeof hash === 'string') {
+          const url = hash.startsWith('#') ? hash : `#${hash}`;
+          window.history.replaceState(null, '', url);
+        }
+      } catch {
+        /* non-fatal: sharing just won't update */
+      }
+    }
+
+    /** Clear the `#s=` fragment, leaving the rest of the URL untouched. */
+    function clearShareHash(): void {
+      try {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      } catch {
+        /* non-fatal: sharing just won't clear */
+      }
+    }
+
+    // Convert — non-blocking; yield a frame before (cheap) work. `userInitiated`
+    // gates the `#s=` hash write/clear: seeding paths (init, decoded share
+    // state) pass false so loading a page never rewrites its own URL.
     let running = false;
     const runLabel = runBtn.querySelector<HTMLElement>('.drc-run-label');
-    async function run(): Promise<void> {
+    async function run(userInitiated = true): Promise<void> {
       if (running) return;
       running = true;
       runBtn!.classList.add('is-busy');
@@ -810,24 +983,34 @@
           if (!res.ok || res.error) {
             renderError(outputBox!, warningsBox!, statusEl!, res.error ?? 'Could not convert the command.');
             lastOutput = '';
+            hideShare();
+            if (userInitiated) clearShareHash();
           } else {
             lastOutput = res.yaml ?? '';
             renderResult(outputBox!, warningsBox!, statusEl!, 'docker-compose.yml', lastOutput, res.warnings ?? []);
+            showShare(input, 'docker run → Compose');
+            if (userInitiated) writeShareHash();
           }
         } else {
           const res = engine.composeToRun(input);
           if (!res.ok || res.error) {
             renderError(outputBox!, warningsBox!, statusEl!, res.error ?? 'Could not convert the service.');
             lastOutput = '';
+            hideShare();
+            if (userInitiated) clearShareHash();
           } else {
             lastOutput = res.command ?? '';
             renderResult(outputBox!, warningsBox!, statusEl!, 'docker run', lastOutput, res.warnings ?? []);
+            showShare(input, 'Compose → docker run');
+            if (userInitiated) writeShareHash();
           }
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Unexpected error while converting.';
         renderError(outputBox!, warningsBox!, statusEl!, msg);
         lastOutput = '';
+        hideShare();
+        if (userInitiated) clearShareHash();
       } finally {
         running = false;
         runBtn!.classList.remove('is-busy');
@@ -863,10 +1046,46 @@
       }, COPIED_RESET_MS);
     });
 
-    // Initial chrome + auto-convert the seeded example.
+    // Share — copy the current `#s=` URL to the clipboard.
+    const shareLabel = shareBtn.querySelector<HTMLElement>('.drc-share-label');
+    let shareCopyTimer: number | undefined;
+    shareBtn.addEventListener('click', () => {
+      const text = shareBtn.dataset.copy ?? '';
+      void copyText(text).then((ok) => {
+        if (!ok) return;
+        shareBtn.classList.add('drc-share-btn--copied');
+        if (shareLabel) shareLabel.textContent = 'Copied';
+        window.clearTimeout(shareCopyTimer);
+        shareCopyTimer = window.setTimeout(() => {
+          shareBtn.classList.remove('drc-share-btn--copied');
+          if (shareLabel) shareLabel.textContent = 'Copy link';
+        }, COPIED_RESET_MS);
+      });
+    });
+
+    // Copy as Markdown — a pasteable summary of the current conversion.
+    const mdLabel = mdBtn.querySelector<HTMLElement>('.drc-md-label');
+    let mdCopyTimer: number | undefined;
+    mdBtn.addEventListener('click', () => {
+      const text = mdBtn.dataset.copy ?? '';
+      void copyText(text).then((ok) => {
+        if (!ok) return;
+        mdBtn.classList.add('drc-share-btn--copied');
+        if (mdLabel) mdLabel.textContent = 'Copied';
+        window.clearTimeout(mdCopyTimer);
+        mdCopyTimer = window.setTimeout(() => {
+          mdBtn.classList.remove('drc-share-btn--copied');
+          if (mdLabel) mdLabel.textContent = 'Copy as Markdown';
+        }, COPIED_RESET_MS);
+      });
+    });
+
+    // Initial chrome + auto-convert the seeded example/shared state. Passing
+    // `false` here means this first render never rewrites the URL hash — only
+    // subsequent user-initiated conversions do.
     applyModeChrome();
     renderEmpty(outputBox, warningsBox, statusEl);
-    void run();
+    void run(false);
     // Now that run() exists and the initial convert is queued, enable the
     // debounced live conversion on every subsequent user edit.
     liveReady = true;

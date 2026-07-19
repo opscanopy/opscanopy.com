@@ -52,3 +52,16 @@ export interface RegexResult {
   /** Every match found, in the order they occur in the text. */
   matches: RegexMatch[];
 }
+
+/**
+ * The full editor state needed to reproduce a session via the `#s=` share
+ * link: the pattern, its flags, and the sample log text. Field names match
+ * the vocabulary used elsewhere in this module (`RegexExample.pattern` /
+ * `.flags` / `.text`) rather than the generic `re`/`log` used in other tools'
+ * ShareState shapes.
+ */
+export interface ShareState {
+  pattern: string;
+  flags: string;
+  text: string;
+}

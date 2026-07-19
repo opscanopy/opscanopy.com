@@ -12,8 +12,9 @@
  *   • empty / malformed / garbage input → ok:false WITHOUT throwing
  */
 import { describe, it, expect } from 'vitest';
-import { runToCompose, composeToRun } from './engine';
+import { runToCompose, composeToRun, encodeState } from './engine';
 import { examples } from './examples';
+import { base64UrlDecode } from '../codec';
 
 describe('runToCompose — canonical docs example', () => {
   it('maps the nginx publish + bind-mount run line into a compose service', () => {
@@ -487,5 +488,30 @@ describe('bundled examples — runToCompose round-trips to the expected structur
     expect(y).toContain('- echo hello');
     // No phantom label from the `-lc` bundle being re-parsed.
     expect(y).not.toContain('labels');
+  });
+});
+
+// `decodeState()` touches `window.location` and is untested here — this
+// project's vitest config runs under the `node` environment (no DOM), matching
+// the existing untested `ip-hash.ts`/AlertLint precedent. It's exercised
+// manually/via the browser instead.
+describe('encodeState — pure output', () => {
+  it('encodes dir + text into a "#s=" base64url fragment', () => {
+    const hash = encodeState('run', 'docker run nginx');
+    expect(hash.startsWith('#s=')).toBe(true);
+    const decoded = base64UrlDecode(hash.slice('#s='.length));
+    expect(JSON.parse(decoded)).toEqual({ dir: 'run', text: 'docker run nginx' });
+  });
+
+  it('round-trips the "compose" direction and multi-line text', () => {
+    const yamlText = 'services:\n  web:\n    image: nginx\n';
+    const hash = encodeState('compose', yamlText);
+    const decoded = JSON.parse(base64UrlDecode(hash.slice('#s='.length)));
+    expect(decoded).toEqual({ dir: 'compose', text: yamlText });
+  });
+
+  it('produces a URL-safe fragment with no base64 padding/unsafe characters', () => {
+    const hash = encodeState('run', 'docker run --name a-very-long-container-name nginx:alpine');
+    expect(hash.slice('#s='.length)).not.toMatch(/[+/=]/);
   });
 });

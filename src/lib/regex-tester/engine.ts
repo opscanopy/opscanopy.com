@@ -27,7 +27,8 @@
  */
 
 import { checkRegexSafety, MAX_REGEX_TEXT } from '../regex-safety';
-import type { RegexMatch, RegexResult } from './types';
+import { base64UrlEncode, base64UrlDecode } from '../codec';
+import type { RegexMatch, RegexResult, ShareState } from './types';
 
 /** A failed result, with no matches. Centralized so shape stays consistent. */
 function invalid(error: string): RegexResult {
@@ -143,4 +144,43 @@ export function run(pattern: string, flags: string, text: string): RegexResult {
     result.error = `Input is large — only the first ${MAX_REGEX_TEXT.toLocaleString()} characters were scanned.`;
   }
   return result;
+}
+
+/* ────────────────────────────────────────────────────────────────────────── *
+ *  Shareable-URL state (base64url in the location hash), following the same
+ *  `#s=` convention as ../alertlint/engine and ../logql-promql/engine.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Encode the pattern + flags + sample text into a URL hash fragment, e.g.
+ *   "#s=eyJwYXR0ZXJuIjoiLi4uIn0".
+ */
+export function encodeState(pattern: string, flags: string, text: string): string {
+  const payload: ShareState = { pattern, flags, text };
+  return '#s=' + base64UrlEncode(JSON.stringify(payload));
+}
+
+/**
+ * Decode the current `location.hash` into a ShareState, or null when absent /
+ * malformed. SSR-safe: returns null when `window` is undefined.
+ */
+export function decodeState(): ShareState | null {
+  if (typeof window === 'undefined') return null;
+  const hash = window.location.hash ?? '';
+  const m = hash.match(/[#&]s=([^&]+)/);
+  if (!m) return null;
+  try {
+    const json = base64UrlDecode(m[1]);
+    const parsed = JSON.parse(json) as Partial<ShareState>;
+    if (
+      typeof parsed.pattern === 'string' &&
+      typeof parsed.flags === 'string' &&
+      typeof parsed.text === 'string'
+    ) {
+      return { pattern: parsed.pattern, flags: parsed.flags, text: parsed.text };
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }

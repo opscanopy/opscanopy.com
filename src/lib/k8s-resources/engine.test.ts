@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { calculate } from './engine';
+import { calculate, encodeState } from './engine';
 import { examples } from './examples';
-import type { K8sResult } from './types';
+import { base64UrlDecode } from '../codec';
+import type { K8sResult, K8sInput } from './types';
 
 /**
  * Kubernetes Resource Calculator — engine tests. Vectors are anchored to the
@@ -215,6 +216,34 @@ describe('k8s-resources calculate()', () => {
       for (const input of hostile) {
         expect(() => calculate(input)).not.toThrow();
       }
+    });
+  });
+
+  describe('encodeState() — pure output (decodeState() touches window.location and is intentionally left untested here, per the ip-hash.ts / AlertLint precedent)', () => {
+    it('produces a "#s=" fragment whose payload decodes back to the given rows', () => {
+      const rows: K8sInput[] = [
+        { cpuRequest: '500m', cpuLimit: '1', memRequest: '256Mi', memLimit: '512Mi', replicas: '3' },
+      ];
+      const hash = encodeState(rows);
+      expect(hash.startsWith('#s=')).toBe(true);
+      const json = base64UrlDecode(hash.slice('#s='.length));
+      expect(JSON.parse(json)).toEqual({ rows });
+    });
+
+    it('round-trips an empty rows array', () => {
+      const hash = encodeState([]);
+      const json = base64UrlDecode(hash.slice('#s='.length));
+      expect(JSON.parse(json)).toEqual({ rows: [] });
+    });
+
+    it('round-trips multiple rows without dropping or reordering fields', () => {
+      const rows: K8sInput[] = [
+        { cpuRequest: '500m', replicas: '2' },
+        { memRequest: '1Gi', memLimit: '2Gi' },
+      ];
+      const hash = encodeState(rows);
+      const json = base64UrlDecode(hash.slice('#s='.length));
+      expect(JSON.parse(json)).toEqual({ rows });
     });
   });
 });

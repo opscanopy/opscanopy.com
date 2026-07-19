@@ -37,10 +37,13 @@ declare module 'js-yaml' {
 }
 
 import yaml from 'js-yaml';
+import { base64UrlEncode, base64UrlDecode } from '../codec';
 import type {
   ComposeService,
   ComposeToRunResult,
+  Direction,
   RunToComposeResult,
+  ShareState,
 } from './types';
 
 /* ────────────────────────────────────────────────────────────────────────── *
@@ -987,5 +990,48 @@ export function composeToRun(yamlText: string): ComposeToRunResult {
       warnings,
       error: `Could not convert the service (${String(e)}).`,
     };
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────────── *
+ *  Shareable-URL state (base64url in the location hash).
+ * ────────────────────────────────────────────────────────────────────────── */
+
+const DIRECTIONS: readonly Direction[] = ['run', 'compose'];
+
+/** Defensive-parsing guard: only 'run'/'compose' survive, never a bare string. */
+function isDirection(value: unknown): value is Direction {
+  return typeof value === 'string' && (DIRECTIONS as readonly string[]).includes(value);
+}
+
+/**
+ * Encode the current direction + pasted text into a URL hash fragment, e.g.
+ *   "#s=eyJkaXIiOiJydW4iLCJ0ZXh0IjoiLi4uIn0".
+ */
+export function encodeState(dir: Direction, text: string): string {
+  const payload: ShareState = { dir, text };
+  return '#s=' + base64UrlEncode(JSON.stringify(payload));
+}
+
+/**
+ * Decode the current `location.hash` into a ShareState, or null when absent /
+ * malformed. SSR-safe: returns null when `window` is undefined. `dir` is
+ * validated against the known direction values rather than trusted outright
+ * (mirrors `parseToolPrefs`'s defensive-parsing convention).
+ */
+export function decodeState(): ShareState | null {
+  if (typeof window === 'undefined') return null;
+  const hash = window.location.hash ?? '';
+  const m = hash.match(/[#&]s=([^&]+)/);
+  if (!m) return null;
+  try {
+    const json = base64UrlDecode(m[1]);
+    const parsed = JSON.parse(json) as Partial<ShareState>;
+    if (isDirection(parsed.dir) && typeof parsed.text === 'string') {
+      return { dir: parsed.dir, text: parsed.text };
+    }
+    return null;
+  } catch {
+    return null;
   }
 }

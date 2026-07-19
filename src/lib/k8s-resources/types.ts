@@ -38,3 +38,21 @@ export interface K8sExample {
   label: string;
   input: Required<Pick<K8sInput, 'cpuRequest' | 'cpuLimit' | 'memRequest' | 'memLimit' | 'replicas'>>;
 }
+
+/**
+ * One shareable row of Pod resource fields — same shape as K8sInput, named
+ * separately so the share-link payload's intent (a row of resource values)
+ * reads clearly at the encode/decode boundary.
+ */
+export type K8sShareRow = K8sInput;
+
+/**
+ * Shareable state encoded into the URL's `#s=` hash fragment. `rows` mirrors
+ * the array-of-rows share-link convention used elsewhere in this codebase;
+ * this playground currently keeps exactly one row (a single Pod spec), but
+ * the array shape leaves room for a future multi-row calculator without a
+ * breaking hash-format change.
+ */
+export interface K8sShareState {
+  rows: K8sShareRow[];
+}

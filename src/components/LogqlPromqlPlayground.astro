@@ -5,15 +5,19 @@
  * A no-framework, server-rendered shell hydrated by a single module <script>
  * that lazily boots a CodeMirror 6 input editor and a read-only output editor,
  * wires a direction toggle (LogQL → PromQL / PromQL → LogQL), an example
- * picker, a "Convert" action and a "Copy output" action. It runs entirely
- * client-side — no upload, no network.
+ * picker, a "Convert" action, a "Copy output" action, a shareable-URL encoder
+ * ("Copy link") and a "Copy as Markdown" action. It runs entirely client-side
+ * — no upload, no network.
  *
  * Runtime contract (built by sibling agents — imported lazily in the script):
  *   ../lib/logql-promql/types →
  *     type Direction = "logql-to-promql" | "promql-to-logql"
  *     interface ConvertResult { output: string; notes: string[]; error?: string }
+ *     interface ShareState { direction: Direction; query: string }
  *   ../lib/logql-promql/engine →
  *     convert(direction: Direction, query: string): ConvertResult
+ *     encodeState(direction: Direction, query: string): string  // hash fragment
+ *     decodeState(): ShareState | null
  *   ../lib/logql-promql/examples →
  *     examples: { id: string; label: string; direction: Direction; query: string }[]
  *
@@ -201,8 +205,48 @@
 
     {/* ── Notes panel (what mapped + what did not) ─────────────────────── */}
     <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex items-center justify-between gap-3">
-        <span class="eyebrow">Notes</span>
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <span class="flex items-center gap-2">
+          <span class="eyebrow">Notes</span>
+          <button id="lp-share" type="button" class="lp-share-btn" data-copy="" hidden>
+            <svg
+              class="lp-share-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6.75 9.25l2.5-2.5"></path>
+              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
+              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
+            </svg>
+            <span class="lp-share-label">Copy link</span>
+          </button>
+          <button id="lp-copy-md" type="button" class="lp-share-btn" hidden>
+            <svg
+              class="lp-share-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 2.5h6.5l3 3v7.75a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-9.75a1 1 0 0 1 1-1z"></path>
+              <path d="M9.5 2.5v3h3"></path>
+              <path d="M4.5 9h7M4.5 11.25h4.5"></path>
+            </svg>
+            <span class="lp-md-label">Copy as Markdown</span>
+          </button>
+        </span>
         <span
           id="lp-summary"
           class="lp-summary code-mono text-mute"
@@ -430,6 +474,45 @@
     white-space: nowrap;
   }
 
+  /* Share-link / Copy-as-Markdown pill buttons next to the "Notes" eyebrow. */
+  .lp-share-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-mute);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease;
+  }
+  .lp-share-btn:hover {
+    color: var(--color-brand-strong);
+    background: var(--color-hairline);
+  }
+  .lp-share-btn:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  .lp-share-btn.lp-share-btn--copied {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+  @media (pointer: coarse) {
+    .lp-share-btn {
+      height: auto;
+      min-height: 36px;
+    }
+  }
+
   /* Notes list (mapping notes / success / empty). */
   .lp-notes {
     min-height: 44px;
@@ -633,6 +716,7 @@
 
 <script>
   import { copyTextToClipboard as copyText } from '../lib/clipboard';
+  import { buildMarkdownBlock } from '../lib/share-md';
   import type { EditorView } from '@codemirror/view';
   import { escapeHtml } from '../lib/escape-html';
 
@@ -643,8 +727,11 @@
   /* ---- Types mirrored from the engine contract (structural, not imported). -- */
   type Direction = 'logql-to-promql' | 'promql-to-logql';
   type ConvertResult = { output: string; notes?: string[]; error?: string };
+  type ShareState = { direction: Direction; query: string };
   type EngineModule = {
     convert: (direction: Direction, query: string) => ConvertResult | Promise<ConvertResult>;
+    encodeState: (direction: Direction, query: string) => string;
+    decodeState: () => ShareState | null;
   };
   type Example = { id: string; label: string; direction: Direction; query: string };
 
@@ -784,6 +871,8 @@
     const announce = el<HTMLElement>(root, '#lp-announce');
     const inputNameEl = el<HTMLElement>(root, '#lp-input-name');
     const outputNameEl = el<HTMLElement>(root, '#lp-output-name');
+    const shareBtn = el<HTMLButtonElement>(root, '#lp-share');
+    const mdBtn = el<HTMLButtonElement>(root, '#lp-copy-md');
     const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('.lp-tab'));
 
     if (
@@ -794,7 +883,9 @@
       !convertBtn ||
       !copyBtn ||
       !notesBox ||
-      !summaryEl
+      !summaryEl ||
+      !shareBtn ||
+      !mdBtn
     ) {
       return;
     }
@@ -889,9 +980,19 @@
       return;
     }
 
-    // Current direction (seeded from the first example, else LogQL → PromQL).
+    // Seed priority: a valid #s= deep link > the first example > LogQL → PromQL.
+    let sharedState: ShareState | null = null;
+    try {
+      sharedState = engine.decodeState();
+    } catch {
+      sharedState = null;
+    }
+    const fromShare = !!sharedState && sharedState.query.length > 0;
+
     const seed = examples[0];
-    let direction: Direction = seed?.direction ?? 'logql-to-promql';
+    let direction: Direction = fromShare
+      ? (sharedState as ShareState).direction
+      : seed?.direction ?? 'logql-to-promql';
 
     // Build the segmented direction toggle.
     dirGroup.innerHTML = '';
@@ -931,20 +1032,59 @@
       opt.textContent = ex.label;
       exampleSel.appendChild(opt);
     });
-    exampleSel.value = examples.length ? '0' : '-1';
+    exampleSel.value = fromShare ? '-1' : examples.length ? '0' : '-1';
     if (!examples.length) exampleSel.disabled = true;
 
-    // Editors — seed the input from the first example.
-    const inputView = makeInputEditor(inputHost, seed?.query ?? '');
+    // Editors — seed the input from the shared link, else the first example.
+    const inputView = makeInputEditor(
+      inputHost,
+      fromShare ? (sharedState as ShareState).query : seed?.query ?? ''
+    );
     const outputView = makeOutputEditor(outputHost, '');
 
     syncDirection();
+
+    /* ---- Share link + Copy as Markdown --------------------------------------- */
+
+    /** Hide both the "Copy link" and "Copy as Markdown" buttons. */
+    function hideShare(): void {
+      shareBtn!.hidden = true;
+      shareBtn!.dataset.copy = '';
+      mdBtn!.hidden = true;
+    }
+
+    /** Drop the `#s=` fragment back to the bare path (non-fatal if it throws). */
+    function clearShareHash(): void {
+      try {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      } catch {
+        /* non-fatal: sharing just won't update */
+      }
+    }
+
+    /** Reveal both buttons for a freshly-converted, non-empty result. */
+    function revealShare(dir: Direction, query: string, userInitiated: boolean): void {
+      try {
+        const hash = engine.encodeState(dir, query);
+        const frag = hash.startsWith('#') ? hash : `#${hash}`;
+        shareBtn!.dataset.copy =
+          window.location.origin + window.location.pathname + window.location.search + frag;
+        if (userInitiated) window.history.replaceState(null, '', frag);
+      } catch {
+        // Fall back to the current URL; sharing degrades gracefully.
+        shareBtn!.dataset.copy = window.location.href;
+      }
+      shareBtn!.hidden = false;
+      mdBtn!.hidden = false;
+    }
 
     /** Reset to the pre-conversion state (output cleared, copy disabled). */
     function resetOutput(): void {
       setEditorDoc(outputView, '');
       copyBtn!.disabled = true;
       renderEmpty(notesBox!, summaryEl!);
+      hideShare();
+      clearShareHash();
     }
 
     // Editing the input or direction means the shown output is stale → Custom.
@@ -1029,7 +1169,7 @@
     const convertLabel = convertBtn.querySelector<HTMLElement>('.lp-convert-label');
     let spinner: HTMLElement | null = null;
 
-    async function convertNow(): Promise<void> {
+    async function convertNow(userInitiated = true): Promise<void> {
       if (running) return;
       running = true;
       convertBtn.classList.add('is-busy');
@@ -1072,6 +1212,8 @@
             summaryEl!,
             result?.error ?? 'Unknown error while converting.'
           );
+          hideShare();
+          if (userInitiated) clearShareHash();
           return;
         }
 
@@ -1088,11 +1230,20 @@
               ? `Converted with ${notes.length} ${notes.length === 1 ? 'note' : 'notes'}.`
               : 'Converted successfully.';
         }
+
+        if (output.length > 0) {
+          revealShare(direction, query, userInitiated);
+        } else {
+          hideShare();
+          if (userInitiated) clearShareHash();
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Unexpected error while converting.';
         setEditorDoc(outputView, '');
         copyBtn!.disabled = true;
         renderError(notesBox!, summaryEl!, msg);
+        hideShare();
+        if (userInitiated) clearShareHash();
       } finally {
         running = false;
         convertBtn.classList.remove('is-busy');
@@ -1135,8 +1286,59 @@
       }, COPIED_RESET_MS);
     });
 
-    // Initial state.
-    renderEmpty(notesBox, summaryEl);
+    // Copy link — copies the shareable URL built by the last successful convert.
+    const shareLabel = shareBtn.querySelector<HTMLElement>('.lp-share-label');
+    let shareCopyTimer: number | undefined;
+    shareBtn.addEventListener('click', async () => {
+      const text = shareBtn.dataset.copy ?? '';
+      if (!text) return;
+      const ok = await copyText(text);
+      shareBtn.classList.toggle('lp-share-btn--copied', ok);
+      if (shareLabel) shareLabel.textContent = ok ? 'Copied' : 'Copy Failed';
+      if (announce) {
+        announce.textContent = ok
+          ? 'Share link copied to your clipboard.'
+          : 'Could not copy the link. Copy the URL from your address bar instead.';
+      }
+      window.clearTimeout(shareCopyTimer);
+      shareCopyTimer = window.setTimeout(() => {
+        shareBtn.classList.remove('lp-share-btn--copied');
+        if (shareLabel) shareLabel.textContent = 'Copy link';
+      }, COPIED_RESET_MS);
+    });
+
+    // Copy as Markdown — a fenced block with the current direction, query and result.
+    const mdLabel = mdBtn.querySelector<HTMLElement>('.lp-md-label');
+    let mdCopyTimer: number | undefined;
+    mdBtn.addEventListener('click', async () => {
+      const dirMeta = DIRECTIONS.find((d) => d.value === direction);
+      const md = buildMarkdownBlock('LogQL ↔ PromQL Helper', [
+        { label: 'Direction', value: dirMeta?.label ?? direction },
+        { label: 'Query', value: inputView.state.doc.toString() },
+        { label: 'Result', value: outputView.state.doc.toString() },
+      ]);
+      const ok = await copyText(md);
+      mdBtn.classList.toggle('lp-share-btn--copied', ok);
+      if (mdLabel) mdLabel.textContent = ok ? 'Copied' : 'Copy Failed';
+      if (announce) {
+        announce.textContent = ok
+          ? 'Markdown summary copied to your clipboard.'
+          : 'Could not copy. Select the text and copy it manually.';
+      }
+      window.clearTimeout(mdCopyTimer);
+      mdCopyTimer = window.setTimeout(() => {
+        mdBtn.classList.remove('lp-share-btn--copied');
+        if (mdLabel) mdLabel.textContent = 'Copy as Markdown';
+      }, COPIED_RESET_MS);
+    });
+
+    // Initial results state: a #s= deep link converts immediately (that's the
+    // point of sharing); otherwise wait for the user's explicit Convert action.
+    if (fromShare) {
+      void convertNow(false);
+    } else {
+      renderEmpty(notesBox, summaryEl);
+    }
   }
 
   boot();
