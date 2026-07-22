@@ -1,0 +1,116 @@
+---
+/**
+ * Practice Tests test-taking page (/tests/<category>/<test>/) — NOINDEX.
+ *
+ * A thin interactive page rendering the TestRunner island (taking + results
+ * phases). Marked noindex (so `searchIndex` auto-false → excluded from Pagefind)
+ * and excluded from the sitemap via the astro.config.mjs filter regex.
+ *
+ * getStaticPaths joins the registry ↔ content collection in BOTH directions and
+ * throws with an actionable message on any mismatch, duplicate content key, or
+ * filename-convention violation — failing the build rather than shipping a
+ * broken/incoherent test.
+ */
+import { getCollection } from 'astro:content';
+import Shell from '../../../components/Shell.astro';
+import TestRunner from '../../../components/tests/TestRunner.astro';
+import { liveTests, getTest, getCategory } from '../../../data/tests';
+import { breadcrumbLd } from '../../../lib/jsonld';
+import { site } from '../../../data/site';
+
+export async function getStaticPaths() {
+  const files = await getCollection('practiceTestQuestions');
+
+  // Content key uniqueness — a duplicate (category, test) across files must
+  // THROW, never silently overwrite.
+  const byKey = new Map<string, (typeof files)[number]>();
+  for (const f of files) {
+    const key = `${f.data.category}/${f.data.test}`;
+    // Filename/ID must match "<category>__<test>" so the file is discoverable.
+    const expectedId = `${f.data.category}__${f.data.test}`;
+    if (!f.id.startsWith(expectedId)) {
+      throw new Error(
+        `[tests] Question file "${f.id}" must be named "${expectedId}.json" to match its category/test fields.`,
+      );
+    }
+    if (byKey.has(key)) {
+      throw new Error(
+        `[tests] Duplicate question file for ${key}: "${f.id}" collides with "${byKey.get(key)!.id}".`,
+      );
+    }
+    byKey.set(key, f);
+
+    // Direction A — every file maps to a LIVE registry test under a LIVE category.
+    const t = getTest(f.data.category, f.data.test);
+    if (!t) {
+      throw new Error(`[tests] Question file "${f.id}" has no registry entry in src/data/tests.ts.`);
+    }
+    if (t.status !== 'live') {
+      throw new Error(
+        `[tests] Test ${key} has a question file but the registry marks it '${t.status}'.`,
+      );
+    }
+    if (getCategory(f.data.category)?.status !== 'live') {
+      throw new Error(
+        `[tests] Category ${f.data.category} is not live but test ${f.data.test} has a question file.`,
+      );
+    }
+  }
+
+  // Direction B — every LIVE registry test must have a question file.
+  return liveTests.map((t) => {
+    const file = byKey.get(`${t.categorySlug}/${t.slug}`);
+    if (!file) {
+      throw new Error(
+        `[tests] Registry marks ${t.categorySlug}/${t.slug} 'live' but no question file exists at src/content/tests/${t.categorySlug}__${t.slug}.json.`,
+      );
+    }
+    return { params: { category: t.categorySlug, test: t.slug }, props: { test: t, file } };
+  });
+}
+
+const { test, file } = Astro.props;
+const category = getCategory(test.categorySlug)!;
+const categoryHref = `/tests/${test.categorySlug}/`;
+const canonical = `/tests/${test.categorySlug}/${test.slug}`;
+
+const jsonLd = breadcrumbLd([
+  { name: 'Home', item: `${site.url}/` },
+  { name: 'Practice Tests', item: `${site.url}/tests/` },
+  { name: category.shortName, item: `${site.url}${categoryHref}` },
+  { name: test.name, item: `${site.url}${canonical}/` },
+]);
+---
+<Shell
+  title={`${test.name} — ${category.shortName} Practice Test — OpsCanopy`}
+  description={test.description}
+  canonical={canonical}
+  jsonLd={jsonLd}
+  noindex
+  noAlternates
+>
+  <section class="bg-canvas-soft" style="min-height:calc(100vh - 64px);">
+    <div class="container-page max-w-[52rem] pb-16 pt-7 sm:pb-24">
+      <nav aria-label="Breadcrumb" class="mb-1">
+        <ol role="list" class="caption flex flex-wrap items-center gap-x-1.5 text-mute">
+          <li><a href="/" class="hover:text-ink">Home</a></li>
+          <li aria-hidden="true">/</li>
+          <li><a href="/tests/" class="hover:text-ink">Practice Tests</a></li>
+          <li aria-hidden="true">/</li>
+          <li><a href={categoryHref} class="hover:text-ink">{category.shortName}</a></li>
+          <li aria-hidden="true">/</li>
+          <li class="text-body" aria-current="page">{test.name}</li>
+        </ol>
+      </nav>
+
+      <TestRunner
+        categorySlug={test.categorySlug}
+        testSlug={test.slug}
+        testName={test.name}
+        categoryHref={categoryHref}
+        passThreshold={test.passThreshold}
+        questions={file.data.questions}
+      />
+    </div>
+  </section>
+</Shell>
