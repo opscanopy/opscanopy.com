@@ -141,6 +141,8 @@ const es: Partial<UiDict> = {
   'tools.availableNow': 'Disponibles ahora',
   'tools.pinAdd': 'Fijar esta herramienta',
   'tools.pinRemove': 'Dejar de fijar esta herramienta',
+  'tools.pinLabel': 'Fijar',
+  'tools.pinnedLabel': 'Fijado',
   'tools.yourTools': 'Tus herramientas',
   'tools.jumpBackIn': 'Continúa donde lo dejaste',
   'tools.jumpBackInCaption': 'Herramientas fijadas y usadas recientemente — guardadas solo en este navegador.',

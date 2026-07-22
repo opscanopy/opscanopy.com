@@ -150,6 +150,8 @@ const en = {
   'tools.availableNow': 'Available now',
   'tools.pinAdd': 'Pin this tool',
   'tools.pinRemove': 'Unpin this tool',
+  'tools.pinLabel': 'Pin',
+  'tools.pinnedLabel': 'Pinned',
   'tools.yourTools': 'Your tools',
   'tools.jumpBackIn': 'Jump back in',
   'tools.jumpBackInCaption': 'Pinned and recently used tools — saved only in this browser.',

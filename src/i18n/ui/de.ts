@@ -143,6 +143,8 @@ const de: Partial<UiDict> = {
   'tools.availableNow': 'Jetzt verfügbar',
   'tools.pinAdd': 'Dieses Tool anheften',
   'tools.pinRemove': 'Anheftung dieses Tools aufheben',
+  'tools.pinLabel': 'Anheften',
+  'tools.pinnedLabel': 'Angeheftet',
   'tools.yourTools': 'Ihre Tools',
   'tools.jumpBackIn': 'Schnellzugriff',
   'tools.jumpBackInCaption': 'Angeheftete und zuletzt verwendete Tools — nur in diesem Browser gespeichert.',
