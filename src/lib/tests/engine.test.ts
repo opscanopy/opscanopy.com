@@ -31,6 +31,15 @@ describe('gradeQuestion() — single answer', () => {
     expect(g.answered).toBe(false);
     expect(g.isCorrect).toBe(false);
   });
+
+  it('an empty selection is never correct even when correctAnswers is empty', () => {
+    // Two empty normalized sets compare equal, but the "unanswered ⇒ incorrect"
+    // contract must win. (Valid content can't reach this — the schema requires
+    // correctAnswers.min(1) — but the engine stays defensive regardless.)
+    const g = gradeQuestion([], []);
+    expect(g.answered).toBe(false);
+    expect(g.isCorrect).toBe(false);
+  });
 });
 
 describe('gradeQuestion() — multi answer (all-or-nothing)', () => {

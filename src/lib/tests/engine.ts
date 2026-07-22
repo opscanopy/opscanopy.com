@@ -81,11 +81,15 @@ export function isMulti(correctAnswers: number[]): boolean {
 export function gradeQuestion(correct: number[], selected: number[]): QuestionGrade {
   const normSelected = normalize(selected);
   const normCorrect = normalize(correct);
+  const answered = normSelected.length > 0;
   return {
     selected: normSelected,
     correct: normCorrect,
-    answered: normSelected.length > 0,
-    isCorrect: sameSet(normSelected, normCorrect),
+    answered,
+    // An empty selection is never correct, even if correctAnswers is also
+    // empty (two empty sets compare equal) — the "unanswered ⇒ incorrect"
+    // contract wins over set equality.
+    isCorrect: answered && sameSet(normSelected, normCorrect),
   };
 }
 

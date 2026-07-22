@@ -54,6 +54,15 @@ describe('parseProgress()', () => {
     expect(parseProgress('{}')).toEqual(EMPTY);
   });
 
+  it('always returns a null-prototype tests map, including the empty/fallback paths', () => {
+    // The valid-object path already yields Object.create(null); the null /
+    // garbage / array / scalar fallbacks must too, so the keyed map can never
+    // carry an Object.prototype regardless of how it was produced.
+    for (const raw of [null, '', '{not json', '[]', '42', '{}'] as (string | null)[]) {
+      expect(Object.getPrototypeOf(parseProgress(raw).tests)).toBeNull();
+    }
+  });
+
   it('drops a wrong-typed tests container', () => {
     expect(parseProgress('{"tests": 5}')).toEqual(EMPTY);
     expect(parseProgress('{"tests": []}')).toEqual(EMPTY);

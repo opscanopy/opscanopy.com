@@ -90,16 +90,19 @@ function parseTests(value: unknown): TestsProgress['tests'] {
  * ones are kept.
  */
 export function parseProgress(raw: string | null): TestsProgress {
-  const empty: TestsProgress = { tests: {} };
-  if (raw === null || raw === '') return empty;
+  // Every return path yields a null-prototype tests map (parseTests always
+  // starts from Object.create(null)), so the keyed map can never carry an
+  // Object.prototype — including the empty/fallback paths below.
+  const empty = (): TestsProgress => ({ tests: parseTests(undefined) });
+  if (raw === null || raw === '') return empty();
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return empty;
+    return empty();
   }
-  if (!isRecord(parsed)) return empty;
+  if (!isRecord(parsed)) return empty();
   return { tests: parseTests(parsed.tests) };
 }
 
