@@ -95,4 +95,41 @@ const mission90Days = defineCollection({
   }),
 });
 
-export const collections = { blog, guides, mission90Days };
+/** One MCQ. correctAnswers indices are refined against THIS question's options
+ *  length (mirrors m90CheckQuestion's answerIndex refine) so a bad index fails
+ *  the build. Number-to-select is derived from correctAnswers.length, never stored. */
+const practiceTestQuestion = z
+  .object({
+    id: z.string(),                                  // stable within the test, e.g. 'q1'
+    /** Scenario prompt as ordered paragraphs (one entry per paragraph). The
+     *  LAST paragraph is the actual question sentence, used as the concise
+     *  <legend>/aria label; earlier paragraphs render as the scenario block. */
+    prompt: z.array(z.string()).min(1),
+    options: z.array(z.string()).min(2).max(6),
+    correctAnswers: z.array(z.number().int().min(0)).min(1),
+    explanation: z.string(),
+  })
+  .refine((q) => q.correctAnswers.every((i) => i < q.options.length), {
+    message: 'every correctAnswers index must be a valid index into options',
+    path: ['correctAnswers'],
+  })
+  .refine((q) => new Set(q.correctAnswers).size === q.correctAnswers.length, {
+    message: 'correctAnswers must not contain duplicate indices',
+    path: ['correctAnswers'],
+  });
+
+const practiceTestQuestions = defineCollection({
+  loader: glob({ pattern: '**/*.json', base: './src/content/tests' }),
+  schema: z
+    .object({
+      category: z.string(),      // must match a TestCategory.slug (checked in getStaticPaths)
+      test: z.string(),          // must match a PracticeTest.slug
+      questions: z.array(practiceTestQuestion).min(1),
+    })
+    .refine((f) => new Set(f.questions.map((q) => q.id)).size === f.questions.length, {
+      message: 'question ids must be unique within a test',
+      path: ['questions'],
+    }),
+});
+
+export const collections = { blog, guides, mission90Days, practiceTestQuestions };
