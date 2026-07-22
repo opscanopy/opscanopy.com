@@ -540,11 +540,11 @@ export function getTool(slug: string): Tool | undefined {
   return tools.find((t) => t.slug === slug);
 }
 
-/** Gradient stop pairs for each accent (matches DESIGN.md brand gradient). */
+/** Gradient stop pairs for each accent (Field Manual: leaf / amber / steel). */
 export const accentGradients: Record<ToolAccent, [string, string]> = {
-  develop: ['#007cf0', '#00dfd8'],
-  preview: ['#7928ca', '#ff0080'],
-  ship: ['#ff4d4d', '#f9cb28'],
+  develop: ['#3f6ea5', '#2f7d82'],
+  preview: ['#4a8c3f', '#a8721f'],
+  ship: ['#b0503f', '#a85a06'],
 };
 
 /**
@@ -555,9 +555,9 @@ export const accentGradients: Record<ToolAccent, [string, string]> = {
  * `class:list={['bg-gradient-to-r', accentEdgeClass[tool.accent]]}`.
  */
 export const accentEdgeClass: Record<ToolAccent, string> = {
-  develop: 'from-[#007cf0] to-[#00dfd8]',
-  preview: 'from-[#7928ca] to-[#ff0080]',
-  ship: 'from-[#ff4d4d] to-[#f9cb28]',
+  develop: 'from-[#3f6ea5] to-[#2f7d82]',
+  preview: 'from-[#4a8c3f] to-[#a8721f]',
+  ship: 'from-[#b0503f] to-[#a85a06]',
 };
 
 /**
@@ -570,16 +570,16 @@ export const accentEdgeClass: Record<ToolAccent, string> = {
  * Keep this keyed by the EXACT `category` strings used above.
  */
 export const categoryAccent: Record<string, string> = {
-  Networking: '#2563eb',
-  Security: '#e11d48',
-  Encoding: '#b45309',
-  Kubernetes: '#4f46e5',
-  Observability: '#7c3aed',
-  'CI/CD': '#0e7490',
-  Scheduling: '#c2410c',
-  Logs: '#be185d',
-  Config: '#0f766e',
-  Docker: '#2496ed',
+  Networking: '#3f6ea5',
+  Security: '#b0503f',
+  Encoding: '#a8721f',
+  Kubernetes: '#5560a8',
+  Observability: '#7a5aa0',
+  'CI/CD': '#2f7d82',
+  Scheduling: '#b0562e',
+  Logs: '#a2456b',
+  Config: '#35786a',
+  Docker: '#3b82b8',
 };
 
 /* ─── Category landing pages ──────────────────────────────────────────────

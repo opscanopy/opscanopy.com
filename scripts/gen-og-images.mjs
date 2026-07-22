@@ -71,7 +71,7 @@ function truncate(text, maxChars) {
 /** Build a dark, branded 1200x630 OG card SVG for one live tool. */
 function toolOgSvg(tool) {
   const [g1, g2] = accentGradients[tool.accent];
-  const dot = categoryAccent[tool.category] ?? '#10b981';
+  const dot = categoryAccent[tool.category] ?? '#4a8c3f';
   const nameLines = wrapText(tool.name, 22, 2);
   const tagline = truncate(tool.tagline, 68);
 
@@ -86,26 +86,26 @@ function toolOgSvg(tool) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-label="${esc(tool.name)} — ${esc(tool.tagline)}">
   <defs>
     <radialGradient id="glow" cx="82%" cy="22%" r="65%">
-      <stop offset="0" stop-color="#10b981" stop-opacity="0.30"/>
-      <stop offset="1" stop-color="#10b981" stop-opacity="0"/>
+      <stop offset="0" stop-color="#8fc97a" stop-opacity="0.26"/>
+      <stop offset="1" stop-color="#8fc97a" stop-opacity="0"/>
     </radialGradient>
     <linearGradient id="topbar" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0" stop-color="${g1}"/>
       <stop offset="1" stop-color="${g2}"/>
     </linearGradient>
   </defs>
-  <rect width="1200" height="630" fill="#0a0a0a"/>
+  <rect width="1200" height="630" fill="#141310"/>
   <rect width="1200" height="630" fill="url(#glow)"/>
   <rect width="1200" height="6" fill="url(#topbar)"/>
 
   <g transform="translate(80,56)">
-    <g stroke="#10b981" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="scale(1.35)">
-      <path d="M4 15.5C6.4 10.3 10.8 7 16 7s9.6 3.3 12 8.5" opacity="0.35"/>
-      <path d="M6.5 19.5C8.6 15.2 11.9 12.7 16 12.7s7.4 2.5 9.5 6.8" opacity="0.6"/>
-      <path d="M9 23C10.6 19.9 13.1 18.2 16 18.2s5.4 1.7 7 4.8" opacity="0.95"/>
-      <path d="M16 23v3.5"/>
+    <g stroke="#8fc97a" stroke-width="2.75" stroke-linecap="square" stroke-linejoin="miter" fill="none" transform="scale(1.35)">
+      <path d="M4 15.5C6.4 10.3 10.8 7 16 7s9.6 3.3 12 8.5"/>
+      <path d="M6.5 19.5C8.6 15.2 11.9 12.7 16 12.7s7.4 2.5 9.5 6.8"/>
+      <path d="M9 23C10.6 19.9 13.1 18.2 16 18.2s5.4 1.7 7 4.8"/>
+      <path d="M16 23v3.6"/>
     </g>
-    <text x="52" y="27" font-family="${SANS}" font-size="23" font-weight="600" fill="#ffffff" letter-spacing="-0.3">OpsCanopy</text>
+    <text x="52" y="27" font-family="${MONO}" font-size="22" font-weight="600" fill="#f4f1ea" letter-spacing="-0.3">OpsCanopy</text>
   </g>
 
   <g transform="translate(80,168)">
@@ -113,11 +113,11 @@ function toolOgSvg(tool) {
     <text x="22" y="0" font-family="${SANS}" font-size="20" font-weight="700" letter-spacing="2.5" fill="${dot}">${esc(tool.category.toUpperCase())}</text>
   </g>
 
-  <text font-family="${SANS}" font-weight="800" font-size="76" fill="#ffffff">${nameTspans}</text>
+  <text font-family="${SANS}" font-weight="800" font-size="76" fill="#f4f1ea">${nameTspans}</text>
 
-  <text x="80" y="${taglineY}" font-family="${SANS}" font-size="32" font-weight="500" fill="#a3a3a3">${esc(tagline)}</text>
+  <text x="80" y="${taglineY}" font-family="${SANS}" font-size="32" font-weight="500" fill="#b8b2a4">${esc(tagline)}</text>
 
-  <text x="80" y="572" font-family="${MONO}" font-size="22" fill="#737373">opscanopy.com/${esc(tool.slug)}</text>
+  <text x="80" y="572" font-family="${MONO}" font-size="22" fill="#8d887c">opscanopy.com/${esc(tool.slug)}</text>
 </svg>`;
 }
 

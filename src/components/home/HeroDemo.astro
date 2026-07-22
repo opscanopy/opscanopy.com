@@ -1,0 +1,468 @@
+---
+/**
+ * HeroDemo — the homepage's live "instrument slab": a real subnet calculator,
+ * not a screenshot. This is the product-forward thesis of the redesign — the
+ * imagery IS the working product.
+ *
+ * Progressive enhancement / LCP-safety: the seed CIDR is computed AT BUILD TIME
+ * (frontmatter, via the pure ip-core engine) and the full 7-row readout is
+ * server-rendered. No-JS visitors get a real, correct computation; the initial
+ * HTML paints it with zero layout shift. The client script only patches row
+ * VALUES via textContent (rows are never added/removed → CLS 0), so the engine
+ * import is pure enhancement.
+ *
+ * Dark-stable slab: renders on --color-inverse in BOTH themes (a plate in the
+ * manual). Demo strings are English in every locale (the established playground
+ * rule); only the tool computes.
+ */
+import {
+  parseCidr,
+  networkAddr,
+  lastAddr,
+  maskForPrefix,
+  addrCount,
+  formatAddr,
+  classify,
+  type Cidr,
+} from '../../lib/ip-core';
+
+interface Props {
+  /** Build-time seed CIDR (must parse, or the build throws — intentional). */
+  seed?: string;
+  class?: string;
+}
+const { seed = '10.20.0.0/22', class: className } = Astro.props;
+
+const V4_FULL = 0xffffffffn;
+
+/** Compute the seven-row readout for a CIDR (IPv4 rich; IPv6 compact). */
+function readout(c: Cidr) {
+  const net = networkAddr(c);
+  const last = lastAddr(c);
+  const total = addrCount(c);
+  const cls = classify(c.version, c.addr);
+  if (c.version === 4) {
+    const mask = maskForPrefix(4, c.prefix);
+    const wildcard = mask ^ V4_FULL;
+    const hostBits = 32 - c.prefix;
+    const usable = c.prefix >= 31 ? total : total - 2n;
+    const first = c.prefix >= 31 ? net : net + 1n;
+    const lastUsable = c.prefix >= 31 ? last : last - 1n;
+    return {
+      version: 4,
+      rows: [
+        formatAddr(4, net),
+        formatAddr(4, last),
+        formatAddr(4, mask),
+        formatAddr(4, wildcard),
+        `${formatAddr(4, first)} – ${formatAddr(4, lastUsable)}`,
+        usable.toLocaleString('en-US'),
+        cls,
+      ],
+      prefix: c.prefix,
+      usable: usable.toLocaleString('en-US'),
+    };
+  }
+  // IPv6 — compact valid readout; v4-only rows carry an em dash.
+  const sub64 = c.prefix <= 64 ? 1n << BigInt(64 - c.prefix) : 1n;
+  return {
+    version: 6,
+    rows: [
+      formatAddr(6, net),
+      formatAddr(6, last),
+      `/${c.prefix}`,
+      `2^${128 - c.prefix}`,
+      `${formatAddr(6, net)} – ${formatAddr(6, last)}`,
+      c.prefix <= 64 ? `${sub64.toLocaleString('en-US')} × /64` : '—',
+      cls,
+    ],
+    prefix: c.prefix,
+    usable: `2^${128 - c.prefix}`,
+  };
+}
+
+const seededCidr = parseCidr(seed);
+if (!seededCidr) throw new Error(`HeroDemo: seed CIDR "${seed}" does not parse`);
+const r = readout(seededCidr);
+
+// Fixed row scaffold. Each row carries BOTH label sets so the client can relabel
+// on a v4↔v6 switch via textContent without any client-side dictionary.
+const ROWS = [
+  { k: 'network', v4: 'Network', v6: 'Network' },
+  { k: 'last', v4: 'Broadcast', v6: 'Last address' },
+  { k: 'mask', v4: 'Netmask', v6: 'Prefix' },
+  { k: 'wildcard', v4: 'Wildcard', v6: 'Total addresses' },
+  { k: 'range', v4: 'Usable range', v6: 'Address range' },
+  { k: 'hosts', v4: 'Usable hosts', v6: '/64 subnets' },
+  { k: 'class', v4: 'Class', v6: 'Type' },
+];
+
+const chips = ['10.20.0.0/22', '192.168.1.0/24', '172.16.0.0/12'];
+---
+
+<div class:list={['hero-demo', className]} data-hero-demo data-version={r.version}>
+  <div class="hero-demo__cap">
+    <span class="hero-demo__dots" aria-hidden="true"><i></i><i></i><i></i></span>
+    <span class="hero-demo__fig">fig. 01 — subnet-calculator · networking</span>
+  </div>
+
+  <div class="hero-demo__body">
+    <label class="hero-demo__field">
+      <span class="hero-demo__label">CIDR</span>
+      <input
+        class="hero-demo__input"
+        type="text"
+        value={seed}
+        spellcheck="false"
+        autocomplete="off"
+        autocapitalize="off"
+        inputmode="text"
+        aria-label="IPv4 or IPv6 CIDR block"
+        data-hero-input
+      />
+    </label>
+
+    <div class="hero-demo__chips" role="group" aria-label="Examples">
+      {
+        chips.map((c, i) => (
+          <button type="button" class="hero-demo__chip" data-hero-chip={c} aria-pressed={i === 0 ? 'true' : 'false'}>
+            {c}
+          </button>
+        ))
+      }
+    </div>
+
+    <dl class="hero-demo__readout" data-hero-readout>
+      {
+        ROWS.map((row, i) => (
+          <div class="hero-demo__row">
+            <dt data-label-v4={row.v4} data-label-v6={row.v6}>{r.version === 4 ? row.v4 : row.v6}</dt>
+            <dd data-k={row.k}>{r.rows[i]}</dd>
+          </div>
+        ))
+      }
+    </dl>
+
+    <p class="hero-demo__annot" data-hero-annot>/{r.prefix} → {r.usable} usable hosts</p>
+
+    <div class="hero-demo__trust">
+      <span class="hero-demo__pulse" aria-hidden="true"></span>
+      <span>0 requests · computed locally · <span data-hero-status>computed</span></span>
+    </div>
+
+    <a class="hero-demo__more" href="/subnet-calculator/" data-hero-more>Open the full calculator →</a>
+  </div>
+</div>
+
+<style>
+  .hero-demo {
+    background: var(--color-inverse);
+    color: var(--color-inverse-fg);
+    border-radius: var(--radius-lg);
+    border: 1px solid #ffffff1f;
+    box-shadow: 0 24px 48px -24px #00000066, var(--shadow-hairline);
+    overflow: hidden;
+    width: 100%;
+    max-width: 30rem;
+  }
+  .hero-demo__cap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 14px;
+    border-bottom: 1px solid #ffffff1f;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: #b8b2a4;
+  }
+  .hero-demo__dots {
+    display: inline-flex;
+    gap: 6px;
+  }
+  .hero-demo__dots i {
+    width: 11px;
+    height: 11px;
+    border-radius: 9999px;
+    display: block;
+  }
+  .hero-demo__dots i:nth-child(1) { background: #e0685f; }
+  .hero-demo__dots i:nth-child(2) { background: #e0b23f; }
+  .hero-demo__dots i:nth-child(3) { background: #63c079; }
+  .hero-demo__fig { margin-left: auto; opacity: 0.85; }
+
+  .hero-demo__body { padding: 18px; }
+  .hero-demo__field { display: flex; align-items: center; gap: 10px; }
+  .hero-demo__label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: #b8b2a4;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .hero-demo__input {
+    flex: 1;
+    min-width: 0;
+    background: #00000033;
+    border: 1px solid #ffffff1f;
+    border-radius: var(--radius-sm);
+    color: var(--color-inverse-fg);
+    font-family: var(--font-mono);
+    font-size: 15px;
+    padding: 9px 11px;
+  }
+  .hero-demo__input:focus-visible {
+    outline: 2px solid #8fc97a;
+    outline-offset: 1px;
+    border-color: transparent;
+  }
+
+  .hero-demo__chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+  .hero-demo__chip {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: #b8b2a4;
+    background: #ffffff0d;
+    border: 1px solid #ffffff1f;
+    border-radius: var(--radius-pill);
+    padding: 6px 10px;
+    cursor: pointer;
+    transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+  }
+  .hero-demo__chip:hover { color: var(--color-inverse-fg); border-color: #ffffff40; }
+  .hero-demo__chip[aria-pressed='true'] {
+    background: #8fc97a1f;
+    border-color: #8fc97a80;
+    color: #8fc97a;
+  }
+  .hero-demo__chip:focus-visible { outline: 2px solid #8fc97a; outline-offset: 2px; }
+
+  .hero-demo__readout {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    margin: 16px 0 0;
+    border-top: 1px solid #ffffff1f;
+  }
+  .hero-demo__row { display: contents; }
+  .hero-demo__readout dt,
+  .hero-demo__readout dd {
+    padding: 8px 2px;
+    border-bottom: 1px solid #ffffff12;
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 13px;
+  }
+  .hero-demo__readout dt {
+    color: #b8b2a4;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+  }
+  .hero-demo__readout dd {
+    color: #8fc97a;
+    text-align: right;
+    font-feature-settings: 'tnum';
+    overflow-wrap: anywhere;
+  }
+  /* v4-only rows dim when showing an em dash under v6. */
+  .hero-demo[data-version='6'] .hero-demo__readout dd[data-empty] { color: #6f695d; }
+
+  .hero-demo__annot {
+    margin: 14px 0 0;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--color-accent-ink);
+  }
+  .hero-demo__annot::before {
+    content: '';
+    width: 16px;
+    height: 1px;
+    background: var(--color-accent-ink);
+    display: block;
+    flex: none;
+  }
+
+  .hero-demo__trust {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid #ffffff1f;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: #b8b2a4;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .hero-demo__pulse {
+    width: 7px;
+    height: 7px;
+    border-radius: 9999px;
+    background: #8fc97a;
+    flex: none;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .hero-demo__pulse { animation: hero-demo-pulse 2.6s ease-in-out infinite; }
+  }
+  @keyframes hero-demo-pulse {
+    0% { box-shadow: 0 0 0 0 #8fc97a66; }
+    70% { box-shadow: 0 0 0 7px #8fc97a00; }
+    100% { box-shadow: 0 0 0 0 #8fc97a00; }
+  }
+
+  .hero-demo__more {
+    display: inline-block;
+    margin-top: 14px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: #8fc97a;
+    text-decoration: none;
+  }
+  .hero-demo__more:hover { text-decoration: underline; }
+  .hero-demo[data-state='error'] .hero-demo__readout { opacity: 0.55; }
+</style>
+
+<script>
+  import {
+    parseCidr,
+    networkAddr,
+    lastAddr,
+    maskForPrefix,
+    addrCount,
+    formatAddr,
+    classify,
+    type Cidr,
+  } from '../../lib/ip-core';
+
+  const V4_FULL = 0xffffffffn;
+
+  function compute(c: Cidr): { rows: Record<string, string>; version: 4 | 6; prefix: number; usable: string } {
+    const net = networkAddr(c);
+    const last = lastAddr(c);
+    const total = addrCount(c);
+    const cls = classify(c.version, c.addr);
+    if (c.version === 4) {
+      const mask = maskForPrefix(4, c.prefix);
+      const wildcard = mask ^ V4_FULL;
+      const usable = c.prefix >= 31 ? total : total - 2n;
+      const first = c.prefix >= 31 ? net : net + 1n;
+      const lastUsable = c.prefix >= 31 ? last : last - 1n;
+      return {
+        version: 4,
+        prefix: c.prefix,
+        usable: usable.toLocaleString('en-US'),
+        rows: {
+          network: formatAddr(4, net),
+          last: formatAddr(4, last),
+          mask: formatAddr(4, mask),
+          wildcard: formatAddr(4, wildcard),
+          range: `${formatAddr(4, first)} – ${formatAddr(4, lastUsable)}`,
+          hosts: usable.toLocaleString('en-US'),
+          class: cls,
+        },
+      };
+    }
+    const sub64 = c.prefix <= 64 ? 1n << BigInt(64 - c.prefix) : 1n;
+    return {
+      version: 6,
+      prefix: c.prefix,
+      usable: `2^${128 - c.prefix}`,
+      rows: {
+        network: formatAddr(6, net),
+        last: formatAddr(6, last),
+        mask: `/${c.prefix}`,
+        wildcard: `2^${128 - c.prefix}`,
+        range: `${formatAddr(6, net)} – ${formatAddr(6, last)}`,
+        hosts: c.prefix <= 64 ? `${sub64.toLocaleString('en-US')} × /64` : '—',
+        class: cls,
+      },
+    };
+  }
+
+  function boot(): void {
+    const root = document.querySelector<HTMLElement>('[data-hero-demo]');
+    if (!root || root.dataset.booted) return;
+    root.dataset.booted = '1';
+
+    const input = root.querySelector<HTMLInputElement>('[data-hero-input]');
+    const chips = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-hero-chip]'));
+    const readoutEl = root.querySelector<HTMLElement>('[data-hero-readout]');
+    const annot = root.querySelector<HTMLElement>('[data-hero-annot]');
+    const status = root.querySelector<HTMLElement>('[data-hero-status]');
+    if (!input || !readoutEl) return;
+
+    const dds = new Map<string, HTMLElement>();
+    const dts = new Map<HTMLElement, HTMLElement>();
+    readoutEl.querySelectorAll<HTMLElement>('.hero-demo__row').forEach((row) => {
+      const dd = row.querySelector<HTMLElement>('dd');
+      const dt = row.querySelector<HTMLElement>('dt');
+      if (dd && dt) {
+        dds.set(dd.dataset.k ?? '', dd);
+        dts.set(dd, dt);
+      }
+    });
+
+    let errTimer: number | undefined;
+
+    function relabel(version: 4 | 6): void {
+      root!.dataset.version = String(version);
+      dds.forEach((dd) => {
+        const dt = dts.get(dd);
+        if (!dt) return;
+        const label = version === 4 ? dt.dataset.labelV4 : dt.dataset.labelV6;
+        if (label) dt.textContent = label;
+      });
+    }
+
+    function render(raw: string): void {
+      const c = parseCidr(raw);
+      if (!c) {
+        // Calm errors: hold last-good values, mark state after a short idle.
+        window.clearTimeout(errTimer);
+        errTimer = window.setTimeout(() => {
+          root!.dataset.state = 'error';
+          if (status) status.textContent = 'enter a valid CIDR';
+        }, 600);
+        return;
+      }
+      window.clearTimeout(errTimer);
+      delete root!.dataset.state;
+      const result = compute(c);
+      relabel(result.version);
+      for (const [k, v] of Object.entries(result.rows)) {
+        const dd = dds.get(k);
+        if (dd) {
+          dd.textContent = v;
+          if (v === '—') dd.setAttribute('data-empty', ''); else dd.removeAttribute('data-empty');
+        }
+      }
+      if (annot) annot.textContent = `/${result.prefix} → ${result.usable}${result.version === 4 ? ' usable hosts' : ' addresses'}`;
+      if (status) status.textContent = 'computed locally';
+    }
+
+    let debounce: number | undefined;
+    input.addEventListener('input', () => {
+      window.clearTimeout(debounce);
+      debounce = window.setTimeout(() => {
+        render(input.value);
+        syncChips(input.value.trim());
+      }, 120);
+    });
+
+    function syncChips(val: string): void {
+      chips.forEach((c) => c.setAttribute('aria-pressed', String(c.dataset.heroChip === val)));
+    }
+
+    chips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const v = chip.dataset.heroChip ?? '';
+        input.value = v;
+        render(v);
+        syncChips(v);
+      });
+    });
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

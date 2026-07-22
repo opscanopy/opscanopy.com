@@ -144,6 +144,8 @@ const fr: Partial<UiDict> = {
   'tools.availableNow': 'Disponibles maintenant',
   'tools.pinAdd': 'Épingler cet outil',
   'tools.pinRemove': 'Désépingler cet outil',
+  'tools.pinLabel': 'Épingler',
+  'tools.pinnedLabel': 'Épinglé',
   'tools.yourTools': 'Vos outils',
   'tools.jumpBackIn': 'Reprenez où vous en étiez',
   'tools.jumpBackInCaption': 'Outils épinglés et récemment utilisés — enregistrés uniquement dans ce navigateur.',

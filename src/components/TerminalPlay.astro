@@ -1,0 +1,227 @@
+---
+/**
+ * TerminalPlay — a non-interactive animated terminal transcript.
+ *
+ * The FULL transcript is server-rendered in <pre><code> (so it is simultaneously
+ * the no-JS state, the prefers-reduced-motion final frame, the print state, and
+ * Pagefind-indexed content). On the client, if motion is allowed, an
+ * IntersectionObserver "types" the command lines out char-by-char and reveals
+ * output lines in sequence; a Replay control appears on completion.
+ *
+ * This is the lightweight sibling of MissionTerminal.astro (the interactive sim)
+ * — do not confuse the two. Pass a raw `transcript` string (auto-classified) or
+ * pre-built `lines`.
+ */
+import { parseTranscript, splitPrompt, type TranscriptLine } from '../lib/terminal-play';
+
+interface Props {
+  transcript?: string;
+  lines?: TranscriptLine[];
+  /** Mono caption in the chrome bar, e.g. "mission: server-down". */
+  title?: string;
+  /** Typing speed for command lines, chars/sec. */
+  speed?: number;
+  /** Show a Replay control after the animation completes (default true). */
+  replay?: boolean;
+  class?: string;
+}
+const { transcript, lines: linesProp, title, speed = 32, replay = true, class: className } = Astro.props;
+const lines: TranscriptLine[] = linesProp ?? (transcript ? parseTranscript(transcript) : []);
+// Pre-split in frontmatter so the template uses only concise-arrow expressions
+// (a block-body arrow inside Astro markup leaks literal braces into the output).
+const rendered = lines.map((l) => {
+  const { prompt, command } = splitPrompt(l.text);
+  return { kind: l.kind, prompt, command, full: l.text };
+});
+---
+
+<div class:list={['termplay', className]} data-termplay data-speed={speed} data-replay={replay ? '1' : '0'}>
+  {
+    title && (
+      <div class="termplay__cap">
+        <span class="termplay__dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="termplay__title">{title}</span>
+      </div>
+    )
+  }
+  <pre class="termplay__pre"><code>{rendered.map((l) => (
+    <span class="termplay__line" data-kind={l.kind} data-cmd={l.kind === 'cmd' ? l.command : undefined}>{l.kind === 'cmd' && l.prompt ? <span class="termplay__prompt">{l.prompt}</span> : null}<span class="termplay__text">{l.kind === 'cmd' ? l.command : l.full}</span></span>
+  ))}</code></pre>
+  {
+    replay && (
+      <button type="button" class="termplay__replay" data-termplay-replay hidden>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+        Replay
+      </button>
+    )
+  }
+</div>
+
+<style>
+  .termplay {
+    background: var(--color-inverse);
+    color: var(--color-inverse-fg);
+    border-radius: var(--radius-lg);
+    border: 1px solid #ffffff1f;
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+    position: relative;
+  }
+  .termplay__cap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 14px;
+    border-bottom: 1px solid #ffffff1f;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: #b8b2a4;
+  }
+  .termplay__dots { display: inline-flex; gap: 6px; }
+  .termplay__dots i { width: 11px; height: 11px; border-radius: 9999px; display: block; }
+  .termplay__dots i:nth-child(1) { background: #e0685f; }
+  .termplay__dots i:nth-child(2) { background: #e0b23f; }
+  .termplay__dots i:nth-child(3) { background: #63c079; }
+
+  .termplay__pre {
+    margin: 0;
+    padding: 16px 18px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.75;
+    color: #b8b2a4;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  /* Each line is a block span; hiding it (opacity) keeps its box so height never
+     shifts. Empty lines keep height via min-height. */
+  .termplay__line { display: block; min-height: 1.75em; }
+  .termplay__line[data-kind='cmd'] .termplay__text { color: var(--color-inverse-fg); }
+  .termplay__prompt { color: #8fc97a; }
+  .termplay__line[data-kind='note'] .termplay__text { color: var(--color-accent-ink); font-style: italic; }
+
+  /* Armed (motion allowed, not yet played): hide lines but hold their height so
+     revealing them causes ZERO layout shift. Never display:none. */
+  .termplay[data-armed] .termplay__line { opacity: 0; }
+  .termplay[data-armed] .termplay__line[data-shown] { opacity: 1; }
+  .termplay__cursor {
+    display: inline-block;
+    width: 8px;
+    height: 1em;
+    margin-left: 1px;
+    background: #8fc97a;
+    vertical-align: -2px;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .termplay__cursor { animation: termplay-blink 1s steps(1) infinite; }
+  }
+  @keyframes termplay-blink { 50% { opacity: 0; } }
+
+  .termplay__replay {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: #b8b2a4;
+    background: #ffffff0d;
+    border: 1px solid #ffffff1f;
+    border-radius: var(--radius-sm);
+    padding: 5px 9px;
+    cursor: pointer;
+  }
+  .termplay__replay:hover { color: var(--color-inverse-fg); border-color: #ffffff40; }
+  .termplay__replay:focus-visible { outline: 2px solid #8fc97a; outline-offset: 2px; }
+</style>
+
+<script>
+  function bootOne(root: HTMLElement): void {
+    if (root.dataset.booted) return;
+    root.dataset.booted = '1';
+
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) return; // full transcript already server-rendered — leave it.
+
+    const pre = root.querySelector<HTMLElement>('.termplay__pre');
+    const lines = Array.from(root.querySelectorAll<HTMLElement>('.termplay__line'));
+    const replayBtn = root.querySelector<HTMLButtonElement>('[data-termplay-replay]');
+    if (!pre || lines.length === 0) return;
+
+    const speed = Number(root.dataset.speed || '32');
+    const charMs = Math.max(8, Math.round(1000 / speed));
+
+    // Snapshot the command text of each cmd line, then arm (hide) everything.
+    const cmdText = new Map<HTMLElement, string>();
+    lines.forEach((line) => {
+      if (line.dataset.kind === 'cmd') {
+        const t = line.querySelector<HTMLElement>('.termplay__text');
+        if (t) cmdText.set(line, t.textContent ?? '');
+      }
+    });
+
+    let timers: number[] = [];
+    const clearTimers = () => { timers.forEach((t) => window.clearTimeout(t)); timers = []; };
+    const at = (ms: number, fn: () => void) => { timers.push(window.setTimeout(fn, ms)); };
+
+    let cursor: HTMLElement | null = null;
+    const placeCursor = (line: HTMLElement) => {
+      if (!cursor) { cursor = document.createElement('span'); cursor.className = 'termplay__cursor'; cursor.setAttribute('aria-hidden', 'true'); }
+      line.appendChild(cursor);
+    };
+
+    function play(): void {
+      clearTimers();
+      root.dataset.armed = '1';
+      if (replayBtn) replayBtn.hidden = true;
+      // reset
+      lines.forEach((line) => {
+        line.removeAttribute('data-shown');
+        if (line.dataset.kind === 'cmd') {
+          const t = line.querySelector<HTMLElement>('.termplay__text');
+          if (t) t.textContent = '';
+        }
+      });
+
+      let clock = 0;
+      lines.forEach((line) => {
+        const kind = line.dataset.kind;
+        if (kind === 'cmd') {
+          const full = cmdText.get(line) ?? '';
+          at(clock, () => { line.setAttribute('data-shown', ''); placeCursor(line); });
+          const textEl = line.querySelector<HTMLElement>('.termplay__text');
+          for (let i = 1; i <= full.length; i++) {
+            at(clock + i * charMs, () => { if (textEl) textEl.textContent = full.slice(0, i); });
+          }
+          clock += full.length * charMs + 340; // pause after a command
+        } else {
+          at(clock, () => { line.setAttribute('data-shown', ''); });
+          clock += kind === 'note' ? 500 : 90; // notes linger; output streams
+        }
+      });
+
+      at(clock + 200, () => {
+        if (cursor && cursor.parentElement) cursor.parentElement.removeChild(cursor);
+        cursor = null;
+        if (replayBtn && root.dataset.replay === '1') replayBtn.hidden = false;
+      });
+    }
+
+    if (replayBtn) replayBtn.addEventListener('click', play);
+
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (e.isIntersecting) { io.disconnect(); play(); }
+      }
+    }, { threshold: 0.35 });
+    io.observe(root);
+  }
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>('[data-termplay]').forEach(bootOne);
+  }
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

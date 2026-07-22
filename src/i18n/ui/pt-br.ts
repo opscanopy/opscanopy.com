@@ -143,6 +143,8 @@ const ptBr: Partial<UiDict> = {
   'tools.availableNow': 'Disponíveis agora',
   'tools.pinAdd': 'Fixar esta ferramenta',
   'tools.pinRemove': 'Desafixar esta ferramenta',
+  'tools.pinLabel': 'Fixar',
+  'tools.pinnedLabel': 'Fixado',
   'tools.yourTools': 'Suas ferramentas',
   'tools.jumpBackIn': 'Continue de onde parou',
   'tools.jumpBackInCaption': 'Ferramentas fixadas e usadas recentemente — salvas apenas neste navegador.',
