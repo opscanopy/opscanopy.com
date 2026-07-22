@@ -31,12 +31,12 @@ const W = 1200;
 const H = 630;
 
 /* Brand tokens */
-const INK = '#171717';
-const BODY = '#4d4d4d';
-const MUTE = '#888888';
-const CANVAS = '#ffffff';
-const CANVAS_SOFT = '#fafafa';
-const HAIRLINE = '#ebebeb';
+const INK = '#211e19';
+const BODY = '#524f48';
+const MUTE = '#7a7568';
+const CANVAS = '#fdfcfa';
+const CANVAS_SOFT = '#f7f5f0';
+const HAIRLINE = '#e6e1d6';
 
 /* Robust system font stack so glyphs rasterize even without Geist installed. */
 const FONT_STACK =
@@ -130,47 +130,47 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" 
       <stop offset="1" stop-color="${CANVAS_SOFT}"/>
     </linearGradient>
 
-    <!-- Canopy mark gradient (matches favicon) -->
+    <!-- Canopy mark gradient (matches favicon) — leaf. -->
     <linearGradient id="oc-canopy" x1="4" y1="7" x2="28" y2="16" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#7928ca"/>
-      <stop offset="1" stop-color="#ff0080"/>
+      <stop offset="0" stop-color="#4a8c3f"/>
+      <stop offset="1" stop-color="#33652c"/>
     </linearGradient>
 
-    <!-- Mesh gradient stops, each as a soft radial light. Hero scale, ambient. -->
+    <!-- Ambient wash — a restrained warm green/amber field (no rainbow mesh). -->
     <radialGradient id="g-blue" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
       gradientTransform="translate(360 70) scale(420)">
-      <stop offset="0" stop-color="#007cf0" stop-opacity="0.55"/>
-      <stop offset="1" stop-color="#007cf0" stop-opacity="0"/>
+      <stop offset="0" stop-color="#4a8c3f" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#4a8c3f" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="g-teal" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
       gradientTransform="translate(880 60) scale(440)">
-      <stop offset="0" stop-color="#00dfd8" stop-opacity="0.55"/>
-      <stop offset="1" stop-color="#00dfd8" stop-opacity="0"/>
+      <stop offset="0" stop-color="#8fc97a" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#8fc97a" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="g-violet" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
       gradientTransform="translate(1080 230) scale(440)">
-      <stop offset="0" stop-color="#7928ca" stop-opacity="0.50"/>
-      <stop offset="1" stop-color="#7928ca" stop-opacity="0"/>
+      <stop offset="0" stop-color="#33652c" stop-opacity="0.24"/>
+      <stop offset="1" stop-color="#33652c" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="g-pink" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
       gradientTransform="translate(1150 70) scale(420)">
-      <stop offset="0" stop-color="#ff0080" stop-opacity="0.50"/>
-      <stop offset="1" stop-color="#ff0080" stop-opacity="0"/>
+      <stop offset="0" stop-color="#a8721f" stop-opacity="0.24"/>
+      <stop offset="1" stop-color="#a8721f" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="g-coral" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
       gradientTransform="translate(640 -40) scale(420)">
-      <stop offset="0" stop-color="#ff4d4d" stop-opacity="0.42"/>
-      <stop offset="1" stop-color="#ff4d4d" stop-opacity="0"/>
+      <stop offset="0" stop-color="#4a8c3f" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="#4a8c3f" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="g-amber" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
       gradientTransform="translate(980 -20) scale(400)">
-      <stop offset="0" stop-color="#f9cb28" stop-opacity="0.45"/>
-      <stop offset="1" stop-color="#f9cb28" stop-opacity="0"/>
+      <stop offset="0" stop-color="#e0a458" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#e0a458" stop-opacity="0"/>
     </radialGradient>
 
-    <!-- Soft fade so the mesh dissolves into canvas in the lower-left text zone -->
+    <!-- Soft fade so the wash dissolves into canvas in the lower-left text zone -->
     <linearGradient id="mesh-fade" x1="0" y1="0" x2="0" y2="${H}" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="0" stop-color="${CANVAS}" stop-opacity="0"/>
       <stop offset="0.62" stop-color="${CANVAS}" stop-opacity="0.55"/>
       <stop offset="1" stop-color="${CANVAS}" stop-opacity="0.92"/>
     </linearGradient>
@@ -212,10 +212,10 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" 
   <text x="96" y="438" font-family="${FONT_STACK}"
     font-size="34" font-weight="400" fill="${BODY}">for platform &amp; DevOps engineers.</text>
 
-  <!-- "Featuring AlertLint" chip — canvas pill with hairline ring -->
+  <!-- "Featuring AlertLint" chip — squared canvas tag with hairline ring -->
   <g transform="translate(96,498)">
-    <rect x="0" y="0" width="312" height="50" rx="25" fill="${CANVAS}" stroke="${HAIRLINE}" stroke-width="1.5"/>
-    <circle cx="34" cy="25" r="5" fill="#00dfd8"/>
+    <rect x="0" y="0" width="312" height="50" rx="6" fill="${CANVAS}" stroke="${HAIRLINE}" stroke-width="1.5"/>
+    <circle cx="34" cy="25" r="5" fill="#4a8c3f"/>
     <text x="56" y="33" font-family="${FONT_STACK}" font-size="20" font-weight="500" fill="${INK}">Featuring AlertLint</text>
   </g>
 
