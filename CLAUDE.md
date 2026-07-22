@@ -47,11 +47,13 @@ Most pages use `<Shell title=… description=… canonical=… jsonLd=…>`. JSO
 
 All design tokens live in the `@theme` block at the top of **`src/styles/global.css`**. Tailwind utilities (`text-ink`, `bg-canvas`, `text-brand`, etc.) are generated from these custom properties. **Never redefine tokens outside this file.**
 
-Key brand tokens:
-- `--color-brand: #10b981` (emerald fill, logo mark)
-- `--color-brand-strong: #047857` (AA-safe text/link on light)
-- `--color-link`, `--color-success` are also emerald
-- `--color-inverse / --color-inverse-fg` — dark-stable surface for code blocks and accent bands (dark in both themes)
+Brand is the **"Field Manual"** system: warm-paper light theme / warm-charcoal dark theme, IBM Plex superfamily (Sans variable + Mono 400/500/600), leaf-green brand used as *ink not area*, amber annotation ink, squared radii, flat shadows, dark-stable "instrument slabs". Key brand tokens:
+- `--color-brand: #4a8c3f` light / `#8fc97a` dark (leaf — graphic/fill tier; **never place white text on it**, use `brand-strong`)
+- `--color-brand-strong: #33652c` light / `#8fc97a` dark (AA-safe text/link; the only green for white-on-green)
+- `--color-link`, `--color-success` ride brand-strong; `--color-accent-ink` (`#a85a06` / `#e0a458`) is the amber annotation/callout/figure-number ink (decoupled from `--color-warning*`)
+- `--color-card` — near-white card fill (`#fffdf9` light) that lifts cards off the cream canvas
+- `--color-inverse / --color-inverse-fg` — dark-stable instrument-slab surface for demos, terminals, code blocks and accent bands (dark in BOTH themes)
+- Radii are squared (`--radius-pill: 6px`); depth is flat (inset-ring shadows). `src/lib/contrast.test.ts` is the palette gate — run `npm run test` after any token edit.
 
 ### Light/dark theming
 
@@ -75,7 +77,7 @@ Engines are dynamically imported inside the boot closure so the heavy logic code
 
 New or reworked playgrounds should follow the conventions these three tools share:
 
-- **Example chips**, not a `<select>` — pill buttons (canvas bg, hairline shadow, brand-strong text; active = brand-soft bg + inset brand ring), 44px min-height on `(pointer: coarse)`.
+- **Example chips**, not a `<select>` — squared chips at `var(--radius-pill)` (6px, the Field Manual radius — not fully-round pills; canvas bg, hairline shadow, brand-strong text; active = brand-soft bg + inset brand ring), 44px min-height on `(pointer: coarse)`.
 - **Live eval + Enter**: single ~130–220ms debounce and the exact hint line "Results update as you type — press Enter to run now." Enter forces an immediate eval (in a textarea, let the newline insert and flush via `setTimeout(evaluate, 0)`; Ctrl/⌘+Enter runs+blurs).
 - **Calm errors**: never flash a red border mid-composition — hold the error until ~600ms idle, blur, or Enter, and return *specific* diagnostics from the engine ("Octet 256 is greater than 255."), not a generic "invalid".
 - **Glossary = muted caption** under the jargon term/title (works on touch, SR-visible, zero JS) — no tooltips.

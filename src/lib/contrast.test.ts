@@ -214,6 +214,17 @@ describe('WCAG AA contrast — light theme tokens', () => {
   it('link color on canvas >= 4.5:1 (AA)', () => {
     assertContrast(light['--color-link'], canvas(), 4.5, 'light: link on canvas');
   });
+
+  // Field-Manual additions: amber annotation ink must be legible as text on the
+  // warm canvas, and the dark "instrument slab" (inverse surface, rendered in
+  // BOTH themes) must carry legible body/heading text.
+  it('accent-ink (amber) on canvas >= 4.5:1 (AA)', () => {
+    assertContrast(light['--color-accent-ink'], canvas(), 4.5, 'light: accent-ink on canvas');
+  });
+
+  it('inverse-fg on inverse slab >= 4.5:1 (AA, dark slab in light theme)', () => {
+    assertContrast(light['--color-inverse-fg'], light['--color-inverse'], 4.5, 'light: inverse-fg on inverse');
+  });
 });
 
 describe('WCAG AA contrast — dark theme tokens', () => {
@@ -248,5 +259,13 @@ describe('WCAG AA contrast — dark theme tokens', () => {
 
   it('link color on canvas >= 4.5:1 (AA)', () => {
     assertContrast(dark['--color-link'], canvas(), 4.5, 'dark: link on canvas');
+  });
+
+  it('accent-ink (amber) on canvas >= 4.5:1 (AA)', () => {
+    assertContrast(dark['--color-accent-ink'], canvas(), 4.5, 'dark: accent-ink on canvas');
+  });
+
+  it('inverse-fg on inverse slab >= 4.5:1 (AA)', () => {
+    assertContrast(dark['--color-inverse-fg'], dark['--color-inverse'], 4.5, 'dark: inverse-fg on inverse');
   });
 });
