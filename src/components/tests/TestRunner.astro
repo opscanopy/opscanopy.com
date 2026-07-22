@@ -18,6 +18,8 @@
  * of the script; the grading engine is DYNAMICALLY imported inside the submit
  * closure so it code-splits away from the page shell.
  */
+import { selectCount, isMulti } from '../../lib/tests/engine';
+
 export interface Props {
   categorySlug: string;
   testSlug: string;
@@ -42,20 +44,24 @@ const total = questions.length;
 const letter = (i: number) => String.fromCharCode(65 + i);
 
 // Per-question derived view-model (single vs multi, scenario split, tick shape).
-const view = questions.map((q) => {
-  const selectCount = new Set(q.correctAnswers).size;
-  const multi = selectCount > 1;
-  return {
-    ...q,
-    selectCount,
-    multi,
-    scenario: q.prompt.slice(0, -1),
-    legend: q.prompt[q.prompt.length - 1] ?? '',
-  };
-});
+// selectCount/isMulti come from the engine so the "Select N" + single/multi
+// decision has a single source of truth.
+const view = questions.map((q) => ({
+  ...q,
+  selectCount: selectCount(q.correctAnswers),
+  multi: isMulti(q.correctAnswers),
+  scenario: q.prompt.slice(0, -1),
+  legend: q.prompt[q.prompt.length - 1] ?? '',
+}));
 
-// Inline tick + check + x SVG inner-markup (reused across taking + review).
+// Inline option-tick markup (16×16, reused across the taking + review options).
 const TICK = '<path d="M4 8.4 6.8 11.2 12 5" />';
+// 24×24 status icons reused across the results banner, review chips, and answer
+// tags — one literal each so the pass/fail glyphs never drift out of sync.
+const CHECK_ICON =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>';
+const CROSS_ICON =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>';
 ---
 
 <div
@@ -169,12 +175,8 @@ const TICK = '<path d="M4 8.4 6.8 11.2 12 5" />';
         <div class="min-w-0 flex-1">
           <p class="eyebrow text-mute" data-result-eyebrow>{testName}</p>
           <div class="mt-2 flex items-center gap-2.5">
-            <span class="tr-result-icon" data-pass-icon hidden>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
-            </span>
-            <span class="tr-result-icon is-fail" data-fail-icon hidden>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
-            </span>
+            <span class="tr-result-icon" data-pass-icon hidden set:html={CHECK_ICON} />
+            <span class="tr-result-icon is-fail" data-fail-icon hidden set:html={CROSS_ICON} />
             <h1 class="display-md text-ink" data-result-heading>Results</h1>
           </div>
           <p class="body-md text-body text-pretty mt-3" data-result-body></p>
@@ -211,11 +213,11 @@ const TICK = '<path d="M4 8.4 6.8 11.2 12 5" />';
                 <div class="flex items-center justify-between gap-3">
                   <p class="badge-mono text-mute">Question {qi + 1}</p>
                   <span class="badge tr-chip is-correct" data-chip-correct hidden>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+                    <Fragment set:html={CHECK_ICON} />
                     Correct
                   </span>
                   <span class="badge tr-chip is-wrong" data-chip-wrong hidden>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                    <Fragment set:html={CROSS_ICON} />
                     Incorrect
                   </span>
                 </div>
@@ -229,11 +231,11 @@ const TICK = '<path d="M4 8.4 6.8 11.2 12 5" />';
                       <span class="tr-key" aria-hidden="true">{letter(oi)}</span>
                       <span class="tr-text body-sm text-pretty">{opt}</span>
                       <span class="tr-tag" data-tag-correct hidden>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+                        <Fragment set:html={CHECK_ICON} />
                         Correct answer
                       </span>
                       <span class="tr-tag" data-tag-yours hidden>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                        <Fragment set:html={CROSS_ICON} />
                         Your answer
                       </span>
                     </div>
@@ -557,6 +559,9 @@ const TICK = '<path d="M4 8.4 6.8 11.2 12 5" />';
     PROGRESS_KEY,
   } from '../../lib/tests/progress';
   import { testKey } from '../../data/tests';
+  // Type-only import: erased at build, so the engine's runtime code stays
+  // dynamically imported (code-split) inside submit().
+  import type { TestResult } from '../../lib/tests/engine';
 
   function initTestRunner(): void {
     document
@@ -715,16 +720,7 @@ const TICK = '<path d="M4 8.4 6.8 11.2 12 5" />';
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
-    function renderResults(
-      result: {
-        graded: { questionId: string; selected: number[]; correct: number[]; isCorrect: boolean }[];
-        total: number;
-        correctCount: number;
-        scorePct: number;
-        passed: boolean;
-      },
-      oldBest: number | undefined,
-    ): void {
+    function renderResults(result: TestResult, oldBest: number | undefined): void {
       const q = (sel: string) => resultsPhase.querySelector<HTMLElement>(sel)!;
 
       q('[data-score-pct]').textContent = String(result.scorePct);
