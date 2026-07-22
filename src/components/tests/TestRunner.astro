@@ -232,7 +232,7 @@ const CROSS_ICON =
                       <span class="tr-text body-sm text-pretty">{opt}</span>
                       <span class="tr-tag" data-tag-correct hidden>
                         <Fragment set:html={CHECK_ICON} />
-                        Correct answer
+                        <span data-tag-label>Correct answer</span>
                       </span>
                       <span class="tr-tag" data-tag-yours hidden>
                         <Fragment set:html={CROSS_ICON} />
@@ -326,6 +326,12 @@ const CROSS_ICON =
     height: 1px;
     opacity: 0;
     pointer-events: none;
+  }
+  /* The native control is visually hidden, so mirror its keyboard focus ring
+     onto the label chrome (matches .card-interactive:has(a:focus-visible)). */
+  .tr-opt:has(.tr-input:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 2px;
   }
   .tr-dot {
     position: relative;
@@ -442,6 +448,11 @@ const CROSS_ICON =
   }
   .tr-opt.is-wrong .tr-tag {
     color: var(--color-error-deep);
+  }
+  /* Correct option the learner actually selected — reinforce with a stronger
+     ring so it reads distinctly from a correct option they missed. */
+  .tr-opt.is-correct.is-picked {
+    box-shadow: inset 0 0 0 1px var(--color-success);
   }
 
   /* ---- Results banner + score ring ---- */
@@ -596,6 +607,9 @@ const CROSS_ICON =
     /** questionId → selected indices (in-memory only; never persisted). */
     const submission: Record<string, number[]> = Object.create(null);
     let current = 0;
+    /** Synchronous re-entrancy guard so rapid double-clicks can't record two
+        attempts while the dynamic engine import is awaited. */
+    let submitting = false;
 
     function isLast(): boolean {
       return current === total - 1;
@@ -697,6 +711,14 @@ const CROSS_ICON =
 
     // ── Submit / grade ──
     async function submit(): Promise<void> {
+      // Synchronous guard: bail if a submission is already in flight so two
+      // quick Submit clicks don't each record an attempt.
+      if (submitting) return;
+      submitting = true;
+      // Disable the button immediately (before the awaited import) so it can't
+      // be clicked again until we switch to the results phase.
+      nextBtn.disabled = true;
+
       // Read the OLD best BEFORE recording so "New best score!" is accurate.
       let oldBest: number | undefined;
       try {
@@ -743,7 +765,7 @@ const CROSS_ICON =
         : 'Not passed — keep practicing';
       const body = q('[data-result-body]');
       if (result.passed) {
-        body.textContent = `You scored above the ${passThreshold}% pass mark for this test.`;
+        body.textContent = `You scored at or above the ${passThreshold}% pass mark for this test.`;
       } else {
         const away = passThreshold - result.scorePct;
         body.textContent = `You need ${passThreshold}% to pass. You're ${away} point${away === 1 ? '' : 's'} away — review the misses below and retake.`;
@@ -774,14 +796,26 @@ const CROSS_ICON =
           const oi = Number(opt.dataset.oi);
           const isCorrect = correctSet.has(oi);
           const isSelected = selectedSet.has(oi);
-          opt.classList.remove('is-correct', 'is-wrong');
+          opt.classList.remove('is-correct', 'is-wrong', 'is-picked');
           const tagCorrect = opt.querySelector<HTMLElement>('[data-tag-correct]')!;
           const tagYours = opt.querySelector<HTMLElement>('[data-tag-yours]')!;
+          const tagLabel = tagCorrect.querySelector<HTMLElement>('[data-tag-label]')!;
           tagCorrect.hidden = true;
           tagYours.hidden = true;
+          // Correctness and selection are applied INDEPENDENTLY so the three
+          // review states are each visually + textually distinct:
+          //   1. selected + correct  → green box, "Correct — your answer"
+          //   2. missed  + correct   → green box, "Correct — you missed this"
+          //   3. selected + wrong    → red box,   "Your answer"
           if (isCorrect) {
             opt.classList.add('is-correct');
             tagCorrect.hidden = false;
+            if (isSelected) {
+              opt.classList.add('is-picked');
+              tagLabel.textContent = 'Correct — your answer';
+            } else {
+              tagLabel.textContent = 'Correct — you missed this';
+            }
           } else if (isSelected) {
             // A selected option that is NOT correct → the learner's wrong pick.
             opt.classList.add('is-wrong');
@@ -811,7 +845,7 @@ const CROSS_ICON =
           input.disabled = false;
         });
         fs.querySelectorAll<HTMLElement>('.tr-opt').forEach((opt) => {
-          opt.classList.remove('is-selected', 'is-correct', 'is-wrong', 'is-disabled');
+          opt.classList.remove('is-selected', 'is-correct', 'is-wrong', 'is-picked', 'is-disabled');
         });
         const selectCounter = fs.querySelector<HTMLElement>('[data-select-counter]');
         if (selectCounter) {
@@ -819,6 +853,9 @@ const CROSS_ICON =
           selectCounter.textContent = `0 of ${correct.length} selected`;
         }
       });
+      // Reset the submit guard so the next Submit works.
+      submitting = false;
+      nextBtn.disabled = false;
       resultsPhase.hidden = true;
       takingPhase.hidden = false;
       showQuestion(0);
