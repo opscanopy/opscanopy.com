@@ -1,0 +1,880 @@
+---
+/**
+ * TestRunner — the interactive Practice-Tests island.
+ *
+ * Renders BOTH phases server-side (Astro auto-escapes all author text — no
+ * question/option/explanation string is ever built via innerHTML):
+ *   - a "taking" view (one question per screen, Back/Next, Submit on the last),
+ *   - a "results" view (score ring, pass/fail banner, full per-question review),
+ * both present in the DOM at load; the <script> only shows/hides phases,
+ * collects selections, grades (dynamic engine import), toggles review classes,
+ * and writes numeric summary strings.
+ *
+ * Option visual language extends M90DayCheck's .m90dc-opt/.m90dc-dot (radio =
+ * circle dot, checkbox = rounded-square dot), plus a pre-submit `is-selected`
+ * state and post-grade `is-correct`/`is-wrong` states — see the <style> block.
+ *
+ * Import strategy (per plan): progress module is STATICALLY imported at the top
+ * of the script; the grading engine is DYNAMICALLY imported inside the submit
+ * closure so it code-splits away from the page shell.
+ */
+import { selectCount, isMulti } from '../../lib/tests/engine';
+
+export interface Props {
+  categorySlug: string;
+  testSlug: string;
+  testName: string;
+  /** '/tests/<category>/' — the Back-to-category action target. */
+  categoryHref: string;
+  passThreshold: number;
+  questions: {
+    id: string;
+    /** Paragraph array; last entry = the concise question sentence. */
+    prompt: string[];
+    options: string[];
+    correctAnswers: number[];
+    explanation: string;
+  }[];
+}
+
+const { categorySlug, testSlug, testName, categoryHref, passThreshold, questions } =
+  Astro.props;
+
+const total = questions.length;
+const letter = (i: number) => String.fromCharCode(65 + i);
+
+// Per-question derived view-model (single vs multi, scenario split, tick shape).
+// selectCount/isMulti come from the engine so the "Select N" + single/multi
+// decision has a single source of truth.
+const view = questions.map((q) => ({
+  ...q,
+  selectCount: selectCount(q.correctAnswers),
+  multi: isMulti(q.correctAnswers),
+  scenario: q.prompt.slice(0, -1),
+  legend: q.prompt[q.prompt.length - 1] ?? '',
+}));
+
+// Inline option-tick markup (16×16, reused across the taking + review options).
+const TICK = '<path d="M4 8.4 6.8 11.2 12 5" />';
+// 24×24 status icons reused across the results banner, review chips, and answer
+// tags — one literal each so the pass/fail glyphs never drift out of sync.
+const CHECK_ICON =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>';
+const CROSS_ICON =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>';
+---
+
+<div
+  class="tr"
+  data-test-runner
+  data-category={categorySlug}
+  data-test={testSlug}
+  data-pass-threshold={passThreshold}
+>
+  {/* ─────────────────────────── TAKING VIEW ─────────────────────────── */}
+  <div data-phase="taking">
+    <div class="mt-1">
+      <div class="flex items-baseline justify-between gap-3">
+        <p class="eyebrow text-mute" data-q-counter>Question 1 of {total}</p>
+        <p class="badge-mono text-mute" data-pct-label>0% complete</p>
+      </div>
+      <div
+        class="tr-bar mt-2.5"
+        role="progressbar"
+        aria-valuemin="0"
+        aria-valuemax={total}
+        aria-valuenow="0"
+        data-bar
+      >
+        <span class="tr-bar-fill" style="width:0%" data-bar-fill></span>
+      </div>
+    </div>
+
+    {
+      view.map((q, qi) => (
+        <fieldset
+          class="card tr-card mt-6"
+          data-q
+          data-qid={q.id}
+          data-correct={JSON.stringify(q.correctAnswers)}
+          aria-describedby={q.scenario.length > 0 ? `tr-scenario-${q.id}` : undefined}
+          hidden={qi !== 0}
+        >
+          {q.scenario.length > 0 && (
+            <div id={`tr-scenario-${q.id}`} class="tr-scenario">
+              {q.scenario.map((para) => (
+                <p class="body-md text-body text-pretty">{para}</p>
+              ))}
+            </div>
+          )}
+          <legend class="body-md font-semibold text-ink text-pretty tr-legend">
+            {q.legend}
+          </legend>
+
+          <div class="mt-4 flex flex-wrap gap-1.5">
+            {q.multi ? (
+              <>
+                <span class="badge tr-badge-select">Select {q.selectCount}</span>
+                <span class="badge badge-mono" role="status" data-select-counter>
+                  0 of {q.selectCount} selected
+                </span>
+              </>
+            ) : (
+              <span class="badge badge-mono">Choose one answer</span>
+            )}
+          </div>
+
+          <div
+            class="mt-4 flex flex-col gap-3"
+            role={q.multi ? 'group' : 'radiogroup'}
+            aria-label="Answer options"
+          >
+            {q.options.map((opt, oi) => (
+              <label class="tr-opt">
+                <input
+                  class="tr-input"
+                  type={q.multi ? 'checkbox' : 'radio'}
+                  name={`tr-${q.id}`}
+                  value={oi}
+                />
+                <span class:list={['tr-dot', q.multi ? 'square' : 'round']} aria-hidden="true">
+                  <svg class="tr-tick" viewBox="0 0 16 16" fill="none" set:html={TICK} />
+                </span>
+                <span class="tr-key" aria-hidden="true">{letter(oi)}</span>
+                <span class="tr-text body-md text-pretty">{opt}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      ))
+    }
+
+    <div class="mt-6 flex items-center justify-between gap-3">
+      <button type="button" class="btn btn-secondary" data-prev>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+        Previous
+      </button>
+      <span class="body-sm text-mute code-mono">{testName} · {total} questions</span>
+      <button type="button" class="btn btn-primary" data-next>
+        <span data-next-label>Next</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-next-icon><path d="m9 18 6-6-6-6" /></svg>
+      </button>
+    </div>
+  </div>
+
+  {/* ─────────────────────────── RESULTS VIEW ─────────────────────────── */}
+  <div data-phase="results" hidden>
+    <div class="card tr-banner mt-1" data-banner>
+      <div class="flex flex-wrap items-center gap-7">
+        <div class="tr-ring" data-ring aria-hidden="true">
+          <div class="tr-ring-inner">
+            <p class="tr-ring-pct"><span data-score-pct>0</span><span class="tr-ring-sign">%</span></p>
+            <p class="badge-mono tr-ring-sub" data-score-fraction>0/0 correct</p>
+          </div>
+        </div>
+        <div class="min-w-0 flex-1">
+          <p class="eyebrow text-mute" data-result-eyebrow>{testName}</p>
+          <div class="mt-2 flex items-center gap-2.5">
+            <span class="tr-result-icon" data-pass-icon hidden set:html={CHECK_ICON} />
+            <span class="tr-result-icon is-fail" data-fail-icon hidden set:html={CROSS_ICON} />
+            <h1 class="display-md text-ink" data-result-heading>Results</h1>
+          </div>
+          <p class="body-md text-body text-pretty mt-3" data-result-body></p>
+          <div class="mt-3.5 flex flex-wrap gap-1.5">
+            <span class="badge badge-mono">Pass mark {passThreshold}%</span>
+            <span class="badge tr-badge-best" data-new-best hidden>
+              <span class="text-brand-strong font-semibold">New best score!</span>
+            </span>
+            <span class="badge badge-mono" data-prev-best hidden>
+              Best so far: <span class="text-ink font-semibold"><span data-prev-best-pct>0</span>%</span>
+            </span>
+          </div>
+        </div>
+      </div>
+      <div class="mt-6 flex flex-wrap gap-3">
+        <button type="button" class="btn btn-primary" data-retry>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
+          Retry test
+        </button>
+        <a class="btn btn-secondary" href={categoryHref} data-back>Back to category</a>
+      </div>
+    </div>
+
+    <div class="mt-10">
+      <div class="flex items-baseline justify-between gap-3">
+        <h2 class="display-sm text-ink">Review your answers</h2>
+        <p class="badge-mono text-mute" data-review-summary>0 of {total} correct</p>
+      </div>
+      <ul role="list" class="mt-4.5 flex flex-col gap-4">
+        {
+          view.map((q, qi) => (
+            <li>
+              <div class="card tr-review" data-review-item data-qid={q.id}>
+                <div class="flex items-center justify-between gap-3">
+                  <p class="badge-mono text-mute">Question {qi + 1}</p>
+                  <span class="badge tr-chip is-correct" data-chip-correct hidden>
+                    <Fragment set:html={CHECK_ICON} />
+                    Correct
+                  </span>
+                  <span class="badge tr-chip is-wrong" data-chip-wrong hidden>
+                    <Fragment set:html={CROSS_ICON} />
+                    Incorrect
+                  </span>
+                </div>
+                <p class="body-md font-semibold text-ink text-pretty mt-3">{q.legend}</p>
+                <div class="mt-4 flex flex-col gap-2.5">
+                  {q.options.map((opt, oi) => (
+                    <div class="tr-opt is-static" data-review-opt data-oi={oi}>
+                      <span class:list={['tr-dot', q.multi ? 'square' : 'round']} aria-hidden="true">
+                        <svg class="tr-tick" viewBox="0 0 16 16" fill="none" set:html={TICK} />
+                      </span>
+                      <span class="tr-key" aria-hidden="true">{letter(oi)}</span>
+                      <span class="tr-text body-sm text-pretty">{opt}</span>
+                      <span class="tr-tag" data-tag-correct hidden>
+                        <Fragment set:html={CHECK_ICON} />
+                        <span data-tag-label>Correct answer</span>
+                      </span>
+                      <span class="tr-tag" data-tag-yours hidden>
+                        <Fragment set:html={CROSS_ICON} />
+                        Your answer
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div class="tr-explain mt-4">
+                  <p class="eyebrow text-mute">Explanation</p>
+                  <p class="body-sm text-body text-pretty mt-2">{q.explanation}</p>
+                </div>
+              </div>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </div>
+</div>
+
+<style>
+  /* Progress bar (mirrors the mockup .bar / .bar-fill). */
+  .tr-bar {
+    height: 8px;
+    border-radius: 9999px;
+    background: var(--color-canvas-soft-2);
+    overflow: hidden;
+  }
+  .tr-bar-fill {
+    display: block;
+    height: 100%;
+    border-radius: 9999px;
+    background: linear-gradient(90deg, var(--color-brand), var(--color-brand-strong));
+    transition: width 0.2s ease;
+  }
+
+  .tr-card {
+    padding: 28px;
+    box-shadow: var(--shadow-soft);
+  }
+  .tr-card[hidden] {
+    display: none;
+  }
+  .tr-scenario {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+  /* <legend> is inline-flow by default; make it a block so margins behave. */
+  .tr-legend {
+    display: block;
+    width: 100%;
+  }
+
+  .tr-badge-select {
+    border: 1px solid color-mix(in srgb, var(--color-warning-deep) 30%, transparent);
+    background: var(--color-warning-soft);
+    color: var(--color-warning-deep);
+    font-weight: 600;
+  }
+
+  /* ---- MCQ option (evolution of M90DayCheck .m90dc-opt) ---- */
+  .tr-opt {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-lg);
+    background: var(--color-canvas);
+    cursor: pointer;
+    transition:
+      background-color 0.15s ease,
+      border-color 0.15s ease,
+      box-shadow 0.15s ease;
+  }
+  .tr-opt:not(.is-static):hover {
+    background: var(--color-canvas-soft-2);
+    border-color: var(--color-hairline-strong);
+  }
+  .tr-opt.is-static {
+    cursor: default;
+  }
+  /* Visually-hidden native control — the label chrome carries all the state. */
+  .tr-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+  /* The native control is visually hidden, so mirror its keyboard focus ring
+     onto the label chrome (matches .card-interactive:has(a:focus-visible)). */
+  .tr-opt:has(.tr-input:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 2px;
+  }
+  .tr-dot {
+    position: relative;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    margin-top: 1px;
+    border: 2px solid var(--color-mute);
+    background: var(--color-canvas);
+    transition:
+      background-color 0.15s ease,
+      border-color 0.15s ease;
+  }
+  .tr-dot.round {
+    border-radius: 9999px;
+  }
+  .tr-dot.square {
+    border-radius: var(--radius-xs);
+  }
+  .tr-tick {
+    width: 13px;
+    height: 13px;
+    stroke: #fff;
+    stroke-width: 2.6;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+  .tr-key {
+    flex-shrink: 0;
+    width: 16px;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--color-mute);
+  }
+  .tr-text {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* Pre-submit selection state. */
+  .tr-opt.is-selected {
+    border-color: var(--color-brand);
+    background: var(--color-brand-soft);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+  }
+  .tr-opt.is-selected .tr-dot {
+    background: var(--color-brand);
+    border-color: var(--color-brand);
+  }
+  .tr-opt.is-selected .tr-dot .tr-tick {
+    opacity: 1;
+  }
+  .tr-opt.is-selected .tr-key {
+    color: var(--color-brand-strong);
+  }
+
+  /* Disabled (multi cap reached) unchecked option — dimmed, non-interactive. */
+  .tr-opt.is-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .tr-opt.is-disabled:hover {
+    background: var(--color-canvas);
+    border-color: var(--color-hairline);
+  }
+
+  /* Post-grade review states. */
+  .tr-opt.is-correct {
+    border-color: var(--color-success);
+    background: color-mix(in srgb, var(--color-success) 12%, var(--color-canvas));
+  }
+  .tr-opt.is-correct .tr-dot {
+    background: var(--color-success);
+    border-color: var(--color-success);
+  }
+  .tr-opt.is-correct .tr-dot .tr-tick {
+    opacity: 1;
+  }
+  .tr-opt.is-correct .tr-key {
+    color: var(--color-success);
+  }
+  .tr-opt.is-wrong {
+    border-color: var(--color-error);
+    background: color-mix(in srgb, var(--color-error) 10%, var(--color-canvas));
+  }
+  .tr-opt.is-wrong .tr-dot {
+    border-color: var(--color-error);
+    background: color-mix(in srgb, var(--color-error) 14%, transparent);
+  }
+  .tr-opt.is-wrong .tr-key {
+    color: var(--color-error-deep);
+  }
+  .tr-tag {
+    margin-left: auto;
+    align-self: center;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  .tr-opt.is-correct .tr-tag {
+    color: var(--color-success);
+  }
+  .tr-opt.is-wrong .tr-tag {
+    color: var(--color-error-deep);
+  }
+  /* Correct option the learner actually selected — reinforce with a stronger
+     ring so it reads distinctly from a correct option they missed. */
+  .tr-opt.is-correct.is-picked {
+    box-shadow: inset 0 0 0 1px var(--color-success);
+  }
+
+  /* ---- Results banner + score ring ---- */
+  .tr-banner {
+    padding: 28px;
+    box-shadow: var(--shadow-soft);
+    border: 1px solid var(--color-hairline);
+  }
+  .tr-banner.is-pass {
+    border-color: color-mix(in srgb, var(--color-success) 30%, transparent);
+    background: color-mix(in srgb, var(--color-success) 10%, var(--color-canvas));
+  }
+  .tr-banner.is-fail {
+    border-color: color-mix(in srgb, var(--color-error) 30%, transparent);
+    background: color-mix(in srgb, var(--color-error) 9%, var(--color-canvas));
+  }
+  .tr-ring {
+    position: relative;
+    width: 132px;
+    height: 132px;
+    flex-shrink: 0;
+    border-radius: 9999px;
+    background: conic-gradient(var(--color-hairline-strong) 0%, var(--color-canvas-soft-3) 0);
+    display: grid;
+    place-items: center;
+  }
+  .tr-ring-inner {
+    width: 104px;
+    height: 104px;
+    border-radius: 9999px;
+    background: var(--color-canvas);
+    display: grid;
+    place-items: center;
+    box-shadow: var(--shadow-hairline);
+    text-align: center;
+    line-height: 1;
+  }
+  .tr-ring-pct {
+    margin: 0;
+    font-size: 34px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    color: var(--color-ink);
+  }
+  .tr-ring-sign {
+    font-size: 18px;
+  }
+  .tr-ring-sub {
+    margin: 4px 0 0;
+    color: var(--color-mute);
+  }
+  .tr-result-icon {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    border-radius: 9999px;
+    background: var(--color-success);
+    color: #fff;
+  }
+  .tr-result-icon.is-fail {
+    background: var(--color-error);
+  }
+  .tr-badge-best {
+    border: 1px solid color-mix(in srgb, var(--color-brand) 30%, transparent);
+    background: var(--color-brand-soft);
+  }
+
+  /* ---- Review cards ---- */
+  .tr-review {
+    padding: 22px 24px;
+    box-shadow: var(--shadow-subtle);
+  }
+  .tr-chip {
+    font-weight: 600;
+  }
+  .tr-chip.is-correct {
+    border: 1px solid color-mix(in srgb, var(--color-success) 35%, transparent);
+    background: color-mix(in srgb, var(--color-success) 12%, var(--color-canvas));
+    color: var(--color-success);
+  }
+  .tr-chip.is-wrong {
+    border: 1px solid color-mix(in srgb, var(--color-error-deep) 35%, transparent);
+    background: color-mix(in srgb, var(--color-error) 10%, var(--color-canvas));
+    color: var(--color-error-deep);
+  }
+  .tr-explain {
+    padding: 14px 16px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas-soft-2);
+    box-shadow: var(--shadow-hairline);
+  }
+
+  .mt-4\.5 {
+    margin-top: 1.125rem;
+  }
+
+  [data-phase][hidden] {
+    display: none;
+  }
+
+  @media (pointer: coarse) {
+    .tr-opt:not(.is-static) {
+      min-height: 44px;
+    }
+  }
+</style>
+
+<script>
+  import {
+    parseProgress,
+    recordAttempt,
+    bestFor,
+    PROGRESS_KEY,
+  } from '../../lib/tests/progress';
+  import { testKey } from '../../data/tests';
+  // Type-only import: erased at build, so the engine's runtime code stays
+  // dynamically imported (code-split) inside submit().
+  import type { TestResult } from '../../lib/tests/engine';
+
+  function initTestRunner(): void {
+    document
+      .querySelectorAll<HTMLElement>('[data-test-runner]')
+      .forEach((root) => {
+        if (root.dataset.bound === 'true') return;
+        root.dataset.bound = 'true';
+        wire(root);
+      });
+  }
+
+  function wire(root: HTMLElement): void {
+    const categorySlug = root.dataset.category ?? '';
+    const testSlug = root.dataset.test ?? '';
+    const passThreshold = Number(root.dataset.passThreshold ?? '0');
+    const key = testKey(categorySlug, testSlug);
+
+    const takingPhase = root.querySelector<HTMLElement>('[data-phase="taking"]')!;
+    const resultsPhase = root.querySelector<HTMLElement>('[data-phase="results"]')!;
+    const fieldsets = Array.from(root.querySelectorAll<HTMLFieldSetElement>('[data-q]'));
+    const total = fieldsets.length;
+
+    const counter = root.querySelector<HTMLElement>('[data-q-counter]')!;
+    const pctLabel = root.querySelector<HTMLElement>('[data-pct-label]')!;
+    const bar = root.querySelector<HTMLElement>('[data-bar]')!;
+    const barFill = root.querySelector<HTMLElement>('[data-bar-fill]')!;
+    const prevBtn = root.querySelector<HTMLButtonElement>('[data-prev]')!;
+    const nextBtn = root.querySelector<HTMLButtonElement>('[data-next]')!;
+    const nextLabel = root.querySelector<HTMLElement>('[data-next-label]')!;
+    const nextIcon = root.querySelector<HTMLElement>('[data-next-icon]')!;
+
+    /** questionId → selected indices (in-memory only; never persisted). */
+    const submission: Record<string, number[]> = Object.create(null);
+    let current = 0;
+    /** Synchronous re-entrancy guard so rapid double-clicks can't record two
+        attempts while the dynamic engine import is awaited. */
+    let submitting = false;
+
+    function isLast(): boolean {
+      return current === total - 1;
+    }
+
+    function showQuestion(idx: number): void {
+      current = Math.max(0, Math.min(total - 1, idx));
+      fieldsets.forEach((fs, i) => {
+        fs.hidden = i !== current;
+      });
+      counter.textContent = `Question ${current + 1} of ${total}`;
+      // Progress reflects how many questions the learner has moved past.
+      const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+      pctLabel.textContent = `${pct}% complete`;
+      barFill.style.width = `${pct}%`;
+      bar.setAttribute('aria-valuenow', String(current));
+      prevBtn.disabled = current === 0;
+      if (isLast()) {
+        nextLabel.textContent = 'Submit';
+        nextIcon.hidden = true;
+      } else {
+        nextLabel.textContent = 'Next';
+        nextIcon.hidden = false;
+      }
+    }
+
+    // ── Wire per-question inputs ──
+    fieldsets.forEach((fs) => {
+      const qid = fs.dataset.qid ?? '';
+      const correct = parseCorrect(fs.dataset.correct);
+      const selectN = correct.length;
+      const multi = selectN > 1;
+      const opts = Array.from(fs.querySelectorAll<HTMLLabelElement>('.tr-opt'));
+      const inputs = Array.from(fs.querySelectorAll<HTMLInputElement>('.tr-input'));
+      const selectCounter = fs.querySelector<HTMLElement>('[data-select-counter]');
+      submission[qid] = [];
+
+      inputs.forEach((input, i) => {
+        input.addEventListener('change', () => {
+          if (multi) {
+            handleMulti(qid, i, opts, inputs, selectN, selectCounter);
+          } else {
+            handleSingle(qid, i, opts);
+          }
+        });
+      });
+    });
+
+    function handleSingle(
+      qid: string,
+      chosen: number,
+      opts: HTMLLabelElement[],
+    ): void {
+      submission[qid] = [chosen];
+      opts.forEach((opt, i) => opt.classList.toggle('is-selected', i === chosen));
+    }
+
+    function handleMulti(
+      qid: string,
+      idx: number,
+      opts: HTMLLabelElement[],
+      inputs: HTMLInputElement[],
+      selectN: number,
+      selectCounter: HTMLElement | null,
+    ): void {
+      const set = new Set(submission[qid]);
+      if (inputs[idx].checked) set.add(idx);
+      else set.delete(idx);
+      submission[qid] = Array.from(set).sort((a, b) => a - b);
+
+      opts.forEach((opt, i) => opt.classList.toggle('is-selected', set.has(i)));
+
+      const capped = set.size >= selectN;
+      // Once N are checked, dim + disable the remaining unchecked boxes; a
+      // re-enable happens as soon as one is cleared.
+      inputs.forEach((input, i) => {
+        if (set.has(i)) {
+          input.disabled = false;
+          opts[i].classList.remove('is-disabled');
+        } else {
+          input.disabled = capped;
+          opts[i].classList.toggle('is-disabled', capped);
+        }
+      });
+
+      if (selectCounter) {
+        selectCounter.textContent = `${set.size} of ${selectN} selected`;
+      }
+    }
+
+    // ── Navigation ──
+    prevBtn.addEventListener('click', () => {
+      if (current > 0) showQuestion(current - 1);
+    });
+    nextBtn.addEventListener('click', () => {
+      if (isLast()) void submit();
+      else showQuestion(current + 1);
+    });
+
+    // ── Submit / grade ──
+    async function submit(): Promise<void> {
+      // Synchronous guard: bail if a submission is already in flight so two
+      // quick Submit clicks don't each record an attempt.
+      if (submitting) return;
+      submitting = true;
+      // Disable the button immediately (before the awaited import) so it can't
+      // be clicked again until we switch to the results phase.
+      nextBtn.disabled = true;
+
+      // Read the OLD best BEFORE recording so "New best score!" is accurate.
+      let oldBest: number | undefined;
+      try {
+        oldBest = bestFor(parseProgress(localStorage.getItem(PROGRESS_KEY)), key)?.bestPct;
+      } catch {
+        /* storage blocked — treat as no prior best */
+      }
+
+      const { gradeTest } = await import('../../lib/tests/engine');
+      const questions = fieldsets.map((fs) => ({
+        id: fs.dataset.qid ?? '',
+        correctAnswers: parseCorrect(fs.dataset.correct),
+      }));
+      const result = gradeTest(questions, submission, passThreshold);
+
+      renderResults(result, oldBest);
+      persist(result.scorePct);
+
+      takingPhase.hidden = true;
+      resultsPhase.hidden = false;
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function renderResults(result: TestResult, oldBest: number | undefined): void {
+      const q = (sel: string) => resultsPhase.querySelector<HTMLElement>(sel)!;
+
+      q('[data-score-pct]').textContent = String(result.scorePct);
+      q('[data-score-fraction]').textContent = `${result.correctCount}/${result.total} correct`;
+      q('[data-review-summary]').textContent = `${result.correctCount} of ${result.total} correct`;
+
+      // Ring fill.
+      const ring = q('[data-ring]');
+      const fillColor = result.passed ? 'var(--color-success)' : 'var(--color-error)';
+      ring.style.background = `conic-gradient(${fillColor} ${result.scorePct}%, var(--color-canvas-soft-3) 0)`;
+
+      // Banner pass/fail state + copy.
+      const banner = q('[data-banner]');
+      banner.classList.toggle('is-pass', result.passed);
+      banner.classList.toggle('is-fail', !result.passed);
+      q('[data-pass-icon]').hidden = !result.passed;
+      q('[data-fail-icon]').hidden = result.passed;
+      q('[data-result-heading]').textContent = result.passed
+        ? 'You passed'
+        : 'Not passed — keep practicing';
+      const body = q('[data-result-body]');
+      if (result.passed) {
+        body.textContent = `You scored at or above the ${passThreshold}% pass mark for this test.`;
+      } else {
+        const away = passThreshold - result.scorePct;
+        body.textContent = `You need ${passThreshold}% to pass. You're ${away} point${away === 1 ? '' : 's'} away — review the misses below and retake.`;
+      }
+
+      // "New best score!" only when this attempt beats the previous best.
+      const isNewBest = oldBest === undefined || result.scorePct > oldBest;
+      q('[data-new-best]').hidden = !isNewBest;
+      const prevBest = q('[data-prev-best]');
+      if (!isNewBest && oldBest !== undefined) {
+        q('[data-prev-best-pct]').textContent = String(oldBest);
+        prevBest.hidden = false;
+      } else {
+        prevBest.hidden = true;
+      }
+
+      // Per-question review classes/status.
+      const items = Array.from(resultsPhase.querySelectorAll<HTMLElement>('[data-review-item]'));
+      result.graded.forEach((g) => {
+        const item = items.find((el) => el.dataset.qid === g.questionId);
+        if (!item) return;
+        item.querySelector<HTMLElement>('[data-chip-correct]')!.hidden = !g.isCorrect;
+        item.querySelector<HTMLElement>('[data-chip-wrong]')!.hidden = g.isCorrect;
+
+        const correctSet = new Set(g.correct);
+        const selectedSet = new Set(g.selected);
+        item.querySelectorAll<HTMLElement>('[data-review-opt]').forEach((opt) => {
+          const oi = Number(opt.dataset.oi);
+          const isCorrect = correctSet.has(oi);
+          const isSelected = selectedSet.has(oi);
+          opt.classList.remove('is-correct', 'is-wrong', 'is-picked');
+          const tagCorrect = opt.querySelector<HTMLElement>('[data-tag-correct]')!;
+          const tagYours = opt.querySelector<HTMLElement>('[data-tag-yours]')!;
+          const tagLabel = tagCorrect.querySelector<HTMLElement>('[data-tag-label]')!;
+          tagCorrect.hidden = true;
+          tagYours.hidden = true;
+          // Correctness and selection are applied INDEPENDENTLY so the three
+          // review states are each visually + textually distinct:
+          //   1. selected + correct  → green box, "Correct — your answer"
+          //   2. missed  + correct   → green box, "Correct — you missed this"
+          //   3. selected + wrong    → red box,   "Your answer"
+          if (isCorrect) {
+            opt.classList.add('is-correct');
+            tagCorrect.hidden = false;
+            if (isSelected) {
+              opt.classList.add('is-picked');
+              tagLabel.textContent = 'Correct — your answer';
+            } else {
+              tagLabel.textContent = 'Correct — you missed this';
+            }
+          } else if (isSelected) {
+            // A selected option that is NOT correct → the learner's wrong pick.
+            opt.classList.add('is-wrong');
+            tagYours.hidden = false;
+          }
+        });
+      });
+    }
+
+    function persist(scorePct: number): void {
+      try {
+        const p = parseProgress(localStorage.getItem(PROGRESS_KEY));
+        const next = recordAttempt(p, key, scorePct, new Date().toISOString());
+        localStorage.setItem(PROGRESS_KEY, JSON.stringify(next));
+      } catch {
+        /* storage blocked — skip silently */
+      }
+    }
+
+    // ── Retry ──
+    root.querySelector<HTMLButtonElement>('[data-retry]')!.addEventListener('click', () => {
+      fieldsets.forEach((fs) => {
+        const qid = fs.dataset.qid ?? '';
+        submission[qid] = [];
+        fs.querySelectorAll<HTMLInputElement>('.tr-input').forEach((input) => {
+          input.checked = false;
+          input.disabled = false;
+        });
+        fs.querySelectorAll<HTMLElement>('.tr-opt').forEach((opt) => {
+          opt.classList.remove('is-selected', 'is-correct', 'is-wrong', 'is-picked', 'is-disabled');
+        });
+        const selectCounter = fs.querySelector<HTMLElement>('[data-select-counter]');
+        if (selectCounter) {
+          const correct = parseCorrect(fs.dataset.correct);
+          selectCounter.textContent = `0 of ${correct.length} selected`;
+        }
+      });
+      // Reset the submit guard so the next Submit works.
+      submitting = false;
+      nextBtn.disabled = false;
+      resultsPhase.hidden = true;
+      takingPhase.hidden = false;
+      showQuestion(0);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    showQuestion(0);
+  }
+
+  function parseCorrect(raw: string | undefined): number[] {
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.map(Number).filter((n) => Number.isInteger(n)) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  initTestRunner();
+  document.addEventListener('astro:page-load', initTestRunner);
+</script>

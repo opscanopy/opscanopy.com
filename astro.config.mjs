@@ -32,14 +32,17 @@ export default defineConfig({
       },
       // Keep noindex routes out of the sitemap (/search is the noindex
       // Pagefind UI — exact-match the path so future "search…" slugs survive;
-      // /mission-90/complete is the noindex personal-progress card page).
+      // /mission-90/complete is the noindex personal-progress card page;
+      // /tests/<cat>/<test>/ are the noindex test-taking pages — the /tests/
+      // hub and /tests/<cat>/ category pages stay indexed).
       filter: (page) =>
         !page.includes('/alertlint-wasm-demo') &&
         !page.includes('/404') &&
         !page.includes('/500') &&
         !page.includes('/offline') &&
         !/\/search\/?$/.test(page) &&
-        !/\/mission-90\/complete\/?$/.test(page),
+        !/\/mission-90\/complete\/?$/.test(page) &&
+        !/\/tests\/[^/]+\/[^/]+\/?$/.test(page),
     }),
   ],
   markdown: {
