@@ -59,7 +59,7 @@ export function localizeKey(pageKey: string, locale: Locale): string {
  * '/changelog' (WS-R R6) joined this list for the same reason: tool names/
  * dates are English-only content, not worth a 5x-duplicated page tree.
  */
-export const ENGLISH_ONLY_SECTIONS = ['/learn', '/mission-90', '/changelog'];
+export const ENGLISH_ONLY_SECTIONS = ['/learn', '/mission-90', '/changelog', '/tests'];
 
 /**
  * localizeKey for nav / footer / menu CHROME links. English-only sections are

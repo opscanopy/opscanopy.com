@@ -36,6 +36,7 @@ const en: SiteContent = {
     { href: '/tools', label: 'Tools' },
     { href: '/learn', label: 'Learn' },
     { href: '/mission-90/', label: '90 Days DevOps' },
+    { href: '/tests', label: 'Practice Tests' },
     { href: '/blog', label: 'Blog' },
     { href: '/search', label: 'Search' },
   ],
