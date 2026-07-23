@@ -537,7 +537,7 @@ export const tools: Tool[] = [
     tagline: 'Generate v4 UUIDs and ULIDs, or inspect one.',
     description:
       'Generate cryptographically random v4 UUIDs and lexicographically sortable ULIDs in bulk, or paste an identifier to decode its version, variant and embedded timestamp — all in the browser.',
-    status: 'planned',
+    status: 'live',
     category: 'Utilities',
     keywords: [
       'uuid generator',
@@ -557,7 +557,7 @@ export const tools: Tool[] = [
     tagline: 'Convert text between camelCase, snake_case, kebab-case and more.',
     description:
       'Convert any string between camelCase, PascalCase, snake_case, SCREAMING_SNAKE_CASE, kebab-case, Title Case and more at once — copy the one you need. Unicode-aware, entirely client-side.',
-    status: 'planned',
+    status: 'live',
     category: 'Utilities',
     keywords: [
       'case converter',
@@ -577,7 +577,7 @@ export const tools: Tool[] = [
     tagline: 'Turn any title into a clean URL slug.',
     description:
       'Turn titles and headings into clean, URL-safe slugs: strips accents and diacritics, collapses separators and enforces a max length. Configurable separator, all in the browser.',
-    status: 'planned',
+    status: 'live',
     category: 'Utilities',
     keywords: [
       'slugify online',
@@ -597,7 +597,7 @@ export const tools: Tool[] = [
     tagline: 'Convert chmod between octal, symbolic and the permission matrix.',
     description:
       'Convert Unix file permissions between octal (755), symbolic (rwxr-xr-x) and a checkbox matrix — including setuid, setgid and the sticky bit — and copy the exact chmod command. Pure client-side bit math.',
-    status: 'planned',
+    status: 'live',
     category: 'Utilities',
     keywords: [
       'chmod calculator',

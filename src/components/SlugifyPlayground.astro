@@ -1,0 +1,946 @@
+---
+/**
+ * SlugifyPlayground — the interactive Slugify island.
+ *
+ * A no-framework, server-rendered shell hydrated by a single module <script>.
+ * A textarea takes any title; a separator selector, max-length number and a
+ * lowercase toggle shape the output; the slug renders live below with per-row
+ * copy, a Copy slug button and a shareable #q=… deep link.
+ *
+ * Evaluation is debounced (~140ms) while typing; Enter runs immediately. The
+ * results container is NOT a live region — a single role="status" summary line
+ * plus an sr-only copy-status span carry announcements.
+ *
+ * Runtime contract (engine lazy-imported for code-splitting):
+ *   ../lib/slugify/engine → slugify(input, opts): SlugifyResult
+ *
+ * examples are imported in frontmatter and rendered server-side as squared
+ * mono chips; the engine is imported dynamically inside the boot closure.
+ */
+import { examples } from '../lib/slugify/examples';
+---
+
+<section class="slug-pg" aria-label="Slugify playground">
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Example chips ────────────────────────────────────────────────── */}
+    <div class="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:px-5">
+      <span class="eyebrow">Examples</span>
+      <div id="slug-chips" class="slug-chips" role="group" aria-label="Examples">
+        {
+          examples.map((ex) => (
+            <button
+              type="button"
+              class="slug-chip"
+              data-input={ex.input}
+              aria-label={`${ex.label} — ${ex.input}`}
+            >
+              {ex.label}
+            </button>
+          ))
+        }
+      </div>
+    </div>
+
+    {/* ── Text input ───────────────────────────────────────────────────── */}
+    <div class="border-b border-hairline px-4 py-4 sm:px-5">
+      <label class="eyebrow mb-2 block" for="slug-input">Text to slugify</label>
+      <textarea
+        id="slug-input"
+        class="slug-textarea code-mono"
+        rows="2"
+        spellcheck="false"
+        autocapitalize="off"
+        autocorrect="off"
+        autocomplete="off"
+        enterkeyhint="done"
+        placeholder="Hello, World! — A Café Guide (2026)"
+        aria-describedby="slug-input-hint slug-input-live"></textarea>
+      <p id="slug-input-hint" class="slug-hint caption text-mute">
+        Accented characters are transliterated (<span class="code-mono">café → cafe</span>);
+        punctuation is dropped and runs of separators are collapsed.
+      </p>
+      <p id="slug-input-live" class="slug-hint slug-hint--live caption text-mute">
+        Results update as you type — press Enter to run now.
+      </p>
+    </div>
+
+    {/* ── Options ──────────────────────────────────────────────────────── */}
+    <div class="border-b border-hairline px-4 py-4 sm:px-5">
+      <span class="eyebrow mb-2 block">Options</span>
+      <div class="slug-controls">
+        <div class="slug-controls-group">
+          <span class="slug-field-label" id="slug-sep-label">Separator</span>
+          <div class="slug-seg" role="group" aria-labelledby="slug-sep-label" id="slug-separator">
+            <button type="button" class="slug-seg__btn is-active" data-sep="-" aria-pressed="true">-</button>
+            <button type="button" class="slug-seg__btn" data-sep="_" aria-pressed="false">_</button>
+            <button type="button" class="slug-seg__btn" data-sep="." aria-pressed="false">.</button>
+          </div>
+        </div>
+        <div class="slug-controls-group">
+          <label class="slug-field-label" for="slug-max">Max length</label>
+          <input
+            id="slug-max"
+            class="slug-num-input"
+            type="number"
+            min="1"
+            max="200"
+            value="60"
+            inputmode="numeric"
+            aria-label="Maximum slug length in characters"
+          />
+        </div>
+        <label class="slug-check" for="slug-lower">
+          <input id="slug-lower" type="checkbox" class="slug-check__box" checked />
+          <span class="slug-check__label">Lowercase</span>
+        </label>
+      </div>
+    </div>
+
+    {/* ── Result panel ─────────────────────────────────────────────────── */}
+    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="slug-result-head">
+        <span class="slug-result-head__left">
+          <span class="eyebrow">Slug</span>
+          <button
+            id="slug-copy"
+            type="button"
+            class="slug-copy-btn slug-copy-btn--labeled"
+            data-copy-all
+            data-copy=""
+            data-copy-label="Copy slug"
+            hidden
+          >
+            <svg class="slug-copy-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="5" y="5" width="9" height="9" rx="1.5"></rect>
+              <path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"></path>
+            </svg>
+            <svg class="slug-check-icon hidden" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="slug-copy-label">Copy slug</span>
+          </button>
+          <button
+            id="slug-share"
+            type="button"
+            class="slug-copy-btn slug-copy-btn--labeled"
+            data-copy-link
+            data-copy=""
+            data-copy-label="Copy link"
+            hidden
+          >
+            <svg class="slug-copy-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M6.75 9.25l2.5-2.5"></path>
+              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
+              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
+            </svg>
+            <svg class="slug-check-icon hidden" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="slug-copy-label">Copy link</span>
+          </button>
+        </span>
+        <span id="slug-summary" class="slug-summary code-mono text-mute" role="status" aria-live="polite"></span>
+      </div>
+      <div id="slug-results" class="slug-results">
+        <p class="slug-empty body-sm text-mute">
+          Type a title or pick an example to see its URL-safe slug here.
+        </p>
+      </div>
+      <noscript>
+        <p class="slug-hint caption text-mute">
+          This tool runs entirely in your browser — enable JavaScript to use it.
+        </p>
+      </noscript>
+      <span id="slug-copy-status" class="sr-only" role="status" aria-live="polite"></span>
+    </div>
+  </div>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  /* ── Example chips ──────────────────────────────────────────────────── */
+  .slug-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .slug-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 11px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-hairline-muted);
+    background: var(--color-canvas);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 16px;
+    letter-spacing: 0.01em;
+    color: var(--color-brand-strong);
+    cursor: pointer;
+    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  }
+  .slug-chip:hover {
+    border-color: var(--color-hairline-strong);
+    background: var(--color-canvas-hover);
+  }
+  .slug-chip.is-active {
+    background: var(--color-brand-soft);
+    border-color: var(--color-brand-strong);
+    color: var(--color-brand-strong);
+  }
+  .slug-chip:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+  @media (pointer: coarse) {
+    .slug-chip {
+      min-height: 44px;
+    }
+  }
+
+  /* ── Input ──────────────────────────────────────────────────────────── */
+  .slug-textarea {
+    width: 100%;
+    min-height: 72px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 14px;
+    line-height: 22px;
+    resize: vertical;
+    transition: box-shadow 0.15s ease;
+  }
+  .slug-textarea::placeholder {
+    color: var(--color-mute);
+  }
+  .slug-textarea:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .slug-textarea:focus {
+    outline: none;
+  }
+  .slug-textarea:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-link);
+    outline: none;
+  }
+  .slug-hint {
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  .slug-hint .code-mono {
+    font-size: 12px;
+    color: var(--color-body);
+  }
+  .slug-hint--live {
+    margin-top: 4px;
+  }
+
+  /* ── Options ────────────────────────────────────────────────────────── */
+  .slug-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px 18px;
+  }
+  .slug-controls-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .slug-field-label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--color-body);
+  }
+  .slug-seg {
+    display: inline-flex;
+    padding: 2px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+  .slug-seg__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 38px;
+    height: 30px;
+    padding: 0 12px;
+    border: none;
+    border-radius: var(--radius-xs);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--color-mute);
+    background: transparent;
+    cursor: pointer;
+    transition: color 0.15s ease, background-color 0.15s ease;
+  }
+  .slug-seg__btn:hover:not(.is-active) {
+    color: var(--color-body);
+  }
+  .slug-seg__btn.is-active {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+  .slug-seg__btn:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+  @media (pointer: coarse) {
+    .slug-seg__btn {
+      min-height: 44px;
+    }
+  }
+  .slug-num-input {
+    width: 88px;
+    height: 34px;
+    padding: 0 10px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+    font-variant-numeric: tabular-nums;
+    transition: box-shadow 0.15s ease;
+  }
+  .slug-num-input:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .slug-num-input:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--color-link);
+  }
+  @media (pointer: coarse) {
+    .slug-num-input {
+      min-height: 44px;
+    }
+  }
+  .slug-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .slug-check__box {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    accent-color: var(--color-brand);
+    cursor: pointer;
+  }
+  .slug-check__box:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+  .slug-check__label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--color-body);
+  }
+
+  /* ── Result panel ───────────────────────────────────────────────────── */
+  .slug-result-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 12px;
+    margin-bottom: 12px;
+  }
+  .slug-result-head__left {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .slug-summary {
+    min-width: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+  .slug-results {
+    min-height: 96px;
+    display: grid;
+    align-content: center;
+  }
+  /* Copy failure message flips from sr-only to a visible caption. */
+  .slug-copy-status--fail {
+    display: block;
+    margin-top: 10px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-error-deep);
+  }
+
+  .slug-copy-btn {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+    padding: 0;
+  }
+  .slug-copy-btn--labeled {
+    height: 28px;
+    gap: 6px;
+    padding: 0 10px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .slug-copy-btn--labeled:hover {
+    color: var(--color-ink);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .slug-copy-btn--labeled:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+  .slug-copy-btn--copied {
+    color: var(--color-brand-strong);
+    box-shadow: inset 0 0 0 1px var(--color-brand-strong);
+  }
+  @media (pointer: coarse) {
+    .slug-copy-btn--labeled {
+      height: auto;
+      min-height: 40px;
+    }
+  }
+
+  /* ── Result sub-card + rows ─────────────────────────────────────────── */
+  :global(.slug-card) {
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+    animation: slug-rise 0.18s ease both;
+  }
+  :global(.slug-slug-row) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 26px;
+    gap: 12px;
+    padding: 12px 14px;
+    align-items: center;
+  }
+  :global(.slug-slug-row__v) {
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 16px;
+    line-height: 24px;
+    color: var(--color-ink);
+    font-variant-numeric: tabular-nums;
+    word-break: break-all;
+  }
+  :global(.slug-note) {
+    padding: 9px 14px;
+    border-top: 1px solid var(--color-hairline);
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-accent-ink);
+    text-wrap: pretty;
+  }
+  :global(.slug-copy-icon-btn) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease;
+    padding: 0;
+  }
+  :global(.slug-copy-icon-btn:hover) {
+    color: var(--color-brand-strong);
+    background: var(--color-hairline);
+  }
+  :global(.slug-copy-icon-btn:focus-visible) {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+  :global(.slug-copy-icon-btn.slug-copy-btn--copied) {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+    box-shadow: none;
+  }
+  @media (pointer: coarse) {
+    :global(.slug-copy-icon-btn) {
+      width: 44px;
+      height: 44px;
+    }
+  }
+
+  :global(.slug-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+  }
+  :global(.slug-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.slug-error__detail) {
+    font-size: 13px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  :global(.slug-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+
+  @keyframes slug-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.slug-card) {
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  import { escapeHtml } from '../lib/escape-html';
+  import { copyTextToClipboard } from '../lib/clipboard';
+
+  type Sep = '-' | '_' | '.';
+  type Result = {
+    valid: boolean;
+    error?: string;
+    slug: string;
+    truncated?: boolean;
+    notes?: string[];
+  };
+  type Options = { separator: string; maxLength: number; lowercase: boolean };
+  type EngineModule = { slugify: (input: string, opts: Options) => Result };
+
+  const ROOT_SEL = '.slug-pg';
+  const DEBOUNCE_MS = 140;
+  const RESET_MS = 1800;
+  const ALLOWED_SEPS: readonly Sep[] = ['-', '_', '.'];
+
+  const ALERT_SVG =
+    '<svg class="slug-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const COPY_ICON_SVG =
+    '<svg class="slug-copy-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"/></svg>';
+  const CHECK_ICON_SVG =
+    '<svg class="slug-check-icon hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.slugWired === 'true') return;
+      root.dataset.slugWired = 'true';
+      void init(root);
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  function asSep(value: string | null | undefined): Sep {
+    return (ALLOWED_SEPS as readonly string[]).includes(value ?? '') ? (value as Sep) : '-';
+  }
+
+  async function init(root: HTMLElement): Promise<void> {
+    const input = el<HTMLTextAreaElement>(root, '#slug-input');
+    const chipsWrap = el<HTMLElement>(root, '#slug-chips');
+    const sepGroup = el<HTMLElement>(root, '#slug-separator');
+    const maxInput = el<HTMLInputElement>(root, '#slug-max');
+    const lowerToggle = el<HTMLInputElement>(root, '#slug-lower');
+    const resultsBox = el<HTMLElement>(root, '#slug-results');
+    const summaryEl = el<HTMLElement>(root, '#slug-summary');
+    const copyBtn = el<HTMLButtonElement>(root, '#slug-copy');
+    const shareBtn = el<HTMLButtonElement>(root, '#slug-share');
+    const copyStatus = el<HTMLElement>(root, '#slug-copy-status');
+    if (
+      !input ||
+      !chipsWrap ||
+      !sepGroup ||
+      !maxInput ||
+      !lowerToggle ||
+      !resultsBox ||
+      !summaryEl ||
+      !copyBtn ||
+      !shareBtn ||
+      !copyStatus
+    ) {
+      return;
+    }
+
+    let engine: EngineModule;
+    try {
+      engine = (await import('../lib/slugify/engine')) as unknown as EngineModule;
+    } catch (err) {
+      renderError(
+        resultsBox,
+        summaryEl,
+        'The slugify engine failed to load. Reload the page to try again.',
+        true
+      );
+      console.error('[Slugify] engine import failed:', err);
+      return;
+    }
+
+    const sepBtns = Array.from(sepGroup.querySelectorAll<HTMLButtonElement>('.slug-seg__btn'));
+    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>('.slug-chip'));
+
+    /* --- Options helpers ------------------------------------------------ */
+
+    function currentSeparator(): Sep {
+      const active = sepBtns.find((b) => b.classList.contains('is-active'));
+      return asSep(active?.dataset.sep);
+    }
+
+    function currentMaxLength(): number {
+      const n = Number.parseInt(maxInput!.value, 10);
+      return Number.isFinite(n) && n > 0 ? n : 0;
+    }
+
+    function currentOptions(): Options {
+      return {
+        separator: currentSeparator(),
+        maxLength: currentMaxLength(),
+        lowercase: lowerToggle!.checked,
+      };
+    }
+
+    function setSeparator(sep: Sep): void {
+      sepBtns.forEach((b) => {
+        const active = b.dataset.sep === sep;
+        b.classList.toggle('is-active', active);
+        b.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+    }
+
+    /* --- Rendering ------------------------------------------------------ */
+
+    function setSummary(text: string, isError: boolean): void {
+      summaryEl!.textContent = text;
+      summaryEl!.classList.toggle('text-error-deep', isError);
+      summaryEl!.classList.toggle('text-mute', !isError);
+    }
+
+    function renderEmpty(): void {
+      setSummary('', false);
+      resultsBox!.innerHTML =
+        '<p class="slug-empty body-sm text-mute">Type a title or pick an example to see its URL-safe slug here.</p>';
+    }
+
+    function hideActions(): void {
+      copyBtn!.hidden = true;
+      copyBtn!.dataset.copy = '';
+      shareBtn!.hidden = true;
+      shareBtn!.dataset.copy = '';
+    }
+
+    function renderResultCard(result: Result, opts: Options): void {
+      const sep = opts.separator;
+      const max = opts.maxLength;
+      const budget = max > 0 ? `${result.slug.length} / ${max} chars` : `${result.slug.length} chars`;
+      setSummary(`${budget} · sep "${sep}"`, false);
+
+      if (result.slug.length === 0) {
+        // Valid input but nothing slug-worthy survived (e.g. only symbols).
+        resultsBox!.innerHTML =
+          '<div class="slug-card"><div class="slug-note">No slug characters — the title has no letters or digits.</div></div>';
+        hideActions();
+        return;
+      }
+
+      const noteHtml =
+        Array.isArray(result.notes) && result.notes.length
+          ? result.notes
+              .map((n) => `<div class="slug-note">${escapeHtml(n)}</div>`)
+              .join('')
+          : '';
+
+      resultsBox!.innerHTML =
+        '<div class="slug-card">' +
+        '<div class="slug-slug-row">' +
+        `<span class="slug-slug-row__v">${escapeHtml(result.slug)}</span>` +
+        `<button class="slug-copy-icon-btn" type="button" aria-label="Copy slug" data-copy="${escapeHtml(result.slug)}">${COPY_ICON_SVG}${CHECK_ICON_SVG}</button>` +
+        '</div>' +
+        noteHtml +
+        '</div>';
+    }
+
+    function renderError(
+      container: HTMLElement,
+      summary: HTMLElement,
+      message: string,
+      isAlert = false
+    ): void {
+      summary.textContent = 'Invalid input';
+      summary.classList.add('text-error-deep');
+      summary.classList.remove('text-mute');
+      container.innerHTML =
+        `<div class="slug-error"${isAlert ? ' role="alert"' : ''}>` +
+        ALERT_SVG +
+        `<p class="slug-error__detail">${escapeHtml(message)}</p></div>`;
+    }
+
+    /* --- Copy plumbing -------------------------------------------------- */
+
+    function setCopyStatus(message: string, failed: boolean): void {
+      copyStatus!.textContent = message;
+      copyStatus!.classList.toggle('sr-only', !failed);
+      copyStatus!.classList.toggle('slug-copy-status--fail', failed);
+    }
+
+    function setCopied(btn: HTMLButtonElement, copied: boolean): void {
+      btn.classList.toggle('slug-copy-btn--copied', copied);
+      btn.querySelector('.slug-copy-icon')?.classList.toggle('hidden', copied);
+      btn.querySelector('.slug-check-icon')?.classList.toggle('hidden', !copied);
+      const label = btn.querySelector<HTMLElement>('.slug-copy-label');
+      if (label) {
+        label.textContent = copied ? 'Copied' : (btn.dataset.copyLabel ?? 'Copy');
+      } else if (copied) {
+        btn.dataset.prevAriaLabel = btn.getAttribute('aria-label') ?? '';
+        btn.setAttribute('aria-label', 'Copied');
+      } else if (btn.dataset.prevAriaLabel) {
+        btn.setAttribute('aria-label', btn.dataset.prevAriaLabel);
+        delete btn.dataset.prevAriaLabel;
+      }
+    }
+
+    async function handleCopy(btn: HTMLButtonElement): Promise<void> {
+      const text = btn.dataset.copy ?? '';
+      if (!text) return;
+      const ok = await copyTextToClipboard(text);
+      if (ok) {
+        setCopied(btn, true);
+        setCopyStatus(btn.hasAttribute('data-copy-link') ? 'Copied link to clipboard.' : 'Copied slug to clipboard.', false);
+        window.clearTimeout(Number(btn.dataset.copyTimer));
+        btn.dataset.copyTimer = String(
+          window.setTimeout(() => {
+            setCopied(btn, false);
+            if (copyStatus!.textContent?.startsWith('Copied')) setCopyStatus('', false);
+          }, RESET_MS)
+        );
+      } else {
+        setCopyStatus('Copy failed — select the value manually.', true);
+      }
+    }
+
+    root.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(
+        '.slug-copy-icon-btn, .slug-copy-btn--labeled'
+      );
+      if (!btn) return;
+      void handleCopy(btn);
+    });
+
+    /* --- Deep-link hash ------------------------------------------------- */
+
+    function localePath(p: string): string {
+      const m = window.location.pathname.match(/^\/(de|es|fr|pt-br)\//);
+      return m ? `/${m[1]}${p}` : p;
+    }
+
+    function buildHash(rawInput: string, opts: Options): string {
+      const parts = [
+        `q=${encodeURIComponent(rawInput)}`,
+        `sep=${encodeURIComponent(opts.separator)}`,
+        `max=${opts.maxLength}`,
+        `lc=${opts.lowercase ? 1 : 0}`,
+      ];
+      return `#${parts.join('&')}`;
+    }
+
+    let lastWrittenHash: string | null = null;
+
+    function writeHash(rawInput: string | null, opts: Options): void {
+      const target = rawInput ? buildHash(rawInput, opts) : '';
+      if (target === lastWrittenHash) return;
+      // Safari throttles replaceState (~100/30s) and throws — never let that break input.
+      try {
+        if (rawInput) {
+          history.replaceState(null, '', target);
+        } else {
+          history.replaceState(null, '', location.pathname + location.search);
+        }
+        lastWrittenHash = target;
+      } catch {
+        /* ignore */
+      }
+    }
+
+    function readHash(): { q: string; sep: Sep; max: number | null; lc: boolean | null } | null {
+      const raw = window.location.hash.replace(/^#/, '');
+      if (!raw) return null;
+      const params = new URLSearchParams(raw);
+      const q = params.get('q');
+      if (q === null) return null;
+      const maxRaw = params.get('max');
+      const maxNum = maxRaw === null ? null : Number.parseInt(maxRaw, 10);
+      const lcRaw = params.get('lc');
+      return {
+        q,
+        sep: asSep(params.get('sep')),
+        max: maxNum !== null && Number.isFinite(maxNum) ? maxNum : null,
+        lc: lcRaw === null ? null : lcRaw === '1',
+      };
+    }
+
+    /* --- Evaluation ----------------------------------------------------- */
+
+    function evaluate(userInitiated: boolean): void {
+      const raw = input!.value;
+      const opts = currentOptions();
+      if (raw.trim().length === 0) {
+        hideActions();
+        renderEmpty();
+        if (userInitiated) writeHash(null, opts);
+        return;
+      }
+      let result: Result | null = null;
+      try {
+        result = engine.slugify(raw, opts);
+      } catch {
+        renderError(resultsBox!, summaryEl!, 'Unexpected error while slugifying.');
+        hideActions();
+        return;
+      }
+      if (!result || result.valid === false) {
+        renderError(resultsBox!, summaryEl!, result?.error ?? 'Could not slugify that title.');
+        hideActions();
+        if (userInitiated) writeHash(null, opts);
+        return;
+      }
+      renderResultCard(result, opts);
+      if (result.slug.length > 0) {
+        copyBtn!.hidden = false;
+        copyBtn!.dataset.copy = result.slug;
+        shareBtn!.hidden = false;
+        shareBtn!.dataset.copy =
+          location.origin + localePath('/slugify') + buildHash(raw, opts);
+      } else {
+        hideActions();
+      }
+      if (userInitiated) writeHash(raw, opts);
+    }
+
+    /* --- Events --------------------------------------------------------- */
+
+    let timer: number | undefined;
+
+    function scheduleEval(): void {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => evaluate(true), DEBOUNCE_MS);
+    }
+
+    function clearChipSelection(): void {
+      chips.forEach((c) => c.classList.remove('is-active'));
+    }
+
+    input.addEventListener('input', () => {
+      clearChipSelection();
+      scheduleEval();
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      // Ctrl/⌘+Enter runs and blurs; plain Enter runs immediately without a newline.
+      e.preventDefault();
+      window.clearTimeout(timer);
+      evaluate(true);
+      if ((e.metaKey || e.ctrlKey) || window.matchMedia?.('(pointer: coarse)').matches) {
+        input.blur();
+      }
+    });
+
+    sepBtns.forEach((b) => {
+      b.addEventListener('click', () => {
+        setSeparator(asSep(b.dataset.sep));
+        window.clearTimeout(timer);
+        evaluate(true);
+      });
+    });
+    maxInput.addEventListener('input', scheduleEval);
+    maxInput.addEventListener('change', () => {
+      window.clearTimeout(timer);
+      evaluate(true);
+    });
+    lowerToggle.addEventListener('change', () => {
+      window.clearTimeout(timer);
+      evaluate(true);
+    });
+
+    chips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        input.value = chip.dataset.input ?? '';
+        chips.forEach((c) => c.classList.toggle('is-active', c === chip));
+        window.clearTimeout(timer);
+        evaluate(true);
+      });
+    });
+
+    /* --- First load: hash deep link > seeded example ------------------- */
+
+    const hash = readHash();
+    if (hash) {
+      input.value = hash.q;
+      setSeparator(hash.sep);
+      if (hash.max !== null) maxInput.value = hash.max > 0 ? String(hash.max) : '';
+      if (hash.lc !== null) lowerToggle.checked = hash.lc;
+      clearChipSelection();
+      evaluate(false);
+    } else if (chips[0]?.dataset.input) {
+      input.value = chips[0].dataset.input;
+      chips[0].classList.add('is-active');
+      evaluate(false);
+    } else {
+      renderEmpty();
+    }
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

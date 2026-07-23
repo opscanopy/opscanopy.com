@@ -51,5 +51,8 @@ export default defineConfig({
   },
   vite: {
     plugins: [tailwindcss()],
+    server: {
+      allowedHosts: ['.vorflux.com'],
+    },
   },
 });

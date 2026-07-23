@@ -1,0 +1,768 @@
+---
+/**
+ * CaseConverterPlayground — the interactive Case Converter island.
+ *
+ * A no-framework, server-rendered shell hydrated by a single module <script>.
+ * One text input; every case style (camelCase, snake_case, kebab-case, …) is
+ * rendered as a labeled, copyable row. Example chips render server-side and run
+ * on tap. Evaluation is synchronous and debounced while typing (Enter commits
+ * immediately). Per-row copy, Copy all, and a shareable #q= deep link. Runs
+ * entirely client-side.
+ *
+ * Runtime contract (engine lazy-imported for code-splitting):
+ *   ../lib/case-converter/engine → convertCases(input: string): CaseResult
+ *   ../lib/case-converter/types  → CaseResult { valid; error?; rows[] }
+ * Example chips are imported statically in the frontmatter so they render SSR.
+ */
+import { examples } from '../lib/case-converter/examples';
+---
+
+<section class="cc-pg" aria-label="Case Converter playground">
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Toolbar: example chips ───────────────────────────────────────── */}
+    <div class="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:px-5">
+      <span class="eyebrow">Examples</span>
+      <div id="cc-chips" class="cc-chips" role="group" aria-label="Examples">
+        {
+          examples.map((ex) => (
+            <button type="button" class="cc-chip" data-input={ex.input} aria-label={ex.label}>
+              {ex.label}
+            </button>
+          ))
+        }
+      </div>
+    </div>
+
+    {/* ── Text input ───────────────────────────────────────────────────── */}
+    <div class="border-b border-hairline px-4 py-4 sm:px-5">
+      <label class="eyebrow mb-2 block" for="cc-input">Text to convert</label>
+      <textarea
+        id="cc-input"
+        class="cc-input code-mono"
+        rows="3"
+        spellcheck="false"
+        autocapitalize="off"
+        autocorrect="off"
+        autocomplete="off"
+        placeholder="userProfileID"
+        aria-describedby="cc-input-hint cc-input-live"></textarea>
+      <p id="cc-input-hint" class="cc-hint caption text-mute">
+        Word boundaries are detected from spaces, hyphens, underscores and camelCase humps —
+        <span class="code-mono">getHTTPResponse</span> splits into
+        <span class="code-mono">get / http / response</span>.
+      </p>
+      <p id="cc-input-live" class="cc-hint cc-hint--live caption text-mute">
+        Results update as you type — press Enter to run now.
+      </p>
+    </div>
+
+    {/* ── Results panel ────────────────────────────────────────────────── */}
+    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <span class="flex items-center gap-2">
+          <span class="eyebrow">Results</span>
+          <button
+            id="cc-share"
+            type="button"
+            class="cc-copy-btn cc-copy-btn--labeled"
+            data-copy-link
+            data-copy=""
+            data-copy-label="Copy link"
+            hidden
+          >
+            <svg
+              class="cc-copy-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6.75 9.25l2.5-2.5"></path>
+              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
+              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
+            </svg>
+            <svg
+              class="cc-check-icon hidden"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="cc-copy-label">Copy link</span>
+          </button>
+          <button
+            id="cc-copy-all"
+            type="button"
+            class="cc-copy-btn cc-copy-btn--labeled"
+            data-copy-all
+            data-copy=""
+            data-copy-label="Copy all"
+            hidden
+          >
+            <svg
+              class="cc-copy-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="5" y="5" width="9" height="9" rx="1.5"></rect>
+              <path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"></path>
+            </svg>
+            <svg
+              class="cc-check-icon hidden"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="cc-copy-label">Copy all</span>
+          </button>
+        </span>
+        <span id="cc-summary" class="cc-summary code-mono text-mute" role="status" aria-live="polite"></span>
+      </div>
+      <div id="cc-results" class="cc-results">
+        <p class="cc-empty body-sm text-mute">
+          Type or paste any identifier — or tap an example — to see it in camelCase, snake_case,
+          kebab-case and more, each with a Copy button.
+        </p>
+      </div>
+      <span class="privacy-note caption text-mute">
+        Conversion runs entirely in your browser — nothing is uploaded.
+      </span>
+      <span id="cc-copy-status" class="sr-only" role="status" aria-live="polite"></span>
+    </div>
+  </div>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  /* ── Example chips (squared instrument-panel chips, mono, 4px radius) ── */
+  .cc-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  :global(.cc-chip) {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 11px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-hairline-muted);
+    background: var(--color-canvas);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 16px;
+    letter-spacing: 0.01em;
+    color: var(--color-brand-strong);
+    cursor: pointer;
+    transition:
+      background 0.12s ease,
+      border-color 0.12s ease,
+      color 0.12s ease;
+  }
+  :global(.cc-chip:hover) {
+    border-color: var(--color-hairline-strong);
+    background: var(--color-canvas-hover);
+  }
+  :global(.cc-chip.is-active) {
+    background: var(--color-brand-soft);
+    border-color: var(--color-brand-strong);
+    color: var(--color-brand-strong);
+  }
+  :global(.cc-chip:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 2px;
+  }
+  @media (pointer: coarse) {
+    :global(.cc-chip) {
+      min-height: 44px;
+    }
+  }
+
+  .cc-input {
+    width: 100%;
+    min-height: 84px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 14px;
+    line-height: 22px;
+    resize: vertical;
+    transition: box-shadow 0.15s ease;
+  }
+  .cc-input::placeholder {
+    color: var(--color-mute);
+  }
+  .cc-input:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .cc-input:focus {
+    outline: none;
+  }
+  .cc-input:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-link);
+    outline: none;
+  }
+
+  .cc-hint {
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  .cc-hint .code-mono {
+    font-size: 12px;
+    color: var(--color-body);
+  }
+  .cc-hint--live {
+    margin-top: 2px;
+  }
+  .privacy-note {
+    display: block;
+    margin-top: 12px;
+  }
+  .cc-summary {
+    min-width: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+  .cc-results {
+    min-height: 120px;
+  }
+  /* Copy failure message flips from sr-only to a visible caption. */
+  .cc-copy-status--fail {
+    display: block;
+    margin-top: 10px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-error-deep);
+  }
+
+  /* ── Runtime-injected markup (styled with :global) ──────────────────── */
+  :global(.cc-card) {
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+    animation: cc-rise 0.18s ease both;
+  }
+  :global(.cc-row) {
+    display: grid;
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+    gap: 12px;
+    padding: 9px 14px;
+    align-items: baseline;
+  }
+  @media (max-width: 479px) {
+    :global(.cc-row) {
+      grid-template-columns: 1fr;
+      gap: 2px;
+    }
+  }
+  :global(.cc-row + .cc-row) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.cc-row__k) {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 18px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+  :global(.cc-row__v-wrap) {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    margin: 0;
+  }
+  :global(.cc-row__v) {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--color-ink);
+    font-variant-numeric: tabular-nums;
+    word-break: break-all;
+  }
+
+  /* ── Copy buttons ─────────────────────────────────────────────────────── */
+  :global(.cc-copy-btn) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition:
+      color 0.12s ease,
+      background 0.12s ease;
+    padding: 0;
+  }
+  :global(.cc-copy-btn:hover) {
+    color: var(--color-brand-strong);
+    background: var(--color-hairline);
+  }
+  :global(.cc-copy-btn:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  :global(.cc-copy-btn--labeled) {
+    width: auto;
+    height: 26px;
+    gap: 6px;
+    padding: 0 10px;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  :global(.cc-copy-btn--copied) {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+  @media (pointer: coarse) {
+    :global(.cc-copy-btn) {
+      width: 44px;
+      height: 44px;
+    }
+    :global(.cc-copy-btn--labeled) {
+      width: auto;
+      height: auto;
+      min-height: 36px;
+    }
+  }
+
+  @keyframes cc-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.cc-card) {
+      animation: none;
+    }
+  }
+
+  :global(.cc-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+  }
+  :global(.cc-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.cc-error__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.cc-error__detail) {
+    margin-top: 2px;
+    font-size: 13px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  :global(.cc-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+</style>
+
+<script>
+  import { escapeHtml } from '../lib/escape-html';
+  import { copyTextToClipboard } from '../lib/clipboard';
+
+  type CaseKind =
+    | 'camel'
+    | 'pascal'
+    | 'snake'
+    | 'screamingSnake'
+    | 'kebab'
+    | 'train'
+    | 'title'
+    | 'sentence'
+    | 'constant'
+    | 'dot'
+    | 'path';
+  type Row = { kind: CaseKind; label: string; value: string };
+  type Result = { valid: boolean; error?: string; rows: Row[] };
+  type EngineModule = { convertCases: (input: string) => Result };
+
+  const ROOT_SEL = '.cc-pg';
+  const DEBOUNCE_MS = 140;
+  const ERROR_HOLD_MS = 600;
+  const RESET_MS = 1800;
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.ccWired === 'true') return;
+      root.dataset.ccWired = 'true';
+      void init(root);
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  const ALERT_SVG =
+    '<svg class="cc-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const COPY_ICON_SVG =
+    '<svg class="cc-copy-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"/></svg>';
+  const CHECK_ICON_SVG =
+    '<svg class="cc-check-icon hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
+
+  function copyBtnHtml(label: string, value: string): string {
+    return (
+      `<button class="cc-copy-btn" type="button" aria-label="Copy ${escapeHtml(label)}" data-copy="${escapeHtml(value)}">` +
+      COPY_ICON_SVG +
+      CHECK_ICON_SVG +
+      '</button>'
+    );
+  }
+
+  function setSummary(summary: HTMLElement, text: string, isError: boolean): void {
+    summary.textContent = text;
+    summary.classList.toggle('text-error-deep', isError);
+    summary.classList.toggle('text-mute', !isError);
+  }
+
+  function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
+    setSummary(summary, '', false);
+    container.innerHTML =
+      '<p class="cc-empty body-sm text-mute">Type or paste any identifier — or tap an example — to see it in camelCase, snake_case, kebab-case and more, each with a Copy button.</p>';
+  }
+
+  function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
+    setSummary(summary, 'No output', true);
+    container.innerHTML =
+      '<div class="cc-error" role="alert">' +
+      ALERT_SVG +
+      '<div><p class="cc-error__title">Nothing to convert</p>' +
+      `<p class="cc-error__detail">${escapeHtml(message)}</p></div></div>`;
+  }
+
+  function renderResult(container: HTMLElement, result: Result): void {
+    const rows = Array.isArray(result.rows) ? result.rows : [];
+    const rowsHtml = rows
+      .map((r) => {
+        const label = r.label ?? '';
+        const value = typeof r.value === 'string' ? r.value : '';
+        return (
+          '<div class="cc-row">' +
+          `<span class="cc-row__k">${escapeHtml(label)}</span>` +
+          `<span class="cc-row__v-wrap"><span class="cc-row__v">${escapeHtml(value)}</span>${copyBtnHtml(label, value)}</span>` +
+          '</div>'
+        );
+      })
+      .join('');
+    container.innerHTML = '<div class="cc-card">' + rowsHtml + '</div>';
+  }
+
+  /** "Label: value" lines for the Copy all button. */
+  function buildCopyAll(result: Result): string {
+    return result.rows.map((r) => `${r.label}: ${r.value}`).join('\n');
+  }
+
+  async function init(root: HTMLElement): Promise<void> {
+    const input = el<HTMLTextAreaElement>(root, '#cc-input');
+    const resultsBox = el<HTMLElement>(root, '#cc-results');
+    const summaryEl = el<HTMLElement>(root, '#cc-summary');
+    const shareBtn = el<HTMLButtonElement>(root, '#cc-share');
+    const copyAllBtn = el<HTMLButtonElement>(root, '#cc-copy-all');
+    const copyStatus = el<HTMLElement>(root, '#cc-copy-status');
+    const chips = Array.from(root.querySelectorAll<HTMLButtonElement>('#cc-chips .cc-chip'));
+    if (!input || !resultsBox || !summaryEl || !shareBtn || !copyAllBtn || !copyStatus) return;
+
+    /* ------------------------------------------------------------------ */
+    /* Copy plumbing (row buttons, Copy link, Copy all)                    */
+    /* ------------------------------------------------------------------ */
+
+    function setCopyStatus(message: string, failed: boolean): void {
+      copyStatus!.textContent = message;
+      copyStatus!.classList.toggle('sr-only', !failed);
+      copyStatus!.classList.toggle('cc-copy-status--fail', failed);
+    }
+
+    function setCopied(btn: HTMLButtonElement, copied: boolean): void {
+      btn.classList.toggle('cc-copy-btn--copied', copied);
+      btn.querySelector('.cc-copy-icon')?.classList.toggle('hidden', copied);
+      btn.querySelector('.cc-check-icon')?.classList.toggle('hidden', !copied);
+      const label = btn.querySelector<HTMLElement>('.cc-copy-label');
+      if (label) {
+        label.textContent = copied ? 'Copied' : (btn.dataset.copyLabel ?? 'Copy');
+      } else if (copied) {
+        btn.dataset.prevAriaLabel = btn.getAttribute('aria-label') ?? '';
+        btn.setAttribute('aria-label', 'Copied');
+      } else if (btn.dataset.prevAriaLabel) {
+        btn.setAttribute('aria-label', btn.dataset.prevAriaLabel);
+        delete btn.dataset.prevAriaLabel;
+      }
+    }
+
+    async function handleCopy(btn: HTMLButtonElement): Promise<void> {
+      const text = btn.dataset.copy ?? '';
+      const ok = await copyTextToClipboard(text);
+      if (ok) {
+        setCopied(btn, true);
+        setCopyStatus('Copied to clipboard.', false);
+        window.clearTimeout(Number(btn.dataset.copyTimer));
+        btn.dataset.copyTimer = String(
+          window.setTimeout(() => {
+            setCopied(btn, false);
+            if (copyStatus!.textContent === 'Copied to clipboard.') setCopyStatus('', false);
+          }, RESET_MS)
+        );
+      } else {
+        setCopyStatus('Copy failed — select the value manually.', true);
+      }
+    }
+
+    root.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.cc-copy-btn');
+      if (!btn) return;
+      void handleCopy(btn);
+    });
+
+    /* ------------------------------------------------------------------ */
+    /* Engine (dynamic import → code-splits away from the page shell)      */
+    /* ------------------------------------------------------------------ */
+
+    let engine: EngineModule;
+    try {
+      engine = (await import('../lib/case-converter/engine')) as unknown as EngineModule;
+    } catch (err) {
+      renderError(
+        resultsBox,
+        summaryEl,
+        'The converter engine failed to load. Reload the page to try again.'
+      );
+      console.error('[CaseConverter] engine import failed:', err);
+      return;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* State machine: EMPTY | VALID | PENDING                              */
+    /* ------------------------------------------------------------------ */
+
+    let evalTimer: number | undefined;
+    let errTimer: number | undefined;
+    let lastWrittenHash: string | null = null;
+
+    function clearTimers(): void {
+      window.clearTimeout(evalTimer);
+      window.clearTimeout(errTimer);
+    }
+
+    function buildQueryHash(value: string): string {
+      return `#q=${encodeURIComponent(value)}`;
+    }
+
+    function writeHash(value: string | null): void {
+      const target = value ? buildQueryHash(value) : '';
+      if (target === lastWrittenHash) return;
+      // Safari throttles replaceState (~100/30s) and throws — never let that break input.
+      try {
+        if (value) {
+          history.replaceState(null, '', target);
+        } else {
+          history.replaceState(null, '', location.pathname + location.search);
+        }
+        lastWrittenHash = target;
+      } catch {
+        /* ignore */
+      }
+    }
+
+    function hideActions(): void {
+      shareBtn!.hidden = true;
+      shareBtn!.dataset.copy = '';
+      copyAllBtn!.hidden = true;
+      copyAllBtn!.dataset.copy = '';
+    }
+
+    function syncChips(value: string): void {
+      chips.forEach((chip) => {
+        chip.classList.toggle('is-active', (chip.dataset.input ?? '') === value);
+      });
+    }
+
+    function clearChips(): void {
+      chips.forEach((chip) => chip.classList.remove('is-active'));
+    }
+
+    function toEmpty(): void {
+      clearTimers();
+      hideActions();
+      renderEmpty(resultsBox!, summaryEl!);
+      clearChips();
+      writeHash(null);
+    }
+
+    function showError(message: string): void {
+      clearTimers();
+      hideActions();
+      renderError(resultsBox!, summaryEl!, message);
+      clearChips();
+      writeHash(null);
+    }
+
+    function evaluate(source: 'type' | 'commit' | 'seed'): void {
+      clearTimers();
+      const value = input!.value;
+      if (value.trim().length === 0) {
+        toEmpty();
+        return;
+      }
+
+      let result: Result | null = null;
+      try {
+        result = engine.convertCases(value);
+      } catch {
+        result = null;
+      }
+
+      if (result && result.valid !== false) {
+        renderResult(resultsBox!, result);
+        const wordCount = result.rows.length ? result.rows[2].value.split('_').length : 0;
+        setSummary(summaryEl!, `${result.rows.length} cases · ${wordCount} words`, false);
+        shareBtn!.hidden = false;
+        shareBtn!.dataset.copy =
+          location.origin + location.pathname + location.search + buildQueryHash(value);
+        copyAllBtn!.hidden = false;
+        copyAllBtn!.dataset.copy = buildCopyAll(result);
+        syncChips(value);
+        if (source !== 'seed') writeHash(value);
+        return;
+      }
+
+      const message = result?.error ?? 'Enter some text to convert.';
+      if (source !== 'type') {
+        showError(message);
+        return;
+      }
+
+      // Mid-typing: hold the last card briefly, no error yet.
+      hideActions();
+      setSummary(summaryEl!, '', false);
+      errTimer = window.setTimeout(() => showError(message), ERROR_HOLD_MS);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Events                                                              */
+    /* ------------------------------------------------------------------ */
+
+    input.addEventListener('input', () => {
+      clearTimers();
+      if (input.value.trim().length === 0) {
+        toEmpty();
+        return;
+      }
+      evalTimer = window.setTimeout(() => evaluate('type'), DEBOUNCE_MS);
+    });
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || e.shiftKey) return;
+      e.preventDefault();
+      evaluate('commit');
+      if (window.matchMedia?.('(pointer: coarse)').matches) input.blur();
+    });
+
+    chips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        input.value = chip.dataset.input ?? '';
+        evaluate('commit');
+      });
+    });
+
+    /* ------------------------------------------------------------------ */
+    /* First load: #q= deep link → seeded first chip. Seeding never writes  */
+    /* the hash — only user actions do.                                     */
+    /* ------------------------------------------------------------------ */
+
+    function readQueryHash(): string | null {
+      const m = window.location.hash.match(/[#&]q=([^&]*)/);
+      if (!m) return null;
+      try {
+        return decodeURIComponent(m[1]);
+      } catch {
+        return m[1];
+      }
+    }
+
+    const hashValue = readQueryHash();
+    const seed = chips[0]?.dataset.input ?? '';
+
+    if (hashValue) {
+      input.value = hashValue;
+      evaluate('seed');
+    } else if (seed) {
+      input.value = seed;
+      evaluate('seed');
+    } else {
+      renderEmpty(resultsBox, summaryEl);
+    }
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

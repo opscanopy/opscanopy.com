@@ -62,6 +62,10 @@ const TOOL_PATHS = {
     lib: 'alertmanager-route-tester',
     component: 'AlertmanagerRouteTesterPlayground.astro',
   },
+  'uuid-ulid-generator': { lib: 'uuid-ulid-generator', component: 'UuidUlidGeneratorPlayground.astro' },
+  'case-converter': { lib: 'case-converter', component: 'CaseConverterPlayground.astro' },
+  'slugify': { lib: 'slugify', component: 'SlugifyPlayground.astro' },
+  'chmod-calculator': { lib: 'chmod-calculator', component: 'ChmodCalculatorPlayground.astro' },
 };
 
 const missing = liveTools.map((t) => t.slug).filter((slug) => !TOOL_PATHS[slug]);

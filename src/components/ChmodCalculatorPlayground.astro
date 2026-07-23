@@ -1,0 +1,1011 @@
+---
+/**
+ * ChmodCalculatorPlayground — the interactive chmod Calculator island.
+ *
+ * A no-framework, server-rendered shell hydrated by a single module <script>.
+ * Three inputs stay in sync — a user/group/other × read/write/execute checkbox
+ * matrix (plus setuid/setgid/sticky special-bit checkboxes), an octal input,
+ * and a symbolic input. Editing any one re-renders the others via the engine.
+ * Output rows (octal, symbolic, ls -l, chmod command) are each copyable, with
+ * Copy all and a shareable #m=<octal> deep link. Runs entirely client-side.
+ *
+ * Runtime contract (engine lazy-imported for code-splitting):
+ *   ../lib/chmod-calculator/engine → parseOctal / parseSymbolic / fromState
+ *   ../lib/chmod-calculator/types  → ChmodResult, ChmodState
+ *
+ * examples.ts is statically imported here in the frontmatter so the chips
+ * render server-side; only the engine is dynamically imported in the boot
+ * closure.
+ */
+import { examples } from '../lib/chmod-calculator/examples';
+
+const ROWS = [
+  { key: 'user', label: 'Owner' },
+  { key: 'group', label: 'Group' },
+  { key: 'other', label: 'Other' },
+] as const;
+const COLS = [
+  { key: 'read', label: 'Read' },
+  { key: 'write', label: 'Write' },
+  { key: 'execute', label: 'Exec' },
+] as const;
+const SPECIAL = [
+  { key: 'setuid', label: 'setuid' },
+  { key: 'setgid', label: 'setgid' },
+  { key: 'sticky', label: 'sticky' },
+] as const;
+---
+
+<section class="chmod-pg" aria-label="chmod Calculator playground">
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Toolbar: example chips ───────────────────────────────────────── */}
+    <div class="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:px-5">
+      <span class="eyebrow">Examples</span>
+      <div id="chmod-chips" class="chmod-chips" role="group" aria-label="Examples">
+        {
+          examples.map((ex) => (
+            <button
+              type="button"
+              class="chmod-chip"
+              data-octal={ex.octal}
+              aria-label={`${ex.label}`}
+            >
+              {ex.label}
+            </button>
+          ))
+        }
+      </div>
+    </div>
+
+    {/* ── Permission matrix ────────────────────────────────────────────── */}
+    <div class="border-b border-hairline px-4 py-4 sm:px-5">
+      <span class="eyebrow chmod-block-label">Permission bits</span>
+      <div class="chmod-grid" role="group" aria-label="Permission matrix">
+        <div class="chmod-grid__cell chmod-grid__cell--corner" aria-hidden="true">·</div>
+        {COLS.map((c) => <div class="chmod-grid__cell chmod-grid__cell--colh">{c.label}</div>)}
+        {
+          ROWS.map((r) => (
+            <>
+              <div class="chmod-grid__cell chmod-grid__cell--rowh">{r.label}</div>
+              {COLS.map((c) => (
+                <div class="chmod-grid__cell">
+                  <input
+                    type="checkbox"
+                    class="chmod-box"
+                    data-who={r.key}
+                    data-bit={c.key}
+                    aria-label={`${r.label} ${c.label}`}
+                  />
+                </div>
+              ))}
+            </>
+          ))
+        }
+      </div>
+      <div class="chmod-special mt-3" role="group" aria-label="Special bits">
+        {
+          SPECIAL.map((s) => (
+            <label class="chmod-check" for={`chmod-${s.key}`}>
+              <input id={`chmod-${s.key}`} type="checkbox" class="chmod-box chmod-box--sm" data-special={s.key} />
+              <span class="chmod-check__label">{s.label}</span>
+            </label>
+          ))
+        }
+      </div>
+    </div>
+
+    {/* ── Octal + symbolic inputs ──────────────────────────────────────── */}
+    <div class="border-b border-hairline px-4 py-4 sm:px-5">
+      <span class="eyebrow chmod-block-label">Enter a value</span>
+      <div class="chmod-sync-row">
+        <div class="chmod-sync-field">
+          <label class="chmod-field-label" for="chmod-octal">Octal</label>
+          <input
+            id="chmod-octal"
+            class="chmod-input code-mono"
+            type="text"
+            inputmode="numeric"
+            spellcheck="false"
+            autocapitalize="off"
+            autocorrect="off"
+            autocomplete="off"
+            enterkeyhint="done"
+            placeholder="755"
+            aria-label="Octal permission value"
+            aria-describedby="chmod-input-hint chmod-input-live"
+          />
+        </div>
+        <div class="chmod-sync-field">
+          <label class="chmod-field-label" for="chmod-symbolic">Symbolic</label>
+          <input
+            id="chmod-symbolic"
+            class="chmod-input code-mono"
+            type="text"
+            spellcheck="false"
+            autocapitalize="off"
+            autocorrect="off"
+            autocomplete="off"
+            enterkeyhint="done"
+            placeholder="rwxr-xr-x"
+            aria-label="Symbolic permission value"
+            aria-describedby="chmod-input-hint chmod-input-live"
+          />
+        </div>
+      </div>
+      <p id="chmod-input-hint" class="chmod-hint caption text-mute">
+        The matrix, octal and symbolic fields all stay in sync — edit any one and the others follow.
+      </p>
+      <p id="chmod-input-live" class="chmod-hint chmod-hint--live caption text-mute">
+        Results update as you type — press Enter to run now.
+      </p>
+    </div>
+
+    {/* ── Results panel ────────────────────────────────────────────────── */}
+    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <span class="flex items-center gap-2">
+          <span class="eyebrow">Output</span>
+          <button
+            id="chmod-share"
+            type="button"
+            class="chmod-copy-btn chmod-copy-btn--labeled"
+            data-copy-link
+            data-copy=""
+            data-copy-label="Copy link"
+            hidden
+          >
+            <svg
+              class="chmod-copy-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6.75 9.25l2.5-2.5"></path>
+              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
+              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
+            </svg>
+            <svg
+              class="chmod-check-icon hidden"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="chmod-copy-label">Copy link</span>
+          </button>
+          <button
+            id="chmod-copy-all"
+            type="button"
+            class="chmod-copy-btn chmod-copy-btn--labeled"
+            data-copy-all
+            data-copy=""
+            data-copy-label="Copy all"
+            hidden
+          >
+            <svg
+              class="chmod-copy-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="5" y="5" width="9" height="9" rx="1.5"></rect>
+              <path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"></path>
+            </svg>
+            <svg
+              class="chmod-check-icon hidden"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="chmod-copy-label">Copy all</span>
+          </button>
+        </span>
+        <span id="chmod-summary" class="chmod-summary code-mono text-mute" role="status"></span>
+      </div>
+      <div id="chmod-results" class="chmod-results">
+        <p class="chmod-empty body-sm text-mute">
+          Toggle the matrix or type an octal or symbolic value to see the octal, symbolic,
+          <span class="code-mono">ls -l</span> and <span class="code-mono">chmod</span> forms here.
+        </p>
+      </div>
+      <span id="chmod-copy-status" class="sr-only" role="status" aria-live="polite"></span>
+    </div>
+  </div>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  .chmod-block-label {
+    display: block;
+    margin-bottom: 10px;
+  }
+
+  /* ── Example chips (squared mono, 4px radius — NOT rounded pills) ────── */
+  .chmod-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .chmod-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 11px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-hairline-muted);
+    background: var(--color-canvas);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 16px;
+    letter-spacing: 0.01em;
+    color: var(--color-brand-strong);
+    cursor: pointer;
+    transition:
+      background 0.12s ease,
+      border-color 0.12s ease,
+      color 0.12s ease;
+  }
+  .chmod-chip:hover {
+    border-color: var(--color-hairline-strong);
+    background: var(--color-canvas-hover);
+  }
+  .chmod-chip.is-active {
+    background: var(--color-brand-soft);
+    border-color: var(--color-brand-strong);
+    color: var(--color-brand-strong);
+  }
+  .chmod-chip:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+  @media (pointer: coarse) {
+    .chmod-chip {
+      min-height: 44px;
+    }
+  }
+
+  /* ── Permission matrix ──────────────────────────────────────────────── */
+  .chmod-grid {
+    display: grid;
+    grid-template-columns: 72px repeat(3, 1fr);
+    gap: 0;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+  }
+  .chmod-grid__cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 8px;
+    border-bottom: 1px solid var(--color-hairline);
+  }
+  .chmod-grid > .chmod-grid__cell:nth-last-child(-n + 4) {
+    border-bottom: none;
+  }
+  .chmod-grid__cell--rowh {
+    justify-content: flex-start;
+    padding-left: 14px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--color-body);
+  }
+  .chmod-grid__cell--colh {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+  .chmod-grid__cell--corner {
+    color: transparent;
+  }
+  @media (pointer: coarse) {
+    .chmod-grid__cell {
+      padding: 14px 8px;
+    }
+  }
+
+  .chmod-box {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+    accent-color: var(--color-brand);
+    cursor: pointer;
+  }
+  .chmod-box--sm {
+    width: 16px;
+    height: 16px;
+  }
+  .chmod-box:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+
+  .chmod-special {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .chmod-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .chmod-check__label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--color-body);
+  }
+
+  /* ── Sync inputs ────────────────────────────────────────────────────── */
+  .chmod-sync-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .chmod-sync-field {
+    flex: 1 1 180px;
+    min-width: 0;
+  }
+  .chmod-field-label {
+    display: block;
+    margin-bottom: 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--color-body);
+  }
+  .chmod-input {
+    width: 100%;
+    height: 48px;
+    padding: 0 14px;
+    border: none;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 14px;
+    line-height: 24px;
+    letter-spacing: 0.01em;
+    transition: box-shadow 0.15s ease;
+  }
+  .chmod-input::placeholder {
+    color: var(--color-mute);
+  }
+  .chmod-input:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .chmod-input:focus {
+    outline: none;
+  }
+  .chmod-input:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-focus);
+    outline: none;
+  }
+  .chmod-input.chmod-input--error {
+    box-shadow: inset 0 0 0 1px var(--color-error);
+  }
+  .chmod-input.chmod-input--error:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-error);
+  }
+  .chmod-hint {
+    margin-top: 10px;
+    font-size: 12px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  .chmod-hint .code-mono {
+    font-size: 12px;
+  }
+  .chmod-hint--live {
+    margin-top: 2px;
+  }
+
+  .chmod-summary {
+    min-width: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+  .chmod-results {
+    min-height: 176px;
+    display: grid;
+    align-content: center;
+  }
+  .chmod-copy-status--fail {
+    display: block;
+    margin-top: 10px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-error-deep);
+  }
+
+  /* ── Runtime-injected result markup ─────────────────────────────────── */
+  :global(.chmod-card) {
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+    animation: chmod-rise 0.18s ease both;
+  }
+  :global(.chmod-row) {
+    display: grid;
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+    gap: 12px;
+    padding: 9px 14px;
+    align-items: baseline;
+  }
+  @media (max-width: 479px) {
+    :global(.chmod-row) {
+      grid-template-columns: 1fr;
+      gap: 2px;
+    }
+  }
+  :global(.chmod-row + .chmod-row) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.chmod-row__k) {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 18px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+  :global(.chmod-row__v-wrap) {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  :global(.chmod-row__v) {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--color-ink);
+    font-variant-numeric: tabular-nums;
+    word-break: break-all;
+  }
+  :global(.chmod-copy-btn) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition:
+      color 0.12s ease,
+      background 0.12s ease;
+    padding: 0;
+  }
+  :global(.chmod-copy-btn:hover) {
+    color: var(--color-brand-strong);
+    background: var(--color-hairline);
+  }
+  :global(.chmod-copy-btn:focus-visible) {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 1px;
+  }
+  :global(.chmod-copy-btn--labeled) {
+    width: auto;
+    height: 26px;
+    gap: 6px;
+    padding: 0 10px;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  :global(.chmod-copy-btn--copied) {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+  @media (pointer: coarse) {
+    :global(.chmod-copy-btn) {
+      width: 44px;
+      height: 44px;
+    }
+    :global(.chmod-copy-btn--labeled) {
+      width: auto;
+      height: auto;
+      min-height: 36px;
+    }
+  }
+
+  :global(.chmod-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+  }
+  :global(.chmod-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.chmod-error__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.chmod-error__detail) {
+    margin-top: 2px;
+    font-size: 13px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  :global(.chmod-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+  :global(.chmod-empty) .code-mono {
+    font-size: 12px;
+  }
+
+  @keyframes chmod-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.chmod-card) {
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  import { escapeHtml } from '../lib/escape-html';
+  import { copyTextToClipboard } from '../lib/clipboard';
+
+  type Perm = { read: boolean; write: boolean; execute: boolean };
+  type Special = { setuid: boolean; setgid: boolean; sticky: boolean };
+  type ChmodState = { special: Special; user: Perm; group: Perm; other: Perm };
+  type ChmodResult = {
+    valid: boolean;
+    error?: string;
+    state?: ChmodState;
+    octal?: string;
+    symbolic?: string;
+    lsStyle?: string;
+    command?: string;
+  };
+  type EngineModule = {
+    parseOctal: (input: string) => ChmodResult;
+    parseSymbolic: (input: string) => ChmodResult;
+    fromState: (state: ChmodState) => ChmodResult;
+    emptyState: () => ChmodState;
+  };
+
+  const ROOT_SEL = '.chmod-pg';
+  const DEBOUNCE_MS = 140;
+  const RESET_MS = 1800;
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.chmodWired === 'true') return;
+      root.dataset.chmodWired = 'true';
+      void init(root);
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  const ALERT_SVG =
+    '<svg class="chmod-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const COPY_ICON_SVG =
+    '<svg class="chmod-copy-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"/></svg>';
+  const CHECK_ICON_SVG =
+    '<svg class="chmod-check-icon hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
+
+  function copyBtnHtml(label: string, value: string): string {
+    return (
+      `<button class="chmod-copy-btn" type="button" aria-label="Copy ${escapeHtml(label)}" data-copy="${escapeHtml(value)}">` +
+      COPY_ICON_SVG +
+      CHECK_ICON_SVG +
+      '</button>'
+    );
+  }
+
+  function setSummary(summary: HTMLElement, text: string, isError: boolean): void {
+    summary.textContent = text;
+    summary.classList.toggle('text-error-deep', isError);
+    summary.classList.toggle('text-mute', !isError);
+  }
+
+  const EMPTY_HTML =
+    '<p class="chmod-empty body-sm text-mute">Toggle the matrix or type an octal or symbolic value to see the octal, symbolic, <span class="code-mono">ls -l</span> and <span class="code-mono">chmod</span> forms here.</p>';
+
+  function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
+    setSummary(summary, `Invalid — ${message}`, true);
+    container.innerHTML =
+      '<div class="chmod-error">' +
+      ALERT_SVG +
+      '<div><p class="chmod-error__title">Could not read that value</p>' +
+      `<p id="chmod-error-detail" class="chmod-error__detail">${escapeHtml(message)}</p></div></div>`;
+  }
+
+  function renderResult(container: HTMLElement, summary: HTMLElement, result: ChmodResult): void {
+    const octal = result.octal ?? '';
+    const symbolic = result.symbolic ?? '';
+    const lsStyle = result.lsStyle ?? '';
+    const command = result.command ?? '';
+    setSummary(summary, `${octal} · ${symbolic} · file`, false);
+
+    const row = (label: string, value: string): string =>
+      '<div class="chmod-row">' +
+      `<span class="chmod-row__k">${escapeHtml(label)}</span>` +
+      `<span class="chmod-row__v-wrap"><span class="chmod-row__v">${escapeHtml(value)}</span>${copyBtnHtml(label, value)}</span></div>`;
+
+    container.innerHTML =
+      '<div class="chmod-card">' +
+      row('Octal', octal) +
+      row('Symbolic', symbolic) +
+      row('ls -l', lsStyle) +
+      row('Command', command) +
+      '</div>';
+  }
+
+  async function init(root: HTMLElement): Promise<void> {
+    const octalInput = el<HTMLInputElement>(root, '#chmod-octal');
+    const symbolicInput = el<HTMLInputElement>(root, '#chmod-symbolic');
+    const resultsBox = el<HTMLElement>(root, '#chmod-results');
+    const summaryEl = el<HTMLElement>(root, '#chmod-summary');
+    const shareBtn = el<HTMLButtonElement>(root, '#chmod-share');
+    const copyAllBtn = el<HTMLButtonElement>(root, '#chmod-copy-all');
+    const copyStatus = el<HTMLElement>(root, '#chmod-copy-status');
+    const boxes = Array.from(root.querySelectorAll<HTMLInputElement>('.chmod-box[data-who]'));
+    const specialBoxes = Array.from(
+      root.querySelectorAll<HTMLInputElement>('.chmod-box[data-special]'),
+    );
+    const chips = Array.from(root.querySelectorAll<HTMLButtonElement>('.chmod-chip'));
+    if (
+      !octalInput ||
+      !symbolicInput ||
+      !resultsBox ||
+      !summaryEl ||
+      !shareBtn ||
+      !copyAllBtn ||
+      !copyStatus
+    ) {
+      return;
+    }
+
+    let engine: EngineModule;
+    try {
+      engine = (await import('../lib/chmod-calculator/engine')) as unknown as EngineModule;
+    } catch (err) {
+      renderError(
+        resultsBox,
+        summaryEl,
+        'The calculator engine failed to load. Reload the page to try again.',
+      );
+      console.error('[ChmodCalculator] engine import failed:', err);
+      return;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Copy plumbing                                                        */
+    /* ------------------------------------------------------------------ */
+
+    function setCopyStatus(message: string, failed: boolean): void {
+      copyStatus!.textContent = message;
+      copyStatus!.classList.toggle('sr-only', !failed);
+      copyStatus!.classList.toggle('chmod-copy-status--fail', failed);
+    }
+
+    function setCopied(btn: HTMLButtonElement, copied: boolean): void {
+      btn.classList.toggle('chmod-copy-btn--copied', copied);
+      btn.querySelector('.chmod-copy-icon')?.classList.toggle('hidden', copied);
+      btn.querySelector('.chmod-check-icon')?.classList.toggle('hidden', !copied);
+      const label = btn.querySelector<HTMLElement>('.chmod-copy-label');
+      if (label) {
+        label.textContent = copied ? 'Copied' : (btn.dataset.copyLabel ?? 'Copy');
+      } else if (copied) {
+        btn.dataset.prevAriaLabel = btn.getAttribute('aria-label') ?? '';
+        btn.setAttribute('aria-label', 'Copied');
+      } else if (btn.dataset.prevAriaLabel) {
+        btn.setAttribute('aria-label', btn.dataset.prevAriaLabel);
+        delete btn.dataset.prevAriaLabel;
+      }
+    }
+
+    async function handleCopy(btn: HTMLButtonElement): Promise<void> {
+      const text = btn.dataset.copy ?? '';
+      if (!text) return;
+      const ok = await copyTextToClipboard(text);
+      if (ok) {
+        setCopied(btn, true);
+        setCopyStatus('Copied to clipboard.', false);
+        window.clearTimeout(Number(btn.dataset.copyTimer));
+        btn.dataset.copyTimer = String(
+          window.setTimeout(() => {
+            setCopied(btn, false);
+            if (copyStatus!.textContent === 'Copied to clipboard.') setCopyStatus('', false);
+          }, RESET_MS),
+        );
+      } else {
+        setCopyStatus('Copy failed — select the value manually.', true);
+      }
+    }
+
+    root.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.chmod-copy-btn');
+      if (!btn) return;
+      void handleCopy(btn);
+    });
+
+    /* ------------------------------------------------------------------ */
+    /* Sync helpers                                                         */
+    /* ------------------------------------------------------------------ */
+
+    function setOctalError(on: boolean): void {
+      octalInput!.classList.toggle('chmod-input--error', on);
+      octalInput!.setAttribute('aria-invalid', on ? 'true' : 'false');
+    }
+    function setSymbolicError(on: boolean): void {
+      symbolicInput!.classList.toggle('chmod-input--error', on);
+      symbolicInput!.setAttribute('aria-invalid', on ? 'true' : 'false');
+    }
+
+    let lastWrittenHash: string | null = null;
+    function writeHash(octal: string | null): void {
+      const target = octal ? `#m=${octal}` : '';
+      if (target === lastWrittenHash) return;
+      try {
+        if (octal) {
+          history.replaceState(null, '', target);
+        } else {
+          history.replaceState(null, '', location.pathname + location.search);
+        }
+        lastWrittenHash = target;
+      } catch {
+        /* Safari throttles replaceState — never let it break input */
+      }
+    }
+
+    function applyState(state: ChmodState): void {
+      boxes.forEach((box) => {
+        const who = box.dataset.who as 'user' | 'group' | 'other';
+        const bit = box.dataset.bit as 'read' | 'write' | 'execute';
+        box.checked = Boolean(state[who]?.[bit]);
+      });
+      specialBoxes.forEach((box) => {
+        const key = box.dataset.special as keyof Special;
+        box.checked = Boolean(state.special?.[key]);
+      });
+    }
+
+    function readState(): ChmodState {
+      const mk = (who: 'user' | 'group' | 'other'): Perm => ({
+        read: boxes.some((b) => b.dataset.who === who && b.dataset.bit === 'read' && b.checked),
+        write: boxes.some((b) => b.dataset.who === who && b.dataset.bit === 'write' && b.checked),
+        execute: boxes.some(
+          (b) => b.dataset.who === who && b.dataset.bit === 'execute' && b.checked,
+        ),
+      });
+      const special = (key: keyof Special): boolean =>
+        specialBoxes.some((b) => b.dataset.special === key && b.checked);
+      return {
+        special: { setuid: special('setuid'), setgid: special('setgid'), sticky: special('sticky') },
+        user: mk('user'),
+        group: mk('group'),
+        other: mk('other'),
+      };
+    }
+
+    /**
+     * Render a valid result: refresh output rows, share/copy-all payloads, and
+     * (from every field except the one being edited) keep inputs + matrix in
+     * sync. `source` names the field the user just edited so we don't clobber
+     * their caret.
+     */
+    function commit(result: ChmodResult, source: 'octal' | 'symbolic' | 'matrix', userInitiated: boolean): void {
+      renderResult(resultsBox!, summaryEl!, result);
+      applyState(result.state!);
+      if (source !== 'octal') octalInput!.value = result.octal!;
+      if (source !== 'symbolic') symbolicInput!.value = result.symbolic!;
+      setOctalError(false);
+      setSymbolicError(false);
+
+      shareBtn!.hidden = false;
+      shareBtn!.dataset.copy =
+        location.origin + location.pathname + location.search + `#m=${result.octal}`;
+      copyAllBtn!.hidden = false;
+      copyAllBtn!.dataset.copy = [
+        `octal:    ${result.octal}`,
+        `symbolic: ${result.symbolic}`,
+        `ls -l:    ${result.lsStyle}`,
+        `command:  ${result.command}`,
+      ].join('\n');
+
+      if (userInitiated) writeHash(result.octal ?? null);
+    }
+
+    function fail(source: 'octal' | 'symbolic', message: string, userInitiated: boolean): void {
+      if (source === 'octal') setOctalError(true);
+      else setSymbolicError(true);
+      shareBtn!.hidden = true;
+      shareBtn!.dataset.copy = '';
+      copyAllBtn!.hidden = true;
+      copyAllBtn!.dataset.copy = '';
+      renderError(resultsBox!, summaryEl!, message);
+      if (userInitiated) writeHash(null);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Evaluators                                                           */
+    /* ------------------------------------------------------------------ */
+
+    function evalOctal(userInitiated: boolean): void {
+      const value = octalInput!.value.trim();
+      if (!value) {
+        fail('octal', 'Enter an octal mode like 755 or 4755.', userInitiated);
+        return;
+      }
+      const result = engine.parseOctal(value);
+      if (!result.valid) {
+        fail('octal', result.error ?? 'Invalid octal mode.', userInitiated);
+        return;
+      }
+      commit(result, 'octal', userInitiated);
+    }
+
+    function evalSymbolic(userInitiated: boolean): void {
+      const value = symbolicInput!.value.trim();
+      if (!value) {
+        fail('symbolic', 'Enter a symbolic mode like rwxr-xr-x.', userInitiated);
+        return;
+      }
+      const result = engine.parseSymbolic(value);
+      if (!result.valid) {
+        fail('symbolic', result.error ?? 'Invalid symbolic mode.', userInitiated);
+        return;
+      }
+      commit(result, 'symbolic', userInitiated);
+    }
+
+    function evalMatrix(userInitiated: boolean): void {
+      const result = engine.fromState(readState());
+      commit(result, 'matrix', userInitiated);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Events                                                               */
+    /* ------------------------------------------------------------------ */
+
+    let timer: number | undefined;
+    function debounce(fn: () => void): void {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(fn, DEBOUNCE_MS);
+    }
+
+    octalInput.addEventListener('input', () => {
+      clearActiveChips();
+      debounce(() => evalOctal(true));
+    });
+    octalInput.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      window.clearTimeout(timer);
+      evalOctal(true);
+      if (window.matchMedia?.('(pointer: coarse)').matches) octalInput.blur();
+    });
+
+    symbolicInput.addEventListener('input', () => {
+      clearActiveChips();
+      debounce(() => evalSymbolic(true));
+    });
+    symbolicInput.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      window.clearTimeout(timer);
+      evalSymbolic(true);
+      if (window.matchMedia?.('(pointer: coarse)').matches) symbolicInput.blur();
+    });
+
+    [...boxes, ...specialBoxes].forEach((box) => {
+      box.addEventListener('change', () => {
+        clearActiveChips();
+        window.clearTimeout(timer);
+        evalMatrix(true);
+      });
+    });
+
+    function clearActiveChips(): void {
+      chips.forEach((c) => c.classList.remove('is-active'));
+    }
+
+    chips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const octal = chip.dataset.octal ?? '';
+        octalInput.value = octal;
+        window.clearTimeout(timer);
+        clearActiveChips();
+        chip.classList.add('is-active');
+        evalOctal(true);
+      });
+    });
+
+    /* ------------------------------------------------------------------ */
+    /* First load: #m=<octal> deep link > seeded example                    */
+    /* ------------------------------------------------------------------ */
+
+    const hashMatch = window.location.hash.match(/^#m=([0-7]{3,4})$/);
+    if (hashMatch) {
+      octalInput.value = hashMatch[1];
+      evalOctal(false);
+    } else if (chips[0]) {
+      const octal = chips[0].dataset.octal ?? '755';
+      octalInput.value = octal;
+      chips[0].classList.add('is-active');
+      evalOctal(false);
+    } else {
+      resultsBox.innerHTML = EMPTY_HTML;
+    }
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>
