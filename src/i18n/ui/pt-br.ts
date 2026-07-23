@@ -134,6 +134,7 @@ const ptBr: Partial<UiDict> = {
   'category.Logs': 'Logs',
   'category.Config': 'Config',
   'category.Docker': 'Docker',
+  'category.Utilities': 'Utilitários',
   'category.all': 'Todas',
 
   // Tool catalog (/tools)

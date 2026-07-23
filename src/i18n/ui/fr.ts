@@ -135,6 +135,7 @@ const fr: Partial<UiDict> = {
   'category.Logs': 'Logs',
   'category.Config': 'Config',
   'category.Docker': 'Docker',
+  'category.Utilities': 'Utilitaires',
   'category.all': 'Tous',
 
   // Tool catalog (/tools)

@@ -531,6 +531,86 @@ export const tools: Tool[] = [
     ],
     accent: 'ship',
   },
+  {
+    slug: 'uuid-ulid-generator',
+    name: 'UUID / ULID Generator',
+    tagline: 'Generate v4 UUIDs and ULIDs, or inspect one.',
+    description:
+      'Generate cryptographically random v4 UUIDs and lexicographically sortable ULIDs in bulk, or paste an identifier to decode its version, variant and embedded timestamp — all in the browser.',
+    status: 'live',
+    category: 'Utilities',
+    keywords: [
+      'uuid generator',
+      'uuid v4 generator online',
+      'ulid generator',
+      'generate uuid online',
+      'bulk uuid generator',
+      'nil uuid',
+      'uuid validator',
+      'uuid version checker',
+    ],
+    accent: 'develop',
+  },
+  {
+    slug: 'case-converter',
+    name: 'Case Converter',
+    tagline: 'Convert text between camelCase, snake_case, kebab-case and more.',
+    description:
+      'Convert any string between camelCase, PascalCase, snake_case, SCREAMING_SNAKE_CASE, kebab-case, Title Case and more at once — copy the one you need. Unicode-aware, entirely client-side.',
+    status: 'live',
+    category: 'Utilities',
+    keywords: [
+      'case converter',
+      'camelcase to snake case',
+      'snake case converter',
+      'kebab case converter',
+      'pascalcase converter',
+      'text case converter online',
+      'constant case',
+      'convert string case',
+    ],
+    accent: 'preview',
+  },
+  {
+    slug: 'slugify',
+    name: 'Slugify',
+    tagline: 'Turn any title into a clean URL slug.',
+    description:
+      'Turn titles and headings into clean, URL-safe slugs: strips accents and diacritics, collapses separators and enforces a max length. Configurable separator, all in the browser.',
+    status: 'live',
+    category: 'Utilities',
+    keywords: [
+      'slugify online',
+      'url slug generator',
+      'text to slug',
+      'slug generator',
+      'make url friendly string',
+      'remove accents from url',
+      'seo slug generator',
+      'permalink generator',
+    ],
+    accent: 'preview',
+  },
+  {
+    slug: 'chmod-calculator',
+    name: 'chmod Calculator',
+    tagline: 'Convert chmod between octal, symbolic and the permission matrix.',
+    description:
+      'Convert Unix file permissions between octal (755), symbolic (rwxr-xr-x) and a checkbox matrix — including setuid, setgid and the sticky bit — and copy the exact chmod command. Pure client-side bit math.',
+    status: 'live',
+    category: 'Utilities',
+    keywords: [
+      'chmod calculator',
+      'chmod 755 meaning',
+      'octal to symbolic permissions',
+      'chmod octal calculator',
+      'linux file permissions calculator',
+      'rwxr-xr-x meaning',
+      'setuid setgid sticky bit',
+      'chmod command generator',
+    ],
+    accent: 'ship',
+  },
 ];
 
 export const liveTools = tools.filter((t) => t.status === 'live');
@@ -580,6 +660,7 @@ export const categoryAccent: Record<string, string> = {
   Logs: '#a2456b',
   Config: '#35786a',
   Docker: '#3b82b8',
+  Utilities: '#7a6e52',
 };
 
 /* ─── Category landing pages ──────────────────────────────────────────────
@@ -652,4 +733,6 @@ export const categoryBlurb: Record<string, string> = {
   Logs: 'Build and test the patterns that parse your logs, against real sample lines.',
   Config: 'Catch configuration drift between your code and its environment files.',
   Docker: 'Convert, validate and reason about container configs — entirely in your browser.',
+  Utilities:
+    'Generate, convert and reshape identifiers, text and file modes — pure client-side.',
 };

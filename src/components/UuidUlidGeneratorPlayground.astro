@@ -1,0 +1,1128 @@
+---
+/**
+ * UuidUlidGeneratorPlayground — the interactive UUID / ULID Generator island.
+ *
+ * A no-framework, server-rendered shell hydrated by a single module <script>.
+ * A mode segment (v4 / nil / ULID), a count input and an uppercase toggle drive
+ * an action-based generator (the "Generate" button, or any control change,
+ * produces a fresh batch). A separate "Inspect" field decodes a pasted
+ * identifier's version / variant / timestamp with a debounced live eval (Enter
+ * runs immediately). Example chips (rendered server-side) apply preset control
+ * state on tap. Results carry per-row copy, a Copy all, and a shareable
+ * #mode=…&n=…&uc=… deep link. Runs entirely client-side.
+ *
+ * Runtime contract (engine lazy-imported for code-splitting):
+ *   ../lib/uuid-ulid-generator/engine → generateUuidV4, nilUuid, generateUlid,
+ *     inspectUuid
+ *   ../lib/uuid-ulid-generator/types  → GenerateMode, GenerateResult, InspectResult
+ *
+ * Example chips are statically imported in the frontmatter so they render SSR.
+ */
+import { examples } from '../lib/uuid-ulid-generator/examples';
+---
+
+<section class="uug-pg" aria-label="UUID / ULID Generator playground">
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Toolbar: example chips ───────────────────────────────────────── */}
+    <div class="uug-block">
+      <span class="eyebrow uug-block-label">Examples</span>
+      <div id="uug-chips" class="uug-chips" role="group" aria-label="Examples">
+        {
+          examples.map((ex) => (
+            <button
+              type="button"
+              class="uug-chip"
+              data-id={ex.id}
+              data-mode={ex.mode}
+              data-count={String(ex.count)}
+              data-uppercase={ex.uppercase ? '1' : '0'}
+              data-inspect={ex.inspect ?? ''}
+            >
+              {ex.label}
+            </button>
+          ))
+        }
+      </div>
+    </div>
+
+    {/* ── Controls ─────────────────────────────────────────────────────── */}
+    <div class="uug-block">
+      <span class="eyebrow uug-block-label">Options</span>
+      <div class="uug-controls-row">
+        <div class="uug-seg" role="group" aria-label="Identifier type">
+          <button type="button" class="uug-seg__btn is-active" data-mode="v4" aria-pressed="true">UUID v4</button>
+          <button type="button" class="uug-seg__btn" data-mode="nil" aria-pressed="false">Nil UUID</button>
+          <button type="button" class="uug-seg__btn" data-mode="ulid" aria-pressed="false">ULID</button>
+        </div>
+        <div class="uug-controls-group">
+          <label class="uug-field-label" for="uug-count">Count</label>
+          <input
+            id="uug-count"
+            class="uug-num-input"
+            type="number"
+            min="1"
+            max="1000"
+            value="5"
+            inputmode="numeric"
+            aria-label="How many to generate (1 to 1000)"
+          />
+        </div>
+        <label class="uug-check" for="uug-upper">
+          <input id="uug-upper" type="checkbox" class="uug-check__box" />
+          <span class="uug-check__label">Uppercase</span>
+        </label>
+        <div class="uug-controls-spacer"></div>
+        <button type="button" id="uug-generate" class="uug-btn uug-btn-primary">Generate</button>
+      </div>
+    </div>
+
+    {/* ── Results panel ────────────────────────────────────────────────── */}
+    <div class="uug-block uug-block--soft">
+      <div class="uug-result-head">
+        <span class="uug-result-head__left">
+          <span class="eyebrow">Generated</span>
+          <button
+            id="uug-copy-link"
+            type="button"
+            class="uug-copy-btn--labeled"
+            data-copy-link
+            data-copy=""
+            data-copy-label="Copy link"
+            hidden
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M6.75 9.25l2.5-2.5"></path>
+              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
+              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
+            </svg>
+            <svg class="uug-check-icon hidden" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="uug-copy-label">Copy link</span>
+          </button>
+          <button
+            id="uug-copy-all"
+            type="button"
+            class="uug-copy-btn--labeled"
+            data-copy-all
+            data-copy=""
+            data-copy-label="Copy all"
+            hidden
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="5" y="5" width="9" height="9" rx="1.5"></rect>
+              <path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"></path>
+            </svg>
+            <svg class="uug-check-icon hidden" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="uug-copy-label">Copy all</span>
+          </button>
+        </span>
+        <span id="uug-summary" class="uug-summary code-mono text-mute" role="status" aria-live="polite"></span>
+      </div>
+
+      <div id="uug-results" class="uug-results">
+        <p class="uug-empty body-sm text-mute">
+          Pick a type and press Generate — or tap an example — to produce identifiers here.
+        </p>
+      </div>
+
+      {/* ── Inspect field ──────────────────────────────────────────────── */}
+      <div class="uug-inspect mt-4">
+        <label class="eyebrow uug-block-label" for="uug-inspect">Inspect a UUID / ULID</label>
+        <input
+          id="uug-inspect"
+          class="uug-inspect-input code-mono"
+          type="text"
+          spellcheck="false"
+          autocapitalize="off"
+          autocorrect="off"
+          autocomplete="off"
+          enterkeyhint="done"
+          placeholder="f47ac10b-58cc-4372-a567-0e02b2c3d479"
+          aria-describedby="uug-inspect-hint uug-inspect-live"
+        />
+        <p id="uug-inspect-hint" class="uug-hint caption text-mute">
+          Paste any UUID or ULID to decode its version, variant and embedded timestamp.
+        </p>
+        <p id="uug-inspect-live" class="uug-hint uug-hint--live caption text-mute">
+          Results update as you type — press Enter to run now.
+        </p>
+        <div id="uug-inspect-result" class="uug-inspect-result"></div>
+      </div>
+
+      <span class="uug-privacy-note caption text-mute">Every value is generated in your browser — nothing is uploaded.</span>
+      <span id="uug-copy-status" class="sr-only" role="status" aria-live="polite"></span>
+    </div>
+  </div>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  .uug-block {
+    padding: 16px;
+    border-bottom: 1px solid var(--color-hairline);
+  }
+  @media (min-width: 640px) {
+    .uug-block {
+      padding: 16px 20px;
+    }
+  }
+  .uug-block--soft {
+    background: var(--color-canvas-soft);
+    border-bottom: none;
+  }
+  .uug-block-label {
+    display: block;
+    margin-bottom: 10px;
+  }
+
+  /* Squared instrument-panel example chips — mono, 4px radius (NOT rounded pills). */
+  .uug-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .uug-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 11px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-hairline-muted);
+    background: var(--color-canvas);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 16px;
+    letter-spacing: 0.01em;
+    color: var(--color-brand-strong);
+    cursor: pointer;
+    transition:
+      background 0.12s ease,
+      border-color 0.12s ease,
+      color 0.12s ease;
+  }
+  .uug-chip:hover {
+    border-color: var(--color-hairline-strong);
+    background: var(--color-canvas-hover);
+  }
+  .uug-chip.is-active {
+    background: var(--color-brand-soft);
+    border-color: var(--color-brand-strong);
+    color: var(--color-brand-strong);
+  }
+  .uug-chip:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+  @media (pointer: coarse) {
+    .uug-chip {
+      min-height: 44px;
+    }
+  }
+
+  /* Segmented mode control (squared). */
+  .uug-seg {
+    display: inline-flex;
+    padding: 2px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+  .uug-seg__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 78px;
+    height: 30px;
+    padding: 0 14px;
+    border: none;
+    border-radius: var(--radius-xs);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--color-mute);
+    background: transparent;
+    cursor: pointer;
+    transition:
+      color 0.15s ease,
+      background-color 0.15s ease;
+  }
+  .uug-seg__btn:hover:not(.is-active) {
+    color: var(--color-body);
+  }
+  .uug-seg__btn.is-active {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+  .uug-seg__btn:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+  @media (pointer: coarse) {
+    .uug-seg__btn {
+      min-height: 44px;
+    }
+  }
+
+  /* Fields. */
+  .uug-field-label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--color-body);
+  }
+  .uug-num-input {
+    width: 88px;
+    height: 34px;
+    padding: 0 10px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+    font-variant-numeric: tabular-nums;
+  }
+  .uug-num-input:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .uug-num-input:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--color-focus);
+  }
+  @media (pointer: coarse) {
+    .uug-num-input {
+      min-height: 44px;
+    }
+  }
+
+  .uug-inspect-input {
+    width: 100%;
+    height: 48px;
+    padding: 0 14px;
+    border: none;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 14px;
+    line-height: 24px;
+  }
+  .uug-inspect-input::placeholder {
+    color: var(--color-mute);
+  }
+  .uug-inspect-input:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .uug-inspect-input:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--color-focus);
+  }
+  .uug-inspect-input.uug-input--error {
+    box-shadow: inset 0 0 0 1px var(--color-error);
+  }
+  .uug-inspect-input.uug-input--error:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-error);
+  }
+
+  /* Checkbox — leaf accent, green as ink. */
+  .uug-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .uug-check__box {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    accent-color: var(--color-brand);
+    cursor: pointer;
+  }
+  .uug-check__box:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+  .uug-check__label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--color-body);
+  }
+
+  /* Buttons — squared, 1px border. */
+  .uug-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 22px;
+    padding: 9px 18px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease;
+  }
+  .uug-btn:active {
+    transform: translateY(1px);
+  }
+  .uug-btn-primary {
+    background: var(--color-primary);
+    color: var(--color-on-primary);
+    border-color: var(--color-primary);
+  }
+  .uug-btn-primary:hover {
+    background: var(--color-primary-hover);
+    border-color: var(--color-primary-hover);
+  }
+  .uug-btn:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+  @media (pointer: coarse) {
+    .uug-btn {
+      min-height: 44px;
+    }
+  }
+
+  .uug-controls-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px 18px;
+  }
+  .uug-controls-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .uug-controls-spacer {
+    flex: 1 1 auto;
+  }
+
+  /* Result panel header. */
+  .uug-result-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 12px;
+    margin-bottom: 12px;
+  }
+  .uug-result-head__left {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .uug-summary {
+    min-width: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+
+  .uug-copy-btn--labeled {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition:
+      box-shadow 0.15s ease,
+      color 0.15s ease;
+  }
+  .uug-copy-btn--labeled:hover {
+    color: var(--color-ink);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .uug-copy-btn--labeled:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+  .uug-copy-btn--labeled.is-copied {
+    color: var(--color-brand-strong);
+    box-shadow: inset 0 0 0 1px var(--color-brand-strong);
+  }
+  @media (pointer: coarse) {
+    .uug-copy-btn--labeled {
+      height: auto;
+      min-height: 40px;
+    }
+  }
+
+  .uug-results {
+    min-height: 180px;
+    display: grid;
+    align-content: start;
+  }
+  .uug-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 120px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+
+  .uug-hint {
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  .uug-hint .code-mono {
+    font-size: 12px;
+  }
+  .uug-hint--live {
+    margin-top: 2px;
+  }
+  .uug-privacy-note {
+    display: block;
+    margin-top: 14px;
+  }
+  .uug-copy-status--fail {
+    display: block;
+    margin-top: 10px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-error-deep);
+  }
+
+  /* ── Runtime-injected markup (styled with :global) ──────────────────── */
+  :global(.uug-rescard) {
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+    animation: uug-rise 0.18s ease both;
+  }
+  :global(.uug-rescard + .uug-rescard) {
+    margin-top: 12px;
+  }
+
+  /* Generated-value rows: index · value · copy. */
+  :global(.uug-val-row) {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr) 26px;
+    gap: 12px;
+    padding: 9px 14px;
+    align-items: center;
+  }
+  :global(.uug-val-row + .uug-val-row) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.uug-val-row__idx) {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 18px;
+    color: var(--color-accent-ink);
+    font-variant-numeric: tabular-nums;
+  }
+  :global(.uug-val-row__v) {
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--color-ink);
+    font-variant-numeric: tabular-nums;
+    word-break: break-all;
+  }
+
+  /* Inspect: titled sub-card + key/value rows. */
+  :global(.uug-kv-title) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-ink);
+  }
+  :global(.uug-badge) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: var(--radius-xs);
+    background: var(--color-brand-soft);
+    color: var(--color-brand-strong);
+  }
+  :global(.uug-kv-title__net) {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-all;
+  }
+  :global(.uug-kv-row) {
+    display: grid;
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+    gap: 12px;
+    padding: 9px 14px;
+    align-items: baseline;
+  }
+  :global(.uug-kv-row + .uug-kv-row) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.uug-kv-row__k) {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 18px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+  :global(.uug-kv-row__v-wrap) {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    margin: 0;
+  }
+  :global(.uug-kv-row__v) {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--color-ink);
+    overflow-wrap: anywhere;
+  }
+  :global(.uug-kv-row__v.is-mono) {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    word-break: break-all;
+  }
+
+  /* Per-row icon copy button. */
+  :global(.uug-copy-btn) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition:
+      color 0.12s ease,
+      background 0.12s ease;
+    padding: 0;
+  }
+  :global(.uug-copy-btn:hover) {
+    color: var(--color-brand-strong);
+    background: var(--color-hairline);
+  }
+  :global(.uug-copy-btn:focus-visible) {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+  :global(.uug-copy-btn.uug-copy-btn--copied) {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+  @media (pointer: coarse) {
+    :global(.uug-copy-btn) {
+      width: 44px;
+      height: 44px;
+    }
+  }
+
+  /* Inspect error card. */
+  :global(.uug-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+  }
+  :global(.uug-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.uug-error__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.uug-error__detail) {
+    margin-top: 2px;
+    font-size: 13px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+
+  @keyframes uug-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.uug-rescard) {
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  import { escapeHtml } from '../lib/escape-html';
+  import { copyTextToClipboard } from '../lib/clipboard';
+
+  type GenerateMode = 'v4' | 'nil' | 'ulid';
+  type GenerateResult = { valid: boolean; error?: string; values: string[]; notes?: string[] };
+  type InspectResult = {
+    valid: boolean;
+    error?: string;
+    kind?: 'uuid' | 'ulid';
+    version?: number;
+    variant?: string;
+    timestamp?: string;
+    notes?: string[];
+  };
+  type EngineModule = {
+    generateUuidV4: (opts: { mode: GenerateMode; count: number; uppercase: boolean }) => GenerateResult;
+    nilUuid: () => string;
+    generateUlid: (now?: number, randomBytes?: Uint8Array) => { valid: boolean; error?: string; value?: string };
+    inspectUuid: (input: string) => InspectResult;
+  };
+
+  const ROOT_SEL = '.uug-pg';
+  const DEBOUNCE_MS = 140;
+  const RESET_MS = 1800;
+
+  const COPY_ICON_SVG =
+    '<svg class="uug-copy-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"/></svg>';
+  const CHECK_ICON_SVG =
+    '<svg class="uug-check-icon hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
+  const ALERT_SVG =
+    '<svg class="uug-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.uugWired === 'true') return;
+      root.dataset.uugWired = 'true';
+      void init(root);
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  function copyBtnHtml(label: string, value: string): string {
+    return (
+      `<button class="uug-copy-btn" type="button" aria-label="Copy ${escapeHtml(label)}" data-copy="${escapeHtml(value)}">` +
+      COPY_ICON_SVG +
+      CHECK_ICON_SVG +
+      '</button>'
+    );
+  }
+
+  function modeLabel(mode: GenerateMode): string {
+    return mode === 'v4' ? 'UUID v4' : mode === 'nil' ? 'Nil UUID' : 'ULID';
+  }
+
+  async function init(root: HTMLElement): Promise<void> {
+    const chips = Array.from(root.querySelectorAll<HTMLButtonElement>('#uug-chips .uug-chip'));
+    const segBtns = Array.from(root.querySelectorAll<HTMLButtonElement>('.uug-seg__btn'));
+    const countInput = el<HTMLInputElement>(root, '#uug-count');
+    const upperInput = el<HTMLInputElement>(root, '#uug-upper');
+    const genBtn = el<HTMLButtonElement>(root, '#uug-generate');
+    const resultsBox = el<HTMLElement>(root, '#uug-results');
+    const summaryEl = el<HTMLElement>(root, '#uug-summary');
+    const copyLinkBtn = el<HTMLButtonElement>(root, '#uug-copy-link');
+    const copyAllBtn = el<HTMLButtonElement>(root, '#uug-copy-all');
+    const copyStatus = el<HTMLElement>(root, '#uug-copy-status');
+    const inspectInput = el<HTMLInputElement>(root, '#uug-inspect');
+    const inspectBox = el<HTMLElement>(root, '#uug-inspect-result');
+
+    if (
+      !countInput ||
+      !upperInput ||
+      !genBtn ||
+      !resultsBox ||
+      !summaryEl ||
+      !copyLinkBtn ||
+      !copyAllBtn ||
+      !copyStatus ||
+      !inspectInput ||
+      !inspectBox
+    )
+      return;
+
+    let mode: GenerateMode = 'v4';
+    let lastValues: string[] = [];
+
+    /* ------------------------------------------------------------------ */
+    /* Copy plumbing                                                       */
+    /* ------------------------------------------------------------------ */
+
+    function setCopyStatus(message: string, failed: boolean): void {
+      copyStatus!.textContent = message;
+      copyStatus!.classList.toggle('sr-only', !failed);
+      copyStatus!.classList.toggle('uug-copy-status--fail', failed);
+    }
+
+    function setCopied(btn: HTMLButtonElement, copied: boolean): void {
+      btn.classList.toggle('uug-copy-btn--copied', copied);
+      btn.classList.toggle('is-copied', copied);
+      btn.querySelector('.uug-copy-icon')?.classList.toggle('hidden', copied);
+      btn.querySelector('.uug-check-icon')?.classList.toggle('hidden', !copied);
+      const label = btn.querySelector<HTMLElement>('.uug-copy-label');
+      if (label) {
+        label.textContent = copied ? 'Copied' : (btn.dataset.copyLabel ?? 'Copy');
+      } else if (copied) {
+        btn.dataset.prevAriaLabel = btn.getAttribute('aria-label') ?? '';
+        btn.setAttribute('aria-label', 'Copied');
+      } else if (btn.dataset.prevAriaLabel) {
+        btn.setAttribute('aria-label', btn.dataset.prevAriaLabel);
+        delete btn.dataset.prevAriaLabel;
+      }
+    }
+
+    async function handleCopy(btn: HTMLButtonElement): Promise<void> {
+      const text = btn.dataset.copy ?? '';
+      if (!text) return;
+      const ok = await copyTextToClipboard(text);
+      if (ok) {
+        setCopied(btn, true);
+        setCopyStatus('Copied to clipboard.', false);
+        window.clearTimeout(Number(btn.dataset.copyTimer));
+        btn.dataset.copyTimer = String(
+          window.setTimeout(() => {
+            setCopied(btn, false);
+            if (copyStatus!.textContent === 'Copied to clipboard.') setCopyStatus('', false);
+          }, RESET_MS)
+        );
+      } else {
+        setCopyStatus('Copy failed — select the value manually.', true);
+      }
+    }
+
+    root.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.uug-copy-btn, .uug-copy-btn--labeled');
+      if (!btn) return;
+      void handleCopy(btn);
+    });
+
+    /* ------------------------------------------------------------------ */
+    /* Engine                                                              */
+    /* ------------------------------------------------------------------ */
+
+    let engine: EngineModule;
+    try {
+      engine = (await import('../lib/uuid-ulid-generator/engine')) as unknown as EngineModule;
+    } catch (err) {
+      resultsBox.innerHTML =
+        '<div class="uug-error">' +
+        ALERT_SVG +
+        '<div><p class="uug-error__title">Could not load the generator</p>' +
+        '<p class="uug-error__detail">Reload the page to try again.</p></div></div>';
+      console.error('[UuidUlidGenerator] engine import failed:', err);
+      return;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Hash: #mode=<v4|nil|ulid>&n=<count>&uc=<0|1>                        */
+    /* ------------------------------------------------------------------ */
+
+    function buildHash(): string {
+      const n = clampCount(countInput!.value);
+      const uc = upperInput!.checked ? '1' : '0';
+      return `#mode=${mode}&n=${n}&uc=${uc}`;
+    }
+
+    function clampCount(raw: string | number): number {
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return 1;
+      const f = Math.floor(n);
+      if (f < 1) return 1;
+      if (f > 1000) return 1000;
+      return f;
+    }
+
+    function readHash(): void {
+      const h = window.location.hash.replace(/^#/, '');
+      if (!h) return;
+      const params = new URLSearchParams(h);
+      const m = params.get('mode');
+      if (m === 'v4' || m === 'nil' || m === 'ulid') mode = m;
+      const n = params.get('n');
+      if (n !== null) countInput!.value = String(clampCount(n));
+      const uc = params.get('uc');
+      if (uc !== null) upperInput!.checked = uc === '1';
+      syncSeg();
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Mode segment / chips sync                                           */
+    /* ------------------------------------------------------------------ */
+
+    function syncSeg(): void {
+      segBtns.forEach((b) => {
+        const active = b.dataset.mode === mode;
+        b.classList.toggle('is-active', active);
+        b.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+      // The count is irrelevant for the nil UUID (always a single value).
+      countInput!.disabled = mode === 'nil';
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Generation (action-driven)                                          */
+    /* ------------------------------------------------------------------ */
+
+    function renderValues(values: string[]): void {
+      const rowsHtml = values
+        .map(
+          (v, i) =>
+            '<div class="uug-val-row">' +
+            `<span class="uug-val-row__idx">${i + 1}</span>` +
+            `<span class="uug-val-row__v">${escapeHtml(v)}</span>` +
+            copyBtnHtml(`value ${i + 1}`, v) +
+            '</div>'
+        )
+        .join('');
+      resultsBox!.innerHTML = `<div class="uug-rescard">${rowsHtml}</div>`;
+    }
+
+    function renderGenerateError(message: string): void {
+      resultsBox!.innerHTML =
+        '<div class="uug-error">' +
+        ALERT_SVG +
+        '<div><p class="uug-error__title">Could not generate</p>' +
+        `<p class="uug-error__detail">${escapeHtml(message)}</p></div></div>`;
+      lastValues = [];
+      summaryEl!.textContent = message;
+      copyAllBtn!.hidden = true;
+      copyLinkBtn!.hidden = true;
+    }
+
+    function generate(): void {
+      const uppercase = upperInput!.checked;
+      let values: string[] = [];
+      let note = '';
+
+      if (mode === 'nil') {
+        const v = engine.nilUuid();
+        values = [uppercase ? v.toUpperCase() : v];
+      } else if (mode === 'ulid') {
+        const count = clampCount(countInput!.value);
+        for (let i = 0; i < count; i++) {
+          const res = engine.generateUlid();
+          if (!res.valid || !res.value) {
+            renderGenerateError(res.error || 'ULID generation failed.');
+            return;
+          }
+          const v = res.value;
+          values.push(uppercase ? v : v.toLowerCase());
+        }
+        // ULIDs are canonically uppercase; when the toggle is off we lowercase.
+      } else {
+        const count = clampCount(countInput!.value);
+        const res = engine.generateUuidV4({ mode: 'v4', count, uppercase });
+        if (!res.valid) {
+          renderGenerateError(res.error || 'UUID generation failed.');
+          return;
+        }
+        values = res.values;
+        if (res.notes && res.notes.length) note = res.notes[0];
+      }
+
+      lastValues = values;
+      renderValues(values);
+
+      const caseWord = uppercase ? 'uppercase' : 'lowercase';
+      const countPart = mode === 'nil' ? '' : `${values.length} × `;
+      let summary = `${countPart}${modeLabel(mode)} · ${caseWord}`;
+      if (note) summary += ` · ${note}`;
+      summaryEl!.textContent = summary;
+
+      copyAllBtn!.hidden = false;
+      copyAllBtn!.dataset.copy = values.join('\n');
+      copyLinkBtn!.hidden = false;
+      copyLinkBtn!.dataset.copy =
+        location.origin + location.pathname + location.search + buildHash();
+
+      // Reset copy-all button visual if it was showing "Copied".
+      setCopied(copyAllBtn!, false);
+      setCopied(copyLinkBtn!, false);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Inspect (debounced live eval + Enter)                               */
+    /* ------------------------------------------------------------------ */
+
+    let inspectTimer: number | undefined;
+
+    function renderInspect(): void {
+      const value = inspectInput!.value.trim();
+      if (value.length === 0) {
+        inspectBox!.innerHTML = '';
+        inspectInput!.classList.remove('uug-input--error');
+        inspectInput!.removeAttribute('aria-invalid');
+        return;
+      }
+
+      let res: InspectResult;
+      try {
+        res = engine.inspectUuid(value);
+      } catch {
+        res = { valid: false, error: 'Could not inspect this value.' };
+      }
+
+      if (!res.valid) {
+        inspectInput!.classList.add('uug-input--error');
+        inspectInput!.setAttribute('aria-invalid', 'true');
+        inspectBox!.innerHTML =
+          '<div class="uug-rescard mt-3"><div class="uug-error">' +
+          ALERT_SVG +
+          '<div><p class="uug-error__title">Not a recognised identifier</p>' +
+          `<p class="uug-error__detail">${escapeHtml(res.error ?? '')}</p></div></div></div>`;
+        return;
+      }
+
+      inspectInput!.classList.remove('uug-input--error');
+      inspectInput!.removeAttribute('aria-invalid');
+
+      const rows: Array<{ k: string; v: string; mono?: boolean; copy?: boolean }> = [];
+      if (res.kind === 'uuid') {
+        rows.push({ k: 'Format', v: 'UUID (8-4-4-4-12 hex)' });
+        if (typeof res.version === 'number') rows.push({ k: 'Version', v: String(res.version) });
+        if (res.variant) rows.push({ k: 'Variant', v: res.variant });
+      } else {
+        rows.push({ k: 'Format', v: 'Crockford base32 ULID (26 chars)' });
+        if (res.timestamp) rows.push({ k: 'Timestamp', v: res.timestamp, mono: true, copy: true });
+        for (const n of res.notes ?? []) {
+          const m = /^Unix \(ms\): (.+)$/.exec(n);
+          if (m) rows.push({ k: 'Unix (ms)', v: m[1], mono: true, copy: true });
+          const r = /^Randomness: (.+)$/.exec(n);
+          if (r) rows.push({ k: 'Randomness', v: r[1], mono: true });
+        }
+      }
+
+      const rowsHtml = rows
+        .map((row) => {
+          const cls = row.mono ? 'uug-kv-row__v is-mono' : 'uug-kv-row__v';
+          const copy = row.copy ? copyBtnHtml(row.k, row.v) : '';
+          return (
+            '<div class="uug-kv-row">' +
+            `<span class="uug-kv-row__k">${escapeHtml(row.k)}</span>` +
+            `<span class="uug-kv-row__v-wrap"><span class="${cls}">${escapeHtml(row.v)}</span>${copy}</span>` +
+            '</div>'
+          );
+        })
+        .join('');
+
+      const badge = res.kind === 'ulid' ? 'ULID' : 'UUID';
+      inspectBox!.innerHTML =
+        '<div class="uug-rescard mt-3">' +
+        `<div class="uug-kv-title"><span class="uug-badge">${badge}</span><span class="uug-kv-title__net">${escapeHtml(value)}</span></div>` +
+        rowsHtml +
+        '</div>';
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Events                                                              */
+    /* ------------------------------------------------------------------ */
+
+    genBtn.addEventListener('click', () => generate());
+
+    segBtns.forEach((b) => {
+      b.addEventListener('click', () => {
+        mode = (b.dataset.mode as GenerateMode) ?? 'v4';
+        syncSeg();
+        generate();
+      });
+    });
+
+    countInput.addEventListener('change', () => generate());
+    upperInput.addEventListener('change', () => generate());
+
+    inspectInput.addEventListener('input', () => {
+      window.clearTimeout(inspectTimer);
+      inspectTimer = window.setTimeout(renderInspect, DEBOUNCE_MS);
+    });
+    inspectInput.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      window.clearTimeout(inspectTimer);
+      renderInspect();
+      if (window.matchMedia?.('(pointer: coarse)').matches) inspectInput.blur();
+    });
+
+    chips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        chips.forEach((c) => c.classList.remove('is-active'));
+        chip.classList.add('is-active');
+        const inspectSeed = chip.dataset.inspect ?? '';
+        if (inspectSeed) {
+          inspectInput.value = inspectSeed;
+          window.clearTimeout(inspectTimer);
+          renderInspect();
+          inspectInput.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          return;
+        }
+        mode = (chip.dataset.mode as GenerateMode) ?? 'v4';
+        countInput.value = String(clampCount(chip.dataset.count ?? '5'));
+        upperInput.checked = chip.dataset.uppercase === '1';
+        syncSeg();
+        generate();
+      });
+    });
+
+    /* ------------------------------------------------------------------ */
+    /* First load: restore from hash, then seed a first batch.             */
+    /* ------------------------------------------------------------------ */
+
+    readHash();
+    syncSeg();
+    generate();
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

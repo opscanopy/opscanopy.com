@@ -141,6 +141,7 @@ const en = {
   'category.Logs': 'Logs',
   'category.Config': 'Config',
   'category.Docker': 'Docker',
+  'category.Utilities': 'Utilities',
   'category.all': 'All',
 
   // Tool catalog (/tools) — chrome shared by ToolCard + the catalog page
