@@ -10,15 +10,21 @@
  *     - Applies the uppercase toggle.
  *     - Clamps count to [1, 1000]. Out-of-range / non-numeric count still
  *       returns a clamped batch plus an explanatory note — never throws.
+ *     - Returns { valid:false, error } (never Math.random()) when no secure
+ *       random source is available.
  *
  *   nilUuid(): string
  *     - The all-zero UUID '00000000-0000-0000-0000-000000000000'.
  *
- *   generateUlid(now = Date.now(), randomBytes?): string
+ *   generateUlid(now = Date.now(), randomBytes?): UlidResult
  *     - Encodes a 48-bit millisecond timestamp (10 Crockford base32 chars) plus
  *       80 bits of randomness (16 chars) = 26 chars total.
- *     - Default randomness is crypto.getRandomValues(new Uint8Array(10));
- *       randomBytes is injectable for deterministic tests.
+ *     - Requires `now` to be a finite integer in [0, 2^48 − 1]; otherwise
+ *       returns { valid:false, error }.
+ *     - Default randomness is a secure crypto.getRandomValues(new Uint8Array(10));
+ *       randomBytes is injectable for deterministic tests. Returns
+ *       { valid:false, error } (never Math.random()) when no secure random
+ *       source is available.
  *     - Crockford alphabet '0123456789ABCDEFGHJKMNPQRSTVWXYZ' (no I/L/O/U).
  *
  *   decodeUlidTime(ulid): number | null
@@ -37,6 +43,7 @@ import type {
   GenerateOptions,
   GenerateResult,
   InspectResult,
+  UlidResult,
 } from './types';
 
 /** Crockford base32 alphabet — excludes I, L, O and U to avoid ambiguity. */
@@ -50,6 +57,17 @@ const INSPECT_ERROR =
 const HEX = '0123456789abcdef';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+/** Largest millisecond timestamp a 48-bit ULID time component can hold. */
+const MAX_ULID_TIME = 2 ** 48 - 1; // 281474976710655
+
+const SECURE_RANDOM_ERROR =
+  'A secure random source (Web Crypto) is unavailable in this browser, so no ' +
+  'cryptographically random identifier can be generated. UUIDs and ULIDs here ' +
+  'never fall back to Math.random().';
+
+const ULID_TIME_ERROR =
+  'ULID timestamp must be a finite integer between 0 and 281474976710655 (2^48 − 1) milliseconds.';
+
 /** Safe access to a Web Crypto-ish object without throwing in odd runtimes. */
 function getCrypto(): Crypto | undefined {
   try {
@@ -59,16 +77,21 @@ function getCrypto(): Crypto | undefined {
   }
 }
 
-/** Fill a byte array with random values, falling back to Math.random if needed. */
-function randomFill(len: number): Uint8Array {
-  const bytes = new Uint8Array(len);
+/**
+ * Fill a byte array with cryptographically secure random values. Returns null
+ * — never falls back to Math.random() — when Web Crypto is missing or when
+ * crypto.getRandomValues() throws, so callers can surface a clean failure.
+ */
+function secureRandomBytes(len: number): Uint8Array | null {
   const c = getCrypto();
-  if (c?.getRandomValues) {
+  if (!c || typeof c.getRandomValues !== 'function') return null;
+  try {
+    const bytes = new Uint8Array(len);
     c.getRandomValues(bytes);
     return bytes;
+  } catch {
+    return null;
   }
-  for (let i = 0; i < len; i++) bytes[i] = Math.floor(Math.random() * 256);
-  return bytes;
 }
 
 /** Format 16 bytes as 8-4-4-4-12 lowercase hex. */
@@ -90,8 +113,12 @@ function bytesToUuid(bytes: Uint8Array): string {
   );
 }
 
-/** Generate one v4 UUID (lowercase), preferring the native crypto.randomUUID. */
-function oneUuidV4(): string {
+/**
+ * Generate one v4 UUID (lowercase), preferring the native crypto.randomUUID.
+ * Returns null — never Math.random() — when no secure random source is
+ * available (or a native implementation throws), so callers fail cleanly.
+ */
+function oneUuidV4(): string | null {
   const c = getCrypto();
   if (c && typeof c.randomUUID === 'function') {
     try {
@@ -100,7 +127,8 @@ function oneUuidV4(): string {
       /* fall through to manual construction */
     }
   }
-  const bytes = randomFill(16);
+  const bytes = secureRandomBytes(16);
+  if (!bytes) return null;
   bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
   bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10x
   return bytesToUuid(bytes);
@@ -130,6 +158,9 @@ export function generateUuidV4(opts: GenerateOptions): GenerateResult {
   const values: string[] = [];
   for (let i = 0; i < count; i++) {
     const v = oneUuidV4();
+    if (v === null) {
+      return { valid: false, error: SECURE_RANDOM_ERROR, values: [] };
+    }
     values.push(uppercase ? v.toUpperCase() : v);
   }
   return { valid: true, values, notes: notes.length ? notes : undefined };
@@ -152,19 +183,12 @@ function encodeCrockford(value: number, len: number): string {
 }
 
 /**
- * Generate a ULID: 48-bit ms timestamp (10 chars) + 80 bits randomness
- * (16 chars) = 26 Crockford base32 chars. `randomBytes` (10 bytes) is
- * injectable for deterministic tests; otherwise crypto randomness is used.
+ * Pure ULID encoder: a validated 48-bit ms timestamp (10 Crockford chars) plus
+ * 10 bytes (80 bits) of randomness (16 chars) = 26 chars. Both inputs are
+ * assumed already validated by the caller; this helper never throws.
  */
-export function generateUlid(
-  now: number = Date.now(),
-  randomBytes?: Uint8Array
-): string {
-  const ms = Number.isFinite(now) ? Math.floor(now) : Date.now();
+function encodeUlid(ms: number, bytes: Uint8Array): string {
   const time = encodeCrockford(ms, 10);
-
-  const bytes =
-    randomBytes && randomBytes.length >= 10 ? randomBytes : randomFill(10);
 
   // Encode 80 bits of randomness as 16 Crockford chars (5 bits each). Walk the
   // bit stream MSB-first so it round-trips exactly regardless of byte layout.
@@ -181,6 +205,41 @@ export function generateUlid(
     }
   }
   return time + rand;
+}
+
+/**
+ * Generate a ULID as a result object: 48-bit ms timestamp (10 chars) + 80 bits
+ * randomness (16 chars) = 26 Crockford base32 chars. Never throws.
+ *
+ * Fails cleanly (`{ valid:false, error }`) when:
+ *   - `now` is not a finite integer in [0, 2^48 − 1], or
+ *   - no secure random source is available and no valid `randomBytes` (>= 10
+ *     bytes) is injected.
+ *
+ * `randomBytes` (>= 10 bytes) is injectable for deterministic tests; otherwise
+ * cryptographically secure randomness is used (never Math.random()).
+ */
+export function generateUlid(
+  now: number = Date.now(),
+  randomBytes?: Uint8Array
+): UlidResult {
+  if (
+    typeof now !== 'number' ||
+    !Number.isFinite(now) ||
+    !Number.isInteger(now) ||
+    now < 0 ||
+    now > MAX_ULID_TIME
+  ) {
+    return { valid: false, error: ULID_TIME_ERROR };
+  }
+
+  const bytes =
+    randomBytes && randomBytes.length >= 10 ? randomBytes : secureRandomBytes(10);
+  if (!bytes) {
+    return { valid: false, error: SECURE_RANDOM_ERROR };
+  }
+
+  return { valid: true, value: encodeUlid(now, bytes) };
 }
 
 /**

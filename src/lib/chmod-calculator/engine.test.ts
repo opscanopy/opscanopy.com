@@ -143,3 +143,58 @@ describe('invalid input never throws', () => {
     expect(parseOctal('758').valid).toBe(false);
   });
 });
+
+describe('malformed runtime input never throws (browser-facing boundary)', () => {
+  it('parseOctal returns { valid:false } for non-string input', () => {
+    for (const bad of [755, null, undefined, NaN, ['7', '5', '5'], {}, true]) {
+      const r = parseOctal(bad as any);
+      expect(r.valid).toBe(false);
+      expect(typeof r.error).toBe('string');
+    }
+  });
+
+  it('parseSymbolic returns { valid:false } for non-string input', () => {
+    for (const bad of [755, null, undefined, NaN, ['r', 'w', 'x'], {}, true]) {
+      const r = parseSymbolic(bad as any);
+      expect(r.valid).toBe(false);
+      expect(typeof r.error).toBe('string');
+    }
+  });
+
+  it('fromState returns { valid:false } for null / undefined / non-objects', () => {
+    for (const bad of [null, undefined, 755, 'rwx', true, ['a']]) {
+      const r = fromState(bad as any);
+      expect(r.valid).toBe(false);
+      expect(typeof r.error).toBe('string');
+    }
+  });
+
+  it('fromState returns { valid:false } for incomplete state objects', () => {
+    const goodPerm = { read: true, write: false, execute: true };
+    const goodSpecial = { setuid: false, setgid: false, sticky: false };
+    const cases = [
+      {},
+      { special: goodSpecial, user: goodPerm, group: goodPerm },
+      { special: goodSpecial, user: goodPerm, group: goodPerm, other: {} },
+      { special: {}, user: goodPerm, group: goodPerm, other: goodPerm },
+      { special: goodSpecial, user: { read: 'yes', write: false, execute: true }, group: goodPerm, other: goodPerm },
+      { special: goodSpecial, user: null, group: goodPerm, other: goodPerm },
+    ];
+    for (const bad of cases) {
+      const r = fromState(bad as any);
+      expect(r.valid).toBe(false);
+      expect(typeof r.error).toBe('string');
+    }
+  });
+
+  it('fromState still accepts a fully-valid state', () => {
+    const r = fromState({
+      special: { setuid: false, setgid: false, sticky: false },
+      user: { read: true, write: true, execute: true },
+      group: { read: true, write: false, execute: true },
+      other: { read: true, write: false, execute: true },
+    });
+    expect(r.valid).toBe(true);
+    expect(r.octal).toBe('755');
+  });
+});

@@ -8,7 +8,7 @@
  * overflow rejection, and inspectUuid version/variant detection + no-throw on
  * garbage input.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import {
   generateUuidV4,
   nilUuid,
@@ -79,19 +79,39 @@ describe('generateUlid', () => {
   it('is deterministic with injected randomness and 26 Crockford chars', () => {
     const a = generateUlid(fixedNow, fixedBytes);
     const b = generateUlid(fixedNow, fixedBytes);
-    expect(a).toBe(b);
-    expect(a).toHaveLength(26);
-    expect(a).toMatch(CROCKFORD_RE);
+    expect(a.valid).toBe(true);
+    expect(a.value).toBe(b.value);
+    expect(a.value).toHaveLength(26);
+    expect(a.value).toMatch(CROCKFORD_RE);
   });
 
   it('alphabet excludes I, L, O and U', () => {
     const u = generateUlid(fixedNow, fixedBytes);
-    expect(u).not.toMatch(/[ILOU]/);
+    expect(u.value).not.toMatch(/[ILOU]/);
   });
 
   it('round-trips through decodeUlidTime', () => {
     const u = generateUlid(fixedNow, fixedBytes);
-    expect(decodeUlidTime(u)).toBe(fixedNow);
+    expect(decodeUlidTime(u.value!)).toBe(fixedNow);
+  });
+
+  it('rejects timestamps outside the 48-bit ULID domain without throwing', () => {
+    for (const bad of [-1, 2 ** 48, Number.NaN, Infinity, -Infinity, 1.5]) {
+      const r = generateUlid(bad, fixedBytes);
+      expect(r.valid).toBe(false);
+      expect(r.value).toBeUndefined();
+      expect(typeof r.error).toBe('string');
+    }
+  });
+
+  it('accepts the boundary timestamps 0 and 2^48 − 1', () => {
+    const lo = generateUlid(0, fixedBytes);
+    expect(lo.valid).toBe(true);
+    expect(decodeUlidTime(lo.value!)).toBe(0);
+
+    const hi = generateUlid(2 ** 48 - 1, fixedBytes);
+    expect(hi.valid).toBe(true);
+    expect(decodeUlidTime(hi.value!)).toBe(2 ** 48 - 1);
   });
 });
 
@@ -145,5 +165,76 @@ describe('inspectUuid', () => {
     expect(inspectUuid(null).valid).toBe(false);
     // @ts-expect-error — intentionally passing a non-string to prove no throw
     expect(inspectUuid(12345).valid).toBe(false);
+  });
+});
+
+describe('secure randomness enforcement', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('fails cleanly (no Math.random fallback) when Web Crypto is missing', () => {
+    vi.stubGlobal('crypto', undefined);
+
+    const u = generateUuidV4({ mode: 'v4', count: 3, uppercase: false });
+    expect(u.valid).toBe(false);
+    expect(u.values).toHaveLength(0);
+    expect(typeof u.error).toBe('string');
+
+    // Inject valid bytes → timestamp/randomness path still works without crypto.
+    const withBytes = generateUlid(1469918176385, new Uint8Array(10).fill(7));
+    expect(withBytes.valid).toBe(true);
+    // No injected bytes and no crypto → clean failure, never Math.random().
+    const noBytes = generateUlid(1469918176385);
+    expect(noBytes.valid).toBe(false);
+    expect(noBytes.value).toBeUndefined();
+    expect(typeof noBytes.error).toBe('string');
+  });
+
+  it('fails cleanly when getRandomValues() throws', () => {
+    vi.stubGlobal('crypto', {
+      getRandomValues: () => {
+        throw new Error('boom');
+      },
+    });
+
+    const u = generateUuidV4({ mode: 'v4', count: 1, uppercase: false });
+    expect(u.valid).toBe(false);
+    expect(typeof u.error).toBe('string');
+
+    const ul = generateUlid(1469918176385);
+    expect(ul.valid).toBe(false);
+    expect(typeof ul.error).toBe('string');
+  });
+
+  it('falls back to manual v4 construction when randomUUID() throws', () => {
+    // getRandomValues works, but the native randomUUID throws — the engine
+    // must still succeed via the manual byte-based construction path.
+    vi.stubGlobal('crypto', {
+      randomUUID: () => {
+        throw new Error('nope');
+      },
+      getRandomValues: (arr: Uint8Array) => {
+        for (let i = 0; i < arr.length; i++) arr[i] = (i * 37 + 11) & 0xff;
+        return arr;
+      },
+    });
+
+    const u = generateUuidV4({ mode: 'v4', count: 2, uppercase: false });
+    expect(u.valid).toBe(true);
+    expect(u.values).toHaveLength(2);
+    for (const v of u.values) expect(v).toMatch(V4_RE);
+  });
+
+  it('fails cleanly when randomUUID() throws and getRandomValues() is missing', () => {
+    vi.stubGlobal('crypto', {
+      randomUUID: () => {
+        throw new Error('nope');
+      },
+    });
+
+    const u = generateUuidV4({ mode: 'v4', count: 1, uppercase: false });
+    expect(u.valid).toBe(false);
+    expect(typeof u.error).toBe('string');
   });
 });

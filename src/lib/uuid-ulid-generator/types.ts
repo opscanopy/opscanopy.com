@@ -28,6 +28,18 @@ export interface GenerateResult {
   notes?: string[];
 }
 
+/**
+ * The result of generating a single ULID. `value` is present only when
+ * `valid` is true; otherwise `error` explains why (invalid timestamp or no
+ * secure random source). Never an exception.
+ */
+export interface UlidResult {
+  valid: boolean;
+  error?: string;
+  /** The 26-char Crockford ULID when valid. */
+  value?: string;
+}
+
 /** The result of inspecting a pasted identifier. */
 export interface InspectResult {
   valid: boolean;

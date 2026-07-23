@@ -83,8 +83,49 @@ function permToSymbolic(p: Perm, special: Special, slot: 'user' | 'group' | 'oth
 /** The ls -l file type prefix (regular file). */
 const LS_TYPE = '-';
 
-/** Build a fully-populated ChmodResult from a validated state. */
+/** True when `v` is a non-null, non-array plain object. */
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/** True when `v` is an object whose read/write/execute fields are all booleans. */
+function isPerm(v: unknown): v is Perm {
+  return (
+    isObject(v) &&
+    typeof v.read === 'boolean' &&
+    typeof v.write === 'boolean' &&
+    typeof v.execute === 'boolean'
+  );
+}
+
+/** True when `v` is an object whose setuid/setgid/sticky fields are all booleans. */
+function isSpecial(v: unknown): v is Special {
+  return (
+    isObject(v) &&
+    typeof v.setuid === 'boolean' &&
+    typeof v.setgid === 'boolean' &&
+    typeof v.sticky === 'boolean'
+  );
+}
+
+/**
+ * Build a fully-populated ChmodResult from a state. Never throws: malformed
+ * runtime input (null, arrays, missing/non-boolean fields) → { valid:false }.
+ */
 export function fromState(state: ChmodState): ChmodResult {
+  if (
+    !isObject(state) ||
+    !isSpecial(state.special) ||
+    !isPerm(state.user) ||
+    !isPerm(state.group) ||
+    !isPerm(state.other)
+  ) {
+    return {
+      valid: false,
+      error: 'Invalid permission state: special, user, group and other must have boolean flags.',
+    };
+  }
+
   const specialDigit = specialToDigit(state.special);
   const userDigit = permToDigit(state.user);
   const groupDigit = permToDigit(state.group);
@@ -110,7 +151,10 @@ export function fromState(state: ChmodState): ChmodResult {
  * Each digit must be 0–7; the optional high digit carries the special bits.
  */
 export function parseOctal(input: string): ChmodResult {
-  const trimmed = (input ?? '').trim();
+  if (typeof input !== 'string') {
+    return { valid: false, error: 'Enter an octal mode like 755 or 4755.' };
+  }
+  const trimmed = input.trim();
   if (trimmed.length === 0) {
     return { valid: false, error: 'Enter an octal mode like 755 or 4755.' };
   }
@@ -177,7 +221,10 @@ function parseTriad(
  * which is stripped. Handles s/S (setuid/setgid) and t/T (sticky).
  */
 export function parseSymbolic(input: string): ChmodResult {
-  const trimmed = (input ?? '').trim();
+  if (typeof input !== 'string') {
+    return { valid: false, error: 'Enter a symbolic mode like rwxr-xr-x.' };
+  }
+  const trimmed = input.trim();
   if (trimmed.length === 0) {
     return { valid: false, error: 'Enter a symbolic mode like rwxr-xr-x.' };
   }
