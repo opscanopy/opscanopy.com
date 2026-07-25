@@ -1,96 +1,295 @@
 ---
 /**
- * JwtDecoderPlayground — the interactive JWT Decoder island.
+ * JwtDecoderPlayground — the interactive JWT Decoder & Encoder island.
  *
- * Paste a compact JWS (header.payload.signature) and it decodes — fully
- * client-side — the header and payload as pretty JSON, the registered claims
- * (with freshness tones), and the raw signature. If a secret / public key is
- * supplied it also runs an async signature verification and shows a badge.
- * Decoding is live (debounced); verification reuses the same debounce.
+ * Three modes behind a segmented control, all fully client-side:
+ *  - Decode & verify: paste a compact JWS and see header/payload as pretty
+ *    JSON, registered claims with plain-English captions, security lint
+ *    warnings, and an async signature verification (HS/RS/PS/ES/EdDSA against
+ *    a secret, SPKI PEM, JWK, or JWKS).
+ *  - Encode & sign: edit header + payload JSON, pick an algorithm, paste a
+ *    secret or private key, and get a signed token live.
+ *  - Generate keys: mint an HMAC secret or an RSA/EC/Ed25519 key pair and
+ *    export it as PEM + JWK.
  *
  * Runtime contract (lazy-imported):
  *   ../lib/jwt-decoder/engine
- *     → decode(token: string, nowMs?: number): JwtResult
- *     → verify(token: string, secret: string): Promise<VerifyResult>
- *   ../lib/jwt-decoder/examples → examples: { id; label; token }[]
+ *     → decode(token, nowMs?): JwtResult
+ *     → verify(token, keyInput, opts?): Promise<VerifyResult>
+ *     → sign(headerJson, payloadJson, keyInput, opts): Promise<SignResult>
+ *     → generateKeys(req): Promise<KeygenResult>
+ *     → SIGNING_ALGS, edDsaSupported()
+ *   ../lib/jwt-decoder/examples → examples: { id; label; token; key? }[]
+ *
+ * No share links and no auto-restore anywhere in this tool — inputs may be
+ * secrets. Snapshots stay opt-in (decode mode only).
  */
 ---
 
-<section class="jwt-pg" aria-label="JWT Decoder playground">
+<section class="jwt-pg" aria-label="JWT Decoder & Encoder playground">
   <div class="card shadow-float overflow-hidden rounded-lg">
-    <div class="flex flex-col gap-1 border-b border-hairline px-4 py-3 sm:px-5">
-      <label class="eyebrow shrink-0" for="jwt-example">Example</label>
-      <div class="jwt-select-wrap relative min-w-0">
-        <select id="jwt-example" class="jwt-select code-mono" autocomplete="off">
-          <option value="">Loading examples…</option>
-        </select>
-        <svg
-          class="jwt-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
-          viewBox="0 0 16 16"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.4"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
+    <div
+      class="flex flex-wrap items-center gap-2 border-b border-hairline px-4 py-3 sm:px-5"
+      role="group"
+      aria-label="Playground mode"
+    >
+      <button id="jwt-mode-decode" type="button" class="jwt-mode-btn" aria-pressed="true" data-mode="decode">
+        Decode &amp; verify
+      </button>
+      <button id="jwt-mode-encode" type="button" class="jwt-mode-btn" aria-pressed="false" data-mode="encode">
+        Encode &amp; sign
+      </button>
+      <button id="jwt-mode-keys" type="button" class="jwt-mode-btn" aria-pressed="false" data-mode="keys">
+        Generate keys
+      </button>
+    </div>
+
+    <!-- ── Decode & verify ─────────────────────────────────────────────── -->
+    <div id="jwt-panel-decode" class="jwt-panel" data-panel="decode">
+      <div class="flex flex-col gap-1 border-b border-hairline px-4 py-3 sm:px-5">
+        <label class="eyebrow shrink-0" for="jwt-example">Example</label>
+        <div class="jwt-select-wrap relative min-w-0">
+          <select id="jwt-example" class="jwt-select code-mono" autocomplete="off">
+            <option value="">Loading examples…</option>
+          </select>
+          <svg
+            class="jwt-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M4 6l4 4 4-4"></path>
+          </svg>
+        </div>
+      </div>
+
+      <div class="border-b border-hairline px-4 py-4 sm:px-5">
+        <label class="eyebrow mb-2 block" for="jwt-input">JWT</label>
+        <textarea
+          id="jwt-input"
+          class="jwt-input code-mono"
+          spellcheck="false"
+          autocapitalize="off"
+          autocorrect="off"
+          autocomplete="off"
+          rows="5"
+          placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+          aria-describedby="jwt-input-hint"></textarea>
+
+        <label class="eyebrow mt-4 mb-2 block" for="jwt-secret"
+          >Secret / public key / JWK / JWKS (optional)</label
         >
-          <path d="M4 6l4 4 4-4"></path>
-        </svg>
-      </div>
-    </div>
-
-    <div class="border-b border-hairline px-4 py-4 sm:px-5">
-      <label class="eyebrow mb-2 block" for="jwt-input">JWT</label>
-      <textarea
-        id="jwt-input"
-        class="jwt-input code-mono"
-        spellcheck="false"
-        autocapitalize="off"
-        autocorrect="off"
-        autocomplete="off"
-        rows="5"
-        placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
-        aria-describedby="jwt-input-hint"></textarea>
-
-      <label class="eyebrow mt-4 mb-2 block" for="jwt-secret"
-        >Secret / public key (optional)</label
-      >
-      <input
-        id="jwt-secret"
-        class="jwt-secret code-mono"
-        type="text"
-        spellcheck="false"
-        autocapitalize="off"
-        autocorrect="off"
-        autocomplete="off"
-        placeholder="your-256-bit-secret   ·or·   -----BEGIN PUBLIC KEY-----…"
-        aria-describedby="jwt-input-hint"
-      />
-      <p id="jwt-input-hint" class="jwt-hint caption text-mute">
-        Everything stays in your browser — nothing is sent anywhere. HS256/384/512 verify against a
-        shared secret; RS256/384/512 need a PEM <span class="code-mono">BEGIN PUBLIC KEY</span>.
-      </p>
-      <div class="jwt-snap-row mt-3 flex flex-wrap items-center gap-2">
-        <button id="jwt-snap-save" type="button" class="jwt-snap-btn">Save snapshot</button>
-        <select id="jwt-snap-select" class="jwt-snap-select" aria-label="Load a saved snapshot" disabled>
-          <option value="">No snapshots yet</option>
-        </select>
-        <button id="jwt-snap-delete" type="button" class="jwt-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
-      </div>
-    </div>
-
-    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex items-center justify-between gap-3">
-        <span class="eyebrow">Result</span>
-        <span id="jwt-summary" class="jwt-summary code-mono text-mute" role="status" aria-live="polite"
-        ></span>
-      </div>
-      <p class="caption text-mute mb-3">No share links on this tool — inputs may be secrets.</p>
-      <div id="jwt-results" class="jwt-results" aria-live="polite" aria-atomic="false">
-        <p class="jwt-empty body-sm text-mute">
-          Paste a JWT or pick an example to see its header, payload, claims, and signature decoded
-          here.
+        <textarea
+          id="jwt-secret"
+          class="jwt-input code-mono jwt-key-input"
+          spellcheck="false"
+          autocapitalize="off"
+          autocorrect="off"
+          autocomplete="off"
+          rows="2"
+          placeholder={'your-256-bit-secret   ·or·   -----BEGIN PUBLIC KEY-----…   ·or·   {"kty":"EC",…}   ·or·   {"keys":[…]}'}
+          aria-describedby="jwt-input-hint"></textarea>
+        <label class="jwt-check mt-2">
+          <input id="jwt-secret-b64u" type="checkbox" />
+          <span>Secret is base64url-encoded <span class="text-mute">(HS256/384/512 only)</span></span>
+        </label>
+        <p id="jwt-input-hint" class="jwt-hint caption text-mute">
+          Everything stays in your browser — nothing is sent anywhere. Verifies HS/RS/PS/ES 256–512
+          and EdDSA against a shared secret, a PEM <span class="code-mono">BEGIN PUBLIC KEY</span>, a
+          JWK, or a full JWKS (matched by <span class="code-mono">kid</span>).
         </p>
+        <div class="jwt-snap-row mt-3 flex flex-wrap items-center gap-2">
+          <button id="jwt-snap-save" type="button" class="jwt-snap-btn">Save snapshot</button>
+          <select id="jwt-snap-select" class="jwt-snap-select" aria-label="Load a saved snapshot" disabled>
+            <option value="">No snapshots yet</option>
+          </select>
+          <button id="jwt-snap-delete" type="button" class="jwt-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
+        </div>
+      </div>
+
+      <div class="bg-canvas-soft px-4 py-4 sm:px-5">
+        <div class="mb-3 flex items-center justify-between gap-3">
+          <span class="eyebrow">Result</span>
+          <span id="jwt-summary" class="jwt-summary code-mono text-mute" role="status" aria-live="polite"
+          ></span>
+        </div>
+        <p class="caption text-mute mb-3">No share links on this tool — inputs may be secrets.</p>
+        <div id="jwt-results" class="jwt-results" aria-live="polite" aria-atomic="false">
+          <p class="jwt-empty body-sm text-mute">
+            Paste a JWT or pick an example to see its header, payload, claims, and signature decoded
+            here.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Encode & sign ───────────────────────────────────────────────── -->
+    <div id="jwt-panel-encode" class="jwt-panel" data-panel="encode" hidden>
+      <div class="border-b border-hairline px-4 py-4 sm:px-5">
+        <label class="eyebrow mb-2 block" for="jwt-enc-alg">Algorithm</label>
+        <div class="jwt-select-wrap relative min-w-0">
+          <select id="jwt-enc-alg" class="jwt-select code-mono" autocomplete="off">
+            <optgroup label="HMAC (shared secret)">
+              <option value="HS256" selected>HS256</option>
+              <option value="HS384">HS384</option>
+              <option value="HS512">HS512</option>
+            </optgroup>
+            <optgroup label="RSA (RSASSA-PKCS1-v1_5)">
+              <option value="RS256">RS256</option>
+              <option value="RS384">RS384</option>
+              <option value="RS512">RS512</option>
+            </optgroup>
+            <optgroup label="RSA-PSS">
+              <option value="PS256">PS256</option>
+              <option value="PS384">PS384</option>
+              <option value="PS512">PS512</option>
+            </optgroup>
+            <optgroup label="ECDSA">
+              <option value="ES256">ES256</option>
+              <option value="ES384">ES384</option>
+              <option value="ES512">ES512</option>
+            </optgroup>
+            <optgroup label="EdDSA">
+              <option value="EdDSA">EdDSA (Ed25519)</option>
+            </optgroup>
+          </select>
+          <svg
+            class="jwt-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M4 6l4 4 4-4"></path>
+          </svg>
+        </div>
+
+        <label class="eyebrow mt-4 mb-2 block" for="jwt-enc-header">Header (JSON)</label>
+        <textarea
+          id="jwt-enc-header"
+          class="jwt-input code-mono"
+          spellcheck="false"
+          autocapitalize="off"
+          autocorrect="off"
+          autocomplete="off"
+          rows="4"></textarea>
+
+        <label class="eyebrow mt-4 mb-2 block" for="jwt-enc-payload">Payload (JSON)</label>
+        <textarea
+          id="jwt-enc-payload"
+          class="jwt-input code-mono"
+          spellcheck="false"
+          autocapitalize="off"
+          autocorrect="off"
+          autocomplete="off"
+          rows="6"></textarea>
+
+        <label class="eyebrow mt-4 mb-2 block" for="jwt-enc-key" id="jwt-enc-key-label">Secret</label>
+        <textarea
+          id="jwt-enc-key"
+          class="jwt-input code-mono jwt-key-input"
+          spellcheck="false"
+          autocapitalize="off"
+          autocorrect="off"
+          autocomplete="off"
+          rows="2"></textarea>
+        <label class="jwt-check mt-2" id="jwt-enc-b64u-row">
+          <input id="jwt-enc-b64u" type="checkbox" />
+          <span>Secret is base64url-encoded</span>
+        </label>
+        <p class="jwt-hint caption text-mute">
+          Signing happens in your browser with the Web Crypto API — keys never leave this page. The
+          token is built from minified JSON, so whitespace in the editors never changes the
+          signature. Need a key? Use the <strong>Generate keys</strong> tab.
+        </p>
+      </div>
+
+      <div class="bg-canvas-soft px-4 py-4 sm:px-5">
+        <div class="mb-3 flex items-center justify-between gap-3">
+          <span class="eyebrow">Signed token</span>
+          <span id="jwt-enc-status" class="jwt-summary code-mono text-mute" role="status" aria-live="polite"
+          ></span>
+        </div>
+        <div id="jwt-enc-results" class="jwt-results">
+          <p class="jwt-empty body-sm text-mute">
+            Fill in the header, payload, and key to see the signed token here.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Generate keys ───────────────────────────────────────────────── -->
+    <div id="jwt-panel-keys" class="jwt-panel" data-panel="keys" hidden>
+      <div class="border-b border-hairline px-4 py-4 sm:px-5">
+        <div class="flex flex-wrap items-end gap-3">
+          <div class="min-w-0">
+            <label class="eyebrow mb-2 block" for="jwt-keys-kind">Key type</label>
+            <div class="jwt-select-wrap relative min-w-0">
+              <select id="jwt-keys-kind" class="jwt-select code-mono" autocomplete="off">
+                <option value="hmac" selected>HMAC secret (HS256/384/512)</option>
+                <option value="rsa">RSA key pair (RS*/PS*)</option>
+                <option value="ec">EC key pair (ES256/384/512)</option>
+                <option value="ed25519">Ed25519 key pair (EdDSA)</option>
+              </select>
+              <svg
+                class="jwt-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.4"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M4 6l4 4 4-4"></path>
+              </svg>
+            </div>
+          </div>
+          <div class="min-w-0" id="jwt-keys-param-wrap">
+            <label class="eyebrow mb-2 block" for="jwt-keys-param">Size</label>
+            <div class="jwt-select-wrap relative min-w-0">
+              <select id="jwt-keys-param" class="jwt-select code-mono" autocomplete="off"></select>
+              <svg
+                class="jwt-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.4"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M4 6l4 4 4-4"></path>
+              </svg>
+            </div>
+          </div>
+          <button id="jwt-keys-generate" type="button" class="jwt-generate-btn">Generate</button>
+        </div>
+        <p class="jwt-hint caption text-mute">
+          Generated locally with the Web Crypto API — nothing leaves your browser. Great for tests
+          and local development; production keys belong in your platform's KMS or secret manager.
+        </p>
+      </div>
+
+      <div class="bg-canvas-soft px-4 py-4 sm:px-5">
+        <div class="mb-3 flex items-center justify-between gap-3">
+          <span class="eyebrow">Key material</span>
+          <span id="jwt-keys-status" class="jwt-summary code-mono text-mute" role="status" aria-live="polite"
+          ></span>
+        </div>
+        <div id="jwt-keys-results" class="jwt-results">
+          <p class="jwt-empty body-sm text-mute">
+            Pick a key type and press Generate — the key appears here as PEM and JWK, with copy
+            buttons.
+          </p>
+        </div>
       </div>
     </div>
   </div>
@@ -98,6 +297,34 @@
 
 <style>
   @reference "../styles/global.css";
+
+  .jwt-mode-btn {
+    flex: 0 0 auto;
+    height: 32px;
+    padding: 0 14px;
+    border-radius: var(--radius-pill);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-brand-strong);
+    font-size: 13px;
+    line-height: 20px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease, color 0.12s ease;
+  }
+  .jwt-mode-btn:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .jwt-mode-btn[aria-pressed='true'] {
+    background: var(--color-brand-soft);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+    color: var(--color-brand-strong);
+  }
+  @media (pointer: coarse) {
+    .jwt-mode-btn {
+      min-height: 44px;
+    }
+  }
 
   .jwt-select {
     appearance: none;
@@ -150,34 +377,36 @@
     resize: vertical;
     transition: box-shadow 0.15s ease;
   }
-  .jwt-secret {
-    width: 100%;
-    height: 40px;
-    padding: 0 14px;
-    border-radius: var(--radius-md);
-    background: var(--color-canvas);
-    color: var(--color-ink);
-    box-shadow: var(--shadow-hairline);
-    font-size: 13px;
-    line-height: 20px;
-    transition: box-shadow 0.15s ease;
+  .jwt-key-input {
+    min-height: 64px;
   }
-  .jwt-input::placeholder,
-  .jwt-secret::placeholder {
+  .jwt-input::placeholder {
     color: var(--color-mute);
   }
-  .jwt-input:hover,
-  .jwt-secret:hover {
+  .jwt-input:hover {
     box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
   }
-  .jwt-input:focus,
-  .jwt-secret:focus {
+  .jwt-input:focus {
     outline: none;
   }
-  .jwt-input:focus-visible,
-  .jwt-secret:focus-visible {
+  .jwt-input:focus-visible {
     box-shadow: inset 0 0 0 2px var(--color-link);
     outline: none;
+  }
+  .jwt-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    line-height: 18px;
+    color: var(--color-body);
+    cursor: pointer;
+    user-select: none;
+  }
+  .jwt-check input {
+    accent-color: var(--color-brand-strong);
+    width: 14px;
+    height: 14px;
   }
   .jwt-hint {
     margin-top: 8px;
@@ -199,6 +428,32 @@
   .jwt-snap-btn:hover {
     background: var(--color-canvas-soft);
     box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .jwt-generate-btn {
+    flex: 0 0 auto;
+    height: 32px;
+    padding: 0 18px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-brand-soft);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+    color: var(--color-brand-strong);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .jwt-generate-btn:hover {
+    box-shadow: inset 0 0 0 1.5px var(--color-brand);
+  }
+  .jwt-generate-btn:disabled {
+    cursor: wait;
+    opacity: 0.6;
+  }
+  @media (pointer: coarse) {
+    .jwt-generate-btn {
+      min-height: 44px;
+    }
   }
   .jwt-snap-select {
     height: 30px;
@@ -321,6 +576,14 @@
     font-family: var(--font-mono);
     font-size: 12px;
   }
+  :global(.jwt-row__caption) {
+    display: block;
+    margin-top: 2px;
+    font-family: var(--font-sans);
+    font-size: 11.5px;
+    line-height: 16px;
+    color: var(--color-mute);
+  }
   :global(.jwt-row--warn .jwt-row__value) {
     color: var(--color-warning-deep);
   }
@@ -403,6 +666,42 @@
     flex: 1 1 auto;
     color: var(--color-mute);
     word-break: break-word;
+  }
+  :global(.jwt-verify-warning) {
+    padding: 0 14px 10px;
+    font-size: 12.5px;
+    line-height: 17px;
+    color: var(--color-warning-deep);
+  }
+
+  /* Decode → encode handoff */
+  :global(.jwt-actions) {
+    margin-top: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  :global(.jwt-action-btn) {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-pill);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-brand-strong);
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  :global(.jwt-action-btn:hover) {
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+  }
+  @media (pointer: coarse) {
+    :global(.jwt-action-btn) {
+      min-height: 44px;
+    }
   }
 
   @keyframes jwt-rise {
@@ -487,7 +786,7 @@
   import { wireSnapshotUI } from '../lib/tool-state/wire';
 
   type ClaimTone = 'ok' | 'warn' | 'error';
-  type ClaimRow = { label: string; value: string; mono?: boolean; tone?: ClaimTone };
+  type ClaimRow = { label: string; value: string; mono?: boolean; tone?: ClaimTone; caption?: string };
   type JwtResult = {
     valid: boolean;
     error?: string;
@@ -500,15 +799,54 @@
     warnings: string[];
   };
   type VerifyStatus = 'valid' | 'invalid' | 'unsupported' | 'error';
-  type VerifyResult = { status: VerifyStatus; detail: string };
-  type Example = { id: string; label: string; token: string };
+  type VerifyResult = { status: VerifyStatus; detail: string; warning?: string };
+  type SignResult = { ok: true; token: string } | { ok: false; error: string };
+  type KeygenRequest =
+    | { kind: 'hmac'; bytes: 32 | 48 | 64 }
+    | { kind: 'rsa'; modulus: 2048 | 3072 | 4096 }
+    | { kind: 'ec'; curve: 'P-256' | 'P-384' | 'P-521' }
+    | { kind: 'ed25519' };
+  type KeygenResult =
+    | {
+        ok: true;
+        secretB64u?: string;
+        publicPem?: string;
+        privatePem?: string;
+        publicJwk?: string;
+        privateJwk?: string;
+      }
+    | { ok: false; error: string };
+  type Example = { id: string; label: string; token: string; key?: string };
   type EngineModule = {
     decode: (token: string, nowMs?: number) => JwtResult;
-    verify: (token: string, secret: string) => Promise<VerifyResult>;
+    verify: (token: string, keyInput: string, opts?: { secretBase64url?: boolean }) => Promise<VerifyResult>;
+    sign: (
+      headerJson: string,
+      payloadJson: string,
+      keyInput: string,
+      opts: { alg: string; secretBase64url?: boolean },
+    ) => Promise<SignResult>;
+    generateKeys: (req: KeygenRequest) => Promise<KeygenResult>;
+    edDsaSupported: () => Promise<boolean>;
   };
 
   const ROOT_SEL = '.jwt-pg';
   const DEBOUNCE_MS = 220;
+  /** Extra hold before showing an encode error, so JSON edits never flash red. */
+  const ERROR_HOLD_MS = 400;
+
+  const HMAC_ALGS = new Set(['HS256', 'HS384', 'HS512']);
+  const ALL_ALGS = new Set([
+    'HS256', 'HS384', 'HS512',
+    'RS256', 'RS384', 'RS512',
+    'PS256', 'PS384', 'PS512',
+    'ES256', 'ES384', 'ES512',
+    'EdDSA',
+  ]);
+
+  const ENC_SEED_HEADER = '{\n  "alg": "HS256",\n  "typ": "JWT"\n}';
+  const ENC_SEED_PAYLOAD = '{\n  "sub": "1234567890",\n  "name": "John Doe",\n  "iat": 1516239022\n}';
+  const ENC_SEED_KEY = 'your-256-bit-secret';
 
   function boot(): void {
     document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
@@ -531,6 +869,7 @@
           id: typeof o.id === 'string' && o.id ? o.id : `example-${i + 1}`,
           label: typeof o.label === 'string' && o.label ? o.label : `Example ${i + 1}`,
           token: typeof o.token === 'string' ? o.token : '',
+          key: typeof o.key === 'string' && o.key ? o.key : undefined,
         } satisfies Example;
       })
       .filter((e) => e.token.length > 0);
@@ -545,13 +884,18 @@
       '<p class="jwt-empty body-sm text-mute">Paste a JWT or pick an example to see its header, payload, claims, and signature decoded here.</p>';
   }
 
-  function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
-    summary.textContent = '';
-    container.innerHTML =
+  function errorHtml(title: string, message: string): string {
+    return (
       '<div class="jwt-error" role="alert">' +
       ALERT_SVG +
-      '<div><p class="jwt-error__title">Can’t decode this token</p>' +
-      `<p class="jwt-error__detail">${escapeHtml(message)}</p></div></div>`;
+      `<div><p class="jwt-error__title">${escapeHtml(title)}</p>` +
+      `<p class="jwt-error__detail">${escapeHtml(message)}</p></div></div>`
+    );
+  }
+
+  function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
+    summary.textContent = '';
+    container.innerHTML = errorHtml('Can’t decode this token', message);
   }
 
   /** Top-of-results trust banner reflecting verification state. */
@@ -560,7 +904,7 @@
       return (
         '<div id="jwt-trust-banner" style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;margin-bottom:12px;border-radius:var(--radius-md);background:#fffbeb;box-shadow:inset 0 0 0 1px #f59e0b;color:#92400e;font-size:13px;line-height:18px;">' +
         '<svg style="flex:0 0 auto;margin-top:1px;" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"/><path d="M10 8v4"/><path d="M10 14.5v.1"/></svg>' +
-        '<span>Decoded — signature not verified. Supply a secret or public key to verify authenticity.</span>' +
+        '<span>Decoded — signature not verified. Supply a secret, public key, JWK, or JWKS to verify authenticity.</span>' +
         '</div>'
       );
     }
@@ -592,19 +936,23 @@
     return (
       '<div id="jwt-trust-banner" style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;margin-bottom:12px;border-radius:var(--radius-md);background:var(--color-canvas-soft);box-shadow:inset 0 0 0 1px var(--color-hairline-strong);color:var(--color-mute);font-size:13px;line-height:18px;">' +
       '<svg style="flex:0 0 auto;margin-top:1px;" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"/><path d="M10 7v4"/><path d="M10 13.5v.1"/></svg>' +
-      `<span>Signature verification ${state === 'unsupported' ? 'not supported for this algorithm' : 'encountered an error'}.</span>` +
+      `<span>Signature verification ${state === 'unsupported' ? 'not supported for this algorithm / key' : 'encountered an error'}.</span>` +
       '</div>'
+    );
+  }
+
+  function copyBtnHtml(): string {
+    return (
+      `<button class="jwt-copy-btn" type="button" title="Copy" ` +
+      `onclick="(function(b){var t=b.textContent;navigator.clipboard.writeText(b.closest('.jwt-block').querySelector('.jwt-code').textContent).then(function(){b.textContent='Copied!';setTimeout(function(){b.textContent=t;},1200)}).catch(function(){});return false;})(this)">Copy</button>`
     );
   }
 
   function jsonBlock(title: string, json: string, meta?: string): string {
     const metaHtml = meta ? `<span class="jwt-block__meta">${escapeHtml(meta)}</span>` : '';
-    const copyBtn =
-      `<button class="jwt-copy-btn" type="button" title="Copy" ` +
-      `onclick="(function(b){var t=b.textContent;navigator.clipboard.writeText(b.closest('.jwt-block').querySelector('.jwt-code').textContent).then(function(){b.textContent='Copied!';setTimeout(function(){b.textContent=t;},1200)}).catch(function(){});return false;})(this)">Copy</button>`;
     return (
       '<div class="jwt-block">' +
-      `<div class="jwt-block__head"><span>${escapeHtml(title)}</span><span style="display:flex;align-items:center;gap:8px;">${metaHtml}${copyBtn}</span></div>` +
+      `<div class="jwt-block__head"><span>${escapeHtml(title)}</span><span style="display:flex;align-items:center;gap:8px;">${metaHtml}${copyBtnHtml()}</span></div>` +
       `<pre class="jwt-code">${escapeHtml(json)}</pre>` +
       '</div>'
     );
@@ -621,10 +969,13 @@
       .map((c) => {
         const toneCls = c.tone === 'warn' ? ' jwt-row--warn' : c.tone === 'error' ? ' jwt-row--error' : '';
         const valueCls = 'jwt-row__value' + (c.mono ? ' jwt-row__value--mono' : '');
+        const caption = c.caption
+          ? `<span class="jwt-row__caption">${escapeHtml(c.caption)}</span>`
+          : '';
         return (
           `<div class="jwt-row${toneCls}">` +
           `<span class="jwt-row__label">${escapeHtml(c.label)}</span>` +
-          `<span class="${valueCls}">${escapeHtml(c.value)}</span>` +
+          `<span class="${valueCls}">${escapeHtml(c.value)}${caption}</span>` +
           '</div>'
         );
       })
@@ -667,7 +1018,7 @@
   }
 
   /** Verification block; `state` controls the badge while an async check resolves. */
-  function verifyBlock(state: 'no-key' | 'pending' | VerifyStatus, detail: string): string {
+  function verifyBlock(state: 'no-key' | 'pending' | VerifyStatus, detail: string, warning?: string): string {
     let badgeCls = 'jwt-badge--muted';
     let badgeText = 'no key';
     if (state === 'no-key') {
@@ -689,12 +1040,17 @@
       badgeCls = 'jwt-badge--muted';
       badgeText = 'error';
     }
+    const warnHtml = warning
+      ? `<p class="jwt-verify-warning">⚠ ${escapeHtml(warning)}</p>`
+      : '';
     return (
       '<div class="jwt-block"><div class="jwt-block__head"><span>Signature verification</span></div>' +
       '<div class="jwt-verify">' +
       `<span class="jwt-badge ${badgeCls}"><span class="jwt-badge__dot"></span>${escapeHtml(badgeText)}</span>` +
       `<span class="jwt-verify__detail">${escapeHtml(detail)}</span>` +
-      '</div></div>'
+      '</div>' +
+      warnHtml +
+      '</div>'
     );
   }
 
@@ -716,27 +1072,45 @@
       claimsBlock(result.claims ?? []) +
       signatureBlock(result.signatureB64) +
       warningsBlock(result.warnings ?? []) +
-      verifyHtml;
+      verifyHtml +
+      '<div class="jwt-actions"><button type="button" class="jwt-action-btn" data-jwt-open-encoder>Edit in encoder →</button></div>';
   }
 
   async function init(root: HTMLElement): Promise<void> {
+    // ── Decode mode elements ──
     const input = el<HTMLTextAreaElement>(root, '#jwt-input');
-    const secretInput = el<HTMLInputElement>(root, '#jwt-secret');
+    const secretInput = el<HTMLTextAreaElement>(root, '#jwt-secret');
+    const secretB64u = el<HTMLInputElement>(root, '#jwt-secret-b64u');
     const exampleSel = el<HTMLSelectElement>(root, '#jwt-example');
     const resultsBox = el<HTMLElement>(root, '#jwt-results');
     const summaryEl = el<HTMLElement>(root, '#jwt-summary');
     const snapSaveBtn = el<HTMLButtonElement>(root, '#jwt-snap-save');
     const snapSelect = el<HTMLSelectElement>(root, '#jwt-snap-select');
     const snapDeleteBtn = el<HTMLButtonElement>(root, '#jwt-snap-delete');
+    // ── Encode mode elements ──
+    const encAlg = el<HTMLSelectElement>(root, '#jwt-enc-alg');
+    const encHeader = el<HTMLTextAreaElement>(root, '#jwt-enc-header');
+    const encPayload = el<HTMLTextAreaElement>(root, '#jwt-enc-payload');
+    const encKey = el<HTMLTextAreaElement>(root, '#jwt-enc-key');
+    const encKeyLabel = el<HTMLElement>(root, '#jwt-enc-key-label');
+    const encB64u = el<HTMLInputElement>(root, '#jwt-enc-b64u');
+    const encB64uRow = el<HTMLElement>(root, '#jwt-enc-b64u-row');
+    const encResults = el<HTMLElement>(root, '#jwt-enc-results');
+    const encStatus = el<HTMLElement>(root, '#jwt-enc-status');
+    // ── Keys mode elements ──
+    const keysKind = el<HTMLSelectElement>(root, '#jwt-keys-kind');
+    const keysParam = el<HTMLSelectElement>(root, '#jwt-keys-param');
+    const keysParamWrap = el<HTMLElement>(root, '#jwt-keys-param-wrap');
+    const keysGenerate = el<HTMLButtonElement>(root, '#jwt-keys-generate');
+    const keysResults = el<HTMLElement>(root, '#jwt-keys-results');
+    const keysStatus = el<HTMLElement>(root, '#jwt-keys-status');
+
     if (
-      !input ||
-      !secretInput ||
-      !exampleSel ||
-      !resultsBox ||
-      !summaryEl ||
-      !snapSaveBtn ||
-      !snapSelect ||
-      !snapDeleteBtn
+      !input || !secretInput || !secretB64u || !exampleSel || !resultsBox || !summaryEl ||
+      !snapSaveBtn || !snapSelect || !snapDeleteBtn ||
+      !encAlg || !encHeader || !encPayload || !encKey || !encKeyLabel || !encB64u || !encB64uRow ||
+      !encResults || !encStatus ||
+      !keysKind || !keysParam || !keysParamWrap || !keysGenerate || !keysResults || !keysStatus
     ) {
       return;
     }
@@ -756,6 +1130,44 @@
       return;
     }
 
+    // ── Mode switching ──
+    const modeBtns = Array.from(root.querySelectorAll<HTMLButtonElement>('.jwt-mode-btn'));
+    const panels = Array.from(root.querySelectorAll<HTMLElement>('.jwt-panel'));
+    let encodeSeeded = false;
+    function setMode(mode: string): void {
+      modeBtns.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
+      panels.forEach((p) => {
+        p.hidden = p.dataset.panel !== mode;
+      });
+      if (mode === 'encode' && !encodeSeeded) {
+        encodeSeeded = true;
+        if (!encHeader!.value.trim() && !encPayload!.value.trim()) {
+          encHeader!.value = ENC_SEED_HEADER;
+          encPayload!.value = ENC_SEED_PAYLOAD;
+          encKey!.value = ENC_SEED_KEY;
+        }
+        evaluateEncode(true);
+      }
+    }
+    modeBtns.forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode ?? 'decode')));
+
+    // Feature-detect Ed25519 once and grey out the affected options.
+    void engine.edDsaSupported().then((ok) => {
+      if (ok) return;
+      const encOpt = encAlg!.querySelector<HTMLOptionElement>('option[value="EdDSA"]');
+      if (encOpt) {
+        encOpt.disabled = true;
+        encOpt.textContent = 'EdDSA (not supported in this browser)';
+      }
+      const keyOpt = keysKind!.querySelector<HTMLOptionElement>('option[value="ed25519"]');
+      if (keyOpt) {
+        keyOpt.disabled = true;
+        keyOpt.textContent = 'Ed25519 (not supported in this browser)';
+      }
+    });
+
+    // ═════════════════════════ Decode & verify ═════════════════════════
+
     exampleSel.innerHTML = '';
     const customOpt = document.createElement('option');
     customOpt.value = '-1';
@@ -771,6 +1183,10 @@
 
     // Monotonic token guard so a slow verify() never overwrites a newer render.
     let runId = 0;
+
+    function verifyOpts(): { secretBase64url?: boolean } {
+      return secretB64u!.checked ? { secretBase64url: true } : {};
+    }
 
     function evaluate(): void {
       const value = input!.value;
@@ -798,13 +1214,13 @@
       const initialBanner: 'no-key' | 'pending' = hasSecret ? 'pending' : 'no-key';
       const initialVerify = hasSecret
         ? verifyBlock('pending', 'Checking the signature with the supplied secret / key…')
-        : verifyBlock('no-key', 'Add a secret or PEM public key above to verify the signature.');
+        : verifyBlock('no-key', 'Add a secret, PEM public key, JWK, or JWKS above to verify the signature.');
       renderResult(resultsBox!, summaryEl!, result, initialVerify, initialBanner);
 
       if (!hasSecret) return;
 
       void engine
-        .verify(value, secret)
+        .verify(value, secret, verifyOpts())
         .then((res) => {
           if (current !== runId) return; // a newer evaluate() superseded this one
           patchVerify(res);
@@ -816,12 +1232,16 @@
     }
 
     /** Replace just the verification block in place (header/payload/claims stay put). */
-    function setVerifyBlock(status: VerifyResult['status'] | 'pending' | 'no-key', detail: string): void {
+    function setVerifyBlock(
+      status: VerifyStatus | 'pending' | 'no-key',
+      detail: string,
+      warning?: string,
+    ): void {
       const blocks = resultsBox!.querySelectorAll('.jwt-block');
       const last = blocks[blocks.length - 1];
       if (!last) return;
       const tmp = document.createElement('div');
-      tmp.innerHTML = verifyBlock(status, detail);
+      tmp.innerHTML = verifyBlock(status, detail, warning);
       const fresh = tmp.firstElementChild;
       if (fresh) last.replaceWith(fresh);
     }
@@ -837,7 +1257,7 @@
     }
 
     function patchVerify(res: VerifyResult): void {
-      setVerifyBlock(res.status, res.detail);
+      setVerifyBlock(res.status, res.detail, res.warning);
       patchTrustBanner(res.status);
     }
 
@@ -851,7 +1271,7 @@
       const secret = secretInput!.value;
       const current = ++runId;
       if (secret.trim().length === 0) {
-        setVerifyBlock('no-key', 'Add a secret or PEM public key above to verify the signature.');
+        setVerifyBlock('no-key', 'Add a secret, PEM public key, JWK, or JWKS above to verify the signature.');
         patchTrustBanner('no-key');
         return;
       }
@@ -859,7 +1279,7 @@
       setVerifyBlock('pending', 'Checking the signature with the supplied secret / key…');
       patchTrustBanner('pending');
       void engine
-        .verify(value, secret)
+        .verify(value, secret, verifyOpts())
         .then((res) => { if (current === runId) patchVerify(res); })
         .catch(() => { if (current === runId) patchVerify({ status: 'error', detail: 'Verification failed unexpectedly.' }); });
     }
@@ -881,14 +1301,36 @@
     }
 
     input.addEventListener('input', onUserInput);
-    // Editing only the secret re-verifies in place (no decode, no panel flash).
+    // Editing only the secret (or its encoding) re-verifies in place.
     secretInput.addEventListener('input', scheduleVerifyOnly);
+    secretB64u.addEventListener('change', () => verifyOnly());
     exampleSel.addEventListener('change', () => {
       const idx = Number(exampleSel.value);
       if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
       input.value = examples[idx].token;
+      // Bundled examples carry their matching key so "verified" is one click;
+      // examples without one clear the field to avoid stale-key confusion.
+      secretInput.value = examples[idx].key ?? '';
+      secretB64u.checked = false;
       window.clearTimeout(timer);
       evaluate();
+    });
+
+    // Decode → encode handoff (delegated: the button is re-rendered each eval).
+    resultsBox.addEventListener('click', (ev) => {
+      const btn = (ev.target as HTMLElement).closest('[data-jwt-open-encoder]');
+      if (!btn) return;
+      const decoded = engine.decode(input!.value);
+      if (!decoded.valid) return;
+      encHeader!.value = decoded.header ?? '{}';
+      encPayload!.value = decoded.payload ?? '{}';
+      encodeSeeded = true;
+      if (decoded.alg && ALL_ALGS.has(decoded.alg)) {
+        encAlg!.value = decoded.alg;
+      }
+      syncEncKeyUi();
+      setMode('encode');
+      evaluateEncode(true);
     });
 
     // Save-snapshot only — this tool is hard-excluded from auto-restore-last-input
@@ -907,6 +1349,236 @@
       },
     });
 
+    // ═════════════════════════ Encode & sign ═══════════════════════════
+
+    let encRunId = 0;
+    let encTimer: number | undefined;
+    let encErrTimer: number | undefined;
+    /** The token currently rendered in the encode results, '' when none. */
+    let encRendered = '';
+
+    function syncEncKeyUi(): void {
+      const isHmac = HMAC_ALGS.has(encAlg!.value);
+      encKeyLabel!.textContent = isHmac ? 'Secret' : 'Private key (PKCS8 PEM or JWK)';
+      encB64uRow!.hidden = !isHmac;
+    }
+
+    function renderEncToken(token: string): void {
+      window.clearTimeout(encErrTimer);
+      // Idempotent: an unchanged token (e.g. a blur-triggered re-sign) must
+      // NOT replace the DOM — swapping nodes mid-click swallows the user's
+      // press on the "Open in decoder" button.
+      if (token === encRendered && encResults!.querySelector('.jwt-code')) return;
+      encRendered = token;
+      const segs = token.split('.');
+      encStatus!.textContent = `${encAlg!.value} · ${token.length} chars`;
+      encResults!.innerHTML =
+        jsonBlock('Compact JWS', token, `${segs.length} segments`) +
+        '<div class="jwt-actions"><button type="button" class="jwt-action-btn" data-jwt-open-decoder>Open in decoder →</button></div>';
+    }
+
+    function renderEncError(message: string): void {
+      encRendered = '';
+      encStatus!.textContent = '';
+      encResults!.innerHTML = errorHtml('Can’t sign yet', message);
+    }
+
+    /**
+     * Live signing with the calm-error contract: a success renders
+     * immediately, but an error is held ~ERROR_HOLD_MS after the debounce so
+     * a half-typed JSON edit never flashes red. `immediate` (Enter/blur/mode
+     * switch) skips the hold.
+     */
+    function evaluateEncode(immediate: boolean): void {
+      const current = ++encRunId;
+      const alg = encAlg!.value;
+      void engine
+        .sign(encHeader!.value, encPayload!.value, encKey!.value, {
+          alg,
+          secretBase64url: !encB64uRow!.hidden && encB64u!.checked,
+        })
+        .then((res) => {
+          if (current !== encRunId) return;
+          if (res.ok) {
+            renderEncToken(res.token);
+            return;
+          }
+          if (immediate) {
+            renderEncError(res.error);
+          } else {
+            window.clearTimeout(encErrTimer);
+            encErrTimer = window.setTimeout(() => {
+              if (current === encRunId) renderEncError(res.error);
+            }, ERROR_HOLD_MS);
+          }
+        })
+        .catch(() => {
+          if (current === encRunId) renderEncError('Signing failed unexpectedly.');
+        });
+    }
+
+    function scheduleEncode(): void {
+      window.clearTimeout(encTimer);
+      encTimer = window.setTimeout(() => evaluateEncode(false), DEBOUNCE_MS);
+    }
+
+    encHeader.addEventListener('input', () => {
+      // Typing a recognised alg into the header JSON updates the selector.
+      try {
+        const parsed = JSON.parse(encHeader!.value) as Record<string, unknown>;
+        const alg = typeof parsed.alg === 'string' ? parsed.alg : '';
+        if (ALL_ALGS.has(alg) && alg !== encAlg!.value) {
+          encAlg!.value = alg;
+          syncEncKeyUi();
+        }
+      } catch {
+        /* defer sync until the JSON parses */
+      }
+      scheduleEncode();
+    });
+    encPayload.addEventListener('input', scheduleEncode);
+    encKey.addEventListener('input', scheduleEncode);
+    encB64u.addEventListener('change', () => evaluateEncode(true));
+    for (const ta of [encHeader, encPayload, encKey]) {
+      ta.addEventListener('blur', () => {
+        window.clearTimeout(encTimer);
+        evaluateEncode(true);
+      });
+    }
+
+    encAlg.addEventListener('change', () => {
+      // Changing the selector rewrites header.alg, preserving other members.
+      try {
+        const parsed = JSON.parse(encHeader!.value) as Record<string, unknown>;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          parsed.alg = encAlg!.value;
+          encHeader!.value = JSON.stringify(parsed, null, 2);
+        }
+      } catch {
+        /* invalid JSON — sign() forces alg anyway; sync once it parses */
+      }
+      syncEncKeyUi();
+      evaluateEncode(true);
+    });
+
+    // Encode → decode handoff. For HMAC the same secret verifies, so it rides
+    // along; asymmetric keys do NOT (the decoder needs the public half).
+    encResults.addEventListener('click', (ev) => {
+      const btn = (ev.target as HTMLElement).closest('[data-jwt-open-decoder]');
+      if (!btn) return;
+      const tokenEl = encResults!.querySelector('.jwt-code');
+      const token = tokenEl?.textContent ?? '';
+      if (!token) return;
+      input!.value = token;
+      exampleSel!.value = '-1';
+      if (HMAC_ALGS.has(encAlg!.value)) {
+        secretInput!.value = encKey!.value;
+        secretB64u!.checked = !encB64uRow!.hidden && encB64u!.checked;
+      }
+      setMode('decode');
+      evaluate();
+    });
+
+    // ═════════════════════════ Generate keys ═══════════════════════════
+
+    const PARAM_OPTIONS: Record<string, { label: string; options: [string, string][] } | null> = {
+      hmac: {
+        label: 'Length',
+        options: [
+          ['32', '32 bytes (HS256)'],
+          ['48', '48 bytes (HS384)'],
+          ['64', '64 bytes (HS512)'],
+        ],
+      },
+      rsa: {
+        label: 'Modulus',
+        options: [
+          ['2048', '2048 bits'],
+          ['3072', '3072 bits'],
+          ['4096', '4096 bits'],
+        ],
+      },
+      ec: {
+        label: 'Curve',
+        options: [
+          ['P-256', 'P-256 (ES256)'],
+          ['P-384', 'P-384 (ES384)'],
+          ['P-521', 'P-521 (ES512)'],
+        ],
+      },
+      ed25519: null,
+    };
+
+    function syncKeysParams(): void {
+      const conf = PARAM_OPTIONS[keysKind!.value];
+      if (!conf) {
+        keysParamWrap!.hidden = true;
+        return;
+      }
+      keysParamWrap!.hidden = false;
+      keysParamWrap!.querySelector('label')!.textContent = conf.label;
+      keysParam!.innerHTML = '';
+      for (const [value, label] of conf.options) {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = label;
+        keysParam!.appendChild(opt);
+      }
+    }
+    keysKind.addEventListener('change', syncKeysParams);
+    syncKeysParams();
+
+    let keysBusy = false;
+    keysGenerate.addEventListener('click', () => {
+      if (keysBusy) return;
+      keysBusy = true;
+      keysGenerate!.disabled = true;
+      keysGenerate!.textContent = 'Generating…';
+      keysStatus!.textContent = '';
+
+      let req: KeygenRequest;
+      switch (keysKind!.value) {
+        case 'rsa':
+          req = { kind: 'rsa', modulus: Number(keysParam!.value) as 2048 | 3072 | 4096 };
+          break;
+        case 'ec':
+          req = { kind: 'ec', curve: keysParam!.value as 'P-256' | 'P-384' | 'P-521' };
+          break;
+        case 'ed25519':
+          req = { kind: 'ed25519' };
+          break;
+        default:
+          req = { kind: 'hmac', bytes: Number(keysParam!.value) as 32 | 48 | 64 };
+      }
+
+      void engine
+        .generateKeys(req)
+        .then((res) => {
+          if (!res.ok) {
+            keysResults!.innerHTML = errorHtml('Key generation failed', res.error);
+            return;
+          }
+          const blocks: string[] = [];
+          if (res.secretB64u) blocks.push(jsonBlock('Secret (base64url)', res.secretB64u));
+          if (res.publicPem) blocks.push(jsonBlock('Public key (PEM · SPKI)', res.publicPem));
+          if (res.privatePem) blocks.push(jsonBlock('Private key (PEM · PKCS8)', res.privatePem));
+          if (res.publicJwk) blocks.push(jsonBlock('Public key (JWK)', res.publicJwk));
+          if (res.privateJwk) blocks.push(jsonBlock('Private key (JWK)', res.privateJwk));
+          keysResults!.innerHTML = blocks.join('');
+          keysStatus!.textContent = res.secretB64u ? 'secret generated' : 'key pair generated';
+        })
+        .catch(() => {
+          keysResults!.innerHTML = errorHtml('Key generation failed', 'Unexpected error — try again.');
+        })
+        .finally(() => {
+          keysBusy = false;
+          keysGenerate!.disabled = false;
+          keysGenerate!.textContent = 'Generate';
+        });
+    });
+
+    // ═════════════════════════ First paint ═════════════════════════════
+
     // Seed priority: a secret-safe handoff (e.g. from Base64's "Decode as
     // JWT" chip) > the first example. A handoff is a one-time read — it
     // never lingers for a later visit.
@@ -919,6 +1591,7 @@
       const seed = examples[0];
       if (seed) {
         input.value = seed.token;
+        secretInput.value = seed.key ?? '';
         exampleSel.value = '0';
         evaluate();
       } else {

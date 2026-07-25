@@ -1,9 +1,10 @@
 ---
 /**
- * JWT Decoder — the jwt-decoder tool page (SEO surface).
- * Paste a JSON Web Token to decode its header and payload, read the standard
- * claims and expiry, and optionally verify the HMAC / RSA signature — all
- * entirely in the browser, with nothing uploaded.
+ * JWT Decoder & Encoder — the jwt-decoder tool page (SEO surface).
+ * Decode a JSON Web Token, verify its signature across the full JWS matrix
+ * (HS/RS/PS/ES/EdDSA — secret, PEM, JWK, or JWKS), sign new tokens from
+ * editable JSON, and generate test key pairs — all entirely in the browser,
+ * with nothing uploaded.
  */
 import Shell from '../../components/Shell.astro';
 import JwtDecoderPlayground from '../../components/JwtDecoderPlayground.astro';
@@ -33,7 +34,19 @@ const faqs = [
   },
   {
     q: '¿Se verifica realmente la firma, y cómo?',
-    a: 'Sí, de forma opcional y local. Pega un secreto compartido para un token HMAC (HS256 / HS384 / HS512) o una clave pública PEM para un token RSA (RS256 / RS384 / RS512) y la herramienta recalcula la firma sobre los bytes de header.payload usando la Web Crypto API directamente en tu navegador, y luego informa si es válida o no válida. Si dejas la clave en blanco, simplemente decodifica sin comprobar la firma.',
+    a: 'Sí, de forma opcional y local. Pega un secreto compartido para un token HMAC (HS256 / HS384 / HS512) o una clave pública para uno asimétrico — RS256–512, PS256–512, ES256–512 o EdDSA — y la herramienta recalcula la firma sobre los bytes de header.payload usando la Web Crypto API directamente en tu navegador, y luego informa si es válida o no válida. La clave puede ser un bloque PEM "BEGIN PUBLIC KEY", un JWK individual o un JWKS completo (la clave correcta se elige mediante el kid del encabezado). Si dejas la clave en blanco, simplemente decodifica sin comprobar la firma.',
+  },
+  {
+    q: '¿Puede esta herramienta también crear y firmar un JWT?',
+    a: 'Sí. Cambia a la pestaña "Encode & sign" (codificar y firmar), edita el JSON del encabezado y de la carga útil, elige un algoritmo y proporciona un secreto (para HS256/384/512) o una clave privada PKCS8 / un JWK privado (para RS, PS, ES o EdDSA). El token se firma en vivo en tu navegador con la Web Crypto API — nada se genera en un servidor. También hay una pestaña "Generate keys" (generar claves) que crea secretos HMAC de prueba y pares de claves RSA / EC / Ed25519, exportados tanto en PEM como en JWK.',
+  },
+  {
+    q: '¿Qué algoritmos de firma se admiten?',
+    a: 'Los trece algoritmos de firma JWS que los navegadores pueden ejecutar de forma nativa: HS256, HS384 y HS512 (HMAC), RS256, RS384 y RS512 (RSASSA-PKCS1-v1_5), PS256, PS384 y PS512 (RSA-PSS), ES256, ES384 y ES512 (ECDSA sobre P-256, P-384 y P-521), y EdDSA (Ed25519, en los navegadores que lo admiten). Los tokens sin firmar con alg:"none" se decodifican — con una advertencia — pero nunca se crean aquí, y ES256K (secp256k1) no está disponible en la Web Crypto API.',
+  },
+  {
+    q: '¿Es seguro generar claves de firma en un navegador?',
+    a: 'Para desarrollo y pruebas, sí: las claves provienen del generador criptográficamente seguro de la Web Crypto API, se crean íntegramente en tu máquina y esta página nunca las transmite ni las almacena. Para producción, genera y guarda las claves en el KMS, HSM o gestor de secretos de tu plataforma — una pestaña del navegador no ofrece un almacenamiento seguro, y cualquier cosa que se muestra en pantalla puede acabar en capturas de pantalla o en el historial del portapapeles.',
   },
   {
     q: '¿Qué significan los claims exp, nbf e iat?',
@@ -62,15 +75,19 @@ const faqs = [
 ];
 
 const softwareApp = softwareAppLd({
-  name: 'JWT Decoder',
+  name: 'JWT Decoder & Encoder',
   description:
-    'Decodificador de JWT en línea y gratuito. Pega un JSON Web Token para decodificar el encabezado y los claims y comprobar la expiración. 100 % en el navegador, sin registro — tu token nunca sale de la página.',
+    'Decodificador, codificador y verificador de JWT en línea y gratuito. Decodifica un JSON Web Token, verifica firmas HS/RS/PS/ES/EdDSA con un secreto, PEM, JWK o JWKS, firma nuevos tokens y genera claves de prueba. 100 % en el navegador — tu token nunca sale de la página.',
   url: pageUrl,
   subCategory: 'Security',
   featureList: [
     'Decodifica el encabezado y la carga útil del JWT desde base64url',
-    'Lee los claims estándar y convierte exp / nbf / iat a horas legibles',
-    'Verifica opcionalmente las firmas HS256–HS512 y RS256–RS512 de forma local',
+    'Lee los claims estándar con explicaciones en lenguaje sencillo y convierte exp / nbf / iat a horas legibles',
+    'Verifica los 13 algoritmos JWS de forma local: HS, RS, PS, ES 256–512 y EdDSA',
+    'Acepta como clave un secreto compartido, un PEM SPKI, un JWK o un JWKS (elegido por kid)',
+    'Codifica y firma nuevos tokens desde JSON editable de encabezado y carga útil',
+    'Genera secretos HMAC y pares de claves RSA / EC / Ed25519 como PEM + JWK',
+    'Lint de seguridad: alg none, exp ausente o lejano, secretos HMAC débiles, tokens sobredimensionados',
     '100 % del lado del cliente, sin subidas, sin registro',
   ],
   keywords: tool?.keywords.join(', '),
@@ -88,11 +105,15 @@ const pipeline = [
   },
   {
     title: 'Lee los claims.',
-    body: 'Se exponen los claims estándar y exp, nbf e iat se convierten en horas legibles con una comprobación de expiración.',
+    body: 'Se exponen los claims estándar con explicaciones en lenguaje sencillo, y exp, nbf e iat se convierten en horas legibles con una comprobación de expiración.',
   },
   {
     title: 'Verifica la firma.',
-    body: 'Proporciona un secreto o una clave pública y la firma HMAC / RSA se recalcula y se comprueba localmente.',
+    body: 'Proporciona un secreto, una clave pública PEM, un JWK o un JWKS y la firma HS / RS / PS / ES / EdDSA se recalcula y se comprueba localmente.',
+  },
+  {
+    title: 'Firma tu propio token.',
+    body: 'Cambia a Encode & sign para crear un token desde JSON editable — o genera antes un par de claves de prueba nuevo.',
   },
 ];
 
@@ -123,30 +144,30 @@ const __lang = (Astro.currentLocale ?? 'en') as __Locale;
 ---
 
 <Shell
-  title="JWT Decoder — Decodifica JWT en línea, gratis y en el navegador"
-  description="Decodificador de JWT en línea y gratuito. Pega un JSON Web Token para decodificar el encabezado y los claims y comprobar la expiración. 100 % en el navegador, sin registro — tu token nunca sale de la página."
+  title="JWT Decoder & Encoder — Decodifica, verifica y firma JWT en línea"
+  description="Decodificador, codificador y verificador de JWT en línea y gratuito. Decodifica un JSON Web Token, verifica firmas HS/RS/PS/ES/EdDSA, firma nuevos tokens y genera claves de prueba. 100 % en el navegador — tu token nunca sale de la página."
   canonical="/jwt-decoder"
   jsonLd={[softwareApp, faqPage]}
 >
   <ToolHero
-    eyebrow="JWT Decoder · Security"
+    eyebrow="JWT Decoder & Encoder · Security"
     badges={[
       { label: 'Se ejecuta en tu navegador', variant: 'live' },
-      { label: 'Verifica HS* y RS*', variant: 'neutral' },
+      { label: 'HS · RS · PS · ES · EdDSA', variant: 'neutral' },
       { label: 'Sin registro', variant: 'neutral' },
     ]}
   >
-    <Fragment slot="headline">Decodifica un JSON Web Token en tu navegador.</Fragment>
+    <Fragment slot="headline">Decodifica, verifica y firma JSON Web Tokens en tu navegador.</Fragment>
     <Fragment slot="lead">
       Pega un token <span class="code-mono text-ink" translate="no">header.payload.signature</span> para
-      leer sus claims y su expiración, y verifica opcionalmente la firma de forma local — nada sale nunca de la
-      pestaña.
+      leer sus claims y verificar la firma con un secreto, PEM, JWK o JWKS — o cambia de pestaña para
+      firmar tu propio token y generar claves de prueba. Nada sale nunca de la pestaña.
     </Fragment>
   </ToolHero>
 
   <section id="playground" class="scroll-mt-24 bg-canvas-soft pt-8 pb-20 sm:pb-24">
     <div class="container-page">
-      <h2 class="sr-only">Área de pruebas del JWT Decoder</h2>
+      <h2 class="sr-only">Área de pruebas del JWT Decoder &amp; Encoder</h2>
       <JwtDecoderPlayground />
     </div>
   </section>
@@ -173,10 +194,12 @@ const __lang = (Astro.currentLocale ?? 'en') as __Locale;
             de producción en un chat de IA. En su lugar, decodifícalo de forma local.
           </p>
           <p class="body-md text-pretty text-body">
-            Este visor de claims de JWT convierte el blob en los hechos concretos que necesitas — el algoritmo
-            del encabezado, cada claim, la expiración en formato legible — y, cuando proporcionas el secreto o
-            la clave pública, confirma la firma con la Web Crypto API. Es un decodificador de JWT totalmente del
-            lado del cliente: el token nunca sale de tu pestaña del navegador, por lo que es seguro usarlo incluso con
+            Este banco de trabajo de JWT convierte el blob en los hechos concretos que necesitas — el algoritmo
+            del encabezado, cada claim con una explicación en lenguaje sencillo, la expiración en formato
+            legible — y, cuando proporcionas el secreto, la clave pública, el JWK o el JWKS, confirma la firma
+            con la Web Crypto API en los trece algoritmos JWS. También funciona en sentido inverso: edita el
+            JSON del encabezado y de la carga útil, firma un token nuevo o genera un par de claves de prueba
+            RSA / EC / Ed25519 — todo íntegramente del lado del cliente, por lo que es seguro usarlo incluso con
             tokens de producción.
           </p>
           <p class="body-sm text-mute">
@@ -193,7 +216,7 @@ const __lang = (Astro.currentLocale ?? 'en') as __Locale;
     id="how-it-works"
     eyebrow="The Pipeline"
     heading="Cómo funciona."
-    lead="Cuatro pasos deterministas se ejecutan con cada pulsación de tecla — todo dentro de tu pestaña del navegador, con la verificación gestionada por la Web Crypto API."
+    lead="Cinco pasos deterministas se ejecutan con cada pulsación de tecla — todo dentro de tu pestaña del navegador, con la firma y la verificación gestionadas por la Web Crypto API."
     steps={pipeline}
   />
 
@@ -266,7 +289,7 @@ const __lang = (Astro.currentLocale ?? 'en') as __Locale;
 
   <ToolCrossLinks lang={__lang}>
     <Fragment slot="lead">
-      El JWT Decoder es una de las herramientas de
+      El JWT Decoder &amp; Encoder es una de las herramientas de
       <span translate="no">{site.name}</span> — un dosel creciente de validadores, conversores y
       probadores basados en el navegador que nunca tocan un servidor.
     </Fragment>
