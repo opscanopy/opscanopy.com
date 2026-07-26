@@ -157,6 +157,18 @@ describe('CSS token extraction', () => {
       '--color-mute',
       '--color-brand-strong',
       '--color-link',
+      // JWT status surfaces (pill/banner/active tab) — gated pairs below rely
+      // on these; keep them present in both theme blocks.
+      '--color-brand',
+      '--color-brand-soft',
+      '--color-error',
+      '--color-error-soft',
+      '--color-error-deep',
+      '--color-warning',
+      '--color-warning-soft',
+      '--color-warning-deep',
+      '--color-primary',
+      '--color-on-primary',
     ];
     for (const token of required) {
       expect(light[token], `missing light token ${token}`).toBeDefined();
@@ -176,6 +188,18 @@ describe('CSS token extraction', () => {
       '--color-mute',
       '--color-brand-strong',
       '--color-link',
+      // JWT status surfaces (pill/banner/active tab) — gated pairs below rely
+      // on these; keep them present in both theme blocks.
+      '--color-brand',
+      '--color-brand-soft',
+      '--color-error',
+      '--color-error-soft',
+      '--color-error-deep',
+      '--color-warning',
+      '--color-warning-soft',
+      '--color-warning-deep',
+      '--color-primary',
+      '--color-on-primary',
     ];
     for (const token of required) {
       expect(dark[token], `missing dark token ${token}`).toBeDefined();

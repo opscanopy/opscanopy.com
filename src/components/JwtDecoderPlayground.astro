@@ -1482,6 +1482,8 @@
 
     // Monotonic token guard so a slow verify() never overwrites a newer render.
     let runId = 0;
+    /** The token behind the current SUCCESS render — '' for empty/error/partial. */
+    let renderedToken = '';
 
     function verifyOpts(): { secretBase64url?: boolean } {
       return secretB64u!.checked ? { secretBase64url: true } : {};
@@ -1489,6 +1491,7 @@
 
     function evaluate(): void {
       const value = input!.value;
+      renderedToken = '';
       if (value.trim().length === 0) {
         runId++;
         renderEmpty(resultsBox!, summaryEl!);
@@ -1530,6 +1533,7 @@
         ? verifyBlock('pending', 'Checking the signature with the supplied secret / key…')
         : verifyBlock('no-key', 'Add a secret, PEM public key, JWK, or JWKS above to verify the signature.');
       renderResult(resultsBox!, summaryEl!, result, initialVerify, initialBanner);
+      renderedToken = value.trim();
 
       // REQ-7 copy payloads — assigned via dataset AFTER innerHTML so
       // newlines/quotes never round-trip through an HTML attribute.
@@ -1597,8 +1601,14 @@
       const value = input!.value;
       // The trust banner only exists on a decode SUCCESS render — its absence
       // means an error/partial state is showing, which has no verify block to
-      // patch; a full re-evaluate is the safe path (keeps partial renders intact).
-      if (value.trim().length === 0 || !resultsBox!.querySelector('#jwt-trust-banner')) {
+      // patch. And when the token field changed but its debounce hasn't fired
+      // yet, patching would verify a DIFFERENT token than the blocks on
+      // screen — full re-evaluate is the safe path in both cases.
+      if (
+        value.trim().length === 0 ||
+        !resultsBox!.querySelector('#jwt-trust-banner') ||
+        value.trim() !== renderedToken
+      ) {
         scheduleEvaluate();
         return;
       }
@@ -1644,6 +1654,19 @@
         window.clearTimeout(timer);
         evaluate();
         if (window.matchMedia('(pointer: coarse)').matches) input!.blur();
+        return;
+      }
+      // Bare Enter while the WHOLE value is selected (the REQ-6 select-all
+      // just ran) must not let the newline replace the selection — that
+      // would wipe the token the moment the user follows the hint line.
+      if (
+        input!.value.length > 0 &&
+        input!.selectionStart === 0 &&
+        input!.selectionEnd === input!.value.length
+      ) {
+        ev.preventDefault();
+        window.clearTimeout(timer);
+        evaluate();
         return;
       }
       window.setTimeout(() => {

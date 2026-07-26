@@ -81,7 +81,7 @@ describe('decode()', () => {
     expect(r.signatureB64).toBe('SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c');
   });
 
-  it('flags an exp-in-the-past token (fixed nowMs) with tone "error" and "(expired)"', () => {
+  it('flags an exp-in-the-past token (fixed nowMs) with tone "error" and a relative "(expired … ago)"', () => {
     // The token's exp is 2020-01-01; freeze "now" a year later so it is past.
     const nowMs = Date.UTC(2021, 0, 1); // 1609459200000
     const r = decode(expiredToken, nowMs);
@@ -219,6 +219,25 @@ describe('freshness (REQ-1 pill)', () => {
   it('non-numeric exp → "none" (never throws)', () => {
     const r = decode(`${b64u({ alg: 'HS256' })}.${b64u({ exp: 'soon' })}.x`, nowMs);
     expect(r.freshness?.state).toBe('none');
+  });
+  it.each([
+    ['null', null],
+    ['boolean', true],
+    ['array', []],
+    ['empty string', ''],
+  ])('non-NumericDate exp (%s) never reads as "Expired since 1970"', (_label, exp) => {
+    // RFC 7519 §4.1.4: NumericDate MUST be a number. null/true/[]/"" all
+    // Number()-coerce to finite 0/1 — the verdict and the claims row must
+    // treat them as absent, not as the epoch.
+    const r = decode(`${b64u({ alg: 'HS256' })}.${b64u({ exp })}.x`, nowMs);
+    expect(r.freshness?.state).toBe('none');
+    const row = r.claims.find((c) => c.label.startsWith('Expires'));
+    expect(row?.tone).not.toBe('error');
+    expect(row?.value ?? '').not.toContain('1970');
+  });
+  it('numeric-STRING exp stays tolerated (real-world issuers emit them)', () => {
+    const r = decode(`${b64u({ alg: 'HS256' })}.${b64u({ exp: String(1700000000 + 3600) })}.x`, nowMs);
+    expect(r.freshness?.state).toBe('valid');
   });
   it('absurd finite epoch beyond Date range → detail falls back to the raw number, never "null"', () => {
     const r = decode(`${b64u({ alg: 'HS256' })}.${b64u({ exp: 1e18 })}.x`, nowMs);

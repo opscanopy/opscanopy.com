@@ -116,15 +116,26 @@ function formatAud(aud: unknown): string {
 }
 
 /**
+ * RFC 7519 NumericDate: MUST be a JSON number. Numeric strings are tolerated
+ * (some real-world issuers emit them) but never JS's wilder coercions —
+ * null/true/[]/"" all Number()-coerce to a finite 0/1 and would otherwise
+ * report a hard "Expired since 1970" verdict for a malformed claim.
+ */
+function numericDate(v: unknown): number | null {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  if (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v))) return Number(v);
+  return null;
+}
+
+/**
  * exp/nbf verdict for the status pill — independent of signature checks.
  * Precedence: expired > not-yet > valid; tokens with neither claim (or only
- * non-numeric ones) are 'none'. `utcFromEpoch` returns null past Date's
+ * non-NumericDate ones) are 'none'. `utcFromEpoch` returns null past Date's
  * ±8.64e15 ms range, so every interpolation falls back to the raw epoch.
  */
 function freshnessOf(payload: Record<string, unknown>, nowMs: number): Freshness {
-  const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : null);
-  const exp = 'exp' in payload ? num(payload.exp) : null;
-  const nbf = 'nbf' in payload ? num(payload.nbf) : null;
+  const exp = 'exp' in payload ? numericDate(payload.exp) : null;
+  const nbf = 'nbf' in payload ? numericDate(payload.nbf) : null;
   if (exp === null && nbf === null) {
     return { state: 'none', detail: 'No exp or nbf claims — this token carries no time bounds.' };
   }
@@ -184,7 +195,7 @@ function buildClaims(payload: Record<string, unknown>, nowMs: number): ClaimRow[
   }
 
   if ('exp' in payload) {
-    const n = Number(payload.exp);
+    const n = numericDate(payload.exp) ?? NaN;
     const date = utcFromEpoch(n);
     let tone: ClaimTone = 'ok';
     let suffix = '';
@@ -207,7 +218,7 @@ function buildClaims(payload: Record<string, unknown>, nowMs: number): ClaimRow[
   }
 
   if ('nbf' in payload) {
-    const n = Number(payload.nbf);
+    const n = numericDate(payload.nbf) ?? NaN;
     const date = utcFromEpoch(n);
     let tone: ClaimTone = 'ok';
     let suffix = '';
@@ -225,7 +236,7 @@ function buildClaims(payload: Record<string, unknown>, nowMs: number): ClaimRow[
   }
 
   if ('iat' in payload) {
-    const n = Number(payload.iat);
+    const n = numericDate(payload.iat) ?? NaN;
     const date = utcFromEpoch(n);
     const suffix = Number.isFinite(n) ? ` (${relative(n * 1000, nowMs)})` : '';
     rows.push({
