@@ -2,8 +2,23 @@
 import { defineConfig } from 'astro/config';
 import tailwindcss from '@tailwindcss/vite';
 import sitemap from '@astrojs/sitemap';
+import { createRequire } from 'node:module';
 import remarkCallouts from './src/lib/remark-callouts.mjs';
 import rehypeChapters from './src/lib/rehype-chapters.mjs';
+
+// Real per-URL <lastmod>, written by scripts/gen-lastmod.mjs in `prebuild`.
+// Missing on a bare `astro dev` with no prior build — fall back to {} so every
+// URL simply keeps the build date rather than failing the config.
+const require = createRequire(import.meta.url);
+/** @type {Record<string, string>} */
+let LASTMOD = {};
+try {
+  LASTMOD = require('./src/data/lastmod.generated.json');
+} catch {
+  console.warn('[sitemap] lastmod.generated.json not found — using build date for all URLs.');
+}
+
+const BUILD_DATE = new Date();
 
 // https://astro.build/config
 export default defineConfig({
@@ -21,9 +36,10 @@ export default defineConfig({
   },
   integrations: [
     sitemap({
-      // Stamp every entry with a <lastmod> (build date is a safe default —
-      // this is a static site rebuilt on each deploy).
-      lastmod: new Date(),
+      // Default for pages with no real date of their own (index/listing pages,
+      // which genuinely do change whenever their contents do). Per-URL dates
+      // are applied in `serialize` below.
+      lastmod: BUILD_DATE,
       // Emit <xhtml:link rel="alternate" hreflang> groups. Map the URL path id
       // (pt-br) to its BCP-47 hreflang value (pt-BR).
       i18n: {
@@ -43,6 +59,16 @@ export default defineConfig({
         !/\/search\/?$/.test(page) &&
         !/\/mission-90\/complete\/?$/.test(page) &&
         !/\/tests\/[^/]+\/[^/]+\/?$/.test(page),
+      // Replace the blanket build-date stamp with the page's real last-modified
+      // date where one exists (git commit date for tools, frontmatter dates for
+      // posts and guides). Claiming all 445 URLs changed on every deploy is both
+      // untrue and a weak freshness signal.
+      serialize: (item) => {
+        const pathname = new URL(item.url).pathname;
+        const known = LASTMOD[pathname];
+        if (known) item.lastmod = known;
+        return item;
+      },
     }),
   ],
   markdown: {

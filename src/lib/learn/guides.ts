@@ -51,6 +51,27 @@ export function getPrevNextInTrack(
   };
 }
 
+/**
+ * Inverse of each guide's `relatedTools` — "which guide covers this tool?".
+ *
+ * Guides already declare the tools they relate to, so inverting that is
+ * authoritative and self-maintaining. It replaces the hand-written
+ * category→track map in ToolCrossLinks, which only covered 3 of 11 categories
+ * and left 26 of 29 tools with no route into /learn.
+ *
+ * Returns the lowest-`order` guide for the tool (the track's entry point), or
+ * undefined when no guide claims it — callers must render nothing rather than
+ * inventing a link.
+ */
+export function getGuideForTool(
+  toolSlug: string,
+  all: LocalizedGuide[],
+): LocalizedGuide | undefined {
+  return all
+    .filter((g) => (g.entry.data.relatedTools ?? []).includes(toolSlug))
+    .sort((a, b) => a.entry.data.order - b.entry.data.order)[0];
+}
+
 export function getRelatedGuides(
   current: LocalizedGuide,
   all: LocalizedGuide[],

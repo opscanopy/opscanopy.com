@@ -1,0 +1,60 @@
+name: Syndicate
+
+# Keeps dev.to syndication honest.
+#
+# Two jobs in one script (scripts/devto-sync.mjs):
+#   1. Audit — every dev.to post that duplicates an opscanopy article must set
+#      canonical_url back to the original. dev.to massively out-ranks a young
+#      domain, so an uncanonicalised repost competes with the original and wins.
+#   2. Repair — with --apply, PUT the correct canonical on anything that drifted.
+#
+# It deliberately does NOT canonicalise dev.to originals (posts with no local
+# equivalent). Pointing canonical at a merely related page is wrong and gains
+# nothing; those are listed in the script's OVERRIDES map as null.
+#
+# Required secret: DEVTO_API_KEY (dev.to -> Settings -> Extensions -> API Keys)
+
+on:
+  schedule:
+    # Weekly drift check — canonical_url can be cleared by editing a post in the
+    # dev.to UI, which is easy to do without noticing.
+    - cron: '0 7 * * 1'
+  push:
+    branches: [main]
+    paths:
+      - 'marketing/**'
+      - 'scripts/devto-sync.mjs'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Write corrected canonical URLs (otherwise audit only)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  canonicals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Scheduled and push runs repair automatically; a manual run can opt out
+      # by unticking `apply` to preview first.
+      - name: Sync dev.to canonicals
+        env:
+          # The repo secret is named DEVTO; the script reads DEVTO_API_KEY.
+          # Accept either so renaming the secret later does not break this.
+          DEVTO_API_KEY: ${{ secrets.DEVTO_API_KEY || secrets.DEVTO }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.apply }}" != "true" ]; then
+            node scripts/devto-sync.mjs
+          else
+            node scripts/devto-sync.mjs --apply
+          fi

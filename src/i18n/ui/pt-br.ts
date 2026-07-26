@@ -51,6 +51,16 @@ const ptBr: Partial<UiDict> = {
     '{count} ferramentas gratuitas, todas capazes de funcionar offline — o opscanopy.com não exige cadastro e não envia nada.',
   'crosslinks.paletteHint':
     '{count} ferramentas, um atalho — pressione Ctrl/⌘+K para acessar qualquer uma delas.',
+  'home.blogEyebrow': 'Do blog',
+  'home.blogHeading': 'Notas dos incidentes.',
+  'home.blogLead':
+    'Textos curtos e práticos sobre os problemas que estas ferramentas existem para resolver: por que um pipeline ficou vermelho, onde um alerta se perdeu, o que uma query realmente significa.',
+  'home.blogBrowseAll': 'Ver todos os artigos',
+
+  'crosslinks.moreIn': 'Mais em {category}',
+  'crosslinks.postsHeading': 'Leia mais sobre isso',
+  'crosslinks.learnNewTo': 'Começando com {track}?',
+  'crosslinks.learnCta': 'Leia o guia de {track}',
 
   // Paleta de comandos (Ctrl/⌘+K)
   'palette.dialogLabel': 'Paleta de comandos',

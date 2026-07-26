@@ -50,6 +50,16 @@ const de: Partial<UiDict> = {
   'crosslinks.hook':
     '{count} kostenlose Tools, jedes einzelne offlinefähig — opscanopy.com funktioniert ohne Registrierung, und nichts wird hochgeladen.',
   'crosslinks.paletteHint': '{count} Tools, ein Shortcut — mit Strg/⌘+K zu jedem springen.',
+  'home.blogEyebrow': 'Aus dem Blog',
+  'home.blogHeading': 'Notizen aus dem Incident-Alltag.',
+  'home.blogLead':
+    'Kurze, praxisnahe Beiträge zu genau den Problemen, für die es diese Tools gibt — warum eine Pipeline rot wurde, wo ein Alert verschwand, was eine Query wirklich bedeutet.',
+  'home.blogBrowseAll': 'Alle Beiträge ansehen',
+
+  'crosslinks.moreIn': 'Mehr aus {category}',
+  'crosslinks.postsHeading': 'Mehr dazu lesen',
+  'crosslinks.learnNewTo': 'Neu bei {track}?',
+  'crosslinks.learnCta': 'Zum {track}-Guide',
 
   // Befehlspalette (Strg/⌘+K)
   'palette.dialogLabel': 'Befehlspalette',
