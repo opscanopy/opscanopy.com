@@ -74,27 +74,26 @@ the 5-locale rule, and the design system.
 
 ## Diagnostics that matter here
 
-**Crawler reachability** — the single highest-value check. Cloudflare can block AI crawlers at
-the edge, above `robots.txt`, and the site looks fine in a browser while being invisible to
-every AI assistant:
+**Crawler reachability.** Cloudflare can block AI crawlers at the edge, above `robots.txt`, so
+the site looks fine in a browser while being invisible to an AI assistant.
 
-```bash
-for ua in \
-  "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.2; +https://openai.com/gptbot)" \
-  "Mozilla/5.0 (compatible; OAI-SearchBot/1.0; +https://openai.com/searchbot)" \
-  "ChatGPT-User/1.0; +https://openai.com/bot" \
-  "Mozilla/5.0 (compatible; ClaudeBot/1.0; +claudebot@anthropic.com)" \
-  "Claude-User/1.0; +Claude-User@anthropic.com" \
-  "Mozilla/5.0 (compatible; PerplexityBot/1.0; +https://perplexity.ai/perplexitybot)" \
-  "Mozilla/5.0 (compatible; CCBot/2.0; +https://commoncrawl.org/faq/)" \
-  "Googlebot/2.1 (+http://www.google.com/bot.html)" \
-  "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)"; do
-  printf "%s  %.55s\n" "$(curl -s -o /dev/null -w '%{http_code}' -A "$ua" --max-time 25 https://opscanopy.com/)" "$ua"
-done
-```
-All must be `200`. A `403` with `Server: cloudflare` on AI bots while `/robots.txt` still
-returns `200` is Cloudflare's **AI Crawl Control** managed block — a dashboard setting, not a
-code bug. Do not try to fix it in `robots.txt`; it sits above it.
+**Do NOT diagnose this with `curl -A`.** Cloudflare verifies major bots by source IP/ASN, not
+by user-agent string. A spoofed UA from any other IP is correctly rejected as an impersonator,
+so `curl -A "…ClaudeBot…"` returns `403` whether or not the real ClaudeBot is allowed. That
+test reports a block that may not exist — it produces false alarms, not evidence.
+
+The authoritative source is **Cloudflare dashboard → AI Crawl Control → Security**, a
+per-crawler table of Allowed / Unsuccessful request counts with a Block toggle each. Read the
+counts:
+- Healthy crawler: non-zero Allowed.
+- Genuinely blocked: Block toggle on, and Allowed at or near 0.
+
+Cross-check **Security → Settings → Bot traffic**, which has separate Search / Agent / Training
+dropdowns plus a legacy "Block AI bots" master switch. Either layer can block independently of
+the per-crawler toggles.
+
+`curl` is still fine for what it actually measures — whether an *unverified* client gets a page,
+i.e. plain reachability, redirects, status codes, and headers.
 
 **Internal link equity** — count inbound links per page in `dist/` before and after any
 cross-linking change. Tool pages sit at 235–247 (header + mega-menu); anything far below that
