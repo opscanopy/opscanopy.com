@@ -37,9 +37,6 @@ export { SIGNING_ALGS, isJwsAlg } from './algs';
 export { edDsaSupported } from './keys';
 
 const ERR_EMPTY = 'Paste a JWT — three base64url segments joined by dots (header.payload.signature).';
-const ERR_PARTS = 'A JWT must have exactly three dot-separated parts: header.payload.signature.';
-const ERR_HEADER = 'The header is not valid base64url-encoded JSON.';
-const ERR_PAYLOAD = 'The payload is not valid base64url-encoded JSON.';
 
 /** Stable failure shape so callers can always read `.claims` / `.warnings`. */
 function bad(error: string): JwtResult {
@@ -66,6 +63,33 @@ function parseJsonSegment(seg: string): unknown | null {
     return JSON.parse(text);
   } catch {
     return null;
+  }
+}
+
+/** One decoded header/payload segment, or the specific way it failed. */
+type SegmentParse =
+  | { ok: true; obj: Record<string, unknown> }
+  | { ok: false; why: 'base64url' | 'json' | 'not-object'; detail: string };
+
+/**
+ * decode()'s segment parser: distinguishes bad base64url from bad JSON from
+ * non-object JSON, naming the segment in each user-facing message (REQ-3).
+ * verify() keeps the simpler parseJsonSegment — it only needs the object.
+ */
+function parseSegmentDetailed(seg: string, name: 'header' | 'payload'): SegmentParse {
+  const text = decodeSegment(seg);
+  if (text === null) {
+    return { ok: false, why: 'base64url', detail: `The ${name} segment is not valid base64url.` };
+  }
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { ok: false, why: 'not-object', detail: `The ${name} decoded but is not a JSON object.` };
+    }
+    return { ok: true, obj: parsed as Record<string, unknown> };
+  } catch (err) {
+    const at = err instanceof SyntaxError ? ` (${err.message})` : '';
+    return { ok: false, why: 'json', detail: `The ${name} decoded but isn't valid JSON${at}.` };
   }
 }
 
@@ -228,23 +252,35 @@ export function decode(token: string, nowMs?: number): JwtResult {
   if (s.length === 0) return bad(ERR_EMPTY);
 
   const parts = s.split('.');
-  if (parts.length !== 3) return bad(ERR_PARTS);
+  if (parts.length !== 3) {
+    return bad(
+      `This doesn't look like a JWT — expected 3 dot-separated parts (header.payload.signature), found ${parts.length}.`,
+    );
+  }
 
   const [headerSeg, payloadSeg, signatureB64] = parts;
 
   // RFC 7519: header and payload MUST be JSON objects (arrays are not).
-  const headerObj = parseJsonSegment(headerSeg);
-  if (headerObj === null || typeof headerObj !== 'object' || Array.isArray(headerObj)) {
-    return bad(ERR_HEADER);
+  const headerParse = parseSegmentDetailed(headerSeg, 'header');
+  if (!headerParse.ok) return bad(headerParse.detail);
+
+  const payloadParse = parseSegmentDetailed(payloadSeg, 'payload');
+  if (!payloadParse.ok) {
+    // The header DID decode — surface it so the UI can render a partial
+    // result next to the payload's specific error (REQ-3).
+    return {
+      ...bad(payloadParse.detail),
+      partial: {
+        header: JSON.stringify(headerParse.obj, null, 2),
+        alg: typeof headerParse.obj.alg === 'string' ? headerParse.obj.alg : undefined,
+        failedSegment: 'payload',
+        segmentError: payloadParse.detail,
+      },
+    };
   }
 
-  const payloadObj = parseJsonSegment(payloadSeg);
-  if (payloadObj === null || typeof payloadObj !== 'object' || Array.isArray(payloadObj)) {
-    return bad(ERR_PAYLOAD);
-  }
-
-  const header = headerObj as Record<string, unknown>;
-  const payload = payloadObj as Record<string, unknown>;
+  const header = headerParse.obj;
+  const payload = payloadParse.obj;
 
   const alg = header.alg !== undefined ? String(header.alg) : undefined;
   const typ = header.typ !== undefined ? String(header.typ) : undefined;

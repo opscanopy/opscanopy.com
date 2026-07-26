@@ -62,6 +62,15 @@ export interface JwtResult {
   warnings: string[];
   /** exp/nbf time-validity verdict for the status pill (success only). */
   freshness?: Freshness;
+  /** On decode failure: whatever still decoded, so the UI can render it. */
+  partial?: {
+    /** Pretty header JSON when the header decoded but the payload did not. */
+    header?: string;
+    alg?: string;
+    /** Which segment broke and why (already user-phrased). */
+    failedSegment: 'header' | 'payload';
+    segmentError: string;
+  };
 }
 
 /** Time-validity verdict for the hero status pill — independent of signature. */

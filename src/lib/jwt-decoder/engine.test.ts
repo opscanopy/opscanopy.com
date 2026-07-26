@@ -143,6 +143,33 @@ describe('decode()', () => {
   });
 });
 
+describe('specific decode errors (REQ-3)', () => {
+  it('names the found segment count', () => {
+    expect(decode('a.b').error).toContain('found 2');
+    expect(decode('a.b.c.d').error).toContain('found 4');
+  });
+  it('distinguishes bad base64url from bad JSON, naming the segment', () => {
+    const badB64 = decode('@@@.eyJhIjoxfQ.x');
+    expect(badB64.error).toMatch(/header.*base64url/i);
+    const badJson = decode(`${Buffer.from('hello').toString('base64url')}.${b64u({ a: 1 })}.x`);
+    expect(badJson.error).toMatch(/header.*JSON/i);
+  });
+  it('renders the header partially when only the payload is broken', () => {
+    const r = decode(`${b64u({ alg: 'HS256', typ: 'JWT' })}.@@@.x`);
+    expect(r.valid).toBe(false);
+    expect(r.partial?.header).toContain('"alg"');
+    expect(r.partial?.failedSegment).toBe('payload');
+    expect(r.partial?.segmentError).toMatch(/base64url/i);
+  });
+  it('alg:"none" stays a decoded-with-warning state, never an error (REQ-3)', () => {
+    const none = examples.find((e) => e.id === 'alg-none')!.token;
+    const r = decode(none);
+    expect(r.valid).toBe(true);
+    expect(r.error).toBeUndefined();
+    expect(r.warnings.some((w) => w.includes('"none"'))).toBe(true);
+  });
+});
+
 describe('freshness (REQ-1 pill)', () => {
   const nowMs = 1700000000 * 1000;
   it('expired token → state "expired" with relative phrase', () => {
