@@ -12,6 +12,7 @@
  * so callers can pass a fixed value for deterministic output.
  */
 import type { TimeResult, TimeRow } from './types';
+import { relative } from '../relative-time';
 
 const ERR_EMPTY =
   'Enter a Unix timestamp (e.g. 1516239022) or a date string (e.g. 2018-01-18T01:30:22Z).';
@@ -104,37 +105,4 @@ function dayOfWeekUtc(date: Date): string {
   return DAYS[date.getUTCDay()];
 }
 
-/** Largest-unit relative phrase, e.g. "in 3 days" / "5 minutes ago". */
-function relative(ms: number, nowMs: number): string {
-  const diff = ms - nowMs; // > 0 => future
-  const abs = Math.abs(diff);
-
-  const SECOND = 1000;
-  const MINUTE = 60 * SECOND;
-  const HOUR = 60 * MINUTE;
-  const DAY = 24 * HOUR;
-  const WEEK = 7 * DAY;
-  const MONTH = 30 * DAY;
-  const YEAR = 365 * DAY;
-
-  if (abs < SECOND) return 'just now';
-
-  const units: [number, string][] = [
-    [YEAR, 'year'],
-    [MONTH, 'month'],
-    [WEEK, 'week'],
-    [DAY, 'day'],
-    [HOUR, 'hour'],
-    [MINUTE, 'minute'],
-    [SECOND, 'second'],
-  ];
-
-  for (const [size, name] of units) {
-    if (abs >= size) {
-      const n = Math.floor(abs / size);
-      const phrase = `${n} ${name}${n === 1 ? '' : 's'}`;
-      return diff > 0 ? `in ${phrase}` : `${phrase} ago`;
-    }
-  }
-  return 'just now';
-}
+// relative() moved to src/lib/relative-time.ts — shared with the JWT decoder.
