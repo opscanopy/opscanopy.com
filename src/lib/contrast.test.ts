@@ -225,6 +225,39 @@ describe('WCAG AA contrast — light theme tokens', () => {
   it('inverse-fg on inverse slab >= 4.5:1 (AA, dark slab in light theme)', () => {
     assertContrast(light['--color-inverse-fg'], light['--color-inverse'], 4.5, 'light: inverse-fg on inverse');
   });
+
+  // JWT playground status surfaces (validity pill, trust banner, verify
+  // badges): each *-deep/-strong text tone on its *-soft fill must be AA.
+  it('brand-strong on brand-soft >= 4.5:1 (AA — pill/banner valid state)', () => {
+    assertContrast(light['--color-brand-strong'], light['--color-brand-soft'], 4.5, 'light: brand-strong on brand-soft');
+  });
+  it('error-deep on error-soft >= 4.5:1 (AA — pill expired state)', () => {
+    assertContrast(light['--color-error-deep'], light['--color-error-soft'], 4.5, 'light: error-deep on error-soft');
+  });
+  it('warning-deep on warning-soft >= 4.5:1 (AA — pill not-yet state)', () => {
+    assertContrast(light['--color-warning-deep'], light['--color-warning-soft'], 4.5, 'light: warning-deep on warning-soft');
+  });
+  it('mute on canvas-soft >= 4.5:1 (AA — pill none state / results column)', () => {
+    assertContrast(light['--color-mute'], light['--color-canvas-soft'], 4.5, 'light: mute on canvas-soft');
+  });
+  it('on-primary on primary >= 4.5:1 (AA — active mode tab text)', () => {
+    assertContrast(light['--color-on-primary'], light['--color-primary'], 4.5, 'light: on-primary on primary');
+  });
+
+  // SC 1.4.11 non-text contrast (first 3:1 tier in this file): pill/banner
+  // rings against the results column fill, and the active-tab boundary.
+  it('brand ring on canvas-soft >= 3:1 (UI component)', () => {
+    assertContrast(light['--color-brand'], light['--color-canvas-soft'], 3, 'light: brand ring on canvas-soft');
+  });
+  it('error ring on canvas-soft >= 3:1 (UI component)', () => {
+    assertContrast(light['--color-error'], light['--color-canvas-soft'], 3, 'light: error ring on canvas-soft');
+  });
+  it('warning ring on canvas-soft >= 3:1 (UI component)', () => {
+    assertContrast(light['--color-warning'], light['--color-canvas-soft'], 3, 'light: warning ring on canvas-soft');
+  });
+  it('primary (active tab fill) on canvas >= 3:1 (UI component)', () => {
+    assertContrast(light['--color-primary'], light['--color-canvas'], 3, 'light: primary on canvas');
+  });
 });
 
 describe('WCAG AA contrast — dark theme tokens', () => {
@@ -267,5 +300,35 @@ describe('WCAG AA contrast — dark theme tokens', () => {
 
   it('inverse-fg on inverse slab >= 4.5:1 (AA)', () => {
     assertContrast(dark['--color-inverse-fg'], dark['--color-inverse'], 4.5, 'dark: inverse-fg on inverse');
+  });
+
+  // JWT playground status surfaces — see the light-theme block for rationale.
+  it('brand-strong on brand-soft >= 4.5:1 (AA — pill/banner valid state)', () => {
+    assertContrast(dark['--color-brand-strong'], dark['--color-brand-soft'], 4.5, 'dark: brand-strong on brand-soft');
+  });
+  it('error-deep on error-soft >= 4.5:1 (AA — pill expired state)', () => {
+    assertContrast(dark['--color-error-deep'], dark['--color-error-soft'], 4.5, 'dark: error-deep on error-soft');
+  });
+  it('warning-deep on warning-soft >= 4.5:1 (AA — pill not-yet state)', () => {
+    assertContrast(dark['--color-warning-deep'], dark['--color-warning-soft'], 4.5, 'dark: warning-deep on warning-soft');
+  });
+  it('mute on canvas-soft >= 4.5:1 (AA — pill none state / results column)', () => {
+    assertContrast(dark['--color-mute'], dark['--color-canvas-soft'], 4.5, 'dark: mute on canvas-soft');
+  });
+  it('on-primary on primary >= 4.5:1 (AA — active mode tab text)', () => {
+    assertContrast(dark['--color-on-primary'], dark['--color-primary'], 4.5, 'dark: on-primary on primary');
+  });
+
+  it('brand ring on canvas-soft >= 3:1 (UI component)', () => {
+    assertContrast(dark['--color-brand'], dark['--color-canvas-soft'], 3, 'dark: brand ring on canvas-soft');
+  });
+  it('error ring on canvas-soft >= 3:1 (UI component)', () => {
+    assertContrast(dark['--color-error'], dark['--color-canvas-soft'], 3, 'dark: error ring on canvas-soft');
+  });
+  it('warning ring on canvas-soft >= 3:1 (UI component)', () => {
+    assertContrast(dark['--color-warning'], dark['--color-canvas-soft'], 3, 'dark: warning ring on canvas-soft');
+  });
+  it('primary (active tab fill) on canvas >= 3:1 (UI component)', () => {
+    assertContrast(dark['--color-primary'], dark['--color-canvas'], 3, 'dark: primary on canvas');
   });
 });
