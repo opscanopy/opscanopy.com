@@ -31,7 +31,7 @@ export type ClaimTone = 'ok' | 'warn' | 'error';
 export interface ClaimRow {
   /** Display name, e.g. "Expires (exp)". */
   label: string;
-  /** Rendered value, e.g. "1516239022 · 2018-01-25 02:10:22 UTC (expired)". */
+  /** Rendered value, e.g. "1516239022 · 2018-01-25 02:10:22 UTC (expired 3 days ago)". */
   value: string;
   /** True for values shown in a monospace cell (tokens, raw numbers). */
   mono?: boolean;

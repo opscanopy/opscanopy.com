@@ -90,7 +90,7 @@ describe('decode()', () => {
     const exp = r.claims.find((c) => c.label === 'Expires (exp)');
     expect(exp).toBeDefined();
     expect(exp!.tone).toBe('error');
-    expect(exp!.value).toContain('(expired)');
+    expect(exp!.value).toMatch(/\(expired .+ ago\)/);
     // Raw epoch and decoded UTC instant are both shown.
     expect(exp!.value).toContain('1577836800');
     expect(exp!.value).toContain('2020-01-01 00:00:00 UTC');
@@ -101,7 +101,7 @@ describe('decode()', () => {
     const r = decode(expiredToken, 1577836800 * 1000);
     const exp = r.claims.find((c) => c.label === 'Expires (exp)');
     expect(exp!.tone).toBe('ok');
-    expect(exp!.value).not.toContain('(expired)');
+    expect(exp!.value).not.toMatch(/\(expired/);
   });
 
   it.each([
@@ -140,6 +140,26 @@ describe('decode()', () => {
     for (const claim of r.claims) {
       expect(claim.caption, `caption for ${claim.label}`).toBeTruthy();
     }
+  });
+});
+
+describe('relative time on claims (REQ-4)', () => {
+  const nowMs = 1700000000 * 1000;
+  it('future exp reads "(expires in 42 minutes)"', () => {
+    const r = decode(`${b64u({ alg: 'HS256' })}.${b64u({ exp: 1700000000 + 42 * 60 })}.x`, nowMs);
+    expect(r.claims.find((c) => c.label.startsWith('Expires'))!.value).toContain('(expires in 42 minutes)');
+  });
+  it('past iat reads "(2 hours ago)"', () => {
+    const r = decode(`${b64u({ alg: 'HS256' })}.${b64u({ iat: 1700000000 - 7200, exp: 1700000000 + 60 })}.x`, nowMs);
+    expect(r.claims.find((c) => c.label.startsWith('Issued'))!.value).toContain('(2 hours ago)');
+  });
+  it('exp exactly at now reads "(expires just now)" — boundary is not-expired', () => {
+    const r = decode(expiredToken, 1577836800 * 1000);
+    expect(r.claims.find((c) => c.label.startsWith('Expires'))!.value).toContain('(expires just now)');
+  });
+  it('future nbf reads "(not yet valid — in …)"', () => {
+    const r = decode(`${b64u({ alg: 'HS256' })}.${b64u({ nbf: 1700000000 + 600, exp: 1700000000 + 3600 })}.x`, nowMs);
+    expect(r.claims.find((c) => c.label.startsWith('Not before'))!.value).toMatch(/\(not yet valid — in 10 minutes\)/);
   });
 });
 

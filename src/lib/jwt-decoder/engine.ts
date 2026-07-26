@@ -188,9 +188,14 @@ function buildClaims(payload: Record<string, unknown>, nowMs: number): ClaimRow[
     const date = utcFromEpoch(n);
     let tone: ClaimTone = 'ok';
     let suffix = '';
-    if (Number.isFinite(n) && n * 1000 < nowMs) {
-      tone = 'error';
-      suffix = ' (expired)';
+    if (Number.isFinite(n)) {
+      // Relative phrasing reads faster than the UTC instant (REQ-4);
+      // the strict < keeps exp === now on the not-expired side.
+      suffix =
+        n * 1000 < nowMs
+          ? ` (expired ${relative(n * 1000, nowMs)})`
+          : ` (expires ${relative(n * 1000, nowMs)})`;
+      if (n * 1000 < nowMs) tone = 'error';
     }
     rows.push({
       label: 'Expires (exp)',
@@ -208,7 +213,7 @@ function buildClaims(payload: Record<string, unknown>, nowMs: number): ClaimRow[
     let suffix = '';
     if (Number.isFinite(n) && n > nowSecs) {
       tone = 'warn';
-      suffix = ' (not yet valid)';
+      suffix = ` (not yet valid — ${relative(n * 1000, nowMs)})`;
     }
     rows.push({
       label: 'Not before (nbf)',
@@ -220,10 +225,12 @@ function buildClaims(payload: Record<string, unknown>, nowMs: number): ClaimRow[
   }
 
   if ('iat' in payload) {
-    const date = utcFromEpoch(Number(payload.iat));
+    const n = Number(payload.iat);
+    const date = utcFromEpoch(n);
+    const suffix = Number.isFinite(n) ? ` (${relative(n * 1000, nowMs)})` : '';
     rows.push({
       label: 'Issued at (iat)',
-      value: date ? `${payload.iat} · ${date}` : String(payload.iat),
+      value: date ? `${payload.iat} · ${date}${suffix}` : String(payload.iat),
       mono: true,
       caption: 'When the token was created.',
     });
