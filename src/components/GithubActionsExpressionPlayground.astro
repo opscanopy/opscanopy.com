@@ -100,6 +100,7 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
         </div>
       </div>
       <p class="caption px-4 py-2 text-mute">
+        Results update as you type — press <kbd class="ga-kbd">⌘/Ctrl</kbd> + <kbd class="ga-kbd">Enter</kbd> to run now.
         Press <kbd class="ga-kbd">Esc</kbd> to release the editor. Your input never leaves the browser.
       </p>
 
@@ -177,6 +178,7 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
         </div>
       </div>
       <p class="caption px-4 py-2 text-mute">
+        Results update as you type — press <kbd class="ga-kbd">⌘/Ctrl</kbd> + <kbd class="ga-kbd">Enter</kbd> to run now.
         Press <kbd class="ga-kbd">Esc</kbd> to release the editor. Nothing is uploaded.
       </p>
 
@@ -234,7 +236,12 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
 
   /* Select + inputs */
   .ga-select {
-    appearance: none; -webkit-appearance: none; height: 32px; min-width: 0; max-width: 320px;
+    /* `width: 100%` is load-bearing, not cosmetic. Without it the select sizes
+       to its longest option text, and at 390px "The always-true footgun
+       (runner#1173)" pushed past the viewport — the whole PAGE gained a
+       horizontal scrollbar and read as broken. With width:100% it shrinks
+       inside its min-w-0 flex parent and max-width still caps it on desktop. */
+    appearance: none; -webkit-appearance: none; height: 32px; min-width: 0; width: 100%; max-width: 320px;
     padding: 0 32px 0 12px; border-radius: var(--radius-sm);
     background: var(--color-canvas); color: var(--color-ink); box-shadow: var(--shadow-hairline);
     font-size: 13px; line-height: 20px; cursor: pointer; text-overflow: ellipsis; touch-action: manipulation;
@@ -445,7 +452,11 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
     let examples: ExamplesModule;
     // Editor factory + doc-setter are assigned from closures over the freshly
     // imported CM symbols (so no runtime CM reference lives at module top level).
-    let makeEditor: (host: HTMLElement, doc: string, opts?: { yaml?: boolean }) => EditorView;
+    let makeEditor: (
+      host: HTMLElement,
+      doc: string,
+      opts?: { yaml?: boolean; onChange?: () => void },
+    ) => EditorView;
     let setDoc: (v: EditorView, doc: string) => void;
     try {
       // Load CodeMirror + the engine + examples together so the ~200KB CM
@@ -480,13 +491,21 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
         '.cm-activeLineGutter': { backgroundColor: 'transparent' },
       });
 
-      makeEditor = (host: HTMLElement, doc: string, opts: { yaml?: boolean } = {}): EditorView => {
+      makeEditor = (
+        host: HTMLElement,
+        doc: string,
+        opts: { yaml?: boolean; onChange?: () => void } = {},
+      ): EditorView => {
         const ext = [
           lineNumbers(), history(), highlightActiveLine(), EditorView.lineWrapping,
           keymap.of([escAndBlur, ...defaultKeymap, ...historyKeymap, indentWithTab]),
           oneDark, baseTheme,
         ];
         if (opts.yaml) ext.push(yamlLang());
+        if (opts.onChange) {
+          const notify = opts.onChange;
+          ext.push(EditorView.updateListener.of((u) => { if (u.docChanged) notify(); }));
+        }
         return new EditorView({ state: EditorState.create({ doc, extensions: ext }), parent: host });
       };
       setDoc = (v: EditorView, doc: string) => v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: doc } });
@@ -505,9 +524,35 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
     const wfHost = el<HTMLElement>(root, '#ga-wf-editor');
     if (!exprHost || !ctxHost || !wfHost) return;
 
-    const exprView = makeEditor(exprHost, examples.expressionExamples[0]?.expression ?? '');
-    const ctxView = makeEditor(ctxHost, JSON.stringify(engine.defaultContext(), null, 2));
-    const wfView = makeEditor(wfHost, examples.triggerExamples[0]?.workflow ?? '', { yaml: true });
+    /**
+     * Live-eval plumbing. runExpr/runSim are declared further down, after the
+     * result containers exist, so the editors cannot reference them directly at
+     * construction time — these mutable hooks bridge the gap and stay no-ops
+     * until they are assigned.
+     *
+     * Debounced at 180ms, inside the 130–220ms band the playground UX contract
+     * in CLAUDE.md specifies.
+     */
+    let onExprInput: () => void = () => {};
+    let onSimInput: () => void = () => {};
+    function debounce(fn: () => void, ms = 180): () => void {
+      let t: number | undefined;
+      return () => {
+        if (t !== undefined) clearTimeout(t);
+        t = window.setTimeout(fn, ms);
+      };
+    }
+
+    const exprView = makeEditor(exprHost, examples.expressionExamples[0]?.expression ?? '', {
+      onChange: () => onExprInput(),
+    });
+    const ctxView = makeEditor(ctxHost, JSON.stringify(engine.defaultContext(), null, 2), {
+      onChange: () => onExprInput(),
+    });
+    const wfView = makeEditor(wfHost, examples.triggerExamples[0]?.workflow ?? '', {
+      yaml: true,
+      onChange: () => onSimInput(),
+    });
 
     // ── Tabs ──
     const tabExpr = el<HTMLButtonElement>(root, '#ga-tab-expr');
@@ -691,8 +736,20 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
     }
 
     // ── Wire actions ──
+    // Activate live eval now that both runners exist. The explicit buttons and
+    // ⌘/Ctrl+Enter stay — they run immediately, skipping the debounce.
+    onExprInput = debounce(runExpr);
+    onSimInput = debounce(runSim);
+
     el<HTMLButtonElement>(root, '#ga-eval')?.addEventListener('click', runExpr);
     el<HTMLButtonElement>(root, '#ga-sim')?.addEventListener('click', runSim);
+    // Selecting an example must show its result without a second click — that is
+    // the entire point of an example.
+    exprSelect?.addEventListener('change', runExpr);
+    trigSelect?.addEventListener('change', runSim);
+    root.querySelectorAll<HTMLButtonElement>('.ga-preset').forEach((b) =>
+      b.addEventListener('click', runExpr),
+    );
     root.addEventListener('keydown', (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
@@ -773,6 +830,21 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
       const restored = getRestoredLastInput(SLUG);
       if (restored) applyRestoredState(restored);
     }
+
+    // Evaluate whatever the editors ended up holding, so the page never opens on
+    // an empty results panel.
+    //
+    // Before this, a first-time visitor saw the seeded footgun example beside the
+    // text "…then Evaluate" and had to press a button to learn anything. The
+    // highest-intent visitor arrives from "github actions if condition always
+    // runs" with seconds of patience and does not press it — so the one insight
+    // this tool exists to deliver was hidden behind a click.
+    //
+    // Both runners only read editor state and write to their own result
+    // container, so calling them here is idempotent and safe after any of the
+    // seed tiers above (#s= deep link, restored input, or the default example).
+    runExpr();
+    runSim();
   }
 
   boot();

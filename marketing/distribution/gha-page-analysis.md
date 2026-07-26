@@ -93,7 +93,7 @@ from actionlint?" Name it first, in the post. HN rewards that heavily.
 
 ## 4. UX findings, in priority order
 
-### 🔴 Critical — the seeded example is not evaluated on load
+### 🔴 Critical — the seeded example is not evaluated on load — **FIXED**
 
 Measured. On first load the editor contains the footgun example, and the results
 panel reads:
@@ -109,20 +109,41 @@ This also breaks the site's own rule. `CLAUDE.md` specifies for playgrounds:
 update as you type — press Enter to run now.'"* Every other OpsCanopy tool does
 this. This one doesn't.
 
-**Fix:** evaluate the seeded example during boot, then debounce-evaluate on
-input. Keep the Evaluate button for the explicit ⌘/Ctrl+Enter affordance.
+**Fixed:** the editors now notify a 180ms-debounced runner on every change (inside
+the 130–220ms band the `CLAUDE.md` contract specifies), both runners fire once at
+the end of boot, and switching example or context preset re-evaluates. The
+Evaluate button and ⌘/Ctrl+Enter remain as immediate, debounce-skipping paths.
+The hint line now reads *"Results update as you type — press ⌘/Ctrl + Enter to run
+now."*
 
-Expected effect: the largest single lift available on this page. It converts a
-bounce into an answer for the biggest persona.
+Verified in a real browser: a visitor who clicks nothing now lands on
+*"An `if:` using this would RUN the step. Returned value: push == 'push'"* plus
+the footgun warning. The trigger tab is pre-populated too.
 
-### 🔴 High — horizontal overflow on mobile
+### 🔴 High — horizontal overflow on mobile — **FIXED**
 
-Measured at 390px: `document.documentElement.scrollWidth > window.innerWidth`.
-The example dropdown clips mid-word — *"The always-true footgun (runner…"* runs
-off the right edge.
+Measured at 390px: `scrollWidth` 751 against a 390px viewport. The whole page
+swiped sideways, which reads as broken.
 
-The whole page can be swiped sideways, which reads as broken. Fix the dropdown's
-`max-width` / truncation and re-assert no overflow at 390px.
+I first blamed the example dropdown. **That was wrong** — a select capped at
+`max-width: 320px` cannot produce 751px. Enumerating every element wider than the
+viewport found the real cause: `article.card-soft` in the cheat-sheet grid.
+
+Grid items default to `min-width: auto`, so an article could not shrink below the
+min-content width of the `CodeBlock` inside it. The inner two-column wrappers
+already carried `min-w-0`; the outer grid items did not. Adding `min-w-0` to both
+articles fixed it.
+
+Verified: no overflow at 390px or 360px. Only this page was affected — jwt-decoder,
+subnet-calculator, gitlab-ci-validator and the homepage were all clean at 390px.
+
+### ~~🟡 Medium — tab 2 is invisible~~ — **I WAS WRONG**
+
+I claimed nothing above the fold advertised the trigger simulator. Re-reading the
+rendered page, the lead paragraph already says *"…and simulate which jobs run for
+a push, PR or tag"*. No change needed. Left here rather than deleted because the
+mistake is worth not repeating: I wrote that finding from the component markup
+instead of from the rendered page.
 
 ### 🟡 Medium — the tool sits below the fold on mobile
 

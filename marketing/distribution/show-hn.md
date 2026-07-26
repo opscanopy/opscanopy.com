@@ -5,10 +5,12 @@
 **Timing:** Tuesday–Thursday, **08:00–10:00 UTC** (early morning US Eastern). Avoid
 weekends. You get one shot per URL — HN dedupes, and a reposted URL usually dies.
 
-> ⛔ **Do not post yet.** See `gha-page-analysis.md`: the seeded example is not
-> evaluated until you press Evaluate, so a first-time visitor lands on an empty
-> results box. Fix that first. Sending an HN spike to a page whose demo doesn't
-> run itself wastes the single shot you get at this URL.
+> ✅ **Cleared to post.** The two blockers in `gha-page-analysis.md` are fixed and
+> verified in a real browser: the page now evaluates its seeded example on load
+> (a visitor who clicks nothing sees the footgun verdict and warning), and the
+> mobile horizontal overflow is gone at 390px and 360px.
+>
+> Still run the 5-input check below on the live page yourself before posting.
 
 ---
 
