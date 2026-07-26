@@ -1,0 +1,69 @@
+name: SEO report
+
+# Weekly Search Console + GA4 pull, committed to reports/seo/ so the trend is
+# reviewable in git history rather than living only in a dashboard.
+#
+# The striking-distance section (queries ranking 11-20) is the point of this
+# job: it turns "what should I write next?" from a guess into a ranked list.
+#
+# Required secrets:
+#   GCP_SA_KEY       service-account JSON, verbatim
+#   GSC_SITE_URL     e.g. sc-domain:opscanopy.com
+# Optional:
+#   GA4_PROPERTY_ID  numeric property id — omit to report from GSC alone
+#
+# The service account must also be added as a user in Search Console and GA4;
+# creating the key alone grants nothing.
+
+on:
+  schedule:
+    # Mondays 06:00 UTC. GSC data lags ~2 days, which the script accounts for.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: seo-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # A build is needed only so the report can diff the sitemap against pages
+      # that drew impressions. Failure here should not lose the GSC data, so the
+      # report step runs regardless.
+      - name: Build (for the sitemap diff)
+        continue-on-error: true
+        run: npm run build
+
+      - name: Generate report
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+          GSC_SITE_URL: ${{ secrets.GSC_SITE_URL }}
+          GA4_PROPERTY_ID: ${{ secrets.GA4_PROPERTY_ID }}
+        run: node scripts/seo-report.mjs
+
+      - name: Commit report
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add reports/seo
+          if git diff --staged --quiet; then
+            echo "No new report content."
+          else
+            git commit -m "chore(seo): weekly Search Console report"
+            git push
+          fi

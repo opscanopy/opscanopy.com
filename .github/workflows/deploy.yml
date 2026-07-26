@@ -1,0 +1,104 @@
+name: Deploy
+
+# Build, verify and publish opscanopy.com, then tell search engines what changed.
+#
+# Deploys were previously run by hand (`npm run deploy` from a laptop), which is
+# why nothing downstream of a deploy could be automated. This is the pipeline the
+# rest of the SEO automation hangs off.
+#
+# Required secrets:
+#   CLOUDFLARE_API_TOKEN   "Edit Cloudflare Workers" template, scoped to this account
+#   CLOUDFLARE_ACCOUNT_ID
+# Optional:
+#   BING_API_KEY           Bing Webmaster Tools -> Settings -> API access
+#                          (bing-submit.mjs skips cleanly when absent)
+
+on:
+  push:
+    branches: [main]
+    # Docs-only edits do not change the built site.
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'marketing/**'
+      - '.claude/**'
+  workflow_dispatch:
+    inputs:
+      resubmit_all:
+        description: 'Re-submit every sitemap URL to IndexNow, not just changed ones'
+        type: boolean
+        default: false
+
+# Never let two deploys race to publish different builds.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # gen-tool-meta.mjs and gen-lastmod.mjs derive dates from commit
+          # history — a shallow clone would make every page look the same age.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Test
+        run: npm run test
+
+      # Restore the IndexNow snapshot so the submit step can diff against the
+      # previous deploy instead of re-announcing all 445 URLs every time.
+      - name: Restore IndexNow snapshot
+        uses: actions/cache/restore@v4
+        with:
+          path: .indexnow-state.json
+          key: indexnow-state-${{ github.run_id }}
+          restore-keys: indexnow-state-
+
+      # Runs prebuild (tool-meta + lastmod) and postbuild (Pagefind, the
+      # trailing-slash guard, CodeMirror modulepreload hints, service worker).
+      # Never replace this with a bare `astro build` — /search breaks without
+      # the Pagefind index.
+      - name: Build
+        run: npm run build
+
+      - name: Guard against placeholder content
+        run: node scripts/check-no-placeholder.mjs
+
+      - name: Deploy to Cloudflare
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # Submission runs only after a successful deploy — announcing URLs that
+      # are not live yet gets them dropped.
+      - name: Submit changed URLs to IndexNow
+        run: node scripts/indexnow.mjs ${{ inputs.resubmit_all && '--all' || '' }}
+
+      - name: Submit changed URLs to Bing
+        env:
+          BING_API_KEY: ${{ secrets.BING_API_KEY }}
+        run: node scripts/bing-submit.mjs
+
+      - name: Save IndexNow snapshot
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .indexnow-state.json
+          key: indexnow-state-${{ github.run_id }}
+
+      - name: Verify crawler reachability
+        run: node scripts/check-crawlers.mjs
