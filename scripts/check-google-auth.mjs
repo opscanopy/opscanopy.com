@@ -5,18 +5,42 @@
 // thing everyone misses, and it surfaces as an opaque 403 a week later when the
 // scheduled report first runs. This checks it in ten seconds instead.
 //
-// Run it locally with the downloaded key file, BEFORE adding anything to GitHub:
+// Run it locally with the downloaded key file, BEFORE adding anything to GitHub.
+// PREFER THE FILE PATH FORM — pass the path, never the key contents:
 //
-//   GCP_SA_KEY="$(cat ~/Downloads/opscanopy-seo-abc123.json)" \
-//   GSC_SITE_URL="sc-domain:opscanopy.com" \
-//   GA4_PROPERTY_ID="498372615" \
-//   node scripts/check-google-auth.mjs
+//   node scripts/check-google-auth.mjs ~/Downloads/opscanopy-seo-abc123.json
+//
+// Interpolating the key with $(cat …) puts the private key into your shell
+// history and onto the process command line, where it is trivially recoverable
+// and easy to paste somewhere public by accident. The file-path form keeps the
+// secret on disk where it already is.
+//
+// Site and property come from the environment or from flags:
+//
+//   GSC_SITE_URL=sc-domain:opscanopy.com GA4_PROPERTY_ID=498372615 \
+//     node scripts/check-google-auth.mjs ~/Downloads/key.json
+//
+// GCP_SA_KEY is still honoured for CI, where the value legitimately arrives as
+// an environment variable from a secret store.
 //
 // GA4_PROPERTY_ID is optional. Exit 0 means Search Console is good to go.
 
 import { createSign } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
-const SA_RAW = process.env.GCP_SA_KEY;
+const keyPathArg = process.argv.slice(2).find((a) => !a.startsWith('-'));
+
+let SA_RAW = process.env.GCP_SA_KEY;
+if (keyPathArg) {
+  try {
+    SA_RAW = readFileSync(keyPathArg.replace(/^~/, process.env.HOME ?? '~'), 'utf8');
+  } catch (err) {
+    console.error(`\nCould not read key file "${keyPathArg}": ${err.code ?? err.message}`);
+    console.error('Pass the path to the .json you downloaded from Google Cloud.\n');
+    process.exit(1);
+  }
+}
+
 const SITE_URL = process.env.GSC_SITE_URL;
 const GA4_PROPERTY = process.env.GA4_PROPERTY_ID;
 
@@ -28,9 +52,12 @@ console.log('\nGoogle credentials preflight\n');
 
 // ── 1. Key parses ─────────────────────────────────────────────────────────────
 if (!SA_RAW) {
-  bad('GCP_SA_KEY is not set.');
-  info('Pass the WHOLE downloaded .json file, e.g.');
-  info('  GCP_SA_KEY="$(cat ~/Downloads/your-key.json)" node scripts/check-google-auth.mjs');
+  bad('No service-account key provided.');
+  info('Pass the PATH to the downloaded .json file:');
+  info('  node scripts/check-google-auth.mjs ~/Downloads/your-key.json');
+  info('');
+  info('Do not paste the key contents into the command — that puts the private');
+  info('key in your shell history and on the process command line.');
   process.exit(1);
 }
 
