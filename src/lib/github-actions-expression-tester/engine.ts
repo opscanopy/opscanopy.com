@@ -71,9 +71,17 @@ export function evaluateIfCondition(raw: string, ctx: EvalContext = defaultConte
       value: substituted,
       rendered: substituted,
       truthy: truthy(substituted),
-      parts: [],
+      // Field is `breakdown`, not `parts` — the playground reads
+      // `result.breakdown.length` OUTSIDE its try/catch, so getting this name
+      // wrong throws a TypeError and the whole result panel silently fails to
+      // render. Keep the empty array: the warning and explanation carry the
+      // message here, and a partial token gloss of a non-expression would
+      // mislead more than it helps.
+      breakdown: [],
       warnings: [footgun],
-      error: null,
+      // `error` is `string | undefined` — omit it rather than passing null.
+      // There is no parse failure here: the substitution succeeded, and the
+      // footgun is reported as a warning, not an error.
       explanation:
         'GitHub only evaluates what is inside ${{ }} — the rest stays literal text. ' +
         `After substitution this if: becomes the string "${substituted}", which is ` +

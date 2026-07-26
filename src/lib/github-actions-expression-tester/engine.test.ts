@@ -37,6 +37,18 @@ describe('if-condition footgun corpus (runner#1173)', () => {
       // The verdict must agree with the warning — see IfVector.truthy.
       if (v.truthy !== undefined) expect(res.truthy).toBe(v.truthy);
       if (v.rendered !== undefined) expect(res.rendered).toBe(v.rendered);
+
+      // Shape contract. The playground reads result.breakdown.length and
+      // result.warnings.map OUTSIDE its try/catch, so a missing field is not a
+      // wrong value — it is an uncaught TypeError and a blank results panel.
+      // A footgun branch that returned `parts` instead of `breakdown` shipped
+      // green because every assertion above only read fields that existed.
+      expect(Array.isArray(res.breakdown)).toBe(true);
+      expect(Array.isArray(res.warnings)).toBe(true);
+      expect(typeof res.rendered).toBe('string');
+      expect(typeof res.truthy).toBe('boolean');
+      expect(typeof res.explanation).toBe('string');
+      expect(res.semanticsVersion).toBe(GHA_SEMANTICS_VERSION);
     });
   }
 });
