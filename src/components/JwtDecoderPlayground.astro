@@ -42,6 +42,7 @@
       <button id="jwt-mode-keys" type="button" class="jwt-mode-btn" aria-pressed="false" data-mode="keys">
         Generate keys
       </button>
+      <span id="jwt-copy-status" class="sr-only" role="status" aria-live="polite"></span>
     </div>
 
     <!-- ── Decode & verify ─────────────────────────────────────────────── -->
@@ -904,10 +905,17 @@
     color: var(--color-ink);
     box-shadow: inset 0 0 0 1px var(--color-body);
   }
+  /* Copy failures surface visibly (the span drops sr-only). */
+  :global(.jwt-copy-status--fail) {
+    color: var(--color-error-deep);
+    font-size: 12.5px;
+    line-height: 18px;
+  }
 </style>
 
 <script>
   import { escapeHtml } from '../lib/escape-html';
+  import { copyTextToClipboard } from '../lib/clipboard';
   import { readHandoffOnce } from '../lib/tool-state/handoff';
   import { wireSnapshotUI } from '../lib/tool-state/wire';
 
@@ -1105,11 +1113,14 @@
     );
   }
 
+  /**
+   * Block-copy button. No inline handler — a single delegated listener in
+   * init() resolves the value (dataset.copy, else the nearest block's
+   * .jwt-code text) and runs it through the shared clipboard helper with the
+   * execCommand fallback + sr-only confirmation (repo copy contract).
+   */
   function copyBtnHtml(): string {
-    return (
-      `<button class="jwt-copy-btn" type="button" title="Copy" ` +
-      `onclick="(function(b){var t=b.textContent;navigator.clipboard.writeText(b.closest('.jwt-block').querySelector('.jwt-code').textContent).then(function(){b.textContent='Copied!';setTimeout(function(){b.textContent=t;},1200)}).catch(function(){});return false;})(this)">Copy</button>`
-    );
+    return '<button class="jwt-copy-btn" type="button" data-copy-label="Copy" aria-label="Copy">Copy</button>';
   }
 
   function jsonBlock(title: string, json: string, meta?: string): string {
@@ -1238,7 +1249,11 @@
       signatureBlock(result.signatureB64) +
       warningsBlock(result.warnings ?? []) +
       verifyHtml +
-      '<div class="jwt-actions"><button type="button" class="jwt-action-btn" data-jwt-open-encoder>Edit in encoder →</button></div>';
+      '<div class="jwt-actions">' +
+      '<button type="button" class="jwt-action-btn jwt-copy-btn" data-copy-all data-copy-label="Copy decoded JSON">Copy decoded JSON</button>' +
+      '<button type="button" class="jwt-action-btn jwt-copy-btn" data-copy-label="Copy Bearer header" data-jwt-copy-bearer>Copy Bearer header</button>' +
+      '<button type="button" class="jwt-action-btn" data-jwt-open-encoder>Edit in encoder →</button>' +
+      '</div>';
   }
 
   async function init(root: HTMLElement): Promise<void> {
@@ -1295,6 +1310,41 @@
       console.error('[JwtDecoder] engine import failed:', err);
       return;
     }
+
+    // ── Copy plumbing (shared clipboard helper + sr-only status) ──
+    const copyStatus = el<HTMLElement>(root, '#jwt-copy-status');
+    function setCopyStatus(message: string, failed: boolean): void {
+      if (!copyStatus) return;
+      copyStatus.textContent = message;
+      copyStatus.classList.toggle('sr-only', !failed);
+      copyStatus.classList.toggle('jwt-copy-status--fail', failed);
+    }
+    async function handleCopy(btn: HTMLButtonElement): Promise<void> {
+      const text =
+        btn.dataset.copy ??
+        btn.closest('.jwt-block, .jwt-partial-block')?.querySelector('.jwt-code')?.textContent ??
+        '';
+      const ok = await copyTextToClipboard(text);
+      if (ok) {
+        const idle = btn.dataset.copyLabel ?? 'Copy';
+        btn.textContent = 'Copied';
+        setCopyStatus('Copied to clipboard.', false);
+        window.clearTimeout(Number(btn.dataset.copyTimer));
+        btn.dataset.copyTimer = String(
+          window.setTimeout(() => {
+            btn.textContent = idle;
+            if (copyStatus?.textContent === 'Copied to clipboard.') setCopyStatus('', false);
+          }, 1200),
+        );
+      } else {
+        setCopyStatus('Copy failed — select the value manually.', true);
+      }
+    }
+    root.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.jwt-copy-btn');
+      if (!btn) return;
+      void handleCopy(btn);
+    });
 
     // ── Mode switching ──
     const modeBtns = Array.from(root.querySelectorAll<HTMLButtonElement>('.jwt-mode-btn'));
@@ -1393,7 +1443,7 @@
           resultsBox!.innerHTML =
             errorHtml('Can’t fully decode this token', result.error ?? 'Decode failed.') +
             '<div class="jwt-partial-block">' +
-            `<div class="jwt-block__head"><span>Header (decoded)</span><span class="jwt-block__meta">${escapeHtml(result.partial.alg ?? '')}</span></div>` +
+            `<div class="jwt-block__head"><span>Header (decoded)</span><span style="display:flex;align-items:center;gap:8px;"><span class="jwt-block__meta">${escapeHtml(result.partial.alg ?? '')}</span>${copyBtnHtml()}</span></div>` +
             `<pre class="jwt-code">${escapeHtml(result.partial.header)}</pre>` +
             '</div>' +
             '<p class="jwt-none">Payload could not be decoded — header shown.</p>';
@@ -1410,6 +1460,23 @@
         ? verifyBlock('pending', 'Checking the signature with the supplied secret / key…')
         : verifyBlock('no-key', 'Add a secret, PEM public key, JWK, or JWKS above to verify the signature.');
       renderResult(resultsBox!, summaryEl!, result, initialVerify, initialBanner);
+
+      // REQ-7 copy payloads — assigned via dataset AFTER innerHTML so
+      // newlines/quotes never round-trip through an HTML attribute.
+      const jsonBtn = resultsBox!.querySelector<HTMLButtonElement>('[data-copy-all]');
+      if (jsonBtn) {
+        try {
+          jsonBtn.dataset.copy = JSON.stringify(
+            { header: JSON.parse(result.header ?? '{}'), payload: JSON.parse(result.payload ?? '{}') },
+            null,
+            2,
+          );
+        } catch {
+          /* header/payload are engine-produced JSON; parse cannot realistically fail */
+        }
+      }
+      const bearerBtn = resultsBox!.querySelector<HTMLButtonElement>('[data-jwt-copy-bearer]');
+      if (bearerBtn) bearerBtn.dataset.copy = `Authorization: Bearer ${value.trim()}`;
 
       if (!hasSecret) return;
 
