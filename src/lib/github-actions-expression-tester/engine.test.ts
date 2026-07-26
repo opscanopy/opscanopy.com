@@ -34,6 +34,9 @@ describe('if-condition footgun corpus (runner#1173)', () => {
       const res = evaluateIfCondition(v.input);
       const hasFootgun = res.warnings.some((w) => w.id === 'literal-if-always-true');
       expect(hasFootgun).toBe(v.footgun);
+      // The verdict must agree with the warning — see IfVector.truthy.
+      if (v.truthy !== undefined) expect(res.truthy).toBe(v.truthy);
+      if (v.rendered !== undefined) expect(res.rendered).toBe(v.rendered);
     });
   }
 });

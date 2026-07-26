@@ -9,7 +9,7 @@
  */
 import type { Decision, EvalContext, ExprWarning, GhaValue, SimEvent } from './types';
 
-export const GHA_SEMANTICS_VERSION = 'gha-2024.11';
+export const GHA_SEMANTICS_VERSION = 'gha-2024.12';
 
 /* ── expression vectors (bare ${{ }} bodies) ───────────────────────────────── */
 
@@ -95,19 +95,44 @@ export interface IfVector {
   id: string;
   input: string;
   footgun: boolean;
+  /**
+   * Expected `if:` decision. For a footgun vector this is the POINT — the whole
+   * bug is that the substituted value is a non-empty string and therefore true,
+   * so asserting only that a warning appears would let the verdict drift out of
+   * agreement with the warning text.
+   */
+  truthy?: boolean;
+  /** Expected value after ${{ }} substitution, for footgun vectors. */
+  rendered?: string;
 }
 
 export const ifCorpus: IfVector[] = [
-  { id: 'footgun-outside-op', input: "${{ github.event_name }} == 'push'", footgun: true },
+  // The canonical actions/runner#1173 case. defaultContext has
+  // github.event_name = 'push', so the runner substitutes to "push == 'push'" —
+  // a non-empty string, hence ALWAYS true. Asserting truthy/rendered here keeps
+  // the UI verdict ("would RUN") in agreement with the warning text.
+  {
+    id: 'footgun-outside-op',
+    input: "${{ github.event_name }} == 'push'",
+    footgun: true,
+    truthy: true,
+    rendered: "push == 'push'",
+  },
   { id: 'ok-wrapped', input: "${{ github.event_name == 'push' }}", footgun: false },
-  { id: 'footgun-bare-literal', input: 'merge me', footgun: true },
+  { id: 'footgun-bare-literal', input: 'merge me', footgun: true, truthy: true, rendered: 'merge me' },
   { id: 'ok-bare-true', input: 'true', footgun: false },
   { id: 'ok-success', input: '${{ success() }}', footgun: false },
   // Bare expressions (no ${{ }}) are valid in an if: and must NOT be flagged.
   { id: 'ok-bare-success-fn', input: 'success()', footgun: false },
   { id: 'ok-bare-comparison', input: "github.ref == 'refs/heads/main'", footgun: false },
   // Non-operator literal text outside ${{ }} is still a footgun.
-  { id: 'footgun-outside-word', input: '${{ github.actor }} is me', footgun: true },
+  {
+    id: 'footgun-outside-word',
+    input: '${{ github.actor }} is me',
+    footgun: true,
+    truthy: true,
+    rendered: 'octocat is me',
+  },
 ];
 
 /* ── glob vectors ──────────────────────────────────────────────────────────── */

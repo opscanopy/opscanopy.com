@@ -51,18 +51,53 @@ export function evaluateExpression(expr: string, ctx: EvalContext = defaultConte
 export function evaluateIfCondition(raw: string, ctx: EvalContext = defaultContext()): EvaluateResult {
   const footgun = analyzeIfCondition(raw);
   const body = extractExpressionBody(raw);
-  const base = evaluateExpression(body, ctx);
+
   if (footgun) {
+    // Model what the runner ACTUALLY does, rather than reporting the failed
+    // parse of a string that was never a single expression.
+    //
+    // extractExpressionBody only unwraps `${{ … }}` when it spans the WHOLE
+    // value, so here it hands back the raw text; evaluating that as one
+    // expression fails on the literal `${{` and yields ''/false. The UI then
+    // rendered "would SKIP the step" directly above a warning saying the
+    // condition is ALWAYS TRUE — the two contradicted each other in exactly
+    // the case this tool exists to explain (actions/runner#1173).
+    //
+    // The runner substitutes each `${{ }}` span in place, leaves the text
+    // between spans literal, and coerces the resulting STRING. So substitute,
+    // then apply string truthiness: non-empty wins, which is the whole bug.
+    const substituted = substituteSpans(raw, ctx);
     return {
-      ...base,
-      warnings: [footgun, ...base.warnings],
+      value: substituted,
+      rendered: substituted,
+      truthy: truthy(substituted),
+      parts: [],
+      warnings: [footgun],
+      error: null,
       explanation:
         'GitHub only evaluates what is inside ${{ }} — the rest stays literal text. ' +
-        'After substitution this if: becomes a non-empty string, so it is ALWAYS true. ' +
-        base.explanation,
+        `After substitution this if: becomes the string "${substituted}", which is ` +
+        'non-empty and therefore ALWAYS true. The step runs on every event.',
+      semanticsVersion: GHA_SEMANTICS_VERSION,
     };
   }
-  return base;
+
+  return evaluateExpression(body, ctx);
+}
+
+/**
+ * Replace every `${{ … }}` span with its evaluated, rendered value, leaving all
+ * text outside the spans exactly as written. This reproduces the runner's
+ * substitution pass for an `if:` value that is not one single expression.
+ *
+ * A span that fails to evaluate renders empty, matching the runner treating an
+ * unresolvable context lookup as the empty string.
+ */
+function substituteSpans(raw: string, ctx: EvalContext): string {
+  return raw.trim().replace(/\$\{\{([\s\S]*?)\}\}/g, (_match, inner: string) => {
+    const res = evaluateExpression(String(inner).trim(), ctx);
+    return res.error ? '' : res.rendered;
+  });
 }
 
 /** Test one ref/path name against one filter pattern (for the cheat-sheet). */
