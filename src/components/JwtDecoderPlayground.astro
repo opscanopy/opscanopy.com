@@ -495,12 +495,65 @@
   }
 
   /* ── Runtime-injected markup ─────────────────────────────────────────── */
-  :global(.jwt-block) {
+  /* REQ-1 hero pill: icon + label + detail, tokens only (theme-safe). */
+  :global(.jwt-pill) {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    border-radius: var(--radius-md);
+    font-size: 12.5px;
+    line-height: 18px;
+    animation: jwt-rise 0.18s ease both;
+  }
+  :global(.jwt-pill svg) {
+    flex: 0 0 auto;
+    align-self: center;
+  }
+  :global(.jwt-pill__label) {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  :global(.jwt-pill__detail) {
+    opacity: 0.9;
+    word-break: break-word;
+  }
+  :global(.jwt-pill--valid) {
+    background: var(--color-brand-soft);
+    color: var(--color-brand-strong);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+  }
+  :global(.jwt-pill--expired) {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+  }
+  :global(.jwt-pill--not-yet) {
+    background: var(--color-warning-soft);
+    color: var(--color-warning-deep);
+    box-shadow: inset 0 0 0 1px var(--color-warning);
+  }
+  :global(.jwt-pill--none) {
+    background: var(--color-canvas-soft);
+    color: var(--color-mute);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+
+  /* Partial-decode header block: same look as .jwt-block, but deliberately a
+     DIFFERENT class — verifyOnly()/setVerifyBlock() treat .jwt-block as a
+     verifiable result and would replace/eat this one. */
+  :global(.jwt-block),
+  :global(.jwt-partial-block) {
     border-radius: var(--radius-md);
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
     overflow: hidden;
     animation: jwt-rise 0.18s ease both;
+  }
+  :global(.jwt-partial-block) {
+    margin-top: 12px;
   }
   :global(.jwt-block + .jwt-block) {
     margin-top: 12px;
@@ -787,6 +840,7 @@
 
   type ClaimTone = 'ok' | 'warn' | 'error';
   type ClaimRow = { label: string; value: string; mono?: boolean; tone?: ClaimTone; caption?: string };
+  type Freshness = { state: 'valid' | 'expired' | 'not-yet' | 'none'; detail: string };
   type JwtResult = {
     valid: boolean;
     error?: string;
@@ -797,6 +851,13 @@
     signatureB64?: string;
     claims: ClaimRow[];
     warnings: string[];
+    freshness?: Freshness;
+    partial?: {
+      header?: string;
+      alg?: string;
+      failedSegment: 'header' | 'payload';
+      segmentError: string;
+    };
   };
   type VerifyStatus = 'valid' | 'invalid' | 'unsupported' | 'error';
   type VerifyResult = { status: VerifyStatus; detail: string; warning?: string };
@@ -898,11 +959,39 @@
     container.innerHTML = errorHtml('Can’t decode this token', message);
   }
 
+  /** REQ-1 hero pill: exp/nbf verdict, icon + text + color in every state. */
+  function freshnessPill(f: Freshness | undefined): string {
+    if (!f) return '';
+    const ICONS: Record<Freshness['state'], string> = {
+      valid:
+        '<svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10l4.5 4.5L16 6"/></svg>',
+      expired:
+        '<svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15"/></svg>',
+      'not-yet':
+        '<svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><path d="M10 6v4l2.5 2.5"/></svg>',
+      none:
+        '<svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="3 3" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/></svg>',
+    };
+    const LABELS: Record<Freshness['state'], string> = {
+      valid: 'Valid',
+      expired: 'Expired',
+      'not-yet': 'Not yet valid',
+      none: 'No time claims',
+    };
+    return (
+      `<div class="jwt-pill jwt-pill--${f.state}" role="group" aria-label="Token time validity">` +
+      ICONS[f.state] +
+      `<span class="jwt-pill__label">${escapeHtml(LABELS[f.state])}</span>` +
+      `<span class="jwt-pill__detail">${escapeHtml(f.detail)}</span>` +
+      '</div>'
+    );
+  }
+
   /** Top-of-results trust banner reflecting verification state. */
   function trustBanner(state: 'no-key' | 'pending' | VerifyStatus): string {
     if (state === 'no-key') {
       return (
-        '<div id="jwt-trust-banner" style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;margin-bottom:12px;border-radius:var(--radius-md);background:#fffbeb;box-shadow:inset 0 0 0 1px #f59e0b;color:#92400e;font-size:13px;line-height:18px;">' +
+        '<div id="jwt-trust-banner" style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;margin-bottom:12px;border-radius:var(--radius-md);background:var(--color-warning-soft);box-shadow:inset 0 0 0 1px var(--color-warning);color:var(--color-warning-deep);font-size:13px;line-height:18px;">' +
         '<svg style="flex:0 0 auto;margin-top:1px;" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"/><path d="M10 8v4"/><path d="M10 14.5v.1"/></svg>' +
         '<span>Decoded — signature not verified. Supply a secret, public key, JWK, or JWKS to verify authenticity.</span>' +
         '</div>'
@@ -918,7 +1007,7 @@
     }
     if (state === 'valid') {
       return (
-        '<div id="jwt-trust-banner" style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;margin-bottom:12px;border-radius:var(--radius-md);background:#f0fdf4;box-shadow:inset 0 0 0 1px #22c55e;color:#14532d;font-size:13px;line-height:18px;">' +
+        '<div id="jwt-trust-banner" style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;margin-bottom:12px;border-radius:var(--radius-md);background:var(--color-brand-soft);box-shadow:inset 0 0 0 1px var(--color-brand);color:var(--color-brand-strong);font-size:13px;line-height:18px;">' +
         '<svg style="flex:0 0 auto;margin-top:1px;" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10l4.5 4.5L16 6"/></svg>' +
         '<span>Signature verified ✓</span>' +
         '</div>'
@@ -1066,6 +1155,7 @@
     if (result.typ) bits.push(result.typ);
     summary.textContent = bits.join(' · ');
     container.innerHTML =
+      freshnessPill(result.freshness) +
       trustBanner(bannerState) +
       jsonBlock('Header', result.header ?? '{}', result.alg) +
       jsonBlock('Payload', result.payload ?? '{}') +
@@ -1205,6 +1295,21 @@
         return;
       }
       if (!result || result.valid === false) {
+        // REQ-3 partial success: the header decoded even though the payload
+        // didn't — show it under the error. The block deliberately does NOT
+        // carry .jwt-block (verifyOnly's setVerifyBlock would replace the
+        // LAST .jwt-block on a secret-field keystroke and eat the header).
+        if (result?.partial?.header) {
+          summaryEl!.textContent = result.partial.alg ?? '';
+          resultsBox!.innerHTML =
+            errorHtml('Can’t fully decode this token', result.error ?? 'Decode failed.') +
+            '<div class="jwt-partial-block">' +
+            `<div class="jwt-block__head"><span>Header (decoded)</span><span class="jwt-block__meta">${escapeHtml(result.partial.alg ?? '')}</span></div>` +
+            `<pre class="jwt-code">${escapeHtml(result.partial.header)}</pre>` +
+            '</div>' +
+            '<p class="jwt-none">Payload could not be decoded — header shown.</p>';
+          return;
+        }
         renderError(resultsBox!, summaryEl!, result?.error ?? 'This does not look like a JWT.');
         return;
       }
@@ -1264,7 +1369,10 @@
     /** Editing only the secret must not re-decode / re-flash the whole panel — just re-verify. */
     function verifyOnly(): void {
       const value = input!.value;
-      if (value.trim().length === 0 || !resultsBox!.querySelector('.jwt-block')) {
+      // The trust banner only exists on a decode SUCCESS render — its absence
+      // means an error/partial state is showing, which has no verify block to
+      // patch; a full re-evaluate is the safe path (keeps partial renders intact).
+      if (value.trim().length === 0 || !resultsBox!.querySelector('#jwt-trust-banner')) {
         scheduleEvaluate();
         return;
       }
