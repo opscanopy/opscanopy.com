@@ -5,6 +5,11 @@
 **Timing:** Tuesday–Thursday, **08:00–10:00 UTC** (early morning US Eastern). Avoid
 weekends. You get one shot per URL — HN dedupes, and a reposted URL usually dies.
 
+> ⛔ **Do not post yet.** See `gha-page-analysis.md`: the seeded example is not
+> evaluated until you press Evaluate, so a first-time visitor lands on an empty
+> results box. Fix that first. Sending an HN spike to a page whose demo doesn't
+> run itself wastes the single shot you get at this URL.
+
 ---
 
 ## Why this tool and not AlertLint
@@ -76,6 +81,14 @@ to a versioned conformance corpus (currently gha-2024.12) with 72 tests; the
 corpus is the spec, and changing engine behaviour means adding a fixture and
 bumping the version. The evaluator never throws — malformed input comes back as
 a structured error.
+
+How this differs from what already exists: actionlint's playground is excellent
+and I use it, but it's a static checker — it tells you an expression is valid,
+not what it returns. GitHub's own actions/languageservices has a real evaluator
+(it powers the VS Code extension) but its browser playground isn't hosted
+anywhere; you have to clone and build it. act runs the whole workflow in Docker,
+which is the right tool for a different question. I wanted to paste one
+condition and see the value.
 
 It runs entirely in your browser. No signup, no upload, nothing to install.
 The site has a CSP with `connect-src 'self'`, so a page physically cannot POST
