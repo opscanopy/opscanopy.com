@@ -521,6 +521,16 @@ describe('sign() — RFC 7515 §A.1 and round-trips', () => {
   });
 });
 
+describe('bundled examples', () => {
+  it('the RS256 example verifies with its bundled public JWK', async () => {
+    const ex = examples.find((e) => e.id === 'rs256')!;
+    expect((await verify(ex.token, ex.key!)).status).toBe('valid');
+  });
+  it('every example carries a chip label', () => {
+    for (const ex of examples) expect(ex.chip.length, ex.id).toBeGreaterThan(0);
+  });
+});
+
 describe('verify() — JWKS', () => {
   it('picks the right key by kid and reports it', async () => {
     const a = await generateKeys({ kind: 'ec', curve: 'P-256' });

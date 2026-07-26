@@ -134,6 +134,8 @@ export type KeygenResult =
 export interface JwtExample {
   id: string;
   label: string;
+  /** Short label for the one-click chip row (e.g. "HS256", "alg:none"). */
+  chip: string;
   /** The compact JWT string. */
   token: string;
   /** Optional matching secret / public key — fills the key field when picked. */
