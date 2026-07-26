@@ -62,6 +62,46 @@ export async function localesForSlug(slug: string): Promise<Locale[]> {
 }
 
 /**
+ * Inverse of each post's `relatedTool` — "which posts are about this tool?".
+ *
+ * Every post declares the tool it belongs to; nothing declared the reverse, so
+ * tool pages linked out to nothing and the whole blog sat orphaned behind the
+ * /blog/ silo (posts drew 9–21 inbound links against 235–247 for a tool page).
+ * This closes that loop from data already in frontmatter — no per-page edits.
+ *
+ * Keyed by tool slug, newest first. Non-tool targets (e.g. "/mission-90/") key
+ * off their first path segment and simply never match a registered tool.
+ */
+export async function getPostsByTool(lang: Locale): Promise<Map<string, LocalizedPost[]>> {
+  const all = await getAllPosts();
+
+  // Only 11 of 20 translations carry `relatedTool` — it is optional and the
+  // translators mostly dropped it. The English original always has it and the
+  // slug is locale-neutral, so fall back to it rather than losing the link on
+  // four fifths of the localized tool pages.
+  const enHrefBySlug = new Map<string, string>();
+  for (const p of all) {
+    if (p.lang !== DEFAULT_LOCALE) continue;
+    const href = p.entry.data.relatedTool?.href;
+    if (href) enHrefBySlug.set(p.slug, href);
+  }
+
+  const posts = all
+    .filter((p) => p.lang === lang)
+    .sort((a, b) => b.entry.data.pubDate.valueOf() - a.entry.data.pubDate.valueOf());
+
+  const byTool = new Map<string, LocalizedPost[]>();
+  for (const post of posts) {
+    const href = post.entry.data.relatedTool?.href ?? enHrefBySlug.get(post.slug);
+    if (!href) continue;
+    const key = href.split('/').filter(Boolean)[0];
+    if (!key) continue;
+    byTool.set(key, [...(byTool.get(key) ?? []), post]);
+  }
+  return byTool;
+}
+
+/**
  * Previous/next posts for chronological article navigation, in the SAME
  * language as `current`, ordered oldest → newest by pubDate. `prev` is the
  * older post, `next` is the newer one; either is null at a boundary.

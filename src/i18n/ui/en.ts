@@ -60,6 +60,18 @@ const en = {
   'crosslinks.hook':
     '{count} free tools, every one offline-capable — opscanopy.com works with no signup and nothing uploaded.',
   'crosslinks.paletteHint': '{count} tools, one shortcut — press Ctrl/⌘+K to jump to any of them.',
+  // Homepage "From the blog" strip (shared component — see SearchPage precedent:
+  // one component for all 5 locales, every string read from here, no per-page copy).
+  'home.blogEyebrow': 'From the blog',
+  'home.blogHeading': 'Notes from the incidents.',
+  'home.blogLead':
+    'Short, practical write-ups on the problems these tools exist to solve — why a pipeline went red, where an alert vanished, what a query actually means.',
+  'home.blogBrowseAll': 'Browse all posts',
+
+  'crosslinks.moreIn': 'More in {category}',
+  'crosslinks.postsHeading': 'Read more about this',
+  'crosslinks.learnNewTo': 'New to {track}?',
+  'crosslinks.learnCta': 'Read the {track} guide',
 
   // Command palette (Ctrl/⌘+K)
   'palette.dialogLabel': 'Command palette',

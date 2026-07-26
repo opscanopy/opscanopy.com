@@ -51,6 +51,16 @@ const fr: Partial<UiDict> = {
     '{count} outils gratuits, tous utilisables hors ligne — opscanopy.com fonctionne sans inscription et sans rien téléverser.',
   'crosslinks.paletteHint':
     "{count} outils, un raccourci — appuyez sur Ctrl/⌘+K pour accéder à n'importe lequel.",
+  'home.blogEyebrow': 'Depuis le blog',
+  'home.blogHeading': 'Notes tirées des incidents.',
+  'home.blogLead':
+    "Des articles courts et concrets sur les problèmes que ces outils servent à résoudre : pourquoi un pipeline est passé au rouge, où une alerte s'est perdue, ce qu'une requête signifie vraiment.",
+  'home.blogBrowseAll': 'Voir tous les articles',
+
+  'crosslinks.moreIn': 'Plus dans {category}',
+  'crosslinks.postsHeading': 'En savoir plus',
+  'crosslinks.learnNewTo': 'Vous débutez avec {track} ?',
+  'crosslinks.learnCta': 'Lire le guide {track}',
 
   // Palette de commandes (Ctrl/⌘+K)
   'palette.dialogLabel': 'Palette de commandes',
