@@ -143,6 +143,42 @@ describe('decode()', () => {
   });
 });
 
+describe('freshness (REQ-1 pill)', () => {
+  const nowMs = 1700000000 * 1000;
+  it('expired token → state "expired" with relative phrase', () => {
+    const r = decode(`${b64u({ alg: 'HS256' })}.${b64u({ exp: 1700000000 - 3 * 86400 })}.x`, nowMs);
+    expect(r.freshness?.state).toBe('expired');
+    expect(r.freshness?.detail).toContain('3 days ago');
+  });
+  it('nbf in the future → "not-yet"', () => {
+    const r = decode(
+      `${b64u({ alg: 'HS256' })}.${b64u({ nbf: 1700000000 + 3600, exp: 1700000000 + 7200 })}.x`,
+      nowMs,
+    );
+    expect(r.freshness?.state).toBe('not-yet');
+  });
+  it('inside the window → "valid"', () => {
+    const r = decode(
+      `${b64u({ alg: 'HS256' })}.${b64u({ nbf: 1700000000 - 60, exp: 1700000000 + 3600 })}.x`,
+      nowMs,
+    );
+    expect(r.freshness?.state).toBe('valid');
+    expect(r.freshness?.detail).toContain('in 1 hour');
+  });
+  it('no exp/nbf → "none", phrased neutrally (not an error)', () => {
+    const r = decode(classicToken, nowMs);
+    expect(r.freshness?.state).toBe('none');
+  });
+  it('non-numeric exp → "none" (never throws)', () => {
+    const r = decode(`${b64u({ alg: 'HS256' })}.${b64u({ exp: 'soon' })}.x`, nowMs);
+    expect(r.freshness?.state).toBe('none');
+  });
+  it('absurd finite epoch beyond Date range → detail falls back to the raw number, never "null"', () => {
+    const r = decode(`${b64u({ alg: 'HS256' })}.${b64u({ exp: 1e18 })}.x`, nowMs);
+    expect(r.freshness?.detail).not.toContain('null');
+  });
+});
+
 describe('security lint (via decode)', () => {
   const nowMs = 1700000000 * 1000;
 

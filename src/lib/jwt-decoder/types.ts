@@ -60,6 +60,16 @@ export interface JwtResult {
   claims: ClaimRow[];
   /** Non-fatal advisories, e.g. `alg:"none"` or a missing `exp`. */
   warnings: string[];
+  /** exp/nbf time-validity verdict for the status pill (success only). */
+  freshness?: Freshness;
+}
+
+/** Time-validity verdict for the hero status pill — independent of signature. */
+export interface Freshness {
+  /** 'valid' = exp/nbf window OK now; 'none' = token has neither claim. */
+  state: 'valid' | 'expired' | 'not-yet' | 'none';
+  /** Human line, e.g. "Expired 3 days ago (exp 2020-01-01 00:00:00 UTC)". */
+  detail: string;
 }
 
 /** Options accepted by `verify()` beyond the token and key input. */

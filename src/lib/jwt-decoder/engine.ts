@@ -19,7 +19,8 @@
  * `sign` (see sign.ts) and `generateKeys` (see keygen.ts) are re-exported so
  * the playground imports one module.
  */
-import type { ClaimRow, ClaimTone, JwtResult, VerifyOptions, VerifyResult } from './types';
+import type { ClaimRow, ClaimTone, Freshness, JwtResult, VerifyOptions, VerifyResult } from './types';
+import { relative } from '../relative-time';
 import { isJwsAlg, signParamsFor } from './algs';
 import {
   b64uToBytes,
@@ -88,6 +89,40 @@ function utcFromEpoch(secs: number): string | null {
 function formatAud(aud: unknown): string {
   if (Array.isArray(aud)) return aud.map((a) => String(a)).join(', ');
   return String(aud);
+}
+
+/**
+ * exp/nbf verdict for the status pill — independent of signature checks.
+ * Precedence: expired > not-yet > valid; tokens with neither claim (or only
+ * non-numeric ones) are 'none'. `utcFromEpoch` returns null past Date's
+ * ±8.64e15 ms range, so every interpolation falls back to the raw epoch.
+ */
+function freshnessOf(payload: Record<string, unknown>, nowMs: number): Freshness {
+  const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : null);
+  const exp = 'exp' in payload ? num(payload.exp) : null;
+  const nbf = 'nbf' in payload ? num(payload.nbf) : null;
+  if (exp === null && nbf === null) {
+    return { state: 'none', detail: 'No exp or nbf claims — this token carries no time bounds.' };
+  }
+  if (exp !== null && exp * 1000 < nowMs) {
+    return {
+      state: 'expired',
+      detail: `Expired ${relative(exp * 1000, nowMs)} (exp ${utcFromEpoch(exp) ?? exp})`,
+    };
+  }
+  if (nbf !== null && nbf * 1000 > nowMs) {
+    return {
+      state: 'not-yet',
+      detail: `Not valid until ${utcFromEpoch(nbf) ?? nbf} (${relative(nbf * 1000, nowMs)})`,
+    };
+  }
+  return {
+    state: 'valid',
+    detail:
+      exp !== null
+        ? `Expires ${relative(exp * 1000, nowMs)} (exp ${utcFromEpoch(exp) ?? exp})`
+        : 'No expiry set; nbf has passed.',
+  };
 }
 
 /**
@@ -225,6 +260,7 @@ export function decode(token: string, nowMs?: number): JwtResult {
     signatureB64,
     claims: buildClaims(payload, now),
     warnings: lintToken(header, payload, s.length, now),
+    freshness: freshnessOf(payload, now),
   };
 }
 
