@@ -6,6 +6,78 @@
  * and FAQPage objects while preserving their precise content and shape.
  */
 import { site } from '../data/site';
+import { getToolUpdatedAt } from '../data/tool-meta';
+
+const LOCALE_PREFIXES = ['de', 'es', 'fr', 'pt-br'];
+
+/**
+ * Tool slug out of an absolute page URL, locale prefix stripped.
+ * "https://opscanopy.com/de/jwt-decoder/" → "jwt-decoder".
+ */
+function slugFromUrl(url: string): string | undefined {
+  const path = url.replace(/^https?:\/\/[^/]+/, '');
+  const parts = path.split('/').filter(Boolean);
+  if (!parts.length) return undefined;
+  return LOCALE_PREFIXES.includes(parts[0]) ? parts[1] : parts[0];
+}
+
+/**
+ * Stable @id anchors for the two sitewide entities.
+ *
+ * Emitting `Organization` and `WebSite` on every page as anonymous inline
+ * objects tells a parser nothing — it sees hundreds of unrelated organizations
+ * with the same name. Giving each a fixed @id and referencing it by @id from
+ * every publisher/isPartOf slot instead declares one entity that the whole site
+ * belongs to, which is what lets search and AI engines resolve "OpsCanopy" to a
+ * single thing.
+ */
+export const ORG_ID = `${site.url}/#organization`;
+export const SITE_ID = `${site.url}/#website`;
+
+/** Reference to the sitewide Organization. Use in `publisher` / `provider`. */
+export const orgRef = { '@id': ORG_ID } as const;
+
+/**
+ * The sitewide Organization node. Emitted once per page by SEO.astro.
+ */
+export function organizationLd(): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    '@id': ORG_ID,
+    name: site.name,
+    url: site.url,
+    description: site.description,
+    sameAs: [site.github, `https://x.com/${site.twitter.replace('@', '')}`],
+  };
+}
+
+/**
+ * The sitewide WebSite node, including the sitelinks SearchAction.
+ *
+ * `/search` is a real working Pagefind UI but nothing declared it, so engines
+ * had no way to offer a search box for the site.
+ */
+export function websiteLd(): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    '@id': SITE_ID,
+    name: site.name,
+    url: site.url,
+    description: site.description,
+    publisher: orgRef,
+    inLanguage: ['en', 'de', 'es', 'fr', 'pt-BR'],
+    potentialAction: {
+      '@type': 'SearchAction',
+      target: {
+        '@type': 'EntryPoint',
+        urlTemplate: `${site.url}/search/?q={search_term_string}`,
+      },
+      'query-input': 'required name=search_term_string',
+    },
+  };
+}
 
 /**
  * SoftwareApplication object for a tool page.
@@ -19,7 +91,17 @@ export function softwareAppLd(o: {
   subCategory?: string;
   featureList?: string[];
   keywords?: string;
+  /**
+   * Override the last-modified date. Normally omitted — it is resolved from
+   * the git-derived tool-meta data using the slug in `url`, so all 145 tool
+   * pages (29 x 5 locales) get an accurate `dateModified` without touching a
+   * single call site. The date was already rendered as ToolHero's "Updated"
+   * badge but was invisible to parsers.
+   */
+  dateModified?: string;
 }): Record<string, unknown> {
+  const slug = slugFromUrl(o.url);
+  const dateModified = o.dateModified ?? (slug ? getToolUpdatedAt(slug) : undefined);
   return {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
@@ -37,11 +119,11 @@ export function softwareAppLd(o: {
       priceCurrency: 'USD',
     },
     isAccessibleForFree: true,
-    publisher: {
-      '@type': 'Organization',
-      name: site.name,
-      url: site.url,
-    },
+    // Reference the one sitewide Organization rather than repeating a stub, so
+    // all 29 tools resolve to the same publisher entity.
+    publisher: orgRef,
+    isPartOf: { '@id': SITE_ID },
+    ...(dateModified ? { dateModified } : {}),
   };
 }
 

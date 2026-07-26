@@ -8,6 +8,7 @@ import { site } from '../data/site';
 import { BCP47, OG_LOCALE, LOCALES, DEFAULT_LOCALE, type Locale } from '../i18n/config';
 import { stripLocale } from '../i18n/utils';
 import { toolOgImage } from '../lib/tool-og';
+import { organizationLd, websiteLd } from '../lib/jsonld';
 
 export interface Props {
   title: string;
@@ -19,6 +20,10 @@ export interface Props {
   /** Alt text for the OG/Twitter image. Defaults to the site name + tagline. */
   imageAlt?: string;
   type?: 'website' | 'article';
+  /** ISO 8601. Emitted as article:published_time — article pages only. */
+  publishedTime?: string;
+  /** ISO 8601. Emitted as article:modified_time — article pages only. */
+  modifiedTime?: string;
   noindex?: boolean;
   /** Optional JSON-LD structured data object(s). */
   jsonLd?: Record<string, unknown> | Record<string, unknown>[];
@@ -42,6 +47,8 @@ const {
   image: explicitImage,
   imageAlt = `${site.name} — ${site.tagline}`,
   type = 'website',
+  publishedTime,
+  modifiedTime,
   noindex = false,
   jsonLd,
   noAlternates = false,
@@ -58,7 +65,18 @@ const image = explicitImage ?? toolOgImage(pageKey) ?? '/og-default.png';
 
 const canonicalURL = getAbsoluteLocaleUrl(lang, pageKey);
 const imageURL = new URL(image, Astro.site ?? Astro.url);
-const ldBlocks = jsonLd ? (Array.isArray(jsonLd) ? jsonLd : [jsonLd]) : [];
+const pageLd = jsonLd ? (Array.isArray(jsonLd) ? jsonLd : [jsonLd]) : [];
+
+/**
+ * The sitewide Organization + WebSite nodes lead every page's LD, so each
+ * page's `publisher: { @id }` reference resolves within the same document.
+ * Previously these existed only on the 5 homepages, leaving the other 451
+ * pages pointing at an entity that was nowhere defined.
+ *
+ * Skipped on noindex pages — nothing should anchor the site identity to a page
+ * that is explicitly not for indexing.
+ */
+const ldBlocks = noindex ? pageLd : [organizationLd(), websiteLd(), ...pageLd];
 
 // Reciprocal hreflang set: one per available locale + x-default → English.
 const alternates = noAlternates
@@ -105,6 +123,14 @@ const xDefaultHref = xDefaultLocale ? getAbsoluteLocaleUrl(xDefaultLocale, pageK
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
 <meta property="og:image:alt" content={imageAlt} />
+{/* Article timestamps — only meaningful when og:type is "article". */}
+{type === 'article' && publishedTime && (
+  <meta property="article:published_time" content={publishedTime} />
+)}
+{type === 'article' && modifiedTime && (
+  <meta property="article:modified_time" content={modifiedTime} />
+)}
+{type === 'article' && <meta property="article:author" content={site.name} />}
 
 <!-- Twitter -->
 <meta name="twitter:card" content="summary_large_image" />

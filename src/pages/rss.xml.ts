@@ -37,15 +37,23 @@ export async function GET(): Promise<Response> {
       const title = escapeXml(post.entry.data.title);
       const description = escapeXml(post.entry.data.description ?? '');
       const pubDate = rfc822(post.entry.data.pubDate);
+      // Tags become <category> so readers and aggregators can filter the feed.
+      const categories = (post.entry.data.tags ?? [])
+        .map((tag) => `\n      <category>${escapeXml(tag)}</category>`)
+        .join('');
       return `    <item>
       <title>${title}</title>
       <link>${link}</link>
       <guid isPermaLink="true">${link}</guid>
       <description>${description}</description>
-      <pubDate>${pubDate}</pubDate>
+      <pubDate>${pubDate}</pubDate>${categories}
     </item>`;
     })
     .join('\n');
+
+  // Newest post's date, not the build time — a feed whose lastBuildDate moves
+  // on every deploy tells readers it changed when it did not.
+  const lastBuildDate = rfc822(posts[0]?.entry.data.pubDate ?? new Date(0));
 
   const channelTitle = escapeXml(`${site.name} Blog`);
   const channelLink = `${site.url}/blog/`;
@@ -60,6 +68,7 @@ export async function GET(): Promise<Response> {
     <link>${channelLink}</link>
     <description>${channelDescription}</description>
     <language>en</language>
+    <lastBuildDate>${lastBuildDate}</lastBuildDate>
     <atom:link href="${site.url}/rss.xml" rel="self" type="application/rss+xml" />
 ${items}
   </channel>
