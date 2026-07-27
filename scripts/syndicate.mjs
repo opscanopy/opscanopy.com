@@ -41,7 +41,28 @@ const flag = (name, fallback) => {
   return i !== -1 && args[i + 1] ? args[i + 1] : fallback;
 };
 const ONLY_TARGET = flag('--target', null);
-const LIMIT = Number(flag('--limit', '0')) || Infinity;
+
+/**
+ * Publishing is capped, deliberately and by default.
+ *
+ * On 2026-07-27 seven articles went out in one day against an account that had
+ * twelve — a 58% jump. Nothing rate-limited it because nothing was meant to: the
+ * limit defaulted to Infinity and only `--limit` held it back. That is the wrong
+ * default for an irreversible, account-risking action.
+ *
+ * A dry run still lists the whole queue (that is just information). Publishing
+ * without an explicit --limit does 2, and MAX_PER_RUN is a ceiling that --limit
+ * cannot exceed.
+ */
+const MAX_PER_RUN = 3;
+const DEFAULT_PUBLISH_LIMIT = 2;
+const requested = Number(flag('--limit', '0'));
+const LIMIT = PUBLISH
+  ? Math.min(requested || DEFAULT_PUBLISH_LIMIT, MAX_PER_RUN)
+  : requested || Infinity;
+if (PUBLISH && requested > MAX_PER_RUN) {
+  console.log(`--limit ${requested} exceeds the ${MAX_PER_RUN}-per-run cap; using ${MAX_PER_RUN}.\n`);
+}
 
 /* ── frontmatter ─────────────────────────────────────────────────────────── */
 
