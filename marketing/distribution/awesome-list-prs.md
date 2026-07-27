@@ -116,7 +116,7 @@ Behaviour is pinned to a versioned conformance corpus (72 tests) so the
 semantics are testable rather than best-effort.
 
 Runs fully client-side — no signup, no upload, and the site's CSP sets
-`connect-src 'self'`, so a pasted workflow cannot leave the browser.
+`connect-src` to the origin plus Google Analytics only — the engine never transmits what you paste.
 
 Disclosure: I built this.
 ```
@@ -157,7 +157,7 @@ converter. Others cover observability (PromQL, LogQL, Alertmanager routing,
 Prometheus relabeling), networking (subnet, CIDR, PTR) and encoding.
 
 Everything runs client-side with no signup and no upload — the site's CSP sets
-`connect-src 'self'`, so pasted configs cannot leave the browser. That is the
+`connect-src` to the origin plus Google Analytics only, and the engines never transmit what you paste. That is the
 main reason it exists: the equivalent hosted validators all POST your CI config
 to a server, which is awkward when it contains internal hostnames and secret
 names.

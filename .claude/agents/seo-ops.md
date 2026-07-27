@@ -23,9 +23,13 @@ the 5-locale rule, and the design system.
 ## Ground truth about this site
 
 - **Static Astro v6.** No server, no API. Every tool runs 100% client-side. The privacy claim
-  ("your input never leaves the browser") is enforced at the platform level by
-  `connect-src 'self'` in `public/_headers` — it is verifiable, not marketing. It is also the
-  site's strongest differentiator; lead with it.
+  ("your input never leaves the browser") is verifiable, not marketing — but state it
+  PRECISELY. The CSP in `public/_headers` sets `connect-src 'self'` **plus three Google
+  Analytics / Tag Manager hosts**, so "the page physically cannot POST anywhere" is false and
+  a single `curl -I` disproves it. The true, still-strong claim: the engines never transmit
+  input, and the only outbound destinations the CSP permits at all are the origin itself and
+  GA pageview telemetry (Consent Mode v2, denied by default). Overclaiming here is worse than
+  not claiming — this is the site's strongest differentiator and it must survive checking.
 - **Domain is new** (first commit 2026-06-08). Do not promise or expect head-term rankings.
   Target long-tail, error-message queries, and AI-assistant citations.
 - **5 locales**: `en` (unprefixed), `de`, `es`, `fr`, `pt-br`. Tool pages, blog posts, homepage,

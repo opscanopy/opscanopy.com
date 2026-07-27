@@ -92,12 +92,17 @@ anywhere; you have to clone and build it. act runs the whole workflow in Docker,
 which is the right tool for a different question. I wanted to paste one
 condition and see the value.
 
-It runs entirely in your browser. No signup, no upload, nothing to install.
-The site has a CSP with `connect-src 'self'`, so a page physically cannot POST
-your workflow anywhere — worth stating plainly given workflows contain secret
-names and internal repo paths. In the interest of full disclosure: the site does
-load Google Analytics for pageviews, behind Consent Mode set to denied by
-default. Your pasted workflow is never part of that.
+It runs entirely in your browser. No signup, no upload, nothing to install —
+which matters here because workflows carry secret names and internal repo paths.
+Precisely: the engine never transmits what you paste, and the CSP only permits
+outbound connections to the origin itself plus Google Analytics, which the site
+loads for pageviews behind Consent Mode set to denied by default. So there is no
+endpoint your workflow could go to, but I'm not going to claim the page can't
+talk to anything — `curl -I` will show you the GA hosts in the header.
+
+Source is MIT on GitHub: https://github.com/opscanopy/opscanopy.com — the engine
+is src/lib/github-actions-expression-tester/, and the conformance corpus is
+conformance.ts if you want to check the semantics against your own expectations.
 
 Static Astro, no framework. It's one of 29 browser-only DevOps tools I've been
 building; this is the one I use most.
