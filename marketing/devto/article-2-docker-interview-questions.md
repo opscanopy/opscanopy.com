@@ -11,8 +11,6 @@ I've been on both sides of the table. Some years I'm the one sweating through a 
 
 **TL;DR:** Interviewers don't want textbook definitions. They want to know you've actually run `docker logs` on a crashing container at 11pm. Below are 14 questions grouped into Fundamentals, Images & Builds, Networking & Storage, and Debugging. Each has the question, what they're *really* testing, and the answer I'd give.
 
-> 🖼️ **[IMAGE PROMPT]:** Clean modern isometric tech illustration, 1200x630, of a developer at a desk facing a glowing terminal that displays Docker whale logo and container blocks stacking upward. Split mood: half "interview" (a subtle speech-bubble panel), half "engineering". Palette: deep slate background, emerald green accents (#10b981), soft white UI panels. Flat vector, no photorealism, no stock-photo people faces, generous negative space.
-
 ## Fundamentals
 
 **1. What's the difference between a container and a VM?**
@@ -85,8 +83,6 @@ ENTRYPOINT sets the executable that always runs; CMD sets default arguments (or 
 
 Use COPY. It just copies files from the build context into the image, no surprises. ADD does that *plus* two magic things: it auto-extracts local tar archives and can fetch remote URLs. Both behaviors bite people, so the convention is COPY by default, ADD only when you specifically want tar extraction.
 
-> 🖼️ **[IMAGE PROMPT]:** Isometric diagram, 1600x900, showing a multi-stage Docker build. Left: a large "builder" container block full of tools, gears, and a compiler icon. An arrow labeled "COPY --from=build" points right to a tiny clean "runtime" container holding just one glowing binary. Show the size difference dramatically (big vs tiny). Style: flat vector, slate + emerald (#10b981) palette, thin white outlines, dark background, no text other than the small label.
-
 **9. What goes in a `.dockerignore` and why does it matter?**
 
 Anything you don't want sent to the Docker daemon as build context: `node_modules`, `.git`, `dist`, `.env`, logs, test fixtures. Two reasons it matters — a bloated context slows every build (the whole thing gets tarred and shipped to the daemon), and `COPY . .` can accidentally bake secrets or local config into the image. It's basically `.gitignore` for builds, and forgetting it is a classic junior mistake.
@@ -156,8 +152,6 @@ HEALTHCHECK --interval=30s --timeout=3s \
 ```
 
 Knowing the difference between "process is up" and "app is healthy" is the kind of thing that separates someone who's run prod from someone who's only done tutorials.
-
-> 🖼️ **[IMAGE PROMPT]:** Flat vector troubleshooting diagram, 1600x900, of a "container exited" debug flow. A red container block with an "exit code" tag, an arrow to a terminal panel showing `docker logs`, branching into two outcomes (a green check and a red restart-loop icon). Slate background, emerald (#10b981) and amber accents, clean thin lines, minimal labels, no people.
 
 ## How to actually prep
 

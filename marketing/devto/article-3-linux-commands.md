@@ -15,8 +15,6 @@ This is that list. Not the comprehensive one — the *honest* one. For each comm
 
 **TL;DR:** Learn to answer four questions fast — *what's broken?* (`ps`, `top`, `ss`, `df`), *what do the logs say?* (`journalctl`, `grep`, `awk`, `tail`), *who can touch this file?* (`find`, `chmod`/`chown`), and *can I reach that box?* (`ssh`, `curl`, `systemctl`). Everything else you can Google mid-incident.
 
-> 🖼️ **[IMAGE PROMPT]:** Clean modern flat-vector illustration, 1200x630, of a calm DevOps engineer at a single dark terminal at night, the screen glowing soft emerald-green (#10b981) with a few lines of monospace command text. Desk lamp warm amber, dark navy room, one small red "alert" notification icon floating. Isometric-ish, minimal, no faces in detail, lots of negative space. Mood: focused, not panicked. Modern tech editorial style, subtle grid background.
-
 ## Find out what's wrong fast
 
 The first 90 seconds of an incident are about *triage*, not fixing. You want a fast read on CPU, memory, disk, and ports before you touch anything.
@@ -70,8 +68,6 @@ Read it as: `t` TCP, `u` UDP, `l` listening sockets only, `p` show the process, 
 ## Wrangle the logs
 
 This is where most of the time actually goes. Logs are the crime scene and these four tools are how you read it.
-
-> 🖼️ **[IMAGE PROMPT]:** Isometric flat-vector illustration, 16:9, of a stylized stream of log lines flowing like a river through a funnel/filter, emerald-green (#10b981) highlighted matching lines being caught while grey noise lines pass through. Dark background, monospace text fragments, a magnifying glass icon over the green lines. Clean, modern, editorial tech style. No people.
 
 ### 5. `journalctl` — the systemd logbook
 
@@ -146,8 +142,6 @@ Confession time: early on I ran `chmod -R 777` on a directory to "fix a permissi
 ## Reach other machines
 
 Your stuff runs on boxes that aren't yours. These three get you there and tell you if they're alive.
-
-> 🖼️ **[IMAGE PROMPT]:** Flat-vector isometric illustration, 16:9, of three stylized server nodes connected by glowing emerald-green (#10b981) lines to a laptop, with small lock icons on the connections (representing SSH) and a green checkmark / "200" badge floating near one node. Dark navy background, clean minimal, modern tech editorial style, subtle dotted network grid. No people.
 
 ### 11. `ssh` — get onto the box
 

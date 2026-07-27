@@ -17,8 +17,6 @@ So let me hand you the mental model I wish I'd had.
 
 One prerequisite, said plainly: you should be comfortable with containers first. If "image vs container" is fuzzy, spend an afternoon with the [Docker for DevOps guide](https://opscanopy.com/learn/guides/docker-for-devops) before this. Kubernetes runs containers — it does not replace knowing what one is.
 
-> 🖼️ **[IMAGE PROMPT]:** Clean modern isometric infrastructure diagram, a friendly ship's helm (Kubernetes wheel) at the center steering several cargo nodes, each node a translucent box containing small glowing pods. Soft emerald-green (#10b981) accents on a dark slate background, subtle grid floor, calm and approachable mood, thin labeled connector lines. Flat-but-dimensional vector style, no text clutter, no photorealism. Aspect ratio 1200x630.
-
 ## Part 1: The 8 objects that actually matter
 
 ### 1. Pod — one running thing
@@ -166,8 +164,6 @@ Guessing these numbers is genuinely hard, and "I'll set it later" usually means 
 
 While we're here: **liveness and readiness probes** are worth a mention even though they're not on the core-8 list. A readiness probe tells the Service "don't send me traffic until I'm warmed up." A liveness probe tells the kubelet "if this check fails, restart me." Get them backwards and you'll restart healthy pods or route traffic into cold ones. Learn them right after you're comfortable with the eight above.
 
-> 🖼️ **[IMAGE PROMPT]:** Isometric cutaway of three worker nodes side by side, each holding pods drawn as small containers with little fuel-gauge meters labeled "request" and "limit". One node's pod meter is overflowing red while the others sit calm green. Dark background, emerald (#10b981) and amber accent palette, clean technical illustration style, thin labels, instructive and slightly playful mood. Aspect ratio 1200x675.
-
 ## Part 2: The 3 errors you WILL hit
 
 You will see these. Not "might." The good news is they're readable once you know where to look, and the where-to-look is almost always the same two commands:
@@ -226,8 +222,6 @@ kubectl describe pod <pod-name>
 Here's the part that connects back to Part 1: OOMKilled is the direct consequence of memory limits, so the fix is rarely "give it infinite memory." It's setting the *right* limit. Too low and you get killed under normal load. Too high and the scheduler over-commits the node and everyone suffers. This is exactly why guessing requests/limits by hand is risky, and why I'll point you one more time at that [resource calculator](https://opscanopy.com/kubernetes-resource-calculator) to get a defensible starting point instead of a vibe.
 
 Sometimes OOMKilled is a real memory leak in your app, and no limit will save you — but the limit is what turns "node falls over and takes ten other apps with it" into "one pod restarts cleanly." That blast-radius containment is the feature, not the bug.
-
-> 🖼️ **[IMAGE PROMPT]:** A clean labeled error-state diagram, three pod icons in a row each showing a distinct failure: one looping in a restart cycle labeled "CrashLoopBackOff", one with a broken download/cloud icon labeled "ImagePullBackOff", one with a popped/overfilled memory bar labeled "OOMKilled". Beneath each, a small terminal chip showing the key kubectl command. Dark slate background, emerald (#10b981) headings with red/amber error accents, monospace labels, technical-explainer style, no photorealism. Aspect ratio 1200x675.
 
 ## Where to go from here
 
