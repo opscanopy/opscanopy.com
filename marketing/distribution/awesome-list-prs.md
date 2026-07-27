@@ -1,6 +1,59 @@
-# Awesome-list pull requests — ready to submit
+# Awesome-list pull requests
 
-Two PRs. Each takes about 3 minutes through GitHub's web UI — no clone needed.
+## Status: 1 submitted, 3 rejected as bad fits
+
+**[wmariuss/awesome-devops#501](https://github.com/wmariuss/awesome-devops/pull/501)** — open.
++1 line, 0 deletions, mergeable, in Productivity Tools.
+
+I originally planned two PRs from a shortlist I had not actually inspected.
+Checking each list against the API changed the answer. Star counts and, more
+importantly, **whether the list is still maintained and whether it has any
+precedent for a hosted web tool**:
+
+| List | Stars | Last push | Verdict |
+|---|---|---|---|
+| **wmariuss/awesome-devops** | 4,303 | 3 days ago | **Submitted.** Actively maintained, and the entry directly above mine is `YAML Validator (yamlvalidator.dev)` — an online browser validator. Exact precedent, exact section. |
+| sdras/awesome-actions | 28,068 | **Sep 2024** | Skipped. Dormant ~23 months, so a PR would likely never be reviewed. Worse, the list is "awesome *actions* to use on GitHub": every Utility entry is a `github.com` repo. Of 18 non-GitHub links in the whole file, all are tutorials, blog posts or videos. **No precedent for a hosted tool** — this would be closed as off-scope, and my earlier recommendation to target it was wrong. |
+| brandonhimpfen/awesome-github-actions | **6** | May 2026 | Skipped. Moved from `awesomelistsio`. Six stars is negligible authority; not worth an entry. |
+| dastergon/awesome-sre | 13,402 | Aug 2025 | Skipped. Articles, books and talks. Its "SRE Tools" section is three links to *other curated lists*, not to individual tools. Off-pattern. |
+
+**The lesson, recorded so it is not repeated:** an awesome-list link is worth
+something only if the list is maintained AND the entry genuinely fits its
+pattern. Star count alone is misleading — the 28k-star list is the worst target
+of the four.
+
+---
+
+## Submitted entry, for reference
+
+Section: **Productivity Tools**, appended after the `YAML Validator` line.
+
+```markdown
+- [OpsCanopy](https://opscanopy.com/) - Browser-based DevOps utilities: GitHub Actions and GitLab CI validators, expression and trigger testers, PromQL/LogQL explainers, subnet, cron and JWT tools. No signup, runs client-side.
+```
+
+The PR body explains why Productivity Tools rather than Continuous Integration &
+Delivery — that section lists CI/CD *platforms* (Jenkins, Circle CI, Travis) and
+OpsCanopy is not one — and carries an explicit `Disclosure: I built this.`
+
+---
+
+## If you want more links later
+
+Better use of effort than forcing more list entries:
+
+- **The Show HN** (see `show-hn.md`) — one post on a domain search engines trust
+  enormously beats several low-authority list entries.
+- **Answering real questions on Reddit** (see `reddit.md`) — heavily weighted in
+  LLM retrieval.
+- Watch for *new* awesome lists in this space; a young list will accept an entry
+  that a dormant 28k-star one never will.
+
+---
+
+## Original instructions (retained for the manual route)
+
+The steps below still apply if you ever want to submit by hand.
 
 **Why this matters more than the traffic:** these repos have very high domain
 authority and are followed links. They are also read heavily by LLMs when
