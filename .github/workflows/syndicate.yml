@@ -19,23 +19,39 @@ on:
     # Weekly drift check — canonical_url can be cleared by editing a post in the
     # dev.to UI, which is easy to do without noticing.
     - cron: '0 7 * * 1'
+    # Publishing drip: Tue/Thu 09:00 UTC, a couple of pieces at a time. Dumping a
+    # 17-piece backlog in one burst reads as content-farming to both the platform
+    # and its readers; at this cadence the backlog clears over about three weeks
+    # and looks like someone posting.
+    - cron: '0 9 * * 2,4'
   push:
     branches: [main]
     paths:
       - 'marketing/**'
       - 'scripts/devto-sync.mjs'
+      - 'scripts/syndicate.mjs'
   workflow_dispatch:
     inputs:
       apply:
         description: 'Write corrected canonical URLs (otherwise audit only)'
         type: boolean
         default: true
+      publish:
+        description: 'Also publish queued articles (otherwise the drip only dry-runs)'
+        type: boolean
+        default: false
+      limit:
+        description: 'Max pieces to publish in this run'
+        type: string
+        default: '2'
 
 permissions:
   contents: read
 
 jobs:
   canonicals:
+    # Skip on the Tue/Thu publishing cron — that slot is for the drip job.
+    if: github.event.schedule != '0 9 * * 2,4'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -58,3 +74,42 @@ jobs:
           else
             node scripts/devto-sync.mjs --apply
           fi
+
+  drip:
+    # Publishes a small batch of queued articles. Runs on the Tue/Thu cron, or on
+    # a manual dispatch where `publish` was ticked. Never on push — a docs commit
+    # must not fire off live posts.
+    if: >-
+      github.event.schedule == '0 9 * * 2,4' ||
+      (github.event_name == 'workflow_dispatch' && inputs.publish == true)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      # Dry run first, always, and print it. If the publish step then does
+      # something unexpected, the log above it shows exactly what was intended.
+      - name: Preview the queue
+        env:
+          DEVTO_API_KEY: ${{ secrets.DEVTO_API_KEY || secrets.DEVTO }}
+          BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
+          BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
+        run: node scripts/syndicate.mjs --limit ${{ inputs.limit || '2' }}
+
+      - name: Publish
+        env:
+          DEVTO_API_KEY: ${{ secrets.DEVTO_API_KEY || secrets.DEVTO }}
+          BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
+          BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
+        run: node scripts/syndicate.mjs --limit ${{ inputs.limit || '2' }} --publish
+
+      # A canonical that failed to set is the one error worth catching straight
+      # away, while the article is minutes old rather than a week.
+      - name: Verify canonicals immediately
+        env:
+          DEVTO_API_KEY: ${{ secrets.DEVTO_API_KEY || secrets.DEVTO }}
+        run: node scripts/devto-sync.mjs --apply

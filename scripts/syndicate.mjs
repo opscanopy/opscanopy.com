@@ -195,8 +195,130 @@ function foremTarget({ name, host, username }) {
   };
 }
 
+/**
+ * Bluesky. Fundamentally different from Forem: this is a LINK BROADCAST, not
+ * article syndication. No copy of the body is created, so there is no duplicate
+ * content and canonical is meaningless here — the value is referral traffic
+ * (links are nofollow) to a ~27.5M-MAU, dev-heavy audience.
+ *
+ * Bots are officially supported; Bluesky ships bot starter templates.
+ *
+ * Two things that bite:
+ *   - Session creation is capped at 30/5min and 300/day, far tighter than the
+ *     posting budget, so the JWT is created ONCE per run and reused. This is the
+ *     limit people actually hit, not the post limit.
+ *   - `text` is capped at 300 graphemes. The URL lives in the embed card, not the
+ *     text, so we spend the whole budget on title + description.
+ */
+function blueskyTarget() {
+  const HOST = 'https://bsky.social';
+  let jwt = null;
+  let did = null;
+
+  /** Intl.Segmenter counts graphemes the way Bluesky does; .length would overcount emoji. */
+  const graphemes = (s) => [...new Intl.Segmenter().segment(s)].length;
+  function fit(title, description, max = 300) {
+    if (graphemes(title) >= max) {
+      return [...new Intl.Segmenter().segment(title)].slice(0, max - 1).map((g) => g.segment).join('') + '…';
+    }
+    const room = max - graphemes(title) - 2; // "\n\n"
+    if (room < 24 || !description) return title;
+    const segs = [...new Intl.Segmenter().segment(description)];
+    const desc =
+      segs.length <= room ? description : segs.slice(0, room - 1).map((g) => g.segment).join('') + '…';
+    return `${title}\n\n${desc}`;
+  }
+
+  return {
+    name: 'bluesky',
+    key: () => (process.env.BLUESKY_HANDLE && process.env.BLUESKY_APP_PASSWORD ? 'set' : ''),
+    keyName: 'BLUESKY_HANDLE + BLUESKY_APP_PASSWORD',
+
+    async login() {
+      if (jwt) return;
+      const res = await fetch(`${HOST}/xrpc/com.atproto.server.createSession`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identifier: process.env.BLUESKY_HANDLE,
+          password: process.env.BLUESKY_APP_PASSWORD,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(`bluesky login HTTP ${res.status}: ${JSON.stringify(json).slice(0, 160)}`);
+      jwt = json.accessJwt;
+      did = json.did;
+    },
+
+    /**
+     * Dedupe by the URL already embedded in the author's own feed — stateless, so
+     * it survives a fresh CI checkout with no cache. Returns canonical URLs, and
+     * the runner compares those instead of titles for this target.
+     */
+    async listPublished() {
+      if (!process.env.BLUESKY_HANDLE) return [];
+      await this.login();
+      const seen = [];
+      let cursor;
+      for (let page = 0; page < 5; page++) {
+        const u = new URL(`${HOST}/xrpc/app.bsky.feed.getAuthorFeed`);
+        u.searchParams.set('actor', did);
+        u.searchParams.set('limit', '100');
+        if (cursor) u.searchParams.set('cursor', cursor);
+        const res = await fetch(u, { headers: { Authorization: `Bearer ${jwt}` } });
+        if (!res.ok) break;
+        const json = await res.json();
+        for (const item of json.feed ?? []) {
+          const ext = item.post?.record?.embed?.external?.uri;
+          if (ext) seen.push(ext);
+        }
+        cursor = json.cursor;
+        if (!cursor) break;
+      }
+      return seen;
+    },
+
+    async create(post) {
+      await this.login();
+      const res = await fetch(`${HOST}/xrpc/com.atproto.repo.createRecord`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repo: did,
+          collection: 'app.bsky.feed.post',
+          record: {
+            $type: 'app.bsky.feed.post',
+            text: fit(post.title, post.description),
+            createdAt: new Date().toISOString(),
+            langs: ['en'],
+            embed: {
+              $type: 'app.bsky.embed.external',
+              external: {
+                uri: post.canonical,
+                title: post.title.slice(0, 300),
+                description: post.description.slice(0, 1000),
+              },
+            },
+          },
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${JSON.stringify(json).slice(0, 180)}`);
+      const rkey = String(json.uri || '').split('/').pop();
+      return `https://bsky.app/profile/${process.env.BLUESKY_HANDLE}/post/${rkey}`;
+    },
+
+    // A post costs 3 points against 5,000/hour, so the budget is not the concern —
+    // looking human is. One every few seconds, dripped by --limit.
+    delayMs: 5000,
+    // Compare canonical URLs rather than titles for this target.
+    dedupeBy: 'canonical',
+  };
+}
+
 const TARGETS = [
   foremTarget({ name: 'devto', host: 'dev.to', username: 'opscanopy' }),
+  blueskyTarget(),
 ];
 
 /* ── run ─────────────────────────────────────────────────────────────────── */
@@ -219,8 +341,15 @@ let failed = 0;
 for (const target of TARGETS) {
   if (ONLY_TARGET && target.name !== ONLY_TARGET) continue;
 
-  const live = new Set((await target.listPublished()).map(normalize));
-  const pending = posts.filter((p) => !alreadyPublished(p.title, live));
+  // Article targets dedupe on title (fuzzily — syndicated copies drop subtitles).
+  // Link-broadcast targets dedupe on the canonical URL they embedded, which is
+  // exact and needs no fuzziness.
+  const byUrl = target.dedupeBy === 'canonical';
+  const published = await target.listPublished();
+  const live = new Set(byUrl ? published.map((u) => u.replace(/\/$/, '')) : published.map(normalize));
+  const pending = posts.filter((p) =>
+    byUrl ? !live.has(p.canonical.replace(/\/$/, '')) : !alreadyPublished(p.title, live),
+  );
 
   console.log(`── ${target.name} ──`);
   console.log(`   ${live.size} already published · ${pending.length} to syndicate`);
