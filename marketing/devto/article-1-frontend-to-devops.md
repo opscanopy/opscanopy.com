@@ -1,6 +1,6 @@
 ---
 title: "6 years of frontend, then I jumped to DevOps. The roadmap I'd actually follow in 2026"
-published: false
+published: true
 description: "A burned-out React dev's honest path into DevOps — what was hard, what wasted my time, and the exact order that finally worked."
 tags: devops, career, beginners, webdev
 cover_image: ""

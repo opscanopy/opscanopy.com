@@ -1,6 +1,6 @@
 ---
 title: "Kubernetes isn't that scary — you really only need 8 objects (and to read 3 errors)"
-published: false
+published: true
 description: "K8s felt like alphabet soup until it clicked. Here are the 8 objects that actually matter and the 3 errors you WILL hit, with the exact kubectl to debug them."
 tags: kubernetes, devops, beginners, tutorial
 cover_image: ""

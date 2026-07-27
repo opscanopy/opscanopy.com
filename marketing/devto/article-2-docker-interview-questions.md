@@ -1,6 +1,6 @@
 ---
 title: "14 Docker interview questions I actually got asked in 2026 (and how I'd answer them)"
-published: false
+published: true
 description: "Real Docker interview questions from 2026 DevOps loops, plus what interviewers are actually testing and the crisp answers that land."
 tags: docker, devops, interview, beginners
 cover_image: ""

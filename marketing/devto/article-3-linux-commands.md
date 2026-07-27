@@ -1,6 +1,6 @@
 ---
 title: "The 12 Linux commands I actually run every day as a DevOps engineer"
-published: false
+published: true
 description: "Tutorials teach you 100 commands. On-call, you reach for the same dozen. Here's my real list, with examples and the mistakes that taught me."
 tags: linux, devops, productivity, beginners
 cover_image: ""
