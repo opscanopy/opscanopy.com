@@ -22,6 +22,34 @@ something only if the list is maintained AND the entry genuinely fits its
 pattern. Star count alone is misleading — the 28k-star list is the worst target
 of the four.
 
+## Correction: these are NOT dofollow links
+
+An earlier version of this file said awesome lists give "real dofollow links from
+high-authority repos". **That is wrong.** GitHub applies `rel="nofollow"` to every
+link in user content without exception — a single render of the `free-for-dev`
+README carries **1,330 `rel="nofollow"` attributes**. No awesome-list entry passes
+any PageRank, on any repo, ever.
+
+The same holds for every other target in this category, verified against live HTML:
+
+| Target | Link attribute |
+|---|---|
+| GitHub READMEs (all awesome lists) | `rel="nofollow"` |
+| AlternativeTo | `rel="nofollow noopener"` |
+| SaaSHub | `rel="nofollow"` |
+| Reddit, Stack Overflow | `rel="nofollow ugc"` |
+| Hacker News, LinkedIn, X, Lemmy | nofollow |
+
+**The only followed links available to this site** are the repo's own `website`
+field on github.com, and outbound links inside articles we publish on dev.to.
+
+This matters because it changes what these submissions are *for*. They are worth
+doing — but for **LLM retrieval surface**, **referral traffic**, and **second-order
+editorial links** (a Show HN or Reddit hit gets picked up by newsletters, and
+*those* links are followed). Not for link equity. Believing otherwise is what
+justifies over-investing in directory submissions, which is the trap this file
+exists to avoid.
+
 ---
 
 ## Submitted entry, for reference
@@ -55,10 +83,12 @@ Better use of effort than forcing more list entries:
 
 The steps below still apply if you ever want to submit by hand.
 
-**Why this matters more than the traffic:** these repos have very high domain
-authority and are followed links. They are also read heavily by LLMs when
-answering "what tool should I use for X", which is exactly the surface you're
-trying to appear on. A merged entry keeps working indefinitely.
+**Why this matters — and it is NOT link equity:** every link is `rel="nofollow"`
+(see the correction above), so none of it passes PageRank. What a merged entry
+actually buys is being read heavily by LLMs when answering "what tool should I use
+for X", which is exactly the surface you're trying to appear on, plus steady
+referral traffic. That keeps working indefinitely, which is why it is still worth
+the twenty minutes.
 
 **One rule, and it is the whole game:** submit each PR **separately**, and only
 to lists where the tool genuinely belongs. Maintainers close self-promotional
