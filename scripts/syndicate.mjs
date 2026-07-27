@@ -186,12 +186,32 @@ function foremTarget({ name, host, username }) {
         }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${JSON.stringify(json).slice(0, 180)}`);
+      if (!res.ok) {
+        // dev.to's /api/articles listing lags behind publication by a minute or
+        // two, so a run started right after a previous one can read a stale list
+        // and re-attempt something that already exists. Forem then refuses it on
+        // canonical-uniqueness or the five-minute title guard.
+        //
+        // That is the backstop working, not an error: the article IS published.
+        // Reporting it as a failure would fail the scheduled drip job for doing
+        // exactly the right thing.
+        const msg = JSON.stringify(json);
+        if (res.status === 422 && /already been taken|already been used/i.test(msg)) {
+          const e = new Error('already published (Forem duplicate guard)');
+          e.alreadyPublished = true;
+          throw e;
+        }
+        throw new Error(`HTTP ${res.status}: ${msg.slice(0, 180)}`);
+      }
       return json.url;
     },
-    // Forem rate-limits article creation to roughly 10 req/30s and separately
-    // rejects a title reused within five minutes.
-    delayMs: 4000,
+    // Forem's ARTICLE-CREATION limiter is far stricter than its general
+    // 10-req/30s API budget: measured in production, the third create inside
+    // ~12s returned `429 {"error":"Rate limit reached, try again in 30 seconds"}`.
+    // So the real constraint is roughly one new article per 30 seconds. 33s
+    // leaves margin without being slow enough to matter — a 2-post drip run
+    // takes about half a minute.
+    delayMs: 33000,
   };
 }
 
@@ -381,8 +401,12 @@ for (const target of TARGETS) {
       const url = await target.create(post, key);
       console.log(`           LIVE: ${url}`);
     } catch (err) {
-      failed++;
-      console.error(`           FAILED: ${err.message}`);
+      if (err.alreadyPublished) {
+        console.log(`           SKIP: ${err.message}`);
+      } else {
+        failed++;
+        console.error(`           FAILED: ${err.message}`);
+      }
     }
     await sleep(target.delayMs);
   }
