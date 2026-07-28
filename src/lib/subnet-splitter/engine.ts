@@ -149,19 +149,30 @@ export function split(parent: string, allocated: string, newPrefix: number | nul
       addr += step;
     }
 
-    // If the list was capped, nextFree may still be beyond the cap — scan on.
+    // If the list was capped, nextFree may still lie beyond the cap. Walk the
+    // merged free intervals instead of stepping candidate-by-candidate: the old
+    // loop ran 2^(newPrefix - parentPrefix) times — 2^96 for a /32 split into
+    // /128 — which froze the tab synchronously with no result and no cancel.
+    // `free` is built forward from parentStart over sorted `used`, so it is
+    // sorted ascending and the first interval that can host an aligned block
+    // yields the lowest free subnet. O(free.length).
     if (nextFree === null && truncated) {
-      let a = parentStart + CAP * step;
-      for (let i = CAP; i < totalCount; i++) {
-        if (statusOf(a, a + step - 1n, used, free) === 'free') {
-          nextFree = `${formatAddr(version, a)}/${newPrefix}`;
+      for (const [s, e] of free) {
+        // Align the interval start up to the next newPrefix boundary. Subnet
+        // boundaries are multiples of `step` measured from parentStart (which
+        // is itself step-aligned, since parentPrefix <= newPrefix).
+        let cand = s < parentStart ? parentStart : s;
+        const rem = (cand - parentStart) % step;
+        if (rem !== 0n) cand += step - rem;
+        const candEnd = cand + step - 1n;
+        if (candEnd <= e && candEnd <= parentEnd) {
+          nextFree = `${formatAddr(version, cand)}/${newPrefix}`;
           break;
         }
-        a += step;
       }
     }
 
-    splitSection = { prefix: newPrefix, truncated, subnets };
+    splitSection = { prefix: newPrefix, truncated, total: fmtCount(totalCount), subnets };
   }
 
   return {
@@ -204,7 +215,14 @@ function intervalWithin(start: bigint, end: bigint, set: [bigint, bigint][]): bo
 function fmtCount(n: bigint): string {
   if (n <= 0n) return '0';
   if (n < 1n << 53n) return n.toString();
-  return (isPow2(n) ? '2^' : '≈2^') + floorLog2(n);
+  if (isPow2(n)) return '2^' + floorLog2(n);
+  // Round to the NEAREST power of two, not down. Flooring understated every
+  // non-power-of-two count by up to 2x — "2^96 minus one address" rendered as
+  // "≈2^95", i.e. half the real free space.
+  const k = BigInt(floorLog2(n));
+  const lo = 1n << k;
+  const hi = 1n << (k + 1n);
+  return '≈2^' + (n - lo > hi - n ? Number(k) + 1 : Number(k));
 }
 
 function isPow2(n: bigint): boolean {

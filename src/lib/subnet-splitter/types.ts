@@ -28,6 +28,12 @@ export interface SplitSection {
   prefix: number;
   /** True when the full subnet list was capped at the 256-row display limit. */
   truncated: boolean;
+  /**
+   * The REAL number of subnets the split produces, independent of the 256-row
+   * render cap (huge v6 counts collapse to '2^N', like {@link SplitStats}).
+   * `subnets.length` is the capped list and must never be shown as the total.
+   */
+  total: string;
   subnets: SplitSubnet[];
 }
 
