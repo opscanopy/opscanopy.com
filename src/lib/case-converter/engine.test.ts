@@ -136,3 +136,35 @@ describe('case-converter examples', () => {
     }
   });
 });
+
+/**
+ * Combining marks are neither \p{L} nor \p{N}, so the tokenizer's
+ * [^\p{L}\p{N}]+ split treated them as WORD SEPARATORS. Decomposed (NFD) text —
+ * exactly what a macOS paste produces — lost its accents and split mid-word,
+ * and Indic/Hebrew text was shredded at every vowel sign and virama.
+ */
+describe('tokenize() — combining marks are part of words, not separators', () => {
+  const NFD = 'Cafe\u0301 Mu\u0308ller'; // e + U+0301, u + U+0308
+  const NFC = 'Caf\u00e9 M\u00fcller';
+
+  it('treats decomposed and precomposed input identically', () => {
+    expect(tokenize(NFD)).toEqual(tokenize(NFC));
+  });
+
+  it('does not split Müller in two at the diaeresis', () => {
+    expect(tokenize(NFD)).toHaveLength(2);
+  });
+
+  it('does not delete the accent from Café', () => {
+    expect(convertCases(NFD).rows.find((r) => r.kind === 'snake')?.value).toBe('café_müller');
+  });
+
+  it('keeps a Devanagari phrase as two words, not five', () => {
+    // नमस्ते विश्व — the virama and vowel signs are \p{M}.
+    expect(tokenize('\u0928\u092e\u0938\u094d\u0924\u0947 \u0935\u093f\u0936\u094d\u0935')).toHaveLength(2);
+  });
+
+  it('keeps pointed Hebrew as a single word', () => {
+    expect(tokenize('\u05e9\u05b8\u05c1\u05dc\u05d5\u05b9\u05dd')).toHaveLength(1);
+  });
+});

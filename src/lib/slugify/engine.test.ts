@@ -146,3 +146,41 @@ describe('slugify engine', () => {
     });
   });
 });
+
+/**
+ * NFKD does not decompose ß ø ł æ œ đ þ ð — they are distinct letters, not
+ * accented bases — so they fell through to the disallowed-character rule and
+ * became separators or vanished. "Łódź" slugged to "odz".
+ */
+describe('slugify() — non-decomposing Latin letters transliterate', () => {
+  const slug = (s: string) =>
+    slugify(s, { separator: '-', lowercase: true, maxLength: 80 }).slug;
+
+  it('does not delete a slashed o', () => {
+    expect(slug('Malm\u00f6 \u00f8sten')).toBe('malmo-osten');
+  });
+
+  it('does not delete a barred L', () => {
+    expect(slug('\u0141\u00f3d\u017a')).toBe('lodz');
+  });
+
+  it('expands eszett to ss', () => {
+    expect(slug('Stra\u00dfe')).toBe('strasse');
+  });
+
+  it('expands thorn and eth', () => {
+    expect(slug('Vi\u00f0ar \u00feorn')).toBe('vidar-thorn');
+  });
+
+  it('expands the ae and oe ligatures', () => {
+    expect(slug('Encyclop\u00e6dia c\u0153ur')).toBe('encyclopaedia-coeur');
+  });
+
+  it('drops an apostrophe instead of splitting the word', () => {
+    expect(slug("Don't Panic")).toBe('dont-panic');
+  });
+
+  it('leaves plain ASCII untouched', () => {
+    expect(slug('Hello World')).toBe('hello-world');
+  });
+});

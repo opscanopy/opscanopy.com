@@ -37,23 +37,30 @@ export function convert(input: string, nowMs?: number): TimeResult {
   let ms: number;
   let detected: Detected;
 
-  if (/^\d+$/.test(s)) {
-    // Pure digits => a Unix epoch. Disambiguate the unit by digit count:
+  // An optional leading "-" is still an epoch: pre-1970 timestamps are ordinary
+  // negative Unix time. Without the sign here they fell through to Date.parse()
+  // and came back tens of thousands of years in the FUTURE ("-86400" rendered
+  // as +086399-12-31) with no error at all.
+  const epochMatch = /^(-?)(\d+)$/.exec(s);
+  if (epochMatch) {
+    // Disambiguate the unit by DIGIT count (excluding the sign):
     // <=11 => seconds, 12-14 => milliseconds, 15-16 => microseconds, 17+ => nanoseconds.
     // Collapse sub-millisecond units to ms via BigInt so we never lose precision
     // past Number's safe-integer range before dividing.
-    const len = s.length;
+    const sign = epochMatch[1] === '-' ? -1 : 1;
+    const digits = epochMatch[2];
+    const len = digits.length;
     if (len <= 11) {
-      ms = Number(s) * 1000;
+      ms = sign * Number(digits) * 1000;
       detected = 'epoch seconds';
     } else if (len <= 14) {
-      ms = Number(s);
+      ms = sign * Number(digits);
       detected = 'epoch milliseconds';
     } else if (len <= 16) {
-      ms = Number(BigInt(s) / 1000n);
+      ms = sign * Number(BigInt(digits) / 1000n);
       detected = 'epoch microseconds';
     } else {
-      ms = Number(BigInt(s) / 1000000n);
+      ms = sign * Number(BigInt(digits) / 1000000n);
       detected = 'epoch nanoseconds';
     }
   } else {

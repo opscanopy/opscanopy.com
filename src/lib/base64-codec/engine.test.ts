@@ -101,3 +101,40 @@ describe('convert() — url-safe alphabet', () => {
     expect(decoded.output).toBe(text);
   });
 });
+
+/**
+ * Decode used to remap - and _ to + and / unconditionally, so a pasted PEM
+ * block's "-----BEGIN" armor became "+++++BEGIN" and "decoded successfully"
+ * into binary noise instead of reporting that it is not base64.
+ */
+describe('convert() — decode rejects non-base64 that merely looks url-safe', () => {
+  const PEM =
+    '-----BEGIN CERTIFICATE-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1234\n-----END CERTIFICATE-----';
+
+  it('does not silently decode a PEM block into garbage', () => {
+    const r = convert(PEM, 'decode', false);
+    expect(r.valid).toBe(false);
+  });
+
+  it('names PEM specifically so the user knows what to strip', () => {
+    const r = convert(PEM, 'decode', false);
+    expect(r.error ?? '').toMatch(/PEM|BEGIN/i);
+  });
+
+  it('rejects a string mixing both alphabets as ambiguous', () => {
+    const r = convert('ab-d+f_h/', 'decode', false);
+    expect(r.valid).toBe(false);
+  });
+
+  it('still decodes genuine url-safe base64', () => {
+    const r = convert('-_8=', 'decode', false);
+    expect(r.valid).toBe(true);
+    expect(r.bytes).toBe(2);
+  });
+
+  it('still decodes standard base64 unchanged', () => {
+    const r = convert('aGVsbG8=', 'decode', false);
+    expect(r.valid).toBe(true);
+    expect(r.output).toBe('hello');
+  });
+});

@@ -19,6 +19,11 @@ const ERR_EMPTY_DECODE = 'Enter base64 to decode, e.g. aGVsbG8gd29ybGQ=.';
 const ERR_NOT_BASE64 =
   'That is not valid base64 — it contains characters outside the base64 alphabet.';
 const ERR_BAD_LENGTH = 'That base64 is malformed — its length is not a valid encoding.';
+const ERR_PEM =
+  'That looks like a PEM block, not raw base64. Remove the “-----BEGIN …-----” and ' +
+  '“-----END …-----” armor lines and paste only the body.';
+const ERR_MIXED_ALPHABET =
+  'That mixes both base64 alphabets (- _ and + /), so it is ambiguous. Use one or the other.';
 
 /** Reverse lookup table: char code -> 6-bit value, or -1 for non-alphabet bytes. */
 const DECODE_MAP: Int8Array = (() => {
@@ -113,6 +118,19 @@ export function convert(input: string, mode: Base64Mode, urlSafe: boolean): Base
   // rest so genuinely invalid characters are still reported.
   const stripped = raw.replace(/[\r\n\t ]+/g, '');
   if (stripped.length === 0) return bad(ERR_EMPTY_DECODE);
+
+  // PEM armor is the common paste that used to slip through: "-----BEGIN" is
+  // all url-safe-legal characters, so remapping - to + turned it into
+  // "+++++BEGIN" and it "decoded successfully" into binary noise. Catch it
+  // before any remapping and say what to strip.
+  if (/-{3,}\s*BEGIN\b/i.test(raw) || /-{3,}\s*END\b/i.test(raw)) {
+    return bad(ERR_PEM);
+  }
+
+  // Both alphabets present at once is ambiguous, not something to guess at.
+  if (/[-_]/.test(stripped) && /[+/]/.test(stripped)) {
+    return bad(ERR_MIXED_ALPHABET);
+  }
 
   // Accept either alphabet: normalise url-safe chars back to standard.
   const sawUrlSafe = /[-_]/.test(stripped);

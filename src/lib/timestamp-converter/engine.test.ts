@@ -162,3 +162,38 @@ describe('timestamp-converter convert()', () => {
     });
   });
 });
+
+/**
+ * Negative epochs (pre-1970). `/^\d+$/` does not match a leading "-", so these
+ * fell through to Date.parse() and came back as a date tens of thousands of
+ * years in the FUTURE — confidently wrong, with no error.
+ */
+describe('convert() — negative (pre-1970) epochs', () => {
+  const iso = (input: string) =>
+    convert(input).rows.find((r) => r.label === 'ISO 8601 (UTC)')?.value;
+
+  it('reads -86400 as one day before the epoch', () => {
+    const r = convert('-86400');
+    expect(r.valid).toBe(true);
+    expect(r.detected).toBe('epoch seconds');
+    expect(iso('-86400')).toBe('1969-12-31T00:00:00.000Z');
+  });
+
+  it('reads -1 as one second before the epoch', () => {
+    expect(iso('-1')).toBe('1969-12-31T23:59:59.000Z');
+  });
+
+  it('never renders a five-digit year for a negative epoch', () => {
+    for (const s of ['-1', '-86400', '-1000000000']) {
+      expect(iso(s), s).toMatch(/^19[0-6]\d-/);
+    }
+  });
+
+  it('still reads 0 as the epoch itself', () => {
+    expect(iso('0')).toBe('1970-01-01T00:00:00.000Z');
+  });
+
+  it('applies the same digit-count unit rule to negative values (13 digits = ms)', () => {
+    expect(convert('-1700000000000').detected).toBe('epoch milliseconds');
+  });
+});

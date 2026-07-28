@@ -36,7 +36,10 @@ const SEP = '\u0000';
 export function tokenize(input: string): string[] {
   if (typeof input !== 'string' || input.length === 0) return [];
 
+  // Compose first, so decomposed input (a macOS paste is NFD) tokenizes
+  // identically to its precomposed form instead of losing its accents.
   const bounded = input
+    .normalize('NFC')
     // acronym-run → word: HTTPResponse → HTTP·Response (before lower→Upper).
     .replace(/(\p{Lu})(\p{Lu}\p{Ll})/gu, `$1${SEP}$2`)
     // lower → Upper: userProfile → user·Profile.
@@ -47,9 +50,12 @@ export function tokenize(input: string): string[] {
     .replace(/(\p{N})(\p{L})/gu, `$1${SEP}$2`);
 
   // Split on the sentinel plus any run of non-alphanumeric characters, then
-  // lowercase and drop empties.
+  // lowercase and drop empties. \p{M} counts as part of a word: combining
+  // marks are not separators, and many scripts (Devanagari, Hebrew with
+  // niqqud, Thai) carry marks that NFC cannot compose away — excluding them
+  // shredded those words at every vowel sign and virama.
   return bounded
-    .split(/[^\p{L}\p{N}]+/u)
+    .split(/[^\p{L}\p{N}\p{M}]+/u)
     .filter((t) => t.length > 0)
     .map((t) => t.toLowerCase());
 }

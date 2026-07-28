@@ -21,6 +21,30 @@ import type { SlugifyOptions, SlugifyResult } from './types';
 /** The only characters permitted as a word separator. */
 const ALLOWED_SEPARATORS = new Set(['-', '_', '.']);
 
+/**
+ * Latin letters that Unicode NFKD does NOT decompose, because they are
+ * distinct letters rather than a base plus a diacritic. Without an explicit
+ * transliteration they survive the mark-stripping pass and are then eaten by
+ * the disallowed-character rule, so "Łódź" became "odz" and "Straße" became
+ * "stra-e". Keyed by the exact codepoint; uppercase forms map to the
+ * uppercase expansion so a non-lowercasing slug still reads correctly.
+ */
+const TRANSLITERATE: Record<string, string> = {
+  ß: 'ss', ẞ: 'SS',
+  ø: 'o', Ø: 'O',
+  ł: 'l', Ł: 'L',
+  æ: 'ae', Æ: 'AE',
+  œ: 'oe', Œ: 'OE',
+  đ: 'd', Đ: 'D',
+  ð: 'd', Ð: 'D',
+  þ: 'th', Þ: 'TH',
+  ħ: 'h', Ħ: 'H',
+  ŋ: 'n', Ŋ: 'N',
+  ı: 'i', İ: 'I',
+  ĸ: 'k',
+  ſ: 's',
+};
+
 /** Escape a single character for safe use inside a RegExp. */
 function escapeForRegex(ch: string): string {
   return ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -43,8 +67,16 @@ export function slugify(input: string, opts: SlugifyOptions): SlugifyResult {
   const sepEsc = escapeForRegex(separator);
   const notes: string[] = [];
 
+  // 0. Transliterate letters NFKD cannot decompose. These are distinct letters
+  //    rather than accented bases, so the mark-stripping in step 1 never
+  //    touches them and they fell through to step 3's disallowed-character
+  //    rule — "Łódź" slugged to "odz" and "Malmö østen" to "malmo-sten".
+  //    Apostrophes are dropped rather than separated ("Don't" -> "dont").
+  let s = input.replace(/['‘’]/g, '');
+  s = s.replace(/./gu, (ch) => TRANSLITERATE[ch] ?? ch);
+
   // 1. Decompose to NFKD and strip every combining mark (all diacritic classes).
-  let s = input.normalize('NFKD').replace(/\p{M}+/gu, '');
+  s = s.normalize('NFKD').replace(/\p{M}+/gu, '');
 
   // 2. Optional lowercasing.
   if (opts.lowercase) s = s.toLowerCase();
