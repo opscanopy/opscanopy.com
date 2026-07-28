@@ -50,6 +50,30 @@ function withGlobal(flags: string): string {
 }
 
 /**
+ * The spec's AdvanceStringIndex (ECMA-262 §22.2.7.3), used to step past a
+ * ZERO-WIDTH match.
+ *
+ * Under `u`/`v` a RegExp matches whole code points: RegExpBuiltinExec snaps a
+ * lastIndex that lands *inside* a surrogate pair back down to the start of that
+ * pair. So a plain `lastIndex++` after a zero-width match at a high surrogate
+ * makes no progress at all — exec keeps re-reporting the same index until the
+ * iteration cap fires, fabricating thousands of duplicate matches. Advancing by
+ * the full pair is what actually moves the scan forward.
+ *
+ * Without `u`/`v` a RegExp matches UTF-16 code units, and stepping one unit at
+ * a time is correct (a zero-width match genuinely can occur between the two
+ * halves of a surrogate pair).
+ */
+function advanceStringIndex(s: string, index: number, unicode: boolean): number {
+  if (!unicode || index + 1 >= s.length) return index + 1;
+  const first = s.charCodeAt(index);
+  if (first < 0xd800 || first > 0xdbff) return index + 1;
+  const second = s.charCodeAt(index + 1);
+  if (second < 0xdc00 || second > 0xdfff) return index + 1;
+  return index + 2; // a well-formed surrogate pair — one code point, two units
+}
+
+/**
  * Run `pattern`/`flags` against `text` and return all matches.
  *
  * Never throws. Invalid patterns (bad syntax, illegal flag, unknown flag) are
@@ -91,6 +115,12 @@ export function run(pattern: string, flags: string, text: string): RegexResult {
   // A pathological pattern against pathological input could in principle match a
   // very large number of times; cap iterations so the UI thread can never hang.
   const MAX_MATCHES = 10000;
+  let cappedAtMax = false;
+
+  // `u`/`v` put the regex in code-point mode, which changes how a zero-width
+  // match must be stepped over (see advanceStringIndex). Read it off the
+  // compiled RegExp's flags so it reflects what actually got constructed.
+  const fullUnicode = re.flags.includes('u') || re.flags.includes('v');
 
   let m: RegExpExecArray | null;
   // `re` is global, so exec advances lastIndex on each call and returns the
@@ -125,12 +155,15 @@ export function run(pattern: string, flags: string, text: string): RegexResult {
 
     // Zero-width-match guard: if the regex consumed nothing (full === ""),
     // lastIndex won't move on its own and exec would loop forever on the same
-    // position. Manually advance past the current position to make progress.
+    // position. Step forward by one code point (u/v) or one code unit.
     if (full.length === 0) {
-      re.lastIndex++;
+      re.lastIndex = advanceStringIndex(scanText, re.lastIndex, fullUnicode);
     }
 
-    if (matches.length >= MAX_MATCHES) break;
+    if (matches.length >= MAX_MATCHES) {
+      cappedAtMax = true;
+      break;
+    }
   }
 
   const result: RegexResult = {
@@ -138,11 +171,22 @@ export function run(pattern: string, flags: string, text: string): RegexResult {
     matchCount: matches.length,
     matches,
   };
+
+  // Neither of these is a compile failure — the pattern is valid and the
+  // matches below are real. They go on `notice`, never on `error`, because the
+  // playground reads a truthy `error` as "invalid pattern" and throws the
+  // results away.
+  const notices: string[] = [];
   if (truncated) {
-    // Not a compile failure: the pattern is valid, but we only scanned a prefix
-    // of very large input to bound work. Surface that as a note via `error`.
-    result.error = `Input is large — only the first ${MAX_REGEX_TEXT.toLocaleString()} characters were scanned.`;
+    notices.push(
+      `Input is large — only the first ${MAX_REGEX_TEXT.toLocaleString()} characters were scanned.`,
+    );
   }
+  if (cappedAtMax) {
+    notices.push(`Stopped after the first ${MAX_MATCHES.toLocaleString('en-US')} matches.`);
+  }
+  if (notices.length > 0) result.notice = notices.join(' ');
+
   return result;
 }
 

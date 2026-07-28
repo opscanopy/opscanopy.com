@@ -41,12 +41,23 @@ export interface RegexMatch {
  * On an invalid pattern, `valid` is false, `error` carries a human-readable
  * message, `matchCount` is 0 and `matches` is empty. On success, `valid` is
  * true and `error` is absent.
+ *
+ * `error` and `notice` are NOT interchangeable: `error` means "there is no
+ * result", `notice` means "here is the result, with a caveat". Callers decide
+ * validity from `valid` alone.
  */
 export interface RegexResult {
   /** False only when the pattern/flags failed to compile. */
   valid: boolean;
   /** Present only on a compile failure — a helpful message. */
   error?: string;
+  /**
+   * A NON-FATAL caveat about an otherwise successful run — the input was
+   * larger than the scan cap, or matching stopped at the iteration cap. The
+   * pattern is valid and `matches` is real; the results are just incomplete.
+   * Render it as information, never as a failure.
+   */
+  notice?: string;
   /** Number of matches found (equal to `matches.length`). */
   matchCount: number;
   /** Every match found, in the order they occur in the text. */

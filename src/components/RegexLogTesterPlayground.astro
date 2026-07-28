@@ -19,8 +19,11 @@
  *   ../lib/regex-tester/types →
  *     RegexMatch  { index: number; length: number; match: string;
  *                   groups: string[]; named: Record<string, string> }
- *     RegexResult { valid: boolean; error?: string; matchCount: number;
- *                   matches: RegexMatch[] }
+ *     RegexResult { valid: boolean; error?: string; notice?: string;
+ *                   matchCount: number; matches: RegexMatch[] }
+ *     — `error` is fatal (nothing to show); `notice` is a non-fatal caveat on a
+ *       successful run (input over the scan cap, or matching stopped at the
+ *       10,000-match cap). Only `valid === false` means "invalid pattern".
  *     ShareState  { pattern: string; flags: string; text: string }
  *   ../lib/regex-tester/examples →
  *     examples: { id: string; label: string; pattern: string; flags: string;
@@ -854,6 +857,31 @@
     word-break: break-word;
   }
 
+  /* Non-fatal notice banner (scan cap / match cap) — informational, NOT an
+     error: the results it sits above are real, just incomplete. */
+  :global(.rx-notice) {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    margin-bottom: 10px;
+    padding: 10px 12px;
+    border-radius: var(--radius-md);
+    background: var(--color-warning-soft);
+    box-shadow: inset 0 0 0 1px var(--color-warning);
+    color: var(--color-warning-deep);
+  }
+  :global(.rx-notice__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.rx-notice__text) {
+    font-size: 13px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+
   /* No-match note. */
   :global(.rx-nomatch) {
     display: flex;
@@ -914,7 +942,10 @@
   };
   type RegexResult = {
     valid: boolean;
+    /** Fatal — the pattern/flags did not compile. Nothing to render. */
     error?: string;
+    /** Non-fatal caveat on a SUCCESSFUL run (scan cap / match cap). */
+    notice?: string;
     matchCount: number;
     matches: RegexMatch[];
   };
@@ -974,6 +1005,8 @@
     '<svg class="rx-nomatch__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"></circle><path d="M7 10.2l-.01.01"></path><path d="M10 10.2l-.01.01"></path><path d="M13 10.2l-.01.01"></path></svg>';
   const ALERT_SVG =
     '<svg class="rx-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const INFO_SVG =
+    '<svg class="rx-notice__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"></circle><path d="M10 9v4.5"></path><path d="M10 6.4v.01"></path></svg>';
 
   /**
    * Build the highlighted HTML by walking sorted, clamped, non-overlapping
@@ -1070,7 +1103,10 @@
     summary: HTMLElement,
     result: RegexResult
   ): void {
-    if (!result || result.valid === false || result.error) {
+    // ONLY `valid === false` is an invalid pattern. A truthy `notice` is a
+    // caveat on a perfectly good run (input over the scan cap, matching stopped
+    // at the match cap) and must never suppress the real matches below.
+    if (!result || result.valid === false) {
       summary.textContent = 'Invalid';
       summary.classList.add('text-error');
       summary.classList.remove('text-mute');
@@ -1087,9 +1123,18 @@
     summary.classList.remove('text-error');
     summary.classList.add('text-mute');
 
+    // Informational banner, rendered ABOVE whatever results follow.
+    const notice =
+      typeof result.notice === 'string' && result.notice
+        ? '<div class="rx-notice">' +
+          INFO_SVG +
+          `<span class="rx-notice__text">${escapeHtml(result.notice)}</span></div>`
+        : '';
+
     const matches = Array.isArray(result.matches) ? result.matches : [];
     if (matches.length === 0) {
       container.innerHTML =
+        notice +
         '<div class="rx-nomatch">' +
         CHECK_SVG +
         '<span class="rx-nomatch__text">No matches. Adjust the pattern, flags or sample text.</span></div>';
@@ -1098,6 +1143,7 @@
 
     const rows = matches.map((m, i) => matchRow(m, i + 1)).join('');
     container.innerHTML =
+      notice +
       '<div class="rx-table-wrap"><table class="rx-table">' +
       '<thead><tr><th scope="col">#</th><th scope="col">Index</th>' +
       '<th scope="col">Match</th><th scope="col">Groups</th></tr></thead>' +
@@ -1296,7 +1342,10 @@
         };
       }
 
-      const ok = result && result.valid !== false && !result.error;
+      // A non-fatal `notice` (scan cap / match cap) is NOT a failure — the
+      // pattern compiled and the matches are real, so the highlight, the share
+      // link and the Markdown copy all stay available.
+      const ok = result && result.valid !== false;
       patternWrap!.classList.toggle('rx-pattern-wrap--error', !ok);
       patternInput!.setAttribute('aria-invalid', ok ? 'false' : 'true');
 
