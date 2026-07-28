@@ -222,6 +222,90 @@ jobs:
     steps: [{ run: deploy }]
 `;
 
+// "If you define only tags/tags-ignore or only branches/branches-ignore, the
+// workflow won't run for events affecting the undefined Git ref." Y_PUSH_MAIN is
+// the branches-only mirror of this one.
+const Y_TAGS_ONLY = `
+on:
+  push:
+    tags:
+      - 'v*'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps: [{ run: make }]
+`;
+
+// `!` negation inside a paths list is ordered, exactly like a branches list.
+const Y_PATHS_NEGATED = `
+on:
+  push:
+    paths:
+      - '**'
+      - '!docs/**'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps: [{ run: make }]
+`;
+
+const Y_PATHS_IGNORE_NEGATED = `
+on:
+  push:
+    paths-ignore:
+      - 'docs/**'
+      - '!docs/critical.md'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps: [{ run: make }]
+`;
+
+// On a pull_request the checked-out ref is the MERGE ref, never the base branch.
+const Y_PR_REF = `
+on: pull_request
+jobs:
+  head:
+    runs-on: ubuntu-latest
+    if: \${{ github.ref == 'refs/heads/main' }}
+    steps: [{ run: deploy }]
+  merge:
+    runs-on: ubuntu-latest
+    if: \${{ startsWith(github.ref, 'refs/pull/') }}
+    steps: [{ run: deploy }]
+  base:
+    runs-on: ubuntu-latest
+    if: \${{ github.base_ref == 'main' }}
+    steps: [{ run: deploy }]
+`;
+
+// pull_request_target is the exception: it DOES run against the base branch ref.
+const Y_PR_TARGET_REF = `
+on: pull_request_target
+jobs:
+  head:
+    runs-on: ubuntu-latest
+    if: \${{ github.ref == 'refs/heads/main' }}
+    steps: [{ run: deploy }]
+`;
+
+const Y_NEEDS_AND_VARS = `
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps: [{ run: make }]
+  deploy:
+    needs: [build]
+    runs-on: ubuntu-latest
+    if: \${{ needs.build.result == 'success' }}
+    steps: [{ run: deploy }]
+  gate:
+    runs-on: ubuntu-latest
+    if: \${{ vars.ENVIRONMENT == 'prod' }}
+    steps: [{ run: gate }]
+`;
+
 export const triggerCorpus: TriggerVector[] = [
   {
     id: 'push-main-match',
@@ -282,5 +366,74 @@ export const triggerCorpus: TriggerVector[] = [
     event: { event: 'push', branch: 'dev' },
     triggered: true,
     jobs: { deploy: 'skipped' },
+  },
+
+  // ── ref-filter matrix: an undefined ref KIND blocks, in both directions ──
+  {
+    id: 'branch-with-tags-only',
+    yaml: Y_TAGS_ONLY,
+    event: { event: 'push', branch: 'main' },
+    triggered: false,
+    jobs: { build: 'not-evaluated' },
+  },
+  {
+    id: 'tag-with-tags-only',
+    yaml: Y_TAGS_ONLY,
+    event: { event: 'push', tag: 'v1.0.0' },
+    triggered: true,
+    jobs: { build: 'runs' },
+  },
+
+  // ── `!` negation is ordered inside paths / paths-ignore too ──
+  {
+    id: 'paths-negation-excludes',
+    yaml: Y_PATHS_NEGATED,
+    event: { event: 'push', branch: 'main', changedFiles: ['docs/a.md'] },
+    triggered: false,
+  },
+  {
+    id: 'paths-negation-keeps-rest',
+    yaml: Y_PATHS_NEGATED,
+    event: { event: 'push', branch: 'main', changedFiles: ['src/a.ts'] },
+    triggered: true,
+    jobs: { build: 'runs' },
+  },
+  {
+    id: 'paths-ignore-negation-reincludes',
+    yaml: Y_PATHS_IGNORE_NEGATED,
+    event: { event: 'push', branch: 'main', changedFiles: ['docs/critical.md'] },
+    triggered: true,
+    jobs: { build: 'runs' },
+  },
+  {
+    id: 'paths-ignore-negation-still-ignores',
+    yaml: Y_PATHS_IGNORE_NEGATED,
+    event: { event: 'push', branch: 'main', changedFiles: ['docs/other.md'] },
+    triggered: false,
+  },
+
+  // ── pull_request runs on the merge ref, pull_request_target on the base ──
+  {
+    id: 'pr-ref-is-merge-ref',
+    yaml: Y_PR_REF,
+    event: { event: 'pull_request', branch: 'main' },
+    triggered: true,
+    jobs: { head: 'skipped', merge: 'runs', base: 'runs' },
+  },
+  {
+    id: 'pr-target-ref-is-base-branch',
+    yaml: Y_PR_TARGET_REF,
+    event: { event: 'pull_request_target', branch: 'main' },
+    triggered: true,
+    jobs: { head: 'runs' },
+  },
+
+  // ── an if: the simulator cannot model is `unknown`, never a confident false ──
+  {
+    id: 'job-if-needs-result-derived',
+    yaml: Y_NEEDS_AND_VARS,
+    event: { event: 'push', branch: 'main' },
+    triggered: true,
+    jobs: { build: 'runs', deploy: 'runs', gate: 'unknown' },
   },
 ];

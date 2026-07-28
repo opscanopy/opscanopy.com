@@ -7,6 +7,10 @@
  * wrong: branch-vs-tag filter matrix, the AND-semantics when branch + path
  * filters coexist, and `!` ordering inside a filter list.
  *
+ * Where it cannot know — an `if:` reading vars/inputs/secrets, or a needs
+ * output — the job decision is `unknown`, never a confident false. See
+ * unmodelledRefs().
+ *
  * Never throws — a YAML parse failure comes back via SimulateResult.error.
  */
 
@@ -28,10 +32,10 @@ import type {
   SimEvent,
   SimulateResult,
 } from './types';
-import { parse } from './expr-parser';
+import { parse, type Expr } from './expr-parser';
 import { evaluateAst } from './expr-eval';
 import { analyzeIfCondition, extractExpressionBody } from './if-footgun';
-import { matchList, matchOne } from './glob';
+import { matchList } from './glob';
 import { truthy } from './values';
 import { GHA_SEMANTICS_VERSION } from './conformance';
 
@@ -106,11 +110,14 @@ export function simulateTriggers(workflowYaml: string, event: SimEvent): Simulat
   // ── per-job decisions ──────────────────────────────────────────────────────
   const jobsObj = isObject(doc.jobs) ? (doc.jobs as Record<string, unknown>) : {};
   const autoCtx = buildEventContext(eventKey, isTag, event);
-  const decisions: JobDecision[] = [];
+  // Evaluated in DEPENDENCY order (so a job's if: can read needs.<dep>.result),
+  // emitted in DECLARATION order (so the results table matches the YAML).
+  const order = dependencyOrder(jobsObj);
+  const byId = new Map<string, JobDecision>();
 
-  for (const [jobId, jobRaw] of Object.entries(jobsObj)) {
+  for (const jobId of order) {
     if (!wf.triggered) {
-      decisions.push({
+      byId.set(jobId, {
         jobId,
         decision: 'not-evaluated',
         reason: 'Workflow not triggered by this event.',
@@ -118,16 +125,16 @@ export function simulateTriggers(workflowYaml: string, event: SimEvent): Simulat
       });
       continue;
     }
-    const job = isObject(jobRaw) ? jobRaw : {};
+    const job = isObject(jobsObj[jobId]) ? (jobsObj[jobId] as Record<string, unknown>) : {};
     const ifVal = job.if;
     const trace: FilterTrace[] = [];
 
     if (ifVal === undefined || ifVal === null) {
-      decisions.push({ jobId, decision: 'runs', reason: 'No job if: — runs whenever the workflow triggers.', trace });
+      byId.set(jobId, { jobId, decision: 'runs', reason: 'No job if: — runs whenever the workflow triggers.', trace });
       continue;
     }
     if (typeof ifVal === 'boolean') {
-      decisions.push({
+      byId.set(jobId, {
         jobId,
         decision: ifVal ? 'runs' : 'skipped',
         reason: `Job if: is the literal boolean ${ifVal}.`,
@@ -140,7 +147,38 @@ export function simulateTriggers(workflowYaml: string, event: SimEvent): Simulat
     if (footgun) warnings.push(footgun);
     const body = extractExpressionBody(raw);
     const { ast } = parse(body);
-    const { value } = evaluateAst(ast, autoCtx);
+
+    // `needs` is the one context we CAN fill in: every dependency already has a
+    // decision by construction (dependency order), so needs.<dep>.result is real.
+    const needsCtx = resolvedNeeds(toStringArray(job.needs) ?? [], byId);
+
+    // Everything else the simulator has no data for must come back as UNKNOWN.
+    // Rendering `vars.ENVIRONMENT == 'prod'` as a confident "will not run" is a
+    // wrong answer stated with certainty, which is worse than admitting the gap.
+    // The footgun case is exempt: literal text outside ${{ }} is true no matter
+    // what any context holds.
+    const unmodelled = footgun ? [] : unmodelledRefs(ast, needsCtx);
+    if (unmodelled.length > 0) {
+      const list = unmodelled.join(', ');
+      warnings.push({
+        id: 'unmodelled-context',
+        severity: 'info',
+        message:
+          `Job "${jobId}" has an if: that reads ${list}. The trigger simulator has no data for ` +
+          'that, so its decision is reported as unknown rather than guessed. Use the Expression ' +
+          'tab with an edited context to test it.',
+      });
+      trace.push({ filter: 'if', outcome: 'n/a', reason: `unknown — context not modelled (${list}).` });
+      byId.set(jobId, {
+        jobId,
+        decision: 'unknown',
+        reason: `Unknown — context not modelled: the if: reads ${list}.`,
+        trace,
+      });
+      continue;
+    }
+
+    const { value } = evaluateAst(ast, { ...autoCtx, needs: needsCtx });
     const runs = footgun ? true : truthy(value); // footgun → always true (the bug it warns about)
     trace.push({
       filter: 'if',
@@ -149,7 +187,7 @@ export function simulateTriggers(workflowYaml: string, event: SimEvent): Simulat
         ? 'Literal text outside ${{ }} → always true (see warning).'
         : `if: evaluated to ${runs ? 'true' : 'false'}.`,
     });
-    decisions.push({
+    byId.set(jobId, {
       jobId,
       decision: runs ? 'runs' : 'skipped',
       reason: footgun
@@ -160,7 +198,11 @@ export function simulateTriggers(workflowYaml: string, event: SimEvent): Simulat
   }
 
   // needs: a job needing a skipped/not-run job is itself skipped.
-  applyNeeds(jobsObj, decisions);
+  applyNeeds(jobsObj, order, byId);
+
+  const decisions: JobDecision[] = Object.keys(jobsObj)
+    .map((id) => byId.get(id))
+    .filter((d): d is JobDecision => d !== undefined);
 
   return {
     workflowTriggered: wf.triggered,
@@ -204,13 +246,21 @@ function evaluateWorkflowTrigger(
   const paths = toStringArray(block.paths);
   const pathsIgnore = toStringArray(block['paths-ignore']);
 
-  const hasRefFilter = isTag
-    ? !!(tags || tagsIgnore || branches || branchesIgnore)
-    : !!(branches || branchesIgnore);
+  // A tags: filter is just as much a "ref filter" for a BRANCH push as a
+  // branches: filter is for a tag push — it is the thing that blocks it. Leaving
+  // tags out of this on the branch side made the summary claim "no filters".
+  const hasRefFilter = !!(branches || branchesIgnore || tags || tagsIgnore);
   const hasPathFilter = !!(paths || pathsIgnore);
 
   // ── ref (branch/tag) gate ──
+  //
+  // GitHub: "If you define only tags/tags-ignore or only branches/branches-ignore,
+  // the workflow won't run for events affecting the undefined Git ref." Both
+  // halves of that rule are modelled below, and they must stay symmetric.
   let refPass = true;
+  /** Overrides the generic "Blocked by the … filter." summary when the block is
+   *  really "you never defined a filter for this KIND of ref". */
+  let refBlockReason: string | undefined;
   if (isTag) {
     const tag = event.tag ?? '';
     if (tags) {
@@ -232,10 +282,11 @@ function evaluateWorkflowTrigger(
     } else if (branches || branchesIgnore) {
       // Push specifies branches but NOT tags → tag pushes are excluded.
       refPass = false;
+      refBlockReason = 'on.push sets branches but not tags, so tag pushes do not trigger.';
       trace.push({
         filter: 'tags',
         outcome: 'excluded',
-        reason: 'on.push sets branches but not tags, so tag pushes do not trigger.',
+        reason: refBlockReason,
       });
     } else {
       trace.push({ filter: 'tags', outcome: 'n/a', reason: 'No tag filter — all tags trigger.' });
@@ -260,6 +311,16 @@ function evaluateWorkflowTrigger(
           ? `branch "${branch}" is excluded by branches-ignore.`
           : `branch "${branch}" is not in branches-ignore.`,
       });
+    } else if (tags || tagsIgnore) {
+      // Mirror of the tag case above: the push defines tags but NOT branches, so
+      // the branch ref is undefined for this workflow and a branch push is out.
+      refPass = false;
+      refBlockReason = 'on.push sets tags but not branches, so branch pushes do not trigger.';
+      trace.push({
+        filter: 'branches',
+        outcome: 'excluded',
+        reason: refBlockReason,
+      });
     } else {
       trace.push({ filter: 'branches', outcome: 'n/a', reason: 'No branch filter — all branches trigger.' });
     }
@@ -278,7 +339,11 @@ function evaluateWorkflowTrigger(
         reason: 'No changed files provided — the path filter was not evaluated.',
       });
     } else if (paths) {
-      const matched = files.find((file) => paths.some((p) => matchOne(file, p)));
+      // matchList, not some(matchOne): a `!pattern` entry EXCLUDES, and later
+      // entries win — the same ordering the branch and tag gates already use.
+      // some(matchOne) treated the leading `!` as a literal character, so a
+      // negation silently did nothing.
+      const matched = files.find((file) => matchList(file, paths).included);
       pathPass = matched !== undefined;
       trace.push({
         filter: 'paths',
@@ -288,7 +353,7 @@ function evaluateWorkflowTrigger(
           : 'no changed file matches any paths: pattern.',
       });
     } else if (pathsIgnore) {
-      const outside = files.find((file) => !pathsIgnore.some((p) => matchOne(file, p)));
+      const outside = files.find((file) => !matchList(file, pathsIgnore).included);
       pathPass = outside !== undefined;
       trace.push({
         filter: 'paths-ignore',
@@ -307,12 +372,12 @@ function evaluateWorkflowTrigger(
       hasRefFilter || hasPathFilter
         ? `Event "${eventKey}" matches the configured filters.`
         : `Event "${eventKey}" has no filters, so it always triggers.`;
-  } else if (!refPass && hasPathFilter && pathPass) {
-    reason = `Blocked by the ${isTag ? 'tag' : 'branch'} filter.`;
   } else if (refPass && !pathPass) {
     reason = 'Blocked by the path filter (branch matched, but no path did — both must pass).';
   } else if (!refPass) {
-    reason = `Blocked by the ${isTag ? 'tag' : 'branch'} filter.`;
+    // refBlockReason is set only for the "ref kind never defined" cases, where
+    // "Blocked by the branch filter." would name a filter that isn't there.
+    reason = refBlockReason ?? `Blocked by the ${isTag ? 'tag' : 'branch'} filter.`;
   } else {
     reason = 'Blocked by the path filter.';
   }
@@ -322,25 +387,177 @@ function evaluateWorkflowTrigger(
 
 /* ── per-job helpers ───────────────────────────────────────────────────────── */
 
+/** Default PR number, matching the Tab-1 `pull_request` context preset. */
+const DEFAULT_PR_NUMBER = 42;
+
 function buildEventContext(eventKey: string, isTag: boolean, event: SimEvent): EvalContext {
-  const refName = isTag ? (event.tag ?? '') : (event.branch ?? '');
-  const ref = isTag ? `refs/tags/${event.tag ?? ''}` : `refs/heads/${event.branch ?? ''}`;
+  const isPr = event.event.startsWith('pull_request');
+  // A `pull_request` run checks out the MERGE ref, not the base branch — that is
+  // why `startsWith(github.ref, 'refs/pull/')` is the idiom and why comparing
+  // github.ref to refs/heads/<base> never matches. `pull_request_target` is the
+  // documented exception: it genuinely runs against the base branch ref (which
+  // is the whole reason it is the dangerous one).
+  const isMergeRef = event.event === 'pull_request';
+  const prNumber = event.prNumber ?? DEFAULT_PR_NUMBER;
+
+  let ref: string;
+  let refName: string;
+  if (isTag) {
+    ref = `refs/tags/${event.tag ?? ''}`;
+    refName = event.tag ?? '';
+  } else if (isMergeRef) {
+    ref = `refs/pull/${prNumber}/merge`;
+    refName = `${prNumber}/merge`;
+  } else {
+    ref = `refs/heads/${event.branch ?? ''}`;
+    refName = event.branch ?? '';
+  }
+
   const github: GhaObject = {
     event_name: eventKey,
     ref,
     ref_name: refName,
     ref_type: isTag ? 'tag' : 'branch',
-    base_ref: event.event.startsWith('pull_request') ? (event.branch ?? '') : '',
-    head_ref: event.event.startsWith('pull_request') ? 'feature-branch' : '',
+    // base_ref stays the branch the user typed — for a PR that IS the base.
+    base_ref: isPr ? (event.branch ?? '') : '',
+    head_ref: isPr ? 'feature-branch' : '',
     sha: 'd6cd1e2bd19e03a81132a23b2025920577f84e37',
   };
   return { github, env: {}, jobStatus: 'success', stepConclusions: ['success'] };
 }
 
-function applyNeeds(jobsObj: Record<string, unknown>, decisions: JobDecision[]): void {
-  const byId = new Map(decisions.map((d) => [d.jobId, d]));
-  for (const [jobId, jobRaw] of Object.entries(jobsObj)) {
-    const job = isObject(jobRaw) ? jobRaw : {};
+/**
+ * Order job ids so every job comes after the jobs it `needs:`. Jobs in a cycle
+ * (or needing a job that isn't in this workflow) fall back to declaration order —
+ * this is a simulator, not a validator, so it must always produce an order.
+ */
+function dependencyOrder(jobsObj: Record<string, unknown>): string[] {
+  const ids = Object.keys(jobsObj);
+  const known = new Set(ids);
+  const deps = new Map<string, string[]>();
+  for (const id of ids) {
+    const job = isObject(jobsObj[id]) ? (jobsObj[id] as Record<string, unknown>) : {};
+    deps.set(id, (toStringArray(job.needs) ?? []).filter((d) => known.has(d) && d !== id));
+  }
+  const done = new Set<string>();
+  const order: string[] = [];
+  for (let progress = true; progress && order.length < ids.length; ) {
+    progress = false;
+    for (const id of ids) {
+      if (done.has(id)) continue;
+      if (!(deps.get(id) ?? []).every((d) => done.has(d))) continue;
+      order.push(id);
+      done.add(id);
+      progress = true;
+    }
+  }
+  for (const id of ids) if (!done.has(id)) order.push(id); // cycle — keep as written
+  return order;
+}
+
+/**
+ * Build the `needs` context from decisions already taken in this run. Only jobs
+ * with a settled decision are included; an `unknown` upstream stays out so the
+ * dependent is reported unknown too rather than inheriting a guess.
+ *
+ * `outputs` is deliberately absent: a job's outputs come from steps the
+ * simulator never runs, so `needs.<id>.outputs.*` is genuinely unmodellable.
+ */
+function resolvedNeeds(needs: string[], byId: Map<string, JobDecision>): GhaObject {
+  const out: GhaObject = {};
+  for (const dep of needs) {
+    const d = byId.get(dep);
+    if (!d || d.decision === 'unknown') continue;
+    out[dep] = { result: d.decision === 'runs' ? 'success' : 'skipped' };
+  }
+  return out;
+}
+
+/** Contexts the trigger simulator has no data for at all. */
+const UNMODELLED_CONTEXTS = new Set(['vars', 'inputs', 'secrets']);
+/** The only `needs.<id>.…` properties this simulator can honestly answer. */
+const MODELLED_NEEDS_PROPS = new Set(['result']);
+
+/**
+ * Dotted path of a pure context chain (`needs.build.result`), or null when the
+ * node is not one. Case is preserved for the message; callers lower-case to
+ * classify, matching GitHub's case-insensitive property access.
+ */
+function chainPath(node: Expr): string | null {
+  switch (node.t) {
+    case 'ctx':
+      return node.name;
+    case 'prop': {
+      const base = chainPath(node.obj);
+      return base === null ? null : `${base}.${node.name}`;
+    }
+    case 'filter': {
+      const base = chainPath(node.obj);
+      return base === null ? null : `${base}.*`;
+    }
+    case 'index': {
+      const base = chainPath(node.obj);
+      return base === null ? null : `${base}[…]`;
+    }
+    default:
+      return null;
+  }
+}
+
+/** Collect every context chain an expression reads, longest form first. */
+function collectRefs(node: Expr, out: Set<string>): void {
+  const path = chainPath(node);
+  if (path !== null) {
+    out.add(path);
+    if (node.t === 'index') collectRefs(node.index, out);
+    return;
+  }
+  switch (node.t) {
+    case 'call':
+      node.args.forEach((a) => collectRefs(a, out));
+      break;
+    case 'not':
+      collectRefs(node.arg, out);
+      break;
+    case 'logic':
+    case 'eq':
+    case 'cmp':
+      collectRefs(node.left, out);
+      collectRefs(node.right, out);
+      break;
+    default:
+      break;
+  }
+}
+
+/**
+ * Which context reads in this `if:` the simulator cannot answer. Returns the
+ * paths verbatim so the UI can name them; an empty array means the verdict is
+ * trustworthy.
+ */
+function unmodelledRefs(ast: Expr, needsCtx: GhaObject): string[] {
+  const refs = new Set<string>();
+  collectRefs(ast, refs);
+  const resolvable = new Set(Object.keys(needsCtx).map((k) => k.toLowerCase()));
+  const bad: string[] = [];
+  for (const ref of refs) {
+    const [root, second, third] = ref.toLowerCase().split('.');
+    if (UNMODELLED_CONTEXTS.has(root)) {
+      bad.push(ref);
+      continue;
+    }
+    // needs.<dep>.result IS modelled — but only for a dependency this run decided.
+    if (root === 'needs' && !(resolvable.has(second ?? '') && MODELLED_NEEDS_PROPS.has(third ?? ''))) {
+      bad.push(ref);
+    }
+  }
+  return bad;
+}
+
+function applyNeeds(jobsObj: Record<string, unknown>, order: string[], byId: Map<string, JobDecision>): void {
+  // Dependency order, so a skip/unknown propagates down a chain in one pass.
+  for (const jobId of order) {
+    const job = isObject(jobsObj[jobId]) ? (jobsObj[jobId] as Record<string, unknown>) : {};
     const needs = toStringArray(job.needs);
     if (!needs) continue;
     const dec = byId.get(jobId);
@@ -353,6 +570,14 @@ function applyNeeds(jobsObj: Record<string, unknown>, decisions: JobDecision[]):
       dec.decision = 'skipped';
       dec.reason = `Needs "${blocker}", which is skipped.`;
       dec.trace.push({ filter: 'needs', outcome: 'no-match', reason: `Upstream job "${blocker}" is skipped.` });
+      continue;
+    }
+    // An upstream job we could not decide makes this one undecidable as well.
+    const unsure = needs.find((dep) => byId.get(dep)?.decision === 'unknown');
+    if (unsure) {
+      dec.decision = 'unknown';
+      dec.reason = `Unknown — context not modelled: needs "${unsure}", which is itself unknown.`;
+      dec.trace.push({ filter: 'needs', outcome: 'n/a', reason: `Upstream job "${unsure}" is unknown.` });
     }
   }
 }

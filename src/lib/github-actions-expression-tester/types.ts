@@ -62,7 +62,8 @@ export interface ExprWarning {
     | 'hashfiles-stub'
     | 'event-payload-stub'
     | 'format-index'
-    | 'star-misuse';
+    | 'star-misuse'
+    | 'unmodelled-context';
   severity: 'warning' | 'info';
   message: string;
   /** 0-based char offsets into the raw input when locatable. */
@@ -110,9 +111,17 @@ export interface SimEvent {
   tag?: string;
   /** Files added / modified / removed in the push or PR diff (repo-relative paths). */
   changedFiles?: string[];
+  /** PR number for pull_request / pull_request_target — drives `github.ref`
+   *  (`refs/pull/<n>/merge`). Defaults to 42, matching the Tab-1 PR preset. */
+  prNumber?: number;
 }
 
-export type Decision = 'runs' | 'skipped' | 'not-evaluated';
+/**
+ * `unknown` is NOT a third kind of "no" — it means the job's `if:` reads a
+ * context the simulator has no data for (vars/inputs/secrets, or a needs output),
+ * so no honest verdict exists. A confident wrong answer is worse than an unknown.
+ */
+export type Decision = 'runs' | 'skipped' | 'not-evaluated' | 'unknown';
 
 export interface FilterTrace {
   /** Which filter decided: 'event' | 'branches' | 'branches-ignore' | 'tags' |
