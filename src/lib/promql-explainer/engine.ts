@@ -1083,7 +1083,7 @@ function buildBreakdown(node: Node): ExplainPart[] {
   const seen = new Set<string>();
 
   const push = (token: string, meaning: string): void => {
-    const key = `${token} ${meaning}`;
+    const key = `${token}\u0000${meaning}`;
     if (seen.has(key)) return;
     seen.add(key);
     parts.push({ token, meaning });

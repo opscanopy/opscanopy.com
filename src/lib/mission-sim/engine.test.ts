@@ -245,7 +245,7 @@ describe('runCommand — never throws (fuzz)', () => {
     'hint hint hint',
     'grep ] [',
     'pwd extra args here',
-    ' ',
+    '\u0000\u0001\u0002',
     'ls -l',
   ];
 
