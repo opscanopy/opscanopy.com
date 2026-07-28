@@ -373,6 +373,14 @@ interface SelectorNode {
 interface ParenNode {
   type: 'paren';
   expr: Node;
+  /**
+   * Set when this node stands in for a SUBQUERY applied to a non-selector,
+   * e.g. `rate(x[5m])[1h:1m]`. attachRange used to discard both values, so the
+   * only window in the prose was the inner `[5m]` and the reader concluded the
+   * max was over 5 minutes rather than an hour.
+   */
+  range?: string;
+  step?: string | null;
 }
 interface UnaryNode {
   type: 'unary';
@@ -643,7 +651,7 @@ class Parser {
     }
     // A subquery on a non-selector (e.g. rate(...)[5m:1m]) — wrap it so the
     // renderer can still describe it. We model it as a paren carrying range.
-    return { type: 'paren', expr: node } satisfies ParenNode;
+    return { type: 'paren', expr: node, range, step } satisfies ParenNode;
   }
   private attachAt(node: Node, at: string): Node {
     if (node.type === 'selector') node.at = at;
@@ -935,8 +943,22 @@ function atReading(at: string): string {
 }
 
 /** A short label-grouping clause for an aggregation. */
-function groupingClause(grouping: 'by' | 'without' | null, labels: string[]): string {
-  if (!grouping) return ', collapsing every series into a single result';
+function groupingClause(
+  grouping: 'by' | 'without' | null,
+  labels: string[],
+  op?: string,
+): string {
+  if (!grouping) {
+    // Not every ungrouped aggregation collapses to one series: topk/bottomk
+    // return k series and count_values returns one per distinct sample value.
+    // Saying "collapsing every series into a single result" for those was
+    // self-contradictory in the same sentence as "keeps the 3 series with…".
+    if (op === 'topk' || op === 'bottomk' || op === 'limitk' || op === 'limit_ratio') {
+      return ', across all series (no grouping)';
+    }
+    if (op === 'count_values') return ', emitting one series per distinct value';
+    return ', collapsing every series into a single result';
+  }
   const list = labels.length ? labels.map((l) => `\`${l}\``).join(', ') : '(no labels)';
   if (grouping === 'by') {
     return labels.length
@@ -961,8 +983,14 @@ function renderNode(node: Node): string {
       return `the string ${JSON.stringify(unquote(node.text))}`;
     case 'selector':
       return describeSelector(node);
-    case 'paren':
-      return renderNode(node.expr);
+    case 'paren': {
+      const inner = renderNode(node.expr);
+      if (!node.range) return inner;
+      const win = humanDuration(node.range);
+      return node.step
+        ? `${inner}, evaluated as a subquery over the last ${win} at a ${humanDuration(node.step)} step`
+        : `${inner}, evaluated as a subquery over the last ${win}`;
+    }
     case 'unary':
       return node.op === '-' ? `the negation of ${renderNode(node.expr)}` : renderNode(node.expr);
     case 'call':
@@ -1009,7 +1037,7 @@ function renderAgg(node: AggNode): string {
   const lower = node.name.toLowerCase();
   const verb = AGG_OPS[lower] ?? `aggregates with \`${node.name}\``;
   const inner = renderNode(node.arg);
-  const group = groupingClause(node.grouping, node.labels);
+  const group = groupingClause(node.grouping, node.labels, lower);
 
   if (AGG_WITH_PARAM.has(lower) && node.param) {
     const p = renderNode(node.param);
@@ -1027,18 +1055,37 @@ function renderAgg(node: AggNode): string {
 }
 
 /**
+ * Render one operand of a binary node, bracketing it when its grouping carries
+ * meaning.
+ *
+ * Flattening every nested binary into one comma chain used to make
+ * `1 - a / b` and `(1 - a) / b` render byte-identically — the tool could not be
+ * used to spot a misplaced paren, which is precisely what it is for. An operand
+ * only nests without ambiguity when it is the LEFT side of an equal-precedence
+ * operator (the default left-associative reading); anything else is bracketed.
+ */
+function renderOperand(n: Node, parentOp: string, side: 'left' | 'right'): string {
+  const inner = n.type === 'paren' ? n.expr : n;
+  if (inner.type !== 'binary') return renderNode(n);
+
+  const explicitlyGrouped = n.type === 'paren';
+  const differentPrecedence = PRECEDENCE[inner.op] !== PRECEDENCE[parentOp];
+  if (explicitlyGrouped || differentPrecedence || side === 'right') {
+    return `the result of (${renderNode(inner)})`;
+  }
+  return renderNode(n);
+}
+
+/**
  * Render a binary-operator node with arithmetic/comparison/set semantics.
  *
- * Operands are rendered as plain clauses (no leading "takes …"); a left operand
- * that is itself a binary therefore flattens naturally into the same sentence
- * (e.g. `1 - a / b` → "the scalar 1, then subtracts a, then divides that by b").
  * The single sentence-leading verb is supplied later by `finishSentence`, so we
  * deliberately do NOT prefix one here — that avoids a "takes takes …" stutter
  * when binaries nest.
  */
 function renderBinary(node: BinaryNode): string {
-  const left = renderNode(node.left);
-  const right = renderNode(node.right);
+  const left = renderOperand(node.left, node.op, 'left');
+  const right = renderOperand(node.right, node.op, 'right');
   const matching = node.matching ? ` (matching series by ${node.matching})` : '';
 
   if (COMPARISON_OPS.has(node.op)) {
@@ -1146,7 +1193,10 @@ function buildBreakdown(node: Node): ExplainPart[] {
             `${n.grouping}(${list})`,
             n.grouping === 'by'
               ? `Keeps one result per distinct value of ${list ? `\`${list}\`` : 'the group'}.`
-              : `Aggregates away all labels except ${list ? `\`${list}\`` : 'none'}.`,
+              : // `without` REMOVES the listed labels and keeps the rest. The old
+                // wording said the exact inverse, contradicting the prose two
+                // lines above it in the same card.
+                `Removes the ${list ? `\`${list}\`` : 'listed'} label(s); every other label is kept.`,
           );
         }
         if (n.param) walk(n.param);
@@ -1270,6 +1320,14 @@ function checkBalanced(src: string): string | null {
     }
     if (c === '"' || c === "'" || c === '`') {
       inString = c;
+      continue;
+    }
+    // The tokenizer skips `#`-to-end-of-line, so this pass must too. Otherwise
+    // an ordinary apostrophe or stray bracket in a trailing comment raised a
+    // false "unterminated string" / "unbalanced )" and the playground threw
+    // away a perfectly good explanation.
+    if (c === '#') {
+      while (i < src.length && src[i] !== '\n') i++;
       continue;
     }
     if (c in open) {
