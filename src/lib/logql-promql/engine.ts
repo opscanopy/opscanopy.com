@@ -242,6 +242,13 @@ interface OuterAgg {
   labels: string[];
   /** The expression inside the aggregation's parentheses. */
   inner: string;
+  /**
+   * Anything left over after the aggregation body and its grouping clause —
+   * typically a threshold comparison (`> 0.2`) or a binary operator. Both
+   * languages accept these verbatim, so the caller re-appends it rather than
+   * dropping it on the floor.
+   */
+  tail: string;
 }
 
 /** Find the matching close paren for the open paren at `text[openIdx]`. */
@@ -310,13 +317,17 @@ function peelOuterAgg(text: string): OuterAgg | null | { error: string } {
   const tail = rest.slice(close + 1).trim();
 
   // by/without may instead trail the body (PromQL).
+  let leftover = tail;
   if (grouping === '' && tail) {
     rest = tail;
     const postErr = consumeGrouping();
     if (postErr) return postErr;
+    // consumeGrouping() advances `rest` past the clause it consumed; whatever
+    // remains is a genuine trailing expression.
+    leftover = grouping === '' ? tail : rest;
   }
 
-  return { op, grouping, labels, inner };
+  return { op, grouping, labels, inner, tail: leftover.trim() };
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -344,6 +355,32 @@ function splitRange(body: string): { sel: string; range: string | null } {
   return { sel: body.slice(0, m.index).trim(), range: m[1].trim() };
 }
 
+/**
+ * Range functions whose FIRST argument is a scalar rather than the selector.
+ * Both languages spell `quantile_over_time(φ, <selector>[range])`, so the φ has
+ * to survive the round trip — dropping it emits a call that is invalid in
+ * either language.
+ */
+const LEADING_SCALAR_FNS = new Set(['quantile_over_time']);
+
+/**
+ * Split `0.99, {app="x"} [5m]` into its leading scalar argument and the rest.
+ * Returns null when there is no top-level comma. Depth-aware so a comma inside
+ * `{…}`, `(…)` or `[…]` is not mistaken for the argument separator.
+ */
+function splitLeadingArg(body: string): { arg: string; rest: string } | null {
+  let depth = 0;
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (c === '(' || c === '[' || c === '{') depth++;
+    else if (c === ')' || c === ']' || c === '}') depth--;
+    else if (c === ',' && depth === 0) {
+      return { arg: body.slice(0, i).trim(), rest: body.slice(i + 1).trim() };
+    }
+  }
+  return null;
+}
+
 /* ── LogQL → PromQL ──────────────────────────────────────────────────────── */
 
 /** Translate the inner range-expression of a LogQL query to PromQL. */
@@ -367,7 +404,9 @@ function logqlRangeToPromql(text: string, notes: string[]): string | { error: st
   }
   if (map.note) notes.push(map.note);
 
-  const { sel: selBody, range } = splitRange(call.body);
+  const { lead, body } = takeLeadingScalar(call.fn, call.body, notes);
+
+  const { sel: selBody, range } = splitRange(body);
   if (!range) {
     notes.push('No [range] was found on the LogQL selector; defaulted to [5m].');
   }
@@ -398,7 +437,30 @@ function logqlRangeToPromql(text: string, notes: string[]): string | { error: st
   );
 
   const matcherText = renderMatchers(selector.matchers);
-  return `${map.fn}(${matcherText}[${rangeText}])`;
+  return `${map.fn}(${lead}${matcherText}[${rangeText}])`;
+}
+
+/**
+ * Peel a leading scalar argument off a range-function body when the function
+ * takes one (see {@link LEADING_SCALAR_FNS}), returning it pre-formatted for
+ * re-emission. Warns rather than throwing when it is missing, so a malformed
+ * call still produces a best-effort translation.
+ */
+function takeLeadingScalar(
+  fn: string,
+  rawBody: string,
+  notes: string[],
+): { lead: string; body: string } {
+  if (!LEADING_SCALAR_FNS.has(fn)) return { lead: '', body: rawBody };
+  const split = splitLeadingArg(rawBody);
+  if (!split) {
+    notes.push(
+      `${fn}() takes a quantile as its first argument (e.g. ${fn}(0.99, …)); none was found, ` +
+        'so the translated query is incomplete — add the quantile manually.',
+    );
+    return { lead: '', body: rawBody };
+  }
+  return { lead: `${split.arg}, `, body: split.rest };
 }
 
 /* ── PromQL → LogQL ──────────────────────────────────────────────────────── */
@@ -442,7 +504,9 @@ function promqlRangeToLogql(text: string, notes: string[]): string | { error: st
   }
   if (map.note) notes.push(map.note);
 
-  const { sel: selBody, range } = splitRange(call.body);
+  const { lead, body } = takeLeadingScalar(call.fn, call.body, notes);
+
+  const { sel: selBody, range } = splitRange(body);
   if (!range) {
     notes.push('No [range] was found on the PromQL selector; defaulted to [5m].');
   }
@@ -454,6 +518,15 @@ function promqlRangeToLogql(text: string, notes: string[]): string | { error: st
   let selector: Selector;
   if (extracted) {
     selector = extracted.selector;
+    // Mirror of the LogQL->PromQL direction, which already surfaces a dropped
+    // pipeline. Anything trailing the PromQL selector (`offset 1h`, `@ end()`)
+    // was previously discarded in silence while the UI reported a clean map.
+    if (extracted.after) {
+      notes.push(
+        `Dropped the PromQL modifier “${extracted.after}”. Re-add the equivalent in LogQL ` +
+          'if you need it (LogQL supports `offset`, but not `@` modifiers).',
+      );
+    }
   } else {
     // Bare metric name inside the range function, e.g. rate(up[5m]).
     const bare = selBody.trim();
@@ -464,7 +537,7 @@ function promqlRangeToLogql(text: string, notes: string[]): string | { error: st
   }
 
   const streamSel = promqlSelectorToLogqlStream(selector, notes);
-  return `${map.fn}(${streamSel} [${rangeText}])`;
+  return `${map.fn}(${lead}${streamSel} [${rangeText}])`;
 }
 
 /**
@@ -548,7 +621,19 @@ export function convert(direction: Direction, query: string): ConvertResult {
       peeled.grouping === ''
         ? ''
         : ` ${peeled.grouping}(${peeled.labels.join(', ')})`;
-    const output = `${peeled.op}${grouping}(${innerOut})`;
+    // Re-append anything that trailed the aggregation (a threshold comparison
+    // or binary operator). Both languages accept these verbatim, so carrying
+    // them through is a truer translation than dropping them — and dropping
+    // them silently inverted the meaning of every alert-rule expression.
+    const tail = peeled.tail ? ` ${peeled.tail}` : '';
+    if (tail) {
+      notes.push(
+        `Carried the trailing expression “${peeled.tail}” through unchanged — ` +
+          'comparison and binary operators have the same meaning in both languages. ' +
+          'Verify it against your data.',
+      );
+    }
+    const output = `${peeled.op}${grouping}(${innerOut})${tail}`;
     return { output, notes };
   }
 
