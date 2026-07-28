@@ -621,7 +621,13 @@ function emitYaml(m: ServiceModel): string {
 
   if (m.healthCmd !== undefined) {
     push('healthcheck:');
-    lines.push(`${I}  test: ${scalar(`CMD-SHELL ${m.healthCmd}`)}`);
+    // Emit the LIST form. Compose treats a string `test` as shorthand for
+    // ["CMD-SHELL", <string>], so folding the prefix into the string yields
+    // `sh -c "CMD-SHELL <cmd>"` -> exit 127 and a container that never becomes
+    // healthy. The prefix has to be its own element.
+    lines.push(`${I}  test:`);
+    lines.push(`${I}    - "CMD-SHELL"`);
+    lines.push(`${I}    - ${scalar(m.healthCmd)}`);
     if (m.healthInterval) lines.push(`${I}  interval: ${scalar(m.healthInterval)}`);
     if (m.healthTimeout) lines.push(`${I}  timeout: ${scalar(m.healthTimeout)}`);
     if (m.healthRetries) {

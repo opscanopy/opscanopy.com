@@ -12,6 +12,7 @@
  *   • empty / malformed / garbage input → ok:false WITHOUT throwing
  */
 import { describe, it, expect } from 'vitest';
+import { load } from 'js-yaml';
 import { runToCompose, composeToRun, encodeState } from './engine';
 import { examples } from './examples';
 import { base64UrlDecode } from '../codec';
@@ -110,9 +111,38 @@ describe('runToCompose — flag forms', () => {
     );
     expect(r.ok).toBe(true);
     expect(r.yaml!).toContain('healthcheck:');
-    expect(r.yaml!).toContain('CMD-SHELL curl -f http://localhost/ || exit 1');
     expect(r.yaml!).toContain('interval: 30s');
     expect(r.yaml!).toContain('retries: 3');
+  });
+
+  // Compose treats a STRING `test` as shorthand for ["CMD-SHELL", <string>], so
+  // emitting the prefix INSIDE the string resolves to
+  // `sh -c "CMD-SHELL curl …"` -> exit 127, and the container is permanently
+  // unhealthy. The prefix must be its own list element.
+  it('emits healthcheck test as a list, not a string with the prefix inside', () => {
+    const r = runToCompose('docker run --health-cmd "redis-cli ping" redis:7-alpine');
+    expect(r.ok).toBe(true);
+    const doc = load(r.yaml!) as any;
+    const test = doc.services.app.healthcheck.test;
+    expect(Array.isArray(test)).toBe(true);
+    expect(test).toEqual(['CMD-SHELL', 'redis-cli ping']);
+  });
+
+  it('never emits a scalar test containing the CMD-SHELL prefix', () => {
+    const r = runToCompose('docker run --health-cmd "curl -f http://localhost/ || exit 1" nginx');
+    const doc = load(r.yaml!) as any;
+    expect(typeof doc.services.app.healthcheck.test).not.toBe('string');
+  });
+
+  it('round-trips a healthcheck back to --health-cmd without the prefix leaking in', () => {
+    const fwd = runToCompose('docker run --health-cmd "redis-cli ping" redis:7-alpine');
+    const back = composeToRun(fwd.yaml!);
+    expect(back.ok).toBe(true);
+    // Shell-quoting style is the engine's own convention; what matters is that
+    // the command survives intact and the Compose-only prefix does not leak
+    // into a docker run line.
+    expect(back.command!).toMatch(/--health-cmd ['"]redis-cli ping['"]/);
+    expect(back.command!).not.toContain('CMD-SHELL');
   });
 
   it('treats the first positional as the image and the rest as the command', () => {

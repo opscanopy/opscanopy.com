@@ -71,7 +71,9 @@ const redis: DockerExample = {
     labels:
       - app=web
     healthcheck:
-      test: "CMD-SHELL redis-cli ping"
+      test:
+        - "CMD-SHELL"
+        - redis-cli ping
       interval: 10s
       timeout: 3s
       retries: 5
