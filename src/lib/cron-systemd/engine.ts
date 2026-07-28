@@ -240,7 +240,12 @@ function renderNumeric(
         if (part.step > spec.max) approximate = true;
         if (span % part.step !== 0 && part.from !== spec.min) approximate = true;
         if (part.from === spec.min && to === spec.max) {
-          return `*/${part.step}`;
+          // NOT `*/step`: systemd calendar syntax requires an explicit start
+          // value before the `/` — a bare `*` short-circuits before the repeat
+          // is parsed, and systemd rejects the whole expression. Anchoring at
+          // the domain minimum ("00/15", "01/2") is the equivalent form and is
+          // what `systemd-analyze calendar` accepts.
+          return `${pad2(part.from)}/${part.step}`;
         }
         return `${pad2(part.from)}..${pad2(to)}/${part.step}`;
       }
@@ -259,33 +264,67 @@ function renderDow(field: ParsedField): { text: string | null; approximate: bool
   if (field.isWildcard) return { text: null, approximate: false };
 
   let approximate = false;
-  const names = (n: number) => SYSTEMD_DOW[n === 7 ? 0 : n];
+  /** Normalise cron's dual Sunday (0 and 7) onto a single 0. */
+  const norm = (n: number) => (n === 7 ? 0 : n);
 
-  const tokens = field.parts.map((part) => {
+  // Collect the day SET rather than rendering each part in place. cron orders
+  // weekdays Sunday-first (0=Sun) while systemd orders them Mon..Sun and
+  // rejects any range whose start index exceeds its end — so "0-4" cannot be
+  // passed through as "Sun..Thu". Going via a set lets us re-sort into systemd
+  // order, and lets "covers all seven days" be detected across the whole field
+  // instead of one part at a time.
+  const days = new Set<number>();
+  let sawAny = false;
+
+  for (const part of field.parts) {
     switch (part.kind) {
       case 'all':
-        return null; // a lone "*" inside a list is meaningless; treat as no-op
+        // A lone "*" inside a list means "every day" — no weekday constraint.
+        return { text: null, approximate: false };
       case 'single':
-        return names(part.value);
-      case 'range': {
-        // systemd accepts weekday ranges like "Mon..Fri".
-        const from = names(part.from);
-        const to = names(part.to);
-        return `${from}..${to}`;
-      }
+        days.add(norm(part.value));
+        sawAny = true;
+        break;
+      case 'range':
+        for (let v = part.from; v <= part.to; v++) days.add(norm(v));
+        sawAny = true;
+        break;
       case 'step': {
-        // systemd has no weekday step syntax; expand to an explicit list.
+        // systemd has no weekday step syntax; expand to explicit days.
         approximate = true;
         const to = part.to ?? 6;
-        const out: string[] = [];
-        for (let v = part.from; v <= to; v += part.step) out.push(names(v));
-        return out.join(',');
+        for (let v = part.from; v <= to; v += part.step) days.add(norm(v));
+        sawAny = true;
+        break;
       }
     }
-  });
+  }
 
-  const text = tokens.filter((t): t is string => t !== null).join(',');
-  return { text: text === '' ? null : text, approximate };
+  if (!sawAny || days.size === 0) return { text: null, approximate };
+  // Every day is listed, so the weekday component is pure noise — drop it.
+  if (days.size === 7) return { text: null, approximate };
+
+  // Sort into systemd's ordering: Mon(1) … Sat(6), then Sun(0) last.
+  const rank = (d: number) => (d === 0 ? 7 : d);
+  const ordered = [...days].sort((a, b) => rank(a) - rank(b));
+
+  // Compact maximal contiguous runs into "A..B" (matching how
+  // `systemd-analyze calendar` normalises a weekday list). Runs of 1 or 2 stay
+  // as discrete tokens, since "Mon..Tue" is no shorter than "Mon,Tue".
+  const out: string[] = [];
+  for (let i = 0; i < ordered.length; ) {
+    let j = i;
+    while (j + 1 < ordered.length && rank(ordered[j + 1]) === rank(ordered[j]) + 1) j++;
+    const runLength = j - i + 1;
+    if (runLength >= 3) {
+      out.push(`${SYSTEMD_DOW[ordered[i]]}..${SYSTEMD_DOW[ordered[j]]}`);
+    } else {
+      for (let k = i; k <= j; k++) out.push(SYSTEMD_DOW[ordered[k]]);
+    }
+    i = j + 1;
+  }
+
+  return { text: out.join(','), approximate };
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -541,6 +580,22 @@ function finalize(args: FinalizeArgs): SystemdResult {
     } else {
       notes.push('Command parsed from the cron line and placed in ExecStart.');
     }
+    // In a systemd unit "%" introduces a specifier (%Y = unit-file directory,
+    // %m = machine ID, %H = hostname, %N = unit name), so a date-stamped
+    // filename copied straight out of a crontab gets silently rewritten. In a
+    // crontab, conversely, a bare "%" truncates the command and feeds the rest
+    // to stdin, which is why real crontabs write "\%". Unescape crontab's form
+    // first, then double every "%" so systemd passes it through literally.
+    if (command.includes('%')) {
+      command = command.replace(/\\%/g, '%').replace(/%/g, '%%');
+      notes.push(
+        'The command contained “%”, which systemd would expand as a unit specifier ' +
+          '(%Y, %m, %H…). It has been escaped as “%%” so systemd passes it through literally. ' +
+          'Note that in a crontab an unescaped “%” truncates the command, so the original line ' +
+          'may need a backslash there too.',
+      );
+    }
+
     // systemd requires an absolute path or a shell wrapper for ExecStart.
     if (!command.startsWith('/') && !/^\S+=/.test(command)) {
       notes.push(
