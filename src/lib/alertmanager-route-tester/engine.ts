@@ -115,26 +115,98 @@ function describeYamlError(e: unknown): string {
  * ────────────────────────────────────────────────────────────────────────── */
 
 /**
+ * The outcome of compiling one Alertmanager regex for browser-side evaluation.
+ * A failure carries a REASON so the caller can say out loud that the pattern
+ * went unevaluated — silently treating it as "never matches" is how a tester
+ * reports a confidently wrong receiver.
+ */
+type CompiledRegex = { ok: true; re: RegExp } | { ok: false; reason: string };
+
+/**
+ * Strip LEADING RE2 inline-flag groups — `(?i)`, `(?s)`, `(?m)` and combinations
+ * such as `(?is)` — translating them into the equivalent JS RegExp flags. RE2
+ * accepts these and real configs use them (`(?i)diskfull`); JS has no inline
+ * flag syntax at all, so without this translation the pattern simply fails to
+ * compile. Only leading, flag-ONLY groups are handled — a scoped `(?i:…)` or a
+ * negation like `(?-i)` is left in the pattern, where it fails to compile and
+ * gets reported rather than silently mis-evaluated.
+ *
+ * Note the `m` flag stays faithful to Alertmanager: it wraps the pattern as
+ * `^(?:…)$` too, so under `(?m)` those anchors are per-line in RE2 exactly as
+ * they become per-line in JS.
+ */
+function extractLeadingInlineFlags(pattern: string): { body: string; flags: string } {
+  let body = pattern;
+  const flags = new Set<string>();
+  for (;;) {
+    const m = /^\(\?([ism]+)\)/.exec(body);
+    if (!m) break;
+    for (const f of m[1]) flags.add(f);
+    body = body.slice(m[0].length);
+  }
+  return { body, flags: [...flags].join('') };
+}
+
+/** A short, human-readable reason for a RegExp constructor throw. */
+function describeRegexError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  return `not valid JavaScript regex syntax — ${msg}`;
+}
+
+/**
  * Compile an Alertmanager regex (`match_re` value or `=~`/`!~` source) to a
  * JavaScript RegExp that is FULLY ANCHORED — Alertmanager wraps every regex as
- * `^(?:<re>)$`, so a partial match never satisfies it. Returns null if the
- * pattern is not valid JS regex syntax (the closest we can get to RE2 client
- * side without an RE2 engine). Never throws.
+ * `^(?:<re>)$`, so a partial match never satisfies it. Never throws; on failure
+ * it returns `{ ok:false, reason }` so the caller can WARN instead of silently
+ * degrading to "this matcher never holds".
  *
- * Alertmanager itself uses RE2, which has no catastrophic backtracking — but we
- * compile to a backtracking JS RegExp on the MAIN THREAD. A pattern such as
- * `(a+)+$` would let user input hang the tab (ReDoS). We therefore run every
- * pattern through the project's `checkRegexSafety()` heuristic first and treat
- * an unsafe pattern exactly like an uncompilable one (return null → never
- * matches), consistent with the existing "bad regex never matches" behaviour.
+ * Two ways the browser cannot faithfully evaluate an RE2 pattern:
+ *
+ *  1. ReDoS. Alertmanager's RE2 has no catastrophic backtracking; we compile to
+ *     a backtracking JS RegExp on the MAIN THREAD, where `(a+)+$` would hang the
+ *     tab. Every pattern therefore goes through the project's
+ *     `checkRegexSafety()` heuristic first. That heuristic is deliberately
+ *     conservative and DOES false-positive on ordinary shapes such as the
+ *     domain-suffix matcher `([a-z0-9-]+\.)+eu\.example\.com` — so refusing is
+ *     the right call, but refusing QUIETLY is not.
+ *  2. Syntax RE2 accepts and JS does not: leading inline flags (handled above)
+ *     and `\p{...}` classes. We compile with the `u` flag so a `\p{...}` either
+ *     works or throws — WITHOUT `u`, JS reads `\p{Lu}` as the literal text
+ *     `p{Lu}`, which is silently backwards from RE2. Because `u` is also
+ *     stricter than plain JS in ways RE2 is not (RE2 treats a stray `{name}` as
+ *     literal text), a throw falls back to a non-`u` compile — except for
+ *     patterns that actually use `\p{…}`/`\P{…}`, where the fallback is exactly
+ *     the silent mis-match we are trying to prevent.
  */
-function compileAnchored(pattern: string): RegExp | null {
-  if (!checkRegexSafety(pattern).safe) return null;
-  try {
-    return new RegExp(`^(?:${pattern})$`);
-  } catch {
-    return null;
+function compileAnchored(pattern: string): CompiledRegex {
+  if (!checkRegexSafety(pattern).safe) {
+    return { ok: false, reason: 'nested-quantifier guard' };
   }
+  const { body, flags } = extractLeadingInlineFlags(pattern);
+  const source = `^(?:${body})$`;
+  try {
+    return { ok: true, re: new RegExp(source, `${flags}u`) };
+  } catch (uErr) {
+    if (/\\[pP]\{/.test(body)) {
+      return { ok: false, reason: describeRegexError(uErr) };
+    }
+    try {
+      return { ok: true, re: new RegExp(source, flags) };
+    } catch (e) {
+      return { ok: false, reason: describeRegexError(e) };
+    }
+  }
+}
+
+/**
+ * Report a regex we could not evaluate. Deduplicated by exact text so the same
+ * pattern appearing on sibling routes does not spam the panel.
+ */
+function warnUnevaluatableRegex(m: Matcher, reason: string, warnings: string[]): void {
+  const msg =
+    `Regex "${m.value}" on label \`${m.name}\` could not be evaluated in the browser ` +
+    `(${reason}). Alertmanager uses RE2 and would evaluate it; this result may be wrong.`;
+  if (!warnings.includes(msg)) warnings.push(msg);
 }
 
 /* ────────────────────────────────────────────────────────────────────────── *
@@ -142,9 +214,10 @@ function compileAnchored(pattern: string): RegExp | null {
  * ────────────────────────────────────────────────────────────────────────── */
 
 /**
- * Split a brace-wrapped body on TOP-LEVEL commas — commas that are not inside a
+ * Split a matcher body on TOP-LEVEL commas — commas that are not inside a
  * quoted string. Returns the list of comma-separated matcher fragments. A body
- * with no top-level comma yields a single-element array (the body itself).
+ * with no top-level comma yields a single-element array (the body itself), so a
+ * comma inside `severity=~"critical,page"` is preserved as part of the value.
  */
 function splitTopLevelCommas(body: string): string[] {
   const parts: string[] = [];
@@ -289,32 +362,37 @@ function matchScalar(name: string, val: unknown, warnings: string[]): string {
 }
 
 /**
- * Parse one `matchers:` list entry into the `out` array. Handles the
- * brace-wrapped, comma-separated form `{a="1",b="2"}` by splitting on
- * top-level commas and parsing each fragment — the single-matcher parser alone
- * would silently corrupt the value (capturing `1",b="2` as a's value and
- * dropping b). Unparseable fragments are reported and skipped.
+ * Parse one `matchers:` list entry into the `out` array.
+ *
+ * Alertmanager's own `ParseMatchers` splits a matcher STRING on top-level commas
+ * whether or not it is wrapped in braces, so `{a="1",b="2"}` and `a="1",b="2"`
+ * mean the same pair of matchers. Handling only the brace-wrapped form let the
+ * single-matcher parser corrupt the unbraced form — `severity=~"critical|page",team="sre"`
+ * became ONE matcher whose value was `critical|page",team="sre`, which can
+ * report a receiver the real Alertmanager would never pick. Braces are
+ * therefore stripped (when present) and the body is ALWAYS split.
+ *
+ * Unparseable fragments are reported and skipped.
  */
 function collectFromMatcherEntry(entry: string, out: Matcher[], warnings: string[]): void {
   const trimmed = entry.trim();
-  const braceWrapped = trimmed.startsWith('{') && trimmed.endsWith('}');
-  if (braceWrapped) {
-    const body = trimmed.slice(1, -1);
-    const fragments = splitTopLevelCommas(body);
-    if (fragments.length > 1) {
-      for (const frag of fragments) {
-        const f = frag.trim();
-        if (f === '') continue;
-        const parsed = parseMatcherString(f);
-        if (parsed) out.push(parsed);
-        else warnings.push(`Could not parse matcher "${f}"; it was skipped.`);
-      }
-      return;
-    }
+  const body =
+    trimmed.startsWith('{') && trimmed.endsWith('}') ? trimmed.slice(1, -1) : trimmed;
+
+  const fragments = splitTopLevelCommas(body)
+    .map((f) => f.trim())
+    .filter((f) => f !== '');
+
+  if (fragments.length === 0) {
+    warnings.push(`Could not parse matcher "${trimmed}"; it was skipped.`);
+    return;
   }
-  const parsed = parseMatcherString(entry);
-  if (parsed) out.push(parsed);
-  else warnings.push(`Could not parse matcher "${entry}"; it was skipped.`);
+
+  for (const f of fragments) {
+    const parsed = parseMatcherString(f);
+    if (parsed) out.push(parsed);
+    else warnings.push(`Could not parse matcher "${f}"; it was skipped.`);
+  }
 }
 
 /* ────────────────────────────────────────────────────────────────────────── *
@@ -325,38 +403,54 @@ function collectFromMatcherEntry(entry: string, out: Matcher[], warnings: string
  * Does a single matcher hold against the alert labels? A label that is absent
  * is treated as the empty string (Alertmanager semantics), so `foo=""` matches
  * a missing label and `foo!=""` requires the label to be present and non-empty.
- * An invalid regex can never match (returns false).
+ *
+ * A regex we cannot evaluate in the browser is treated CONSERVATIVELY — the
+ * matcher does not hold, for `=~` and `!~` alike — but it always pushes a
+ * warning naming the label and the pattern, so the verdict is never silently
+ * wrong.
  */
-function matcherHolds(m: Matcher, labels: Map<string, string>): boolean {
+function matcherHolds(
+  m: Matcher,
+  labels: Map<string, string>,
+  warnings: string[],
+): boolean {
   const actual = labels.get(m.name) ?? '';
   switch (m.op) {
     case '=':
       return actual === m.value;
     case '!=':
       return actual !== m.value;
-    case '=~': {
-      const re = compileAnchored(m.value);
+    case '=~':
+    case '!~': {
+      const compiled = compileAnchored(m.value);
+      if (!compiled.ok) {
+        warnUnevaluatableRegex(m, compiled.reason, warnings);
+        return false;
+      }
       // Cap the subject text so even a safe-looking pattern cannot be fed a huge
       // label value and hang the tab (defence-in-depth alongside the safety
       // heuristic in compileAnchored). An over-long value cannot match.
       if (actual.length > MAX_REGEX_TEXT) return false;
-      return re ? re.test(actual) : false;
-    }
-    case '!~': {
-      const re = compileAnchored(m.value);
-      // An uncompilable negative regex cannot be proven false, so it does NOT
-      // match (consistent with `=~` returning false on a bad pattern).
-      if (actual.length > MAX_REGEX_TEXT) return false;
-      return re ? !re.test(actual) : false;
+      const hit = compiled.re.test(actual);
+      return m.op === '=~' ? hit : !hit;
     }
     default:
       return false;
   }
 }
 
-/** All matchers on a node must hold for the node to match (logical AND). */
-function nodeMatches(matchers: Matcher[], labels: Map<string, string>): boolean {
-  return matchers.every((m) => matcherHolds(m, labels));
+/**
+ * All matchers on a node must hold for the node to match (logical AND).
+ * `every` short-circuits, which is also the least noisy behaviour: a regex we
+ * cannot evaluate only warns when it was actually reached, i.e. when it could
+ * have changed the verdict.
+ */
+function nodeMatches(
+  matchers: Matcher[],
+  labels: Map<string, string>,
+  warnings: string[],
+): boolean {
+  return matchers.every((m) => matcherHolds(m, labels, warnings));
 }
 
 /* ────────────────────────────────────────────────────────────────────────── *
@@ -527,7 +621,7 @@ function walk(
     }
     const child = rawChild as RawRoute;
     const childMatchers = nodeOwnMatchers(child, warnings);
-    if (!nodeMatches(childMatchers, labels)) continue;
+    if (!nodeMatches(childMatchers, labels, warnings)) continue;
 
     matchedAny = true;
     const childContinue = child.continue === true;

@@ -451,3 +451,261 @@ route:
     expect(r.warnings.some((w) => /not a scalar/i.test(w))).toBe(true);
   });
 });
+
+/**
+ * Alertmanager compiles every regex with RE2, which has no backtracking and a
+ * SUPERSET of JS syntax in the places that matter here (inline `(?i)` flags,
+ * `\p{...}` classes). We evaluate on the browser's backtracking engine behind a
+ * ReDoS heuristic, so some patterns we simply cannot evaluate faithfully. The
+ * one thing we must never do is drop such a pattern SILENTLY — a wrong receiver
+ * with an empty `warnings` array is indistinguishable from a correct one.
+ */
+describe('matchRoute — regexes the browser cannot evaluate are never silent', () => {
+  it('an ordinary domain-suffix match_re is not silently dropped by the ReDoS guard', () => {
+    const TREE = `
+route:
+  receiver: 'default-receiver'
+  routes:
+    - receiver: 'eu-hosts'
+      match_re:
+        instance: '([a-z0-9-]+\\.)+eu\\.example\\.com(:[0-9]+)?'
+`;
+    const r = matchRoute(TREE, 'instance=web-3.rack1.eu.example.com:9100');
+    expect(r.ok).toBe(true);
+    // The group body ends in a mandatory `\.` separator, so this is NOT a
+    // backtracking hazard and the ReDoS heuristic no longer rejects it. The
+    // matcher is therefore evaluated for real and agrees with Alertmanager
+    // (RE2), rather than being conservatively dropped with a warning.
+    expect(r.matches![0].receiver).toBe('eu-hosts');
+    expect(r.warnings.filter((x) => /could not be evaluated/i.test(x))).toEqual([]);
+  });
+
+  it('a leading (?i) RE2 inline flag is translated, not swallowed', () => {
+    const TREE = `
+route:
+  receiver: 'default'
+  routes:
+    - receiver: 'disk'
+      match_re:
+        alertname: '(?i)diskfull'
+`;
+    const r = matchRoute(TREE, 'alertname=DiskFull');
+    expect(r.ok).toBe(true);
+    expect(r.matches![0].receiver).toBe('disk');
+    expect(r.warnings.some((x) => /could not be evaluated/i.test(x))).toBe(false);
+  });
+
+  it('combined and stacked leading inline flags are translated too', () => {
+    // A label value can never contain a newline (the label parser is line
+    // based), so `s`/`m` are not observable here — what matters is that the
+    // whole flag group is consumed, the flags JS understands are applied, and
+    // nothing is left behind to break compilation.
+    const COMBINED = `
+route:
+  receiver: 'default'
+  routes:
+    - receiver: 'multi'
+      match_re:
+        msg: '(?is)a.c'
+`;
+    expect(matchRoute(COMBINED, 'msg=AxC').matches![0].receiver).toBe('multi');
+
+    const STACKED = `
+route:
+  receiver: 'default'
+  routes:
+    - receiver: 'multi'
+      match_re:
+        msg: '(?i)(?m)abc'
+`;
+    const r = matchRoute(STACKED, 'msg=ABC');
+    expect(r.matches![0].receiver).toBe('multi');
+    expect(r.warnings.some((x) => /could not be evaluated/i.test(x))).toBe(false);
+  });
+
+  it('RE2-only group syntax is reported rather than silently never matching', () => {
+    // `(?P<name>…)` is RE2/Go named-group syntax; JS spells it `(?<name>…)` and
+    // throws on the RE2 form under every flag combination.
+    const TREE = `
+route:
+  receiver: 'default'
+  routes:
+    - receiver: 'named'
+      match_re:
+        instance: '(?P<host>[a-z]+)'
+`;
+    const r = matchRoute(TREE, 'instance=web');
+    expect(r.ok).toBe(true);
+    expect(r.matches![0].receiver).toBe('default');
+    expect(r.warnings.some((x) => /could not be evaluated/i.test(x))).toBe(true);
+  });
+
+  it('an invalid Unicode property name is reported, never read as literal text', () => {
+    // `\p{Foo}` throws under `u` but WITHOUT `u` it quietly means the literal
+    // text `pFoo`. The `u`-less fallback must refuse to rescue `\p{…}`.
+    const TREE = `
+route:
+  receiver: 'default'
+  routes:
+    - receiver: 'bogus'
+      match_re:
+        code: '\\p{Foo}'
+`;
+    const r = matchRoute(TREE, 'code=pFoo');
+    expect(r.ok).toBe(true);
+    expect(r.matches![0].receiver).toBe('default');
+    expect(r.warnings.some((x) => /could not be evaluated/i.test(x))).toBe(true);
+  });
+
+  it('a scoped `(?i:…)` modifier is evaluated where supported and reported where not', () => {
+    // ES2025 regexp modifiers make this work on current engines; on an older
+    // browser the RegExp constructor throws. Either outcome is acceptable —
+    // silently returning the wrong receiver with no warning is not.
+    const TREE = `
+route:
+  receiver: 'default'
+  routes:
+    - receiver: 'scoped'
+      match_re:
+        alertname: '(?i:diskfull)'
+`;
+    const r = matchRoute(TREE, 'alertname=DiskFull');
+    expect(r.ok).toBe(true);
+    const evaluated = r.matches![0].receiver === 'scoped';
+    const reported = r.warnings.some((x) => /could not be evaluated/i.test(x));
+    expect(evaluated || reported).toBe(true);
+  });
+
+  it('\\p{Lu}+ matches uppercase letters instead of the literal text "p{Lu}"', () => {
+    const TREE = `
+route:
+  receiver: 'default'
+  routes:
+    - receiver: 'upper'
+      match_re:
+        code: '\\p{Lu}+'
+`;
+    // Without the `u` flag this pattern silently means the literal `p{Lu}` —
+    // exactly backwards from RE2.
+    expect(matchRoute(TREE, 'code=ABC').matches![0].receiver).toBe('upper');
+    expect(matchRoute(TREE, 'code=p{Lu}').matches![0].receiver).toBe('default');
+  });
+
+  it('a regex JS cannot compile at all warns instead of silently never matching', () => {
+    const TREE = `
+route:
+  receiver: 'default'
+  routes:
+    - receiver: 'bad-re'
+      match_re:
+        env: '([unclosed'
+`;
+    const r = matchRoute(TREE, 'env=anything');
+    expect(r.ok).toBe(true);
+    expect(r.matches![0].receiver).toBe('default');
+    expect(r.warnings.some((x) => /could not be evaluated/i.test(x))).toBe(true);
+  });
+
+  it('an unevaluatable regex on a `!~` matcher also warns', () => {
+    // RE2 named-group syntax. Alertmanager accepts `(?P<name>…)`; JS uses
+    // `(?<name>…)` and throws on it with and without the `u` flag, so this is
+    // genuinely unevaluatable in the browser rather than merely guard-rejected.
+    const TREE = `
+route:
+  receiver: 'default'
+  routes:
+    - receiver: 'not-eu'
+      matchers:
+        - 'instance!~"(?P<host>[a-z0-9-]+)\\.eu\\.example\\.com"'
+`;
+    const r = matchRoute(TREE, 'instance=web-3.us.example.com');
+    expect(r.ok).toBe(true);
+    expect(r.warnings.some((x) => /could not be evaluated/i.test(x))).toBe(true);
+  });
+
+  it('a plain pattern the `u` flag would reject still compiles (RE2 literal braces)', () => {
+    const TREE = `
+route:
+  receiver: 'default'
+  routes:
+    - receiver: 'tmpl'
+      match_re:
+        msg: 'job{name}'
+`;
+    // RE2 treats `{name}` as literal text; the `u` flag rejects it outright, so
+    // we must fall back rather than declare the pattern unevaluatable.
+    const r = matchRoute(TREE, 'msg=job{name}');
+    expect(r.matches![0].receiver).toBe('tmpl');
+    expect(r.warnings.some((x) => /could not be evaluated/i.test(x))).toBe(false);
+  });
+});
+
+/**
+ * Alertmanager's `ParseMatchers` splits a matcher STRING on top-level commas
+ * whether or not it is wrapped in braces. Handling only the brace-wrapped form
+ * corrupts `a="1",b="2"` into a single matcher whose value is `1",b="2` — which
+ * can invent a receiver the real Alertmanager would never pick.
+ */
+describe('matchRoute — comma-separated matcher strings without braces', () => {
+  const TREE = `
+route:
+  receiver: 'default-receiver'
+  routes:
+    - receiver: 'sre-pager'
+      matchers:
+        - 'severity=~"critical|page",team="sre"'
+`;
+
+  it('does NOT report a false receiver when only the first fragment holds', () => {
+    const r = matchRoute(TREE, 'severity=critical\nteam=frontend');
+    expect(r.ok).toBe(true);
+    expect(r.matches![0].receiver).toBe('default-receiver');
+  });
+
+  it('matches when BOTH fragments hold', () => {
+    const r = matchRoute(TREE, 'severity=page\nteam=sre');
+    expect(r.matches![0].receiver).toBe('sre-pager');
+  });
+
+  it('splits a="1",b="2" with no braces and no spaces', () => {
+    const T = `
+route:
+  receiver: 'default'
+  routes:
+    - receiver: 'child'
+      matchers:
+        - 'a="1",b="2"'
+`;
+    expect(matchRoute(T, 'a=1\nb=2').matches![0].receiver).toBe('child');
+    expect(matchRoute(T, 'a=1').matches![0].receiver).toBe('default');
+  });
+
+  it('splits a="1", b="2" with no braces and a space after the comma', () => {
+    const T = `
+route:
+  receiver: 'default'
+  routes:
+    - receiver: 'child'
+      matchers:
+        - 'a="1", b="2"'
+`;
+    expect(matchRoute(T, 'a=1\nb=2').matches![0].receiver).toBe('child');
+    expect(matchRoute(T, 'b=2').matches![0].receiver).toBe('default');
+  });
+
+  it('a comma INSIDE a quoted value is not a split point', () => {
+    const T = `
+route:
+  receiver: 'default'
+  routes:
+    - receiver: 'child'
+      matchers:
+        - 'msg=~"a,b"'
+`;
+    expect(matchRoute(T, 'msg=a,b').matches![0].receiver).toBe('child');
+    // No spurious second fragment was invented and skipped.
+    expect(matchRoute(T, 'msg=a,b').warnings.some((w) => /Could not parse matcher/i.test(w))).toBe(
+      false,
+    );
+  });
+});

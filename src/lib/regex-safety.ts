@@ -42,9 +42,21 @@ export function checkRegexSafety(pattern: string): RegexSafetyResult {
   interface Frame {
     hasUnbounded: boolean;
     hasAlternation: boolean;
+    /**
+     * Does the group body end in a MANDATORY atom (a literal or class that is
+     * not itself quantified)? A trailing separator like the `.` in `(\d+\.)+`
+     * anchors each repetition, which removes the ambiguity that drives
+     * catastrophic backtracking — so those patterns are safe despite matching
+     * the nested-quantifier shape.
+     */
+    endsWithMandatoryAtom: boolean;
   }
 
   const stack: Frame[] = [];
+  /** Mark the innermost group's trailing atom as mandatory / not. */
+  const markAtom = (mandatory: boolean) => {
+    if (stack.length > 0) stack[stack.length - 1].endsWithMandatoryAtom = mandatory;
+  };
 
   for (let i = 0; i < pattern.length; i++) {
     const ch = pattern[i];
@@ -52,6 +64,7 @@ export function checkRegexSafety(pattern: string): RegexSafetyResult {
     // Skip escaped characters — `\(`, `\+`, etc. are literals, not structure.
     if (ch === '\\') {
       i++;
+      markAtom(true);
       continue;
     }
 
@@ -63,33 +76,44 @@ export function checkRegexSafety(pattern: string): RegexSafetyResult {
         if (pattern[i] === '\\') i++;
         i++;
       }
+      markAtom(true);
       continue;
     }
 
     if (ch === '(') {
-      stack.push({ hasUnbounded: false, hasAlternation: false });
+      stack.push({ hasUnbounded: false, hasAlternation: false, endsWithMandatoryAtom: false });
       continue;
     }
 
     if (ch === '|') {
-      if (stack.length > 0) stack[stack.length - 1].hasAlternation = true;
+      if (stack.length > 0) {
+        stack[stack.length - 1].hasAlternation = true;
+        stack[stack.length - 1].endsWithMandatoryAtom = false;
+      }
       continue;
     }
 
     // Unbounded quantifiers: `*`, `+`, or `{n,}` (open-ended).
     let isUnbounded = false;
+    let isQuantifier = ch === '*' || ch === '+' || ch === '?';
     if (ch === '*' || ch === '+') {
       isUnbounded = true;
     } else if (ch === '{') {
-      // Look ahead for `{n,}` (a comma with nothing — or `}` — after it).
+      // ONLY a well-formed `{n}` / `{n,}` / `{n,m}` is a quantifier token. The
+      // old code consumed EVERY `{…}` span, so a literal brace swallowed
+      // whatever it wrapped: `{(a+)+}` skipped straight past the nested
+      // quantifier and was reported safe, which is a share-link tab freeze.
       const close = pattern.indexOf('}', i);
-      if (close !== -1) {
-        const inner = pattern.slice(i + 1, close);
-        const commaIdx = inner.indexOf(',');
-        if (commaIdx !== -1 && inner.slice(commaIdx + 1).trim() === '') {
-          isUnbounded = true;
-        }
-        i = close; // consume the whole {…} token
+      const inner = close === -1 ? null : pattern.slice(i + 1, close);
+      if (inner !== null && /^\d+(,\d*)?$/.test(inner)) {
+        isQuantifier = true;
+        if (/,$/.test(inner)) isUnbounded = true;
+        i = close; // consume the whole quantifier token
+      }
+      // Otherwise `{` is a literal: fall through WITHOUT moving `i`.
+      else {
+        markAtom(true);
+        continue;
       }
     }
 
@@ -114,7 +138,14 @@ export function checkRegexSafety(pattern: string): RegexSafetyResult {
           }
         }
 
-        if (groupUnbounded && (frame.hasUnbounded || frame.hasAlternation)) {
+        // The trailing-separator exemption applies only to the nested-quantifier
+        // risk. An alternation of overlapping branches — `(a|a)*` — backtracks
+        // regardless of what the body ends with, so that half is unconditional.
+        const risky = frame.hasUnbounded
+          ? !frame.endsWithMandatoryAtom
+          : frame.hasAlternation;
+
+        if (groupUnbounded && risky) {
           return {
             safe: false,
             reason:
@@ -126,6 +157,15 @@ export function checkRegexSafety(pattern: string): RegexSafetyResult {
         if (stack.length > 0 && (groupUnbounded || frame.hasUnbounded)) {
           stack[stack.length - 1].hasUnbounded = true;
         }
+        // For the PARENT, this group is one atom — mandatory only if it is not
+        // itself quantified.
+        const quantifierAfter = pattern[i + 1];
+        const groupIsQuantified =
+          quantifierAfter === '*' ||
+          quantifierAfter === '+' ||
+          quantifierAfter === '?' ||
+          quantifierAfter === '{';
+        markAtom(!groupIsQuantified);
       }
       continue;
     }
@@ -133,6 +173,9 @@ export function checkRegexSafety(pattern: string): RegexSafetyResult {
     if (isUnbounded && stack.length > 0) {
       stack[stack.length - 1].hasUnbounded = true;
     }
+    // A quantifier makes the atom it follows optional/repeatable, so the body
+    // no longer ends in something mandatory. Anything else is a plain literal.
+    markAtom(!isQuantifier);
   }
 
   return { safe: true };
