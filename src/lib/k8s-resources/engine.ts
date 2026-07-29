@@ -22,23 +22,33 @@ function bad(error: string): K8sResult {
   return { valid: false, error, rows: [], warnings: [] };
 }
 
-/** Binary (1024^n) memory suffixes, longest-match-first when scanning. */
+/**
+ * Binary (1024^n) memory suffixes, longest-match-first when scanning.
+ * Mirrors the binary set in Kubernetes' `resource.Quantity` grammar.
+ */
 const BINARY: Record<string, bigint> = {
   Ki: 1024n,
   Mi: 1024n ** 2n,
   Gi: 1024n ** 3n,
   Ti: 1024n ** 4n,
   Pi: 1024n ** 5n,
+  Ei: 1024n ** 6n,
 };
 
-/** Decimal (1000^n) memory suffixes. */
+/**
+ * Decimal (1000^n) memory suffixes.
+ *
+ * Lowercase `k` only: `K` is not an SI prefix and Kubernetes rejects it, so
+ * accepting it told the user a manifest was fine that the API server would
+ * refuse. `E` (exa) completes the set alongside binary `Ei`.
+ */
 const DECIMAL: Record<string, bigint> = {
   k: 1000n,
-  K: 1000n,
   M: 1000n ** 2n,
   G: 1000n ** 3n,
   T: 1000n ** 4n,
   P: 1000n ** 5n,
+  E: 1000n ** 6n,
 };
 
 /**
@@ -67,12 +77,13 @@ function parseMem(raw: string): bigint | null {
   const s = raw.trim();
   if (s.length === 0) return null;
 
-  // Binary suffix, e.g. "256Mi".
-  const bin = /^(\d+(?:\.\d+)?)(Ki|Mi|Gi|Ti|Pi)$/.exec(s);
+  // Binary suffix, e.g. "256Mi". Must be tried before the decimal form so the
+  // trailing "i" is not mistaken for a bare decimal suffix.
+  const bin = /^(\d+(?:\.\d+)?)(Ki|Mi|Gi|Ti|Pi|Ei)$/.exec(s);
   if (bin) return scale(bin[1], BINARY[bin[2]]);
 
-  // Decimal suffix, e.g. "1G" or "500k".
-  const dec = /^(\d+(?:\.\d+)?)([kKMGTP])$/.exec(s);
+  // Decimal suffix, e.g. "1G" or "500k". Lowercase k only — see DECIMAL.
+  const dec = /^(\d+(?:\.\d+)?)([kMGTPE])$/.exec(s);
   if (dec) return scale(dec[1], DECIMAL[dec[2]]);
 
   // Plain integer = bytes.

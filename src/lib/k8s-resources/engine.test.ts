@@ -247,3 +247,48 @@ describe('k8s-resources calculate()', () => {
     });
   });
 });
+
+/**
+ * Kubernetes quantity suffixes (see the `resource.Quantity` grammar): the
+ * decimal SI set is n u m "" k M G T P E — lowercase `k` only, because `K` is
+ * not an SI prefix — and the binary set is Ki Mi Gi Ti Pi Ei. Accepting `512K`
+ * tells the user a manifest is fine that the API server will reject, and
+ * rejecting `1Ei` refuses a quantity Kubernetes accepts.
+ */
+describe('memory suffixes match the Kubernetes grammar', () => {
+  it('rejects uppercase K, which is not a Kubernetes suffix', () => {
+    expect(calculate({ memRequest: '512K' }).valid).toBe(false);
+  });
+
+  it('still accepts lowercase k as decimal 1000', () => {
+    const r = calculate({ memRequest: '512k' });
+    expect(r.valid).toBe(true);
+  });
+
+  it('accepts E as the decimal exa suffix', () => {
+    expect(calculate({ memRequest: '1E' }).valid).toBe(true);
+  });
+
+  it('accepts Ei as the binary exbi suffix', () => {
+    expect(calculate({ memRequest: '1Ei' }).valid).toBe(true);
+  });
+
+  it('scales Ei as 1024^6 bytes, distinct from E', () => {
+    const ei = calculate({ memRequest: '1Ei' });
+    const e = calculate({ memRequest: '1E' });
+    expect(ei.valid && e.valid).toBe(true);
+    expect(row(ei, 'Memory request (per pod)')).not.toBe(row(e, 'Memory request (per pod)'));
+  });
+
+  it('leaves the other suffixes working', () => {
+    for (const q of ['256Mi', '1Gi', '2Ti', '5Pi', '1M', '3G', '4T', '2P', '1024']) {
+      expect(calculate({ memRequest: q }).valid, q).toBe(true);
+    }
+  });
+
+  it('still rejects genuine nonsense', () => {
+    for (const q of ['512Q', '1KB', 'Mi', '1.2.3Gi', '-5Mi']) {
+      expect(calculate({ memRequest: q }).valid, q).toBe(false);
+    }
+  });
+});
