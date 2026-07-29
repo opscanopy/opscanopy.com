@@ -88,6 +88,14 @@ function diagnoseIPv4(s: string): string {
       return `"${part}" is not a decimal octet (0–255).`;
     }
   }
+  // Zero padding is refused rather than guessed at: inet_aton-style parsers
+  // read "010" as octal 8 while a decimal read gives 10, so a membership
+  // verdict on it would be confidently wrong under the other reading. Say so —
+  // a bare "not an IP address" leaves the user with no idea what to change.
+  const padded = parts.find((part) => /^0\d+$/.test(part));
+  if (padded) {
+    return `Octet "${padded}" has a leading zero, which is ambiguous — inet_aton-style parsers read it as octal. Write ${Number(padded)} instead.`;
+  }
   return ERR_FALLBACK;
 }
 

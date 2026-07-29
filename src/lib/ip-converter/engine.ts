@@ -219,7 +219,15 @@ export function convert(input: string): ConvertResult {
     if (parts.every((part) => /^[01]{4,}$/.test(part))) {
       return bad(binaryLengthError(stripSeparators(s).length));
     }
-    const v = parseIPv4(s);
+    // ip-core's parseIPv4 REJECTS zero-padded octets, because for a checker
+    // ("is this in range?") answering on an inet_aton-ambiguous address is an
+    // ACL/SSRF footgun. A converter's job is the opposite: explain what the
+    // ambiguous thing means. So the lenient form is normalised here — a
+    // tool-specific input form belonging in this engine, not in ip-core (see
+    // CLAUDE.md) — and W2 below names the octal disagreement explicitly.
+    // `(?=\d)` keeps a bare "000" collapsing to "0" rather than "".
+    const canonical = parts.map((part) => part.replace(/^0+(?=\d)/, '')).join('.');
+    const v = parseIPv4(canonical);
     if (v === null) return bad(diagnoseIPv4(s));
     version = 4;
     value = v;

@@ -19,13 +19,27 @@ export function fullMask(version: IpVersion): bigint {
 
 /* ── IPv4 ─────────────────────────────────────────────────────────────────── */
 
-/** Parse dotted-decimal IPv4 → 32-bit BigInt, or null. Rejects octets > 255. */
+/**
+ * Parse dotted-decimal IPv4 → 32-bit BigInt, or null. Rejects octets > 255 and
+ * any zero-padded octet.
+ *
+ * Zero padding is rejected rather than interpreted because the form is
+ * genuinely ambiguous: inet_aton(3) — and everything built on it — reads `010`
+ * as OCTAL 8, while a naive decimal parse yields 10. Accepting it silently
+ * picked the decimal reading, so this module would report `010.0.0.1` as
+ * inside `10.0.0.0/24` when a resolver using the octal reading sees 8.0.0.1
+ * and goes somewhere else entirely. That disagreement is a known ACL/SSRF
+ * bypass, and a checker that answers confidently is worse than one that
+ * refuses. Go net/netip, Python ipaddress and Node net.isIP all reject it.
+ *
+ * A bare `0` octet is still valid — only padding is refused.
+ */
 export function parseIPv4(input: string): bigint | null {
   const parts = input.trim().split('.');
   if (parts.length !== 4) return null;
   let v = 0n;
   for (const p of parts) {
-    if (!/^\d{1,3}$/.test(p)) return null;
+    if (!/^(0|[1-9]\d{0,2})$/.test(p)) return null;
     const n = Number(p);
     if (n > 255) return null;
     v = (v << 8n) | BigInt(n);
