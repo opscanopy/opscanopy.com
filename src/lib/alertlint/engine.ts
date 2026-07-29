@@ -112,6 +112,7 @@ class EvalError extends Error {}
  * ────────────────────────────────────────────────────────────────────────── */
 
 const UNIT_SECONDS: Record<string, number> = {
+  ms: 0.001,
   s: 1,
   m: 60,
   h: 3600,
@@ -119,27 +120,38 @@ const UNIT_SECONDS: Record<string, number> = {
   w: 604800,
 };
 
+/**
+ * The whole string must be an optional sign followed by one or more
+ * `<integer><unit>` terms — the Prometheus/Loki duration grammar.
+ *
+ * Anchoring matters: a scanning regex `(\d+)(s|m|h|d|w)` finds a unit ANYWHERE,
+ * so "500ms" read as 500 *minutes*, "1.5h" silently became 5 hours, and "-5m"
+ * lost its sign. `ms` must be tried before the single-letter units.
+ */
+const DURATION_RE = /^([+-])?((?:\d+(?:ms|[smhdw]))+)$/i;
+const DURATION_TERM_RE = /(\d+)(ms|[smhdw])/gi;
+
 /** Parse a Prometheus/Loki style duration like "0m", "30s", "1h30m" → seconds. */
 function parseDuration(raw: string | number | undefined, ctx: string): number {
   if (raw === undefined || raw === null) return 0;
   if (typeof raw === 'number') return raw; // already seconds
   const s = String(raw).trim();
-  if (s === '' || s === '0') return 0;
-  // Allow compound durations (e.g. "1h30m") as well as single units.
-  const re = /(\d+)\s*(s|m|h|d|w)/gi;
-  let total = 0;
-  let matched = false;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(s)) !== null) {
-    matched = true;
-    const value = Number(m[1]);
-    const unit = m[2].toLowerCase();
-    total += value * UNIT_SECONDS[unit];
-  }
-  if (!matched) {
+  if (s === '') return 0;
+  if (/^[+-]?0+$/.test(s)) return 0; // bare "0" is a valid zero duration
+
+  const whole = s.match(DURATION_RE);
+  if (!whole) {
     throw new EvalError(`Could not parse duration "${raw}" in ${ctx}. Use units like 30s, 5m, 1h.`);
   }
-  return total;
+
+  // Compound durations ("1h30m") sum their terms.
+  let total = 0;
+  DURATION_TERM_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = DURATION_TERM_RE.exec(whole[2])) !== null) {
+    total += Number(m[1]) * UNIT_SECONDS[m[2].toLowerCase()];
+  }
+  return whole[1] === '-' ? -total : total;
 }
 
 /* ────────────────────────────────────────────────────────────────────────── *
@@ -290,11 +302,14 @@ function matchesLabels(entry: LogEntry, matchers: LabelMatcher[]): boolean {
       case '!=':
         if (actual === m.value) return false;
         break;
+      // Loki/Prometheus compile LABEL-matcher regexes fully anchored, as
+      // `^(?:pattern)$` — `namespace=~"prod"` never matches "production".
+      // (LINE filters below stay unanchored: those are substring searches.)
       case '=~':
-        if (!safeRegex(m.value).test(actual)) return false;
+        if (!safeRegex(m.value, true).test(actual)) return false;
         break;
       case '!~':
-        if (safeRegex(m.value).test(actual)) return false;
+        if (safeRegex(m.value, true).test(actual)) return false;
         break;
     }
   }
@@ -323,8 +338,17 @@ function matchesFilters(line: string, filters: LineFilter[]): boolean {
 }
 
 const regexCache = new Map<string, RegExp>();
-function safeRegex(pattern: string): RegExp {
-  let re = regexCache.get(pattern);
+/**
+ * Compile a user-supplied regex, guarded against catastrophic backtracking.
+ *
+ * `anchored` wraps the pattern as `^(?:…)$`, which is how Loki/Prometheus
+ * compile LABEL matchers. Line filters pass `false` (the default) because
+ * `|~` / `!~` after the stream selector are genuine substring searches.
+ * Both variants are cached under distinct keys.
+ */
+function safeRegex(pattern: string, anchored = false): RegExp {
+  const key = (anchored ? 'a ' : 'u ') + pattern;
+  let re = regexCache.get(key);
   if (!re) {
     // Reject catastrophic-backtracking shapes before compiling so a malicious
     // label-matcher or line-filter regex cannot wedge the evaluation thread.
@@ -338,11 +362,11 @@ function safeRegex(pattern: string): RegExp {
       );
     }
     try {
-      re = new RegExp(pattern);
+      re = new RegExp(anchored ? `^(?:${pattern})$` : pattern);
     } catch {
       throw new EvalError(`Invalid regular expression: "${pattern}".`);
     }
-    regexCache.set(pattern, re);
+    regexCache.set(key, re);
   }
   return re;
 }
@@ -484,7 +508,8 @@ function evalMetric(expr: string, store: LogEntry[], evalT: number, ctx: string)
   const body = m[2].trim();
 
   // Pull the trailing range: "...} [5m]"
-  const rangeMatch = body.match(/\[\s*([0-9]+[smhdw](?:[0-9]+[smhdw])*)\s*\]\s*$/i);
+  // Same duration grammar as parseDuration (ms included, `ms` before `m`).
+  const rangeMatch = body.match(/\[\s*((?:[0-9]+(?:ms|[smhdw]))+)\s*\]\s*$/i);
   if (!rangeMatch) {
     throw new EvalError(`Missing range "[...]" in ${ctx}, e.g. count_over_time({app="x"}[5m]).`);
   }
@@ -526,6 +551,18 @@ function evalMetric(expr: string, store: LogEntry[], evalT: number, ctx: string)
 
 interface FiringAlert {
   labels: Record<string, string>;
+  /**
+   * THIS series' own value at evalT — what `{{ $value }}` must render. Each
+   * member of a `sum by (...)` group carries its own number; reporting the
+   * group maximum for all of them puts another series' figure in the alert.
+   */
+  value?: number;
+}
+
+interface AlertEvaluation {
+  alerts: FiringAlert[];
+  /** Optional explanation appended to the assertion's message. */
+  note?: string;
 }
 
 /**
@@ -537,9 +574,22 @@ function evaluateAlertRule(
   store: LogEntry[],
   evalT: number,
   intervalSeconds: number,
+  evalLabel: string,
   ctx: string,
-): FiringAlert[] {
+): AlertEvaluation {
   const forSeconds = parseDuration(rule.for, `${ctx} (for:)`);
+
+  // A `for:` longer than the evaluation time cannot possibly have elapsed —
+  // the pending window would reach back before t=0, where no data exists. The
+  // alert is Pending at evalT, never Firing. Say so instead of silently
+  // collapsing the window to whatever samples happen to be in range (which
+  // validated every long-`for` rule as if `for` were 0).
+  if (forSeconds > 0 && forSeconds > evalT) {
+    return {
+      alerts: [],
+      note: `for: ${String(rule.for)} exceeds eval_time ${evalLabel} — the alert would still be Pending, not Firing.`,
+    };
+  }
 
   // Sample times across the for-window, oldest → newest, inclusive of evalT.
   const sampleTimes: number[] = [];
@@ -551,6 +601,9 @@ function evaluateAlertRule(
 
   // The firing series must be present (and pass the comparison) at every sample.
   let intersection: Map<string, Series> | null = null;
+  // The most recent sample's vector — the loop only exits early once the
+  // intersection is empty, so whenever alerts survive this holds evalT.
+  let latest = new Map<string, Series>();
   for (const t of sampleTimes) {
     const out = evalExpr(rule.expr, store, t, ctx);
     if (!out.hasComparison) {
@@ -560,6 +613,7 @@ function evaluateAlertRule(
     }
     const present = new Map<string, Series>();
     for (const s of out.series) present.set(labelKey(s.labels), s);
+    latest = present;
 
     if (intersection === null) {
       intersection = present;
@@ -572,18 +626,18 @@ function evaluateAlertRule(
     if (intersection.size === 0) break;
   }
 
-  const firing: FiringAlert[] = [];
+  const alerts: FiringAlert[] = [];
   if (intersection) {
-    for (const s of intersection.values()) {
+    for (const [key, s] of intersection) {
       // Alert label set = rule.labels merged over the series' own labels.
       const labels: Record<string, string> = {
         ...s.labels,
         ...(rule.labels ?? {}),
       };
-      firing.push({ labels });
+      alerts.push({ labels, value: latest.get(key)?.value ?? s.value });
     }
   }
-  return firing;
+  return { alerts };
 }
 
 /* ────────────────────────────────────────────────────────────────────────── *
@@ -720,12 +774,21 @@ export function runTests(rulesYaml: string, testYaml: string): RunResult {
           continue;
         }
 
-        const firing = evaluateAlertRule(rule, store, evalT, intervalSeconds, ctx);
+        const { alerts: firing, note } = evaluateAlertRule(
+          rule,
+          store,
+          evalT,
+          intervalSeconds,
+          evalLabel,
+          ctx,
+        );
         const expected = art.exp_alerts ?? [];
 
         // Build a comparable “actual” alert list (with rendered annotations).
         const actualAlerts = firing.map((f) => {
-          const value = computeRuleValue(rule, store, evalT, ctx);
+          // Each firing series renders its OWN value; computeRuleValue is only
+          // a fallback for the single-unlabelled-series shape.
+          const value = f.value ?? computeRuleValue(rule, store, evalT, ctx);
           const annotations: Record<string, string> = {};
           for (const [k, v] of Object.entries(rule.annotations ?? {})) {
             annotations[k] = renderTemplate(v, f.labels, value);
@@ -734,7 +797,12 @@ export function runTests(rulesYaml: string, testYaml: string): RunResult {
         });
 
         const verdict = compareAlerts(alertname, expected, actualAlerts);
-        results.push({ ...verdict, evalTime: evalLabel, kind: 'alert' });
+        results.push({
+          ...verdict,
+          message: note ? `${verdict.message} ${note}` : verdict.message,
+          evalTime: evalLabel,
+          kind: 'alert',
+        });
       }
 
       // ── Recording-rule assertions ──────────────────────────────────────
@@ -781,19 +849,28 @@ export function runTests(rulesYaml: string, testYaml: string): RunResult {
   }
 }
 
-/** Compute a representative scalar `$value` for annotation templating. */
+/**
+ * Fallback scalar `$value` for annotation templating, used only when a firing
+ * alert did not carry its own sample value.
+ *
+ * Restricted to the ONE case where a whole-expression value is unambiguous: a
+ * single, unlabelled series. With a `sum by (...)` group there is no single
+ * right answer — reducing across series handed every alert its neighbour's
+ * number — so we return undefined and the template renders empty.
+ */
 function computeRuleValue(
   rule: LokiRule,
   store: LogEntry[],
   evalT: number,
   ctx: string,
-): number {
+): number | undefined {
   // Strip the comparison so we report the underlying measured value.
   const noCmp = rule.expr.replace(CMP_RE, '').trim();
   const series = evalAggOrMetric(noCmp, store, evalT, ctx);
-  if (series.length === 0) return 0;
-  // Report the max series value (most relevant for “rate exceeded threshold”).
-  return series.reduce((acc, s) => Math.max(acc, s.value), series[0].value);
+  if (series.length === 1 && Object.keys(series[0].labels).length === 0) {
+    return series[0].value;
+  }
+  return undefined;
 }
 
 /** Compare expected vs. actual alerts and produce a TestResult (sans evalTime/kind). */
