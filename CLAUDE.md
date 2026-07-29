@@ -85,7 +85,9 @@ New or reworked playgrounds should follow the conventions these three tools shar
 - **Copy/share**: per-row copy buttons (icon-swap, execCommand fallback, 44px coarse targets), a "Copy all" button carrying `data-copy-all`, and a "Copy link" share button hidden until valid. The `result_copied` analytics listener in `Layout.astro` fires on `[data-copy]`/`[data-copy-all]`/`[data-copy-link]` clicks inside `#playground`.
 - **XSS**: every injected value goes through `escapeHtml()` (`src/lib/escape-html.ts`).
 
-`src/components/IpConverterPlayground.astro` is the cleanest reference implementation to port these patterns from.
+**`src/components/CidrCheckerPlayground.astro` is the reference implementation to port these patterns from** (`SubnetCalculatorPlayground.astro` is equally compliant). Both satisfy every bullet above: example chips at `var(--radius-pill)` with a 44px coarse-pointer target, the exact hint line, per-row copy + `data-copy-all` + `data-copy-link`, an sr-only `role="status"` copy-status span, and a results container that is **not** `aria-live`.
+
+Do NOT copy `IpConverterPlayground.astro` for these patterns — it predates the contract and violates two of its own bullets (it uses a `<select id="ipc-example">` for examples, and has no hint line). Its `.ipc-chip` classes are cross-tool *link* chips, an unrelated feature. It was cited here as the reference until 2026-07-29, so anything modelled on it is likely non-compliant.
 
 ### Networking tools — shared IP math
 
