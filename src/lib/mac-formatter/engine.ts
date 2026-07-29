@@ -2,7 +2,8 @@
  * MAC Address Formatter — engine. Accepts an EUI-48 MAC in any common
  * notation (colon, hyphen, Cisco dotted, or bare hex, with an optional leading
  * "0x"), then renders every separator form plus the OUI, the I/G and U/L bit
- * interpretations, and the derived IPv6 link-local (modified EUI-64) address.
+ * interpretations, and — for unicast addresses only — the derived IPv6
+ * link-local (modified EUI-64) address.
  * Pure + browser-safe; never throws on user input.
  */
 import { ipv6Compress } from '../ip-core';
@@ -51,10 +52,15 @@ export function format(input: string): MacResult {
   rows.push({ label: 'No separators', value: lower, mono: true });
   rows.push({ label: 'OUI (first 3 bytes)', value: join(bytes.slice(0, 3), ':', true), mono: true });
 
-  // I/G bit — bit 0 of the first octet: 0 = unicast, 1 = multicast.
+  // I/G bit — bit 0 of the first octet: 0 = unicast, 1 = group (multicast).
   const isBroadcast = bytes.every((b) => b === 0xff);
-  let transmission = (bytes[0] & 0x01) === 0 ? 'Unicast' : 'Multicast';
+  const isGroup = (bytes[0] & 0x01) !== 0;
+  let transmission = isGroup ? 'Multicast' : 'Unicast';
   if (isBroadcast) transmission += ' — broadcast';
+  // A group address names a set of receivers, not one interface, so there is no
+  // interface identifier to derive. Say that here — where the I/G bit is already
+  // being reported — and omit the link-local row below entirely.
+  if (isGroup) transmission += ' (group address: no EUI-64 link-local)';
   rows.push({ label: 'Transmission', value: transmission });
 
   // U/L bit — bit 1 of the first octet: 0 = universal/OUI, 1 = local.
@@ -64,20 +70,28 @@ export function format(input: string): MacResult {
 
   // Modified EUI-64: flip the U/L bit of the first octet, then insert
   // 0xff 0xfe between bytes 3 and 4. Prepend fe80::/64 for the link-local.
-  const eui64 = [
-    bytes[0] ^ 0x02,
-    bytes[1],
-    bytes[2],
-    0xff,
-    0xfe,
-    bytes[3],
-    bytes[4],
-    bytes[5],
-  ];
-  let interfaceId = 0n;
-  for (const b of eui64) interfaceId = (interfaceId << 8n) | BigInt(b);
-  const linkLocal = (0xfe80n << 112n) | interfaceId;
-  rows.push({ label: 'IPv6 link-local (EUI-64)', value: ipv6Compress(linkLocal), mono: true });
+  //
+  // UNICAST ONLY. Deriving this for a group address (multicast, or the all-ones
+  // broadcast) invents an fe80:: address that no interface has and that nothing
+  // will answer on — so the row is omitted and the Transmission row above says
+  // why. Downstream consumers key off this row's label to offer the address to
+  // other tools; there must be nothing to offer here.
+  if (!isGroup) {
+    const eui64 = [
+      bytes[0] ^ 0x02,
+      bytes[1],
+      bytes[2],
+      0xff,
+      0xfe,
+      bytes[3],
+      bytes[4],
+      bytes[5],
+    ];
+    let interfaceId = 0n;
+    for (const b of eui64) interfaceId = (interfaceId << 8n) | BigInt(b);
+    const linkLocal = (0xfe80n << 112n) | interfaceId;
+    rows.push({ label: 'IPv6 link-local (EUI-64)', value: ipv6Compress(linkLocal), mono: true });
+  }
 
   return { valid: true, rows };
 }

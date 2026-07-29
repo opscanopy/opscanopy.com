@@ -18,7 +18,12 @@
  *
  *   generateUlid(now = Date.now(), randomBytes?): UlidResult
  *     - Encodes a 48-bit millisecond timestamp (10 Crockford base32 chars) plus
- *       80 bits of randomness (16 chars) = 26 chars total.
+ *       80 bits of randomness (16 chars) = 26 chars total, always UPPERCASE
+ *       (canonical Crockford).
+ *     - Monotonic: repeats of the same millisecond increment the retained 80-bit
+ *       random component by 1 (overflow waits for the next millisecond, never
+ *       wraps), so a back-to-back batch is strictly increasing as a byte sort.
+ *       Injecting `randomBytes` bypasses that and stays deterministic.
  *     - Requires `now` to be a finite integer in [0, 2^48 − 1]; otherwise
  *       returns { valid:false, error }.
  *     - Default randomness is a secure crypto.getRandomValues(new Uint8Array(10));
@@ -207,9 +212,60 @@ function encodeUlid(ms: number, bytes: Uint8Array): string {
   return time + rand;
 }
 
+/* ── Monotonic state (same-millisecond ordering) ──────────────────────────── *
+ * ULID's whole selling point over UUIDv4 is that lexicographic order equals
+ * mint order. Drawing fresh randomness for every value breaks that inside a
+ * millisecond: a batch minted in one tick comes out in random sort order. So we
+ * retain the last (ms, 80-bit random) pair and, when the millisecond repeats,
+ * increment the random component by 1 instead of re-randomising.
+ * ------------------------------------------------------------------------- */
+
+/** Timestamp of the last ULID minted from generated (not injected) randomness. */
+let lastUlidMs = -1;
+/** The 80-bit random component that accompanied `lastUlidMs`. */
+let lastUlidRandom: Uint8Array | null = null;
+
+/**
+ * Increment a big-endian byte array by 1 in place. Returns false when the value
+ * was all-ones and therefore overflowed (callers must not wrap — wrapping would
+ * emit a value that sorts *before* its predecessor).
+ */
+function incrementBytes(bytes: Uint8Array): boolean {
+  for (let i = bytes.length - 1; i >= 0; i--) {
+    if (bytes[i] === 0xff) {
+      bytes[i] = 0;
+      continue;
+    }
+    bytes[i] += 1;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Wait for the wall clock to move past `after` so a fresh millisecond (and a
+ * fresh random component) can be used rather than wrapping. Bounded: if the
+ * clock cannot advance past `after` within a few milliseconds (e.g. `after` is
+ * a fabricated future timestamp) fall back to `after + 1` instead of spinning.
+ */
+function millisecondAfter(after: number): number {
+  const giveUpAt = Date.now() + 5;
+  for (;;) {
+    const t = Date.now();
+    if (t > after) return t;
+    if (t > giveUpAt) return after + 1;
+  }
+}
+
 /**
  * Generate a ULID as a result object: 48-bit ms timestamp (10 chars) + 80 bits
  * randomness (16 chars) = 26 Crockford base32 chars. Never throws.
+ *
+ * Monotonic: consecutive calls that land in the same millisecond increment the
+ * retained 80-bit random component by 1, so a back-to-back batch is strictly
+ * increasing as a byte sort. If that component is exhausted (all ones) the
+ * engine waits for the next millisecond rather than wrapping. Passing
+ * `randomBytes` bypasses the monotonic path entirely and stays deterministic.
  *
  * Fails cleanly (`{ valid:false, error }`) when:
  *   - `now` is not a finite integer in [0, 2^48 − 1], or
@@ -233,13 +289,33 @@ export function generateUlid(
     return { valid: false, error: ULID_TIME_ERROR };
   }
 
-  const bytes =
-    randomBytes && randomBytes.length >= 10 ? randomBytes : secureRandomBytes(10);
+  // Injected randomness → fully deterministic; no monotonic state involved.
+  if (randomBytes && randomBytes.length >= 10) {
+    return { valid: true, value: encodeUlid(now, randomBytes) };
+  }
+
+  let ms = now;
+
+  // Same millisecond as the previous mint → +1 on the retained randomness.
+  if (ms === lastUlidMs && lastUlidRandom) {
+    const next = new Uint8Array(lastUlidRandom);
+    if (incrementBytes(next)) {
+      lastUlidRandom = next;
+      return { valid: true, value: encodeUlid(ms, next) };
+    }
+    // 2^80 values exhausted within one millisecond: move to the next tick.
+    ms = millisecondAfter(lastUlidMs);
+    if (ms > MAX_ULID_TIME) return { valid: false, error: ULID_TIME_ERROR };
+  }
+
+  const bytes = secureRandomBytes(10);
   if (!bytes) {
     return { valid: false, error: SECURE_RANDOM_ERROR };
   }
 
-  return { valid: true, value: encodeUlid(now, bytes) };
+  lastUlidMs = ms;
+  lastUlidRandom = bytes;
+  return { valid: true, value: encodeUlid(ms, bytes) };
 }
 
 /**

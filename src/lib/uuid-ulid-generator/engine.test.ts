@@ -19,6 +19,7 @@ import {
 
 const V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CROCKFORD_RE = /^[0-9ABCDEFGHJKMNPQRSTVWXYZ]{26}$/;
+const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 
 describe('generateUuidV4', () => {
   it('matches the v4 shape across many samples', () => {
@@ -112,6 +113,78 @@ describe('generateUlid', () => {
     const hi = generateUlid(2 ** 48 - 1, fixedBytes);
     expect(hi.valid).toBe(true);
     expect(decodeUlidTime(hi.value!)).toBe(2 ** 48 - 1);
+  });
+});
+
+describe('ULID monotonicity (same-millisecond ordering)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('mints a large back-to-back batch that is strictly increasing as a byte sort', () => {
+    const values: string[] = [];
+    for (let i = 0; i < 1000; i++) {
+      const r = generateUlid();
+      expect(r.valid).toBe(true);
+      values.push(r.value!);
+    }
+    // Every value must be > its predecessor: the UI numbers the batch 1..N, so
+    // mint order has to equal sort order or the list lies about being ordered.
+    const outOfOrder: number[] = [];
+    for (let i = 1; i < values.length; i++) {
+      if (!(values[i] > values[i - 1])) outOfOrder.push(i);
+    }
+    expect(outOfOrder).toEqual([]);
+    expect([...values].sort()).toEqual(values);
+    expect(new Set(values).size).toBe(values.length);
+  });
+
+  it('keeps the timestamp and increments the random component by 1 when the ms repeats', () => {
+    const now = Date.now();
+    const a = generateUlid(now);
+    const b = generateUlid(now);
+    expect(a.valid).toBe(true);
+    expect(b.valid).toBe(true);
+    expect(b.value!.slice(0, 10)).toBe(a.value!.slice(0, 10));
+    expect(b.value! > a.value!).toBe(true);
+    // Exactly +1 on the 80-bit random component.
+    const randToBig = (s: string) => {
+      let n = 0n;
+      for (const ch of s.slice(10)) n = n * 32n + BigInt(CROCKFORD.indexOf(ch));
+      return n;
+    };
+    expect(randToBig(b.value!) - randToBig(a.value!)).toBe(1n);
+  });
+
+  it('emits canonical uppercase Crockford, never lowercase', () => {
+    const r = generateUlid();
+    expect(r.value).toMatch(/^[0-9A-Z]{26}$/);
+    expect(r.value).not.toMatch(/[a-z]/);
+  });
+
+  it('waits for the next millisecond instead of wrapping when the random component overflows', () => {
+    // All-ones randomness → the next mint in the same millisecond overflows.
+    vi.stubGlobal('crypto', {
+      getRandomValues: (a: Uint8Array) => {
+        a.fill(0xff);
+        return a;
+      },
+    });
+    const now = Date.now() - 1000; // distinct from any retained state
+    const a = generateUlid(now);
+    const b = generateUlid(now);
+    expect(a.valid).toBe(true);
+    expect(b.valid).toBe(true);
+    expect(a.value!.slice(10)).toBe('ZZZZZZZZZZZZZZZZ'); // 80 ones
+    expect(b.value! > a.value!).toBe(true);
+    expect(decodeUlidTime(b.value!)!).toBeGreaterThan(decodeUlidTime(a.value!)!);
+  });
+
+  it('stays deterministic when randomBytes is injected (no monotonic state)', () => {
+    const bytes = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    const a = generateUlid(1469918176385, bytes);
+    const b = generateUlid(1469918176385, bytes);
+    expect(a.value).toBe(b.value);
   });
 });
 

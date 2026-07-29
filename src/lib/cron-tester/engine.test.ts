@@ -1,5 +1,36 @@
 import { describe, it, expect } from 'vitest';
-import { nextRunEpochSeconds } from './engine';
+import { explain, nextRunEpochSeconds } from './engine';
+
+describe('explain — "every N" is only claimed when the list really tiles the field', () => {
+  it('does not fabricate "Every 45 minutes" for 0,45 (the real gap is 15 minutes)', () => {
+    expect(explain('0,45 * * * *').description).toBe('Minute 0 and 45 of every hour.');
+  });
+
+  it('does not fabricate "Every 59 minutes" for 0,59', () => {
+    expect(explain('0,59 * * * *').description).toBe('Minute 0 and 59 of every hour.');
+  });
+
+  it('does not fabricate "Every 23 hours" for hours 0,23', () => {
+    expect(explain('0 0,23 * * *').description).toBe('At 00:00 and 23:00.');
+  });
+
+  it('enumerates */5 hours honestly — 20:00 → 00:00 is a 4-hour gap, not 5', () => {
+    expect(explain('0 */5 * * *').description).toBe(
+      'At 00:00, 05:00, 10:00, 15:00, and 20:00.',
+    );
+  });
+
+  it('still says "Every 15 minutes" for a genuinely tiling list', () => {
+    expect(explain('0,15,30,45 * * * *').description).toBe('Every 15 minutes.');
+  });
+
+  it('still says "Every N" for real step expressions that tile', () => {
+    expect(explain('*/5 * * * *').description).toBe('Every 5 minutes.');
+    expect(explain('*/15 * * * *').description).toBe('Every 15 minutes.');
+    expect(explain('0 */2 * * *').description).toBe('Every 2 hours at :00.');
+    expect(explain('0 */6 * * *').description).toBe('Every 6 hours at :00.');
+  });
+});
 
 describe('nextRunEpochSeconds', () => {
   it('returns a real epoch for the next local midnight after `from`', () => {

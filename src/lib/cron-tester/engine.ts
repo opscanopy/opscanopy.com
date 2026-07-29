@@ -347,6 +347,11 @@ function detectFullStep(spec: FieldSpec, min: number, max: number): number | nul
   // skipped — i.e. the next step lands past `max`. If it would still fit, the
   // values were a partial range, not a "* /step" across the whole field.
   if (expected <= max) return null;
+  // The step must also TILE the field, or "every N" is a lie about the wrap:
+  // "0,45" in minutes ends 45 → 0, a 15-minute gap, and "*/5" in hours ends
+  // 20 → 0, a 4-hour gap. Only a step that divides the field width evenly
+  // repeats at a constant interval; anything else must be enumerated instead.
+  if ((max - min + 1) % step !== 0) return null;
   return step;
 }
 
