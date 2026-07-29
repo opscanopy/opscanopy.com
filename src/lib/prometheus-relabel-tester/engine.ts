@@ -31,6 +31,14 @@
  * │      match the regex.                                                       │
  * │    • lowercase / uppercase: set target_label to the lower/upper-cased       │
  * │      joined source.                                                         │
+ * │    • EVERY write goes through one setter, because Prometheus writes through │
+ * │      labels.Builder.Set, which DELETES the label when the value is "".      │
+ * │      That applies to lowercase/uppercase/labelmap/hashmod, not just         │
+ * │      replace — see `setLabel`.                                             │
+ * │    • regexes are RE2, so `(?P<name>…)` and a leading `(?i)` are translated │
+ * │      into JavaScript rather than rejected, and patterns that would make the │
+ * │      browser's backtracking engine explode are refused before they run —    │
+ * │      see the regex-compilation section.                                     │
  * │                                                                            │
  * │  It NEVER throws: bad YAML, a non-list config, or empty input returns      │
  * │  { ok:false, error } with no results.                                      │
@@ -307,22 +315,280 @@ function parseRule(raw: unknown, idx: number): RelabelRule | { error: string } {
 }
 
 /* ────────────────────────────────────────────────────────────────────────── *
- *  Regex anchoring + replacement expansion (Prometheus semantics).
+ *  Regex compilation: RE2 → JavaScript translation, anchoring, and a
+ *  catastrophic-backtracking guard.
+ *
+ *  Prometheus compiles relabel regexes with Go's `regexp` (RE2), which differs
+ *  from JavaScript in two ways that matter here:
+ *
+ *    1. SPELLING. RE2 writes named groups as `(?P<name>…)` and accepts a leading
+ *       inline flag group `(?i)` / `(?s)` / `(?m)`. Both are valid Prometheus
+ *       config and must be TRANSLATED, not rejected. Constructs that genuinely
+ *       have no JavaScript equivalent (POSIX classes like `[[:alpha:]]`, `(?U)`)
+ *       must be refused BY NAME — never with a bare "invalid regex", and never
+ *       by handing the browser a pattern that quietly matches something else.
+ *
+ *    2. TIME. RE2 has no backtracking: it matches in time linear in the input,
+ *       so a nested quantifier like `(a+)+b` is harmless in Prometheus. The
+ *       browser's engine backtracks, and the same pattern is exponential —
+ *       measured on this engine, `(a+)+b` against a non-matching 26-character
+ *       value took 21s, and each extra character roughly doubles that. Since we
+ *       cannot interrupt a running RegExp on the main thread, such patterns are
+ *       refused BEFORE they run, loudly. A silently skipped matcher would print
+ *       a wrong survivor list, which is the worse failure.
  * ────────────────────────────────────────────────────────────────────────── */
 
+/** A compiled, fully-anchored matcher — or a specific reason we refused it. */
+type CompileResult = { re: RegExp } | { error: string };
+
+/** The only Go inline flags with a direct JavaScript RegExp flag equivalent. */
+const LIFTABLE_INLINE_FLAGS = /^[ism]+$/;
+
 /**
- * Compile a Prometheus relabel regex. Prometheus wraps the user pattern as
- * `^(?:<regex>)$` (relabel.NewRegexp) so it is FULLY ANCHORED — a partial match
- * never counts. We compile with no flags (Go's RE2 is case-sensitive by default).
- * Returns null when the pattern is not valid (caller turns that into an error).
+ * Index of the `)` closing the group that opens at `open`, skipping escapes and
+ * `[...]` character classes. Returns -1 when the group is unbalanced.
  */
-function compileRegex(pattern: string): RegExp | null {
-  try {
-    return new RegExp(`^(?:${pattern})$`);
-  } catch {
+function matchingParen(pattern: string, open: number): number {
+  let depth = 0;
+  let inClass = false;
+  for (let i = open; i < pattern.length; i++) {
+    const c = pattern[i];
+    if (c === '\\') {
+      i++;
+      continue;
+    }
+    if (inClass) {
+      if (c === ']') inClass = false;
+      continue;
+    }
+    if (c === '[') {
+      inClass = true;
+      continue;
+    }
+    if (c === '(') depth++;
+    else if (c === ')') {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Indices of `pattern` that sit at *operator* level — i.e. not consumed by a
+ * backslash escape and not inside a `[...]` character class. Everything that
+ * inspects regex structure below walks these, so a `+` inside `[a+]` or a `(`
+ * written `\(` is never mistaken for syntax.
+ */
+function operatorIndices(pattern: string): number[] {
+  const out: number[] = [];
+  let inClass = false;
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i];
+    if (c === '\\') {
+      i++;
+      continue;
+    }
+    if (inClass) {
+      if (c === ']') inClass = false;
+      continue;
+    }
+    if (c === '[') {
+      inClass = true;
+      continue;
+    }
+    out.push(i);
+  }
+  return out;
+}
+
+/** True when an UNBOUNDED quantifier (`*`, `+`, `{n,}`) starts at `i`. */
+function isUnboundedQuantifierAt(pattern: string, i: number): boolean {
+  const c = pattern[i];
+  if (c === '*' || c === '+') return true;
+  if (c === '{') {
+    const close = pattern.indexOf('}', i);
+    if (close === -1) return false; // a literal `{`
+    return /^\{\d*,\}$/.test(pattern.slice(i, close + 1));
+  }
+  return false;
+}
+
+/**
+ * The first `(…)`-group in `pattern` that is itself repeated without an upper
+ * bound AND contains an unbounded quantifier — `(a+)+`, `(a*)*`, `(\d+|x){2,}`.
+ * That nesting is what makes a backtracking engine explode exponentially. A
+ * BOUNDED outer quantifier (`(?::\d+)?`, `(x+){1,3}`) cannot blow up and is left
+ * alone, so ordinary Prometheus patterns keep working. Returns null when clean.
+ */
+function nestedUnboundedQuantifier(pattern: string): string | null {
+  const hasUnbounded = (s: string) =>
+    operatorIndices(s).some((i) => isUnboundedQuantifierAt(s, i));
+
+  for (const open of operatorIndices(pattern)) {
+    if (pattern[open] !== '(') continue;
+    const close = matchingParen(pattern, open);
+    if (close === -1) continue;
+    if (!isUnboundedQuantifierAt(pattern, close + 1)) continue;
+    if (!hasUnbounded(pattern.slice(open + 1, close))) continue;
+    const end = pattern[close + 1] === '{' ? pattern.indexOf('}', close + 1) + 1 : close + 2;
+    return pattern.slice(open, end);
+  }
+  return null;
+}
+
+/** What one pass over the pattern found while translating RE2 spelling. */
+interface Re2Scan {
+  /** The pattern with `(?P<name>` rewritten to JavaScript's `(?<name>`. */
+  body: string;
+  /** First POSIX bracket class seen (e.g. `[:alpha:]`), else null. */
+  posix: string | null;
+  /** First inline flag group seen, else null (used only to explain a failure). */
+  flagGroup: string | null;
+}
+
+/**
+ * Single pass that rewrites RE2-only *spelling* into JavaScript and records the
+ * constructs we may have to explain. `(?P<name>` → `(?<name>` is the only
+ * rewrite; POSIX classes and inline flag groups are reported, not rewritten.
+ */
+function scanRe2(pattern: string): Re2Scan {
+  let body = '';
+  let posix: string | null = null;
+  let flagGroup: string | null = null;
+  let inClass = false;
+
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i];
+
+    if (c === '\\') {
+      body += c + (pattern[i + 1] ?? '');
+      i++;
+      continue;
+    }
+
+    if (inClass) {
+      // `[[:alpha:]]` compiles in JavaScript as a class of the literal
+      // characters `[`,`:`,`a`,`l`,`p`,`h` — a SILENT mis-match, so flag it.
+      if (c === '[' && pattern[i + 1] === ':') {
+        const close = pattern.indexOf(':]', i + 2);
+        if (close !== -1 && posix === null) posix = pattern.slice(i, close + 2);
+      }
+      if (c === ']') inClass = false;
+      body += c;
+      continue;
+    }
+
+    if (c === '[') {
+      inClass = true;
+      body += c;
+      continue;
+    }
+
+    if (c === '(') {
+      if (pattern.startsWith('(?P<', i)) {
+        body += '(?<';
+        i += 3;
+        continue;
+      }
+      const flags = /^\(\?([A-Za-z-]+)[):]/.exec(pattern.slice(i));
+      if (flags && flagGroup === null) flagGroup = flags[0];
+      body += c;
+      continue;
+    }
+
+    body += c;
+  }
+
+  return { body, posix, flagGroup };
+}
+
+/**
+ * Compile a Prometheus relabel regex, FULLY ANCHORED as `^(?:<regex>)$` exactly
+ * like `relabel.NewRegexp` does — a partial match never counts. RE2 spelling is
+ * translated first; anything unrepresentable, or anything that would make the
+ * JavaScript engine backtrack catastrophically, returns a specific `error`.
+ */
+function compileRegex(pattern: string): CompileResult {
+  let body = pattern;
+  let flags = '';
+
+  const addFlags = (set: string): string | null => {
+    if (!LIFTABLE_INLINE_FLAGS.test(set)) {
+      return `uses the inline flag group \`(?${set})\`, which has no JavaScript RegExp flag equivalent (only \`(?i)\`, \`(?s)\` and \`(?m)\` do). Prometheus (RE2) accepts it, so the pattern is fine in your config — but this in-browser simulator refuses to guess rather than mis-match it.`;
+    }
+    for (const f of set) if (!flags.includes(f)) flags += f;
     return null;
+  };
+
+  // 1. Lift leading inline flags into real RegExp flags. At position 0 a Go
+  //    `(?i)` applies to the whole pattern, which is precisely what a JavaScript
+  //    flag does. `(?i)(?s)foo` and a whole-pattern `(?i:foo|bar)` both reduce.
+  for (let progress = true; progress; ) {
+    progress = false;
+    const lead = /^\(\?([A-Za-z-]+)\)/.exec(body);
+    if (lead) {
+      const bad = addFlags(lead[1]);
+      if (bad) return { error: bad };
+      body = body.slice(lead[0].length);
+      progress = true;
+      continue;
+    }
+    // `(?i:…)` only reduces to a flag when the group spans the WHOLE pattern;
+    // `(?i:a)|b` must not make `b` case-insensitive too.
+    const scoped = /^\(\?([A-Za-z-]+):/.exec(body);
+    if (scoped && matchingParen(body, 0) === body.length - 1) {
+      const bad = addFlags(scoped[1]);
+      if (bad) return { error: bad };
+      body = body.slice(scoped[0].length, -1);
+      progress = true;
+    }
+  }
+
+  // 2. Translate RE2 spelling (`(?P<name>` → `(?<name>`) and collect hazards.
+  const scan = scanRe2(body);
+  body = scan.body;
+
+  if (scan.posix) {
+    return {
+      error: `uses the POSIX character class \`${scan.posix}\`. It is valid in Prometheus (RE2), but JavaScript reads it as a class of the literal characters instead, so this simulator would silently mis-match it. Rewrite it explicitly (\`[[:alpha:]]\` → \`[A-Za-z]\`, \`[[:digit:]]\` → \`[0-9]\`) to preview the result here.`,
+    };
+  }
+
+  // 3. Refuse exponential backtracking BEFORE any matching happens.
+  const nested = nestedUnboundedQuantifier(body);
+  if (nested) {
+    return {
+      error: `was NOT evaluated: \`${nested}\` nests an unbounded quantifier inside an unbounded-quantified group, which makes JavaScript's backtracking regex engine explode exponentially (measured here: ~21s on a 26-character value, roughly doubling per extra character) and would freeze this tab. Prometheus compiles relabel regexes with RE2, which has no backtracking and evaluates this safely in linear time — the pattern is fine in your Prometheus config. Rewrite it without the nested quantifier (e.g. \`(a+)+\` → \`a+\`) to preview the result here.`,
+    };
+  }
+
+  // 4. Go's `\p{…}` Unicode classes need JavaScript's `u` flag; without it JS
+  //    reads `\p` as a literal `p` and would silently mis-match.
+  const needsUnicode = /\\[pP]\{/.test(body);
+  if (needsUnicode) flags += 'u';
+
+  try {
+    return { re: new RegExp(`^(?:${body})$`, flags) };
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    if (scan.flagGroup) {
+      return {
+        error: `uses the inline flag group \`${scan.flagGroup}…\`, which this browser's regex engine cannot represent. Prometheus (RE2) applies it from that point to the end of the enclosing group; JavaScript has no equivalent, so nothing was evaluated rather than mis-matched.`,
+      };
+    }
+    if (needsUnicode) {
+      return {
+        error: `uses a \`\\p{…}\` Unicode class that JavaScript could not compile in Unicode mode: ${reason}`,
+      };
+    }
+    return { error: `is not a valid regular expression here — ${reason}` };
   }
 }
+
+/* ────────────────────────────────────────────────────────────────────────── *
+ *  Replacement expansion (Prometheus semantics).
+ * ────────────────────────────────────────────────────────────────────────── */
 
 /**
  * Expand `$1`, `${1}`, `$name`, `${name}` references in a replacement string
@@ -543,6 +809,27 @@ interface ApplyOutcome {
 }
 
 /**
+ * The ONE way a relabel rule may write a label. Every Prometheus relabel action
+ * writes through `labels.Builder.Set`, which opens with:
+ *
+ *     func (b *Builder) Set(n, v string) *Builder {
+ *         if v == "" {
+ *             // Empty labels are the same as missing labels.
+ *             return b.Del(n)
+ *         }
+ *
+ * So an empty value DELETES the label — for `replace`, but equally for
+ * `lowercase`, `uppercase`, `labelmap` and `hashmod`. Leaving `foo=""` behind
+ * would show the user a label that will not exist on the real target. Note the
+ * test is `v === ''` and nothing else: a `hashmod` landing on shard `"0"` is a
+ * perfectly good value and must still be written.
+ */
+function setLabel(labels: LabelMap, name: string, value: string): void {
+  if (value === '') labels.delete(name);
+  else labels.set(name, value);
+}
+
+/**
  * Apply all rules in order to a single (cloned) label set. Mirrors the control
  * flow of Prometheus `relabel.Process`: rules run sequentially; a keep/drop/
  * *equal rule can mark the whole target dropped (we stop processing it then,
@@ -551,7 +838,7 @@ interface ApplyOutcome {
 function applyRules(
   input: LabelMap,
   rules: RelabelRule[],
-  regexes: (RegExp | null)[],
+  regexes: RegExp[],
 ): ApplyOutcome {
   const labels = new Map(input);
 
@@ -564,13 +851,13 @@ function applyRules(
 
     switch (rule.action) {
       case 'drop': {
-        if (re && re.test(joined)) {
+        if (re.test(joined)) {
           return { labels, dropped: true, droppedByRule: r + 1, droppedByAction: 'drop' };
         }
         break;
       }
       case 'keep': {
-        if (re && !re.test(joined)) {
+        if (!re.test(joined)) {
           return { labels, dropped: true, droppedByRule: r + 1, droppedByAction: 'keep' };
         }
         break;
@@ -590,7 +877,6 @@ function applyRules(
         break;
       }
       case 'replace': {
-        if (!re) break;
         const m = joined.match(re);
         if (!m) break; // no match → labels unchanged
         const value = expand(rule.replacement, m);
@@ -599,27 +885,24 @@ function applyRules(
         // so e.g. target_label: __param_$1 is named from capture group 1.
         const target = expand(rule.targetLabel ?? '', m);
         if (target === '') break;
-        // Empty expansion deletes the label; otherwise set it.
-        if (value === '') labels.delete(target);
-        else labels.set(target, value);
+        setLabel(labels, target, value);
         break;
       }
       case 'lowercase': {
-        if (rule.targetLabel) labels.set(rule.targetLabel, joined.toLowerCase());
+        if (rule.targetLabel) setLabel(labels, rule.targetLabel, joined.toLowerCase());
         break;
       }
       case 'uppercase': {
-        if (rule.targetLabel) labels.set(rule.targetLabel, joined.toUpperCase());
+        if (rule.targetLabel) setLabel(labels, rule.targetLabel, joined.toUpperCase());
         break;
       }
       case 'hashmod': {
         if (rule.targetLabel && rule.modulus) {
-          labels.set(rule.targetLabel, String(hashmod(joined, rule.modulus)));
+          setLabel(labels, rule.targetLabel, String(hashmod(joined, rule.modulus)));
         }
         break;
       }
       case 'labelmap': {
-        if (!re) break;
         // For every EXISTING label whose NAME matches, set a new label named by
         // the expanded replacement to that label's value. We collect first to
         // avoid mutating the map while iterating.
@@ -628,18 +911,16 @@ function applyRules(
           const m = name.match(re);
           if (m) writes.push([expand(rule.replacement, m), val]);
         }
-        for (const [name, val] of writes) labels.set(name, val);
+        for (const [name, val] of writes) setLabel(labels, name, val);
         break;
       }
       case 'labeldrop': {
-        if (!re) break;
         for (const name of [...labels.keys()]) {
           if (re.test(name)) labels.delete(name);
         }
         break;
       }
       case 'labelkeep': {
-        if (!re) break;
         for (const name of [...labels.keys()]) {
           if (!re.test(name)) labels.delete(name);
         }
@@ -734,17 +1015,19 @@ export function applyRelabel(configsYaml: string, labelSetsInput: string): Relab
 
   // 2. Normalise + validate every rule, compiling its anchored regex.
   const rules: RelabelRule[] = [];
-  const regexes: (RegExp | null)[] = [];
+  const regexes: RegExp[] = [];
   let usesHashmod = false;
   for (let i = 0; i < list.length; i++) {
     const parsed = parseRule(list[i], i);
     if ('error' in parsed) return fail(parsed.error);
     rules.push(parsed);
-    const re = compileRegex(parsed.regex);
-    if (re === null) {
-      return fail(`Rule ${i + 1}: invalid regex \`${parsed.regex}\` — not a valid regular expression.`);
+    const compiled = compileRegex(parsed.regex);
+    if ('error' in compiled) {
+      // compileRegex always names the construct it could not handle, so the
+      // message reads as one sentence: "Rule 2: regex `…` uses the POSIX …".
+      return fail(`Rule ${i + 1}: regex \`${parsed.regex}\` ${compiled.error}`);
     }
-    regexes.push(re);
+    regexes.push(compiled.re);
     if (parsed.action === 'hashmod') usesHashmod = true;
   }
 

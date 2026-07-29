@@ -19,6 +19,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { applyRelabel } from './engine';
+import { examples } from './examples';
 import type { TargetResult } from './types';
 
 /** Convenience: pull the single result's output as a plain {name: value} map. */
@@ -479,5 +480,296 @@ describe('applyRelabel — malformed / empty input never throws', () => {
     const res = applyRelabel('- action: keep\n  regex: up', 'this is not a label set');
     // "this", "is", "not"… are not key=value, so no sets are parsed.
     expect(res.ok).toBe(false);
+  });
+});
+
+/* ────────────────────────────────────────────────────────────────────────── *
+ *  labels.Builder.Set parity — writing "" REMOVES the label.
+ *
+ *  EVERY relabel write in Prometheus goes through labels.Builder.Set, which
+ *  opens with:
+ *        func (b *Builder) Set(n, v string) *Builder {
+ *            if v == "" {
+ *                // Empty labels are the same as missing labels.
+ *                return b.Del(n)
+ *            }
+ *  So lowercase / uppercase / labelmap / hashmod / replace all DELETE the target
+ *  when the value they compute is empty. Leaving `foo=""` behind would show the
+ *  user a label that will not exist on the real target.
+ * ────────────────────────────────────────────────────────────────────────── */
+describe('applyRelabel — an empty write DELETES the label (labels.Builder.Set parity)', () => {
+  it('lowercase: an empty joined source removes the target label', () => {
+    // __meta_env does not exist → joined "" → ToLower("") = "" → Set → Del.
+    const res = applyRelabel(
+      '- source_labels: [__meta_env]\n  action: lowercase\n  target_label: environment',
+      'environment="PROD", job="api"',
+    );
+    expect(res.ok).toBe(true);
+    const r = res.results![0];
+    expect(outputMap(r).environment).toBeUndefined();
+    expect(r.changes.find((c) => c.name === 'environment')?.kind).toBe('removed');
+    // Untouched labels survive.
+    expect(outputMap(r).job).toBe('api');
+  });
+
+  it('uppercase: an empty joined source removes the target label', () => {
+    const res = applyRelabel(
+      '- source_labels: [__meta_code]\n  action: uppercase\n  target_label: code',
+      'code="abc", job="api"',
+    );
+    expect(res.ok).toBe(true);
+    const r = res.results![0];
+    expect(outputMap(r).code).toBeUndefined();
+    expect(r.changes.find((c) => c.name === 'code')?.kind).toBe('removed');
+  });
+
+  it('lowercase/uppercase still SET a non-empty cased value (no over-deleting)', () => {
+    const lower = applyRelabel(
+      '- source_labels: [environment]\n  action: lowercase\n  target_label: environment',
+      'environment="PRODUCTION"',
+    );
+    expect(outputMap(lower.results![0]).environment).toBe('production');
+
+    const upper = applyRelabel(
+      '- source_labels: [code]\n  action: uppercase\n  target_label: code',
+      'code="abc"',
+    );
+    expect(outputMap(upper.results![0]).code).toBe('ABC');
+  });
+
+  it('labelmap: mapping a label whose VALUE is empty removes the destination', () => {
+    // labelmap does lb.Set(expandedName, sourceValue); an empty source value
+    // therefore DELETES any pre-existing label of the mapped name.
+    const res = applyRelabel(
+      '- action: labelmap\n  regex: __meta_kubernetes_pod_label_(.+)',
+      'app="stale", __meta_kubernetes_pod_label_app="", job="api"',
+    );
+    expect(res.ok).toBe(true);
+    const r = res.results![0];
+    expect(outputMap(r).app).toBeUndefined();
+    expect(r.changes.find((c) => c.name === 'app')?.kind).toBe('removed');
+    expect(outputMap(r).job).toBe('api');
+  });
+
+  it('hashmod: shard "0" is written, not treated as empty (only "" deletes)', () => {
+    // Guards the setter against a falsy check: md5("10.0.0.2:9100") % 3 == 0 and
+    // the string "0" MUST be set, not dropped.
+    const res = applyRelabel(
+      '- source_labels: [__address__]\n  action: hashmod\n  modulus: 3\n  target_label: shard',
+      '__address__="10.0.0.2:9100"',
+    );
+    expect(res.ok).toBe(true);
+    expect(outputMap(res.results![0]).shard).toBe('0');
+  });
+
+  it('replace: an empty expansion still removes the target (unchanged behaviour)', () => {
+    const res = applyRelabel(
+      '- source_labels: [tmp]\n  action: replace\n  regex: (.*)\n  target_label: instance\n  replacement: $1',
+      'instance="old", tmp=""',
+    );
+    expect(outputMap(res.results![0]).instance).toBeUndefined();
+  });
+});
+
+/* ────────────────────────────────────────────────────────────────────────── *
+ *  RE2 syntax Prometheus accepts. Prometheus compiles relabel regexes with Go's
+ *  regexp (RE2), whose spelling differs from JavaScript's in ways this simulator
+ *  must translate rather than reject:
+ *    • named groups are `(?P<name>…)`, JavaScript spells them `(?<name>…)`
+ *    • a leading `(?i)` / `(?s)` / `(?m)` sets flags for the whole pattern
+ *  Anything genuinely unrepresentable must name the construct in the error.
+ * ────────────────────────────────────────────────────────────────────────── */
+describe('applyRelabel — RE2 regex syntax', () => {
+  it('(?P<name>…): the Go named-group form compiles and expands via ${name}', () => {
+    const res = applyRelabel(
+      '- source_labels: [addr]\n  action: replace\n  regex: (?P<svc>.+)\n  target_label: service\n  replacement: ${svc}',
+      'addr="checkout"',
+    );
+    expect(res.ok).toBe(true);
+    expect(outputMap(res.results![0]).service).toBe('checkout');
+  });
+
+  it('(?P<name>…): the group is also reachable positionally as $1', () => {
+    const res = applyRelabel(
+      '- source_labels: [addr]\n  action: replace\n  regex: (?P<svc>.+)\n  target_label: service\n  replacement: $1',
+      'addr="checkout"',
+    );
+    expect(res.ok).toBe(true);
+    expect(outputMap(res.results![0]).service).toBe('checkout');
+  });
+
+  it('a leading (?i) makes the whole pattern case-insensitive', () => {
+    const res = applyRelabel(
+      '- source_labels: [job]\n  action: keep\n  regex: (?i)api',
+      'job="API"\n\njob="api"\n\njob="other"',
+    );
+    expect(res.ok).toBe(true);
+    expect(res.results!.map((r) => r.dropped)).toEqual([false, false, true]);
+  });
+
+  it('a lifted (?i) does NOT loosen the full anchoring', () => {
+    // relabel.NewRegexp wraps the pattern as ^(?:…)$ — case-insensitivity must
+    // not turn that into a partial match.
+    const res = applyRelabel(
+      '- source_labels: [job]\n  action: keep\n  regex: (?i)api',
+      'job="API-server"',
+    );
+    expect(res.ok).toBe(true);
+    expect(res.results![0].dropped).toBe(true);
+  });
+
+  it('a whole-pattern (?i:…) group is lifted into flags', () => {
+    const res = applyRelabel(
+      '- source_labels: [job]\n  action: keep\n  regex: (?i:api|web)',
+      'job="WEB"\n\njob="db"',
+    );
+    expect(res.ok).toBe(true);
+    expect(res.results!.map((r) => r.dropped)).toEqual([false, true]);
+  });
+
+  it('(?i) and (?P<name>…) combine — the named capture still expands', () => {
+    const res = applyRelabel(
+      '- source_labels: [addr]\n  action: replace\n  regex: (?i)(?P<svc>CHECK.*)\n  target_label: service\n  replacement: ${svc}',
+      'addr="checkout"',
+    );
+    expect(res.ok).toBe(true);
+    expect(outputMap(res.results![0]).service).toBe('checkout');
+  });
+
+  it('an unrepresentable construct NAMES it — never a bare "invalid regex"', () => {
+    // POSIX classes are valid RE2. JavaScript would compile `[[:alpha:]]` into a
+    // different character set and silently mis-match, so it must be refused by
+    // name instead.
+    const posix = applyRelabel('- action: keep\n  regex: "[[:alpha:]]+"', 'job="api"');
+    expect(posix.ok).toBe(false);
+    expect(posix.error).toMatch(/\[:alpha:\]/);
+    expect(posix.error).toMatch(/RE2|Prometheus/);
+
+    // (?U) (ungreedy) has no JavaScript flag equivalent — name it.
+    const ungreedy = applyRelabel('- action: keep\n  regex: "(?U)a+"', 'job="api"');
+    expect(ungreedy.ok).toBe(false);
+    expect(ungreedy.error).toMatch(/\(\?U\)/);
+  });
+
+  it('a genuinely broken pattern still reports the offending pattern', () => {
+    const res = applyRelabel('- action: keep\n  regex: "([unclosed"', '__name__="up"');
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/regex/i);
+    expect(res.error).toContain('([unclosed');
+  });
+});
+
+/* ────────────────────────────────────────────────────────────────────────── *
+ *  Catastrophic backtracking. Prometheus uses RE2 — no backtracking, linear
+ *  time. This simulator runs on the browser's backtracking engine, where
+ *  `(a+)+b` against a non-matching value is exponential (measured on this
+ *  engine: ~29s at 30 characters, ~105s at 32) and freezes the tab. Such a
+ *  pattern must be REFUSED with a loud diagnostic — a silently skipped matcher
+ *  producing a wrong survivor list is the worse failure.
+ * ────────────────────────────────────────────────────────────────────────── */
+describe('applyRelabel — catastrophic backtracking is refused, never run', () => {
+  it('a nested unbounded quantifier is refused in well under a second', () => {
+    const started = performance.now();
+    const res = applyRelabel(
+      '- source_labels: [v]\n  action: keep\n  regex: (a+)+b',
+      'v="' + 'a'.repeat(26) + 'c"',
+    );
+    const elapsed = performance.now() - started;
+    expect(res.ok).toBe(false);
+    // Non-silent: says the pattern was not evaluated, and that RE2 is safe.
+    expect(res.error).toMatch(/not evaluated/i);
+    expect(res.error).toMatch(/RE2/);
+    expect(res.error).toContain('(a+)+b');
+    expect(elapsed).toBeLessThan(500);
+  });
+
+  it('the refusal is total — no results are returned to be misread', () => {
+    const res = applyRelabel(
+      '- source_labels: [v]\n  action: keep\n  regex: (a*)*b',
+      'v="aaaa"',
+    );
+    expect(res.ok).toBe(false);
+    expect(res.results).toBeUndefined();
+  });
+
+  it('a BOUNDED outer quantifier over an unbounded inner one is still evaluated', () => {
+    // The bundled "rewrite __address__" example relies on (?::\d+)? — a `?`
+    // cannot blow up, so the guard must not refuse it.
+    const res = applyRelabel(
+      '- source_labels: [__address__, __meta_port]\n  action: replace\n  regex: ([^:]+)(?::\\d+)?;(\\d+)\n  replacement: $1:$2\n  target_label: __address__',
+      '__address__="10.0.0.4:8080", __meta_port="9100"',
+    );
+    expect(res.ok).toBe(true);
+    expect(outputMap(res.results![0]).__address__).toBe('10.0.0.4:9100');
+  });
+
+  it('ordinary single quantifiers keep/drop exactly as before', () => {
+    const res = applyRelabel(
+      '- source_labels: [__name__]\n  action: keep\n  regex: go_.*_total',
+      '__name__="go_gc_x_total"\n\n__name__="http_total"',
+    );
+    expect(res.ok).toBe(true);
+    expect(res.results!.map((r) => r.dropped)).toEqual([false, true]);
+  });
+});
+
+/* ────────────────────────────────────────────────────────────────────────── *
+ *  The bundled playground examples must keep producing their documented output.
+ * ────────────────────────────────────────────────────────────────────────── */
+describe('bundled examples', () => {
+  it('every bundled example runs cleanly and yields one result per label set', () => {
+    for (const ex of examples) {
+      const res = applyRelabel(ex.configs, ex.labels);
+      expect(res.ok, `example ${ex.id}: ${res.error ?? ''}`).toBe(true);
+      expect(res.results!.length, `example ${ex.id}`).toBeGreaterThan(0);
+    }
+  });
+
+  const byId = (id: string) => {
+    const ex = examples.find((e) => e.id === id)!;
+    return applyRelabel(ex.configs, ex.labels);
+  };
+
+  it('k8s-keep-labelmap: the opted-in pod survives with promoted labels', () => {
+    const res = byId('k8s-keep-labelmap');
+    expect(res.results!.map((r) => r.dropped)).toEqual([false, true]);
+    const o = outputMap(res.results![0]);
+    expect(o.app).toBe('api');
+    expect(o.tier).toBe('backend');
+    expect(o.__address__).toBe('10.0.0.5:8080');
+  });
+
+  it('replace-address: rewrites __address__ and sets __metrics_path__', () => {
+    const o = outputMap(byId('replace-address').results![0]);
+    expect(o.__address__).toBe('10.0.2.4:9100');
+    expect(o.__metrics_path__).toBe('/actuator/prometheus');
+  });
+
+  it('drop-metric: drops both go_gc_* series, keeps http_requests_total', () => {
+    const res = byId('drop-metric');
+    expect(res.results!.map((r) => r.dropped)).toEqual([true, false, true]);
+  });
+
+  it('hashmod-shard: only 10.0.0.2 lands on shard 0 and survives', () => {
+    const res = byId('hashmod-shard');
+    expect(res.results!.map((r) => r.dropped)).toEqual([true, false, true, true]);
+    expect(outputMap(res.results![1]).__tmp_shard).toBe('0');
+  });
+
+  it('labeldrop-lowercase: lowercases environment and strips every __meta_*', () => {
+    const o = outputMap(byId('labeldrop-lowercase').results![0]);
+    expect(o.environment).toBe('production');
+    expect(o.job).toBe('web');
+    expect(o.__name__).toBe('up');
+    expect(Object.keys(o).some((k) => k.startsWith('__meta_'))).toBe(false);
+  });
+
+  it('replace-empty-deletes: (.+) cannot match "", so instance survives', () => {
+    // The paired blog post spells this out: with `regex: (.+)` an empty source
+    // fails to match, so the rule does nothing and `instance` is untouched.
+    // (The delete-on-empty path is covered by the `(.*)` tests above.)
+    const o = outputMap(byId('replace-empty-deletes').results![0]);
+    expect(o.instance).toBe('old-value');
+    expect(o.job).toBe('api');
   });
 });
