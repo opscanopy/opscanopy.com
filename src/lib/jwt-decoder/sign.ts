@@ -2,16 +2,17 @@
  * JWT Decoder & Encoder — signing. Turns two editable JSON texts (header +
  * payload) and pasted key material into a signed compact JWS.
  *
- * The token's segments and the signing input are built from ONE minified
- * `JSON.stringify` serialization of each parsed object, so the bytes that are
- * signed are byte-identical to the bytes in the token — pretty-printing in
- * the textarea never leaks into the JWS. `alg` in the emitted header is
- * forced to the selected algorithm (the UI keeps the two in sync).
+ * The token's segments and the signing input are built from ONE lossless
+ * minification of each editor's OWN source text, so the bytes that are signed
+ * are byte-identical to the bytes in the token — and to the bytes the user
+ * typed. `alg` in the emitted header is forced to the selected algorithm (the
+ * UI keeps the two in sync).
  *
  * Never throws on user input; resolves `{ ok:false, error }` instead.
  */
 import type { JwsAlg, SignResult } from './types';
 import { ALGS, isJwsAlg, signParamsFor } from './algs';
+import { minifyJsonSource } from './json-source';
 import { bytesToB64u, importKeyFor } from './keys';
 
 /** Encode a UTF-8 string as an unpadded base64url segment. */
@@ -80,10 +81,24 @@ export async function sign(
   });
   if (!imported.ok) return { ok: false, error: imported.reason };
 
-  // One serialization builds both the token segments and the signing input.
-  const finalHeader = { ...header.obj, alg: opts.alg };
-  const headerSeg = utf8ToB64u(JSON.stringify(finalHeader));
-  const payloadSeg = utf8ToB64u(JSON.stringify(payload.obj));
+  // The segments come from the user's own JSON text, only minified. Re-
+  // serialising the PARSED objects here (the old `JSON.stringify({...obj})`)
+  // is unacceptable for a signing tool: JS numbers cannot hold every JSON
+  // number, so `{"uid":1234567890123456789}` would be signed as
+  // `{"uid":1234567890123456800}` — the user mints a claim they never wrote,
+  // and since the signature covers the rewritten bytes it verifies cleanly
+  // and nothing ever tells them. `JSON.parse` above is validation only.
+  const headerSrc = minifyJsonSource(headerJson, { name: 'alg', json: JSON.stringify(opts.alg) });
+  const payloadSrc = minifyJsonSource(payloadJson);
+  if (headerSrc === null || payloadSrc === null) {
+    return {
+      ok: false,
+      error:
+        'The header or payload uses JSON this tool cannot re-encode without changing it — simplify it and try again.',
+    };
+  }
+  const headerSeg = utf8ToB64u(headerSrc);
+  const payloadSeg = utf8ToB64u(payloadSrc);
   const signingInput = new TextEncoder().encode(`${headerSeg}.${payloadSeg}`);
 
   try {

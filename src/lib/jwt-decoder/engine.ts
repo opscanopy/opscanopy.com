@@ -6,7 +6,13 @@
  * `decode` is PURE + browser-safe and NEVER throws on user input — malformed
  * segments, bad base64, or invalid JSON all yield { valid:false, error }. Its
  * claims table carries plain-English captions and its warnings come from the
- * security lint (`lint.ts`).
+ * security lint (`lint.ts`) plus the lossless-source notes below.
+ *
+ * The header/payload it renders are the segments' OWN JSON text, re-indented
+ * by `json-source.ts` — never a `JSON.stringify` of the parsed object, which
+ * would round big integers, null out out-of-range numbers, drop duplicate
+ * members and reorder integer-like keys. The parsed objects are still used for
+ * claim inspection (exp/nbf/iat) and the lint; they are just not what is shown.
  *
  * `verify` checks the signature with the Web Crypto API: HS256/384/512 via
  * HMAC (UTF-8 or base64url secret, or an oct JWK), RS256/384/512 (RSASSA-
@@ -22,6 +28,8 @@
 import type { ClaimRow, ClaimTone, Freshness, JwtResult, VerifyOptions, VerifyResult } from './types';
 import { relative } from '../relative-time';
 import { isJwsAlg, signParamsFor } from './algs';
+import type { JsonSourceInfo } from './json-source';
+import { inspectJsonSource, jsonSourceWarnings } from './json-source';
 import {
   b64uToBytes,
   classifyKeyInput,
@@ -66,9 +74,14 @@ function parseJsonSegment(seg: string): unknown | null {
   }
 }
 
-/** One decoded header/payload segment, or the specific way it failed. */
+/**
+ * One decoded header/payload segment, or the specific way it failed. On success
+ * BOTH forms are carried: `text` is the segment's real UTF-8 JSON (the thing
+ * that gets rendered) and `obj` is the JS view of it (used only for claim
+ * inspection — exp/nbf/iat arithmetic and the lint).
+ */
 type SegmentParse =
-  | { ok: true; obj: Record<string, unknown> }
+  | { ok: true; obj: Record<string, unknown>; text: string }
   | { ok: false; why: 'base64url' | 'json' | 'not-object'; detail: string };
 
 /**
@@ -86,11 +99,26 @@ function parseSegmentDetailed(seg: string, name: 'header' | 'payload'): SegmentP
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
       return { ok: false, why: 'not-object', detail: `The ${name} decoded but is not a JSON object.` };
     }
-    return { ok: true, obj: parsed as Record<string, unknown> };
+    return { ok: true, obj: parsed as Record<string, unknown>, text };
   } catch (err) {
     const at = err instanceof SyntaxError ? ` (${err.message})` : '';
     return { ok: false, why: 'json', detail: `The ${name} decoded but isn't valid JSON${at}.` };
   }
+}
+
+/**
+ * Render one segment for display. NEVER `JSON.stringify` the parsed object: a
+ * JS round-trip rounds big integers, turns out-of-range numbers into null,
+ * drops duplicate members and reorders integer-like keys — so the "decoded"
+ * JSON would not be the token's JSON, which is the one thing this tool exists
+ * to show. `inspectJsonSource` re-emits the segment's own text and reports the
+ * losses a JS consumer would suffer. Its null case is unreachable after
+ * `JSON.parse` succeeded, but the fallback is still the raw text, never a
+ * re-serialisation.
+ */
+function renderSegment(text: string): { pretty: string; info: JsonSourceInfo | null } {
+  const info = inspectJsonSource(text);
+  return { pretty: info?.pretty ?? text, info };
 }
 
 /** Format an epoch-seconds number as "YYYY-MM-DD HH:MM:SS UTC", or null if NaN. */
@@ -262,8 +290,8 @@ function buildClaims(payload: Record<string, unknown>, nowMs: number): ClaimRow[
 /**
  * Decode (do NOT verify) a compact JWT. Splits on ".", requires exactly three
  * parts, base64url-decodes and JSON-parses the header and payload, then surfaces
- * the alg/typ, pretty-printed JSON, registered claims, and lint warnings.
- * Never throws.
+ * the alg/typ, the segments' own JSON re-indented losslessly, registered
+ * claims, and lint warnings. Never throws.
  */
 export function decode(token: string, nowMs?: number): JwtResult {
   const s = (token ?? '').trim();
@@ -282,6 +310,8 @@ export function decode(token: string, nowMs?: number): JwtResult {
   const headerParse = parseSegmentDetailed(headerSeg, 'header');
   if (!headerParse.ok) return bad(headerParse.detail);
 
+  const headerRender = renderSegment(headerParse.text);
+
   const payloadParse = parseSegmentDetailed(payloadSeg, 'payload');
   if (!payloadParse.ok) {
     // The header DID decode — surface it so the UI can render a partial
@@ -289,7 +319,7 @@ export function decode(token: string, nowMs?: number): JwtResult {
     return {
       ...bad(payloadParse.detail),
       partial: {
-        header: JSON.stringify(headerParse.obj, null, 2),
+        header: headerRender.pretty,
         alg: typeof headerParse.obj.alg === 'string' ? headerParse.obj.alg : undefined,
         failedSegment: 'payload',
         segmentError: payloadParse.detail,
@@ -299,6 +329,7 @@ export function decode(token: string, nowMs?: number): JwtResult {
 
   const header = headerParse.obj;
   const payload = payloadParse.obj;
+  const payloadRender = renderSegment(payloadParse.text);
 
   const alg = header.alg !== undefined ? String(header.alg) : undefined;
   const typ = header.typ !== undefined ? String(header.typ) : undefined;
@@ -309,11 +340,15 @@ export function decode(token: string, nowMs?: number): JwtResult {
     valid: true,
     alg,
     typ,
-    header: JSON.stringify(header, null, 2),
-    payload: JSON.stringify(payload, null, 2),
+    header: headerRender.pretty,
+    payload: payloadRender.pretty,
     signatureB64,
     claims: buildClaims(payload, now),
-    warnings: lintToken(header, payload, s.length, now),
+    warnings: [
+      ...lintToken(header, payload, s.length, now),
+      ...jsonSourceWarnings('header', headerRender.info),
+      ...jsonSourceWarnings('payload', payloadRender.info),
+    ],
     freshness: freshnessOf(payload, now),
   };
 }

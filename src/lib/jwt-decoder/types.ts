@@ -50,15 +50,18 @@ export interface JwtResult {
   alg?: string;
   /** `typ` from the header, e.g. "JWT", when present. */
   typ?: string;
-  /** Pretty-printed header JSON (2-space indent). */
+  /** The header's OWN JSON, re-indented 2-space losslessly (never re-serialised). */
   header?: string;
-  /** Pretty-printed payload JSON (2-space indent). */
+  /** The payload's OWN JSON, re-indented 2-space losslessly (never re-serialised). */
   payload?: string;
   /** The raw third segment (the signature), base64url, when present. */
   signatureB64?: string;
   /** Registered-claim rows (iss/sub/aud/exp/nbf/iat/jti) that were present. */
   claims: ClaimRow[];
-  /** Non-fatal advisories, e.g. `alg:"none"` or a missing `exp`. */
+  /**
+   * Non-fatal advisories, e.g. `alg:"none"`, a missing `exp`, a duplicate
+   * member, or a number JavaScript cannot represent exactly.
+   */
   warnings: string[];
   /** exp/nbf time-validity verdict for the status pill (success only). */
   freshness?: Freshness;

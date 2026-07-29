@@ -679,6 +679,144 @@ describe('review regressions', () => {
   });
 });
 
+describe('lossless JSON source — what is shown and signed is what is in the token', () => {
+  /**
+   * Encode a RAW JSON string as a segment. `b64u()` above goes through
+   * JSON.stringify, which would launder away exactly the hostile properties
+   * (big integers, duplicate members, key order) these cases are about.
+   */
+  function rawSeg(json: string): string {
+    return Buffer.from(json, 'utf8').toString('base64url');
+  }
+  const NOW = 1700000000 * 1000;
+  const HDR = b64u({ alg: 'HS256', typ: 'JWT' });
+
+  // ── sign(): the bytes signed must be the bytes the user typed ─────────────
+
+  it('sign() preserves a big-integer claim exactly (no JSON.parse → stringify)', async () => {
+    // 1234567890123456789 > Number.MAX_SAFE_INTEGER: a JS round-trip rewrites
+    // it, so the user would sign a claim they never typed.
+    const payloadJson = '{"uid":1234567890123456789}';
+    const r = await sign('{"alg":"HS256","typ":"JWT"}', payloadJson, 'your-256-bit-secret', {
+      alg: 'HS256',
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const signed = Buffer.from(r.token.split('.')[1], 'base64url').toString('utf8');
+    expect(signed).toBe(payloadJson);
+    expect(signed).not.toContain('1234567890123456800');
+  });
+
+  it('sign() preserves number spelling and member order; alg is pinned in place', async () => {
+    const payloadJson = '{"z":1.0,"a":1e2,"neg":-0,"tiny":1e-7}';
+    const secret = 'a-secret-long-enough-for-hs256-0123456789abcdef';
+    const r = await sign('{"typ":"JWT","kid":"k1"}', payloadJson, secret, { alg: 'HS256' });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const [h, p] = r.token.split('.');
+    expect(Buffer.from(p, 'base64url').toString('utf8')).toBe(payloadJson);
+    // alg was absent, so it is appended last — nothing else moves or changes.
+    expect(Buffer.from(h, 'base64url').toString('utf8')).toBe('{"typ":"JWT","kid":"k1","alg":"HS256"}');
+  });
+
+  it('sign() minifies pretty-printed editor text (the decode → edit → sign flow)', async () => {
+    // The playground copies decode()'s pretty output straight into the encoder
+    // textareas, so the minifier has to survive indentation and newlines.
+    const r = await sign(
+      '{\n  "alg": "HS256",\n  "typ": "JWT"\n}',
+      '{\n  "sub": "1234567890",\n  "name": "John Doe",\n  "iat": 1516239022\n}',
+      'your-256-bit-secret',
+      { alg: 'HS256' },
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.token).toBe(classicToken);
+  });
+
+  it('sign() signs the bytes it emits (signature covers the preserved payload)', async () => {
+    const secret = 'a-secret-long-enough-for-hs256-0123456789abcdef';
+    const r = await sign('{"alg":"HS256"}', '{"uid":1234567890123456789}', secret, { alg: 'HS256' });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect((await verify(r.token, secret)).status).toBe('valid');
+  });
+
+  // ── decode(): what is displayed must be the token's own JSON ──────────────
+
+  it('decode() shows a big-integer claim unrounded and flags the precision loss', () => {
+    const r = decode(`${HDR}.${rawSeg('{"uid":1234567890123456789,"exp":1800000000}')}.sig`, NOW);
+    expect(r.valid).toBe(true);
+    expect(r.payload).toBe('{\n  "uid": 1234567890123456789,\n  "exp": 1800000000\n}');
+    expect(r.warnings.some((w) => w.includes('1234567890123456789'))).toBe(true);
+    // The claims table still reads the parsed object, so exp handling is intact.
+    expect(r.claims.find((c) => c.label.startsWith('Expires'))!.value).toContain('1800000000');
+  });
+
+  it('decode() keeps duplicate members and warns that the token is ambiguous', () => {
+    // JSON.parse keeps only the last "sub"; a verifier may read the first.
+    const r = decode(`${HDR}.${rawSeg('{"sub":"admin","sub":"guest"}')}.sig`, NOW);
+    expect(r.payload).toBe('{\n  "sub": "admin",\n  "sub": "guest"\n}');
+    expect(r.warnings.some((w) => /duplicate/i.test(w) && w.includes('sub'))).toBe(true);
+  });
+
+  it('decode() preserves member order, including integer-like keys JS would resort', () => {
+    const r = decode(`${HDR}.${rawSeg('{"sub":"a","2":"two","1":"one"}')}.sig`, NOW);
+    expect(r.payload).toBe('{\n  "sub": "a",\n  "2": "two",\n  "1": "one"\n}');
+  });
+
+  it('decode() shows an out-of-range number as written instead of null', () => {
+    const r = decode(`${HDR}.${rawSeg('{"big":1e400}')}.sig`, NOW);
+    expect(r.payload).toBe('{\n  "big": 1e400\n}');
+    expect(r.payload).not.toContain('null');
+    expect(r.warnings.some((w) => w.includes('1e400') && w.includes('Infinity'))).toBe(true);
+  });
+
+  it('decode() renders duplicate header members too, and reports the alg JS sees', () => {
+    const r = decode(
+      `${rawSeg('{"alg":"HS256","alg":"none"}')}.${b64u({ sub: 'x', exp: 1700003600 })}.sig`,
+      NOW,
+    );
+    expect(r.header).toBe('{\n  "alg": "HS256",\n  "alg": "none"\n}');
+    expect(r.alg).toBe('none');
+    expect(r.warnings.some((w) => /duplicate/i.test(w) && w.includes('alg'))).toBe(true);
+  });
+
+  it('the partial header render (payload broken) is lossless as well', () => {
+    const r = decode(`${rawSeg('{"alg":"HS256","serial":1234567890123456789}')}.@@@.x`, NOW);
+    expect(r.valid).toBe(false);
+    expect(r.partial?.header).toContain('1234567890123456789');
+  });
+
+  // ── controls: ordinary tokens must render exactly as they did before ──────
+
+  it('an ordinary token renders byte-identically to the old pretty-printer', () => {
+    const r = decode(classicToken);
+    expect(r.header).toBe(JSON.stringify({ alg: 'HS256', typ: 'JWT' }, null, 2));
+    expect(r.payload).toBe(
+      JSON.stringify({ sub: '1234567890', name: 'John Doe', iat: 1516239022 }, null, 2),
+    );
+  });
+
+  it('nested, empty and escaped structures match JSON.stringify(x, null, 2) exactly', () => {
+    const obj = {
+      s: 'line\nbreak\t"quoted"\\',
+      u: 'café — ünïçode ☂',
+      nested: { a: [1, 2, [3, { b: null }]], empty_o: {}, empty_a: [] },
+      flags: [true, false, null],
+      n: -1.5e-7,
+      exp: 1700003600,
+    };
+    const r = decode(`${HDR}.${rawSeg(JSON.stringify(obj))}.sig`, NOW);
+    expect(r.payload).toBe(JSON.stringify(obj, null, 2));
+    // No false-positive notes on a perfectly ordinary token.
+    expect(r.warnings.some((w) => /duplicate|safe integer|double range/i.test(w))).toBe(false);
+  });
+
+  it('an empty object payload still renders as "{}"', () => {
+    const r = decode(`${HDR}.${rawSeg('{}')}.sig`, NOW);
+    expect(r.payload).toBe('{}');
+  });
+});
+
 describe('generateKeys()', () => {
   it('generates a base64url HMAC secret of the requested byte length', async () => {
     for (const bytes of [32, 48, 64] as const) {
