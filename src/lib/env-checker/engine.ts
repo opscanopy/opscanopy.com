@@ -46,15 +46,18 @@ import type { EnvResult } from './types';
  *   • Quoted-key forms accept the same identifier charset between the quotes,
  *     so `process.env["X-Y"]` (not a valid shell env name) is ignored, while
  *     `process.env["X_Y"]` is captured.
+ *   • The JS/TS forms tolerate optional chaining (`process.env?.X`), since that
+ *     reads exactly the same variable.
+ *   • The shell forms are deliberately narrower — see SHELL NAMING GATE below.
  */
 const ACCESS_PATTERNS: RegExp[] = [
-  // JS/TS (Node): process.env.X  and  process.env["X"] / process.env['X']
-  /process\.env\.([A-Za-z_][A-Za-z0-9_]*)/g,
-  /process\.env\[\s*["'`]([A-Za-z_][A-Za-z0-9_]*)["'`]\s*\]/g,
+  // JS/TS (Node): process.env.X / process.env?.X  and  process.env["X"]
+  /process\.env\??\.([A-Za-z_][A-Za-z0-9_]*)/g,
+  /process\.env\??(?:\.)?\[\s*["'`]([A-Za-z_][A-Za-z0-9_]*)["'`]\s*\]/g,
 
-  // Vite / import.meta: import.meta.env.X  and  import.meta.env["X"]
-  /import\.meta\.env\.([A-Za-z_][A-Za-z0-9_]*)/g,
-  /import\.meta\.env\[\s*["'`]([A-Za-z_][A-Za-z0-9_]*)["'`]\s*\]/g,
+  // Vite / import.meta: import.meta.env.X / import.meta.env?.X  and  […]["X"]
+  /import\.meta\.env\??\.([A-Za-z_][A-Za-z0-9_]*)/g,
+  /import\.meta\.env\??(?:\.)?\[\s*["'`]([A-Za-z_][A-Za-z0-9_]*)["'`]\s*\]/g,
 
   // Deno: Deno.env.get("X")
   /Deno\.env\.get\(\s*["'`]([A-Za-z_][A-Za-z0-9_]*)["'`]\s*\)/g,
@@ -77,7 +80,54 @@ const ACCESS_PATTERNS: RegExp[] = [
   // PHP: getenv("X")  and  $_ENV["X"] / $_ENV['X']
   /getenv\(\s*["'`]([A-Za-z_][A-Za-z0-9_]*)["'`]\s*\)/g,
   /\$_ENV\[\s*["'`]([A-Za-z_][A-Za-z0-9_]*)["'`]\s*\]/g,
+
+  /*
+   * Shell expansion — bash/sh scripts, Dockerfiles, docker-compose
+   * interpolation and CI job steps: ${X}, ${X:-default}, ${X:?msg}, $X.
+   *
+   * ── SHELL NAMING GATE ──────────────────────────────────────────────────
+   * Unlike every pattern above, `$X` has no anchoring prefix to prove intent,
+   * so it is gated by NAMING CONVENTION rather than by sniffing whether the
+   * whole paste "looks like" shell (a document-level sniff misfires on the
+   * mixed pastes people actually submit — a repo dump, a script beside its
+   * consumer). Only SCREAMING_SNAKE_CASE names that START WITH A LETTER are
+   * captured, which:
+   *   • matches how env vars are named in every shell/Docker/CI context,
+   *   • skips realistic JS template-literal noise (`${apiBase}`, `${userId}`),
+   *   • skips PHP superglobals ($_ENV, $_SERVER — all begin with `_`), and
+   *   • skips positional/special params ($1, $@, $#, $?, $$) and `$100`.
+   * `${{ … }}` (GitHub Actions) never matches: `{` is not `[A-Z]`.
+   *
+   * Residual, deliberate trade-off: an UPPERCASE JS interpolation such as
+   * `` `${API_BASE}/v1` `` is read as an env access. That errs toward "used",
+   * which can only ever SUPPRESS an unused-key warning — never tell a user to
+   * delete a key their code needs.
+   * ──────────────────────────────────────────────────────────────────────
+   */
+  /\$\{([A-Z][A-Z0-9_]*)\b/g,
+  /\$([A-Z][A-Z0-9_]*)\b/g,
 ];
+
+/**
+ * `const { X, Y } = process.env` — the single most common Node idiom, plus the
+ * `import.meta.env` equivalent. Unlike ACCESS_PATTERNS this captures the whole
+ * BINDING LIST (`X, Y: y, Z = 'd'`), which `collectDestructuredVars` then
+ * splits, so it is handled separately rather than being mixed into that array.
+ *
+ * `[^}]*` cannot cross the closing brace, so a nested pattern simply fails to
+ * match rather than mis-capturing.
+ */
+const ENV_DESTRUCTURE =
+  /\b(?:const|let|var)\s*\{([^}]*)\}\s*=\s*(?:process\.env|import\.meta\.env)\b/g;
+
+/**
+ * One entry of a destructuring binding list, as it appears before the `,` split.
+ * The ENV KEY is whatever sits in *key position* — i.e. the leading identifier,
+ * terminated by `:` (rename: `API_KEY: apiKey`), `=` (default: `PORT = 3000`)
+ * or the end of the entry (plain: `NODE_ENV`). A rest element (`...rest`) has
+ * no leading identifier and is therefore skipped.
+ */
+const BINDING_KEY = /^["'`]?([A-Za-z_][A-Za-z0-9_]*)["'`]?[ \t]*(?:[:=]|$)/;
 
 /**
  * Matches a single declaration line of a `.env`/`.env.example` file:
@@ -99,12 +149,32 @@ function uniqueSorted(values: Iterable<string>): string[] {
 }
 
 /**
+ * Add every env key bound by a `{ … } = process.env` destructure to `used`.
+ *
+ * Splitting the binding list on `,` is safe for real code; if a default value
+ * ever contained a comma the surplus fragment simply fails `BINDING_KEY` and is
+ * dropped, so the failure mode is a missed key, never a bogus one.
+ */
+function collectDestructuredVars(code: string, used: Set<string>): void {
+  // Reset lastIndex defensively — module-level global regex, reused per call.
+  ENV_DESTRUCTURE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = ENV_DESTRUCTURE.exec(code)) !== null) {
+    for (const entry of m[1].split(',')) {
+      const key = BINDING_KEY.exec(entry.trim());
+      if (key && key[1]) used.add(key[1]);
+    }
+    // The match always consumes `= process.env`, so it can never be zero-width.
+  }
+}
+
+/**
  * Extract the unique set of env-var names READ by `code`.
  *
- * Runs every access pattern over the full source. Because the patterns are
- * line-agnostic, a var read on any line (in any of the supported languages) is
- * found regardless of surrounding syntax. Dynamic, non-literal accesses simply
- * do not match and are therefore ignored, as required.
+ * Runs every access pattern over the full source, then the destructuring pass.
+ * Because the patterns are line-agnostic, a var read on any line (in any of the
+ * supported languages) is found regardless of surrounding syntax. Dynamic,
+ * non-literal accesses simply do not match and are therefore ignored.
  */
 function collectUsedVars(code: string): string[] {
   const used = new Set<string>();
@@ -131,6 +201,8 @@ function collectUsedVars(code: string): string[] {
       if (m[0] === '') pattern.lastIndex++;
     }
   }
+
+  collectDestructuredVars(code, used);
 
   return uniqueSorted(used);
 }
