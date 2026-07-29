@@ -40,10 +40,16 @@ export interface MembershipEntry {
   rangeCount: number;
 }
 
-/** A non-disjoint relationship found between two inputs. */
+/**
+ * A non-disjoint relationship found between two inputs — or, for the single
+ * `'truncated'` row, the notice that a degenerate list produced more colliding
+ * pairs than the engine will enumerate. That row is always first, is not counted
+ * in `stats.overlaps`, and reads as a plain sentence like every other relation
+ * so it renders in the same list without the UI needing to know about it.
+ */
 export interface OverlapPair {
   relation: string;
-  kind: 'equal' | 'contains' | 'within' | 'overlaps';
+  kind: 'equal' | 'contains' | 'within' | 'overlaps' | 'truncated';
 }
 
 /** The minimal covering set for one address family. */

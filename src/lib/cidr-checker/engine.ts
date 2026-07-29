@@ -2,9 +2,10 @@
  * CIDR / Subnet Checker — engine. Parses one IP/CIDR per line (blank lines and
  * `#` comments ignored). A line with no "/" is a bare IP to check: every bare
  * IP gets an in-range verdict against every same-family range in the list.
- * Range entries are compared pairwise for overlap / containment, and all valid
- * entries are aggregated into the minimal covering CIDR set per address
- * family. Pure + browser-safe; never throws on user input.
+ * Range entries are checked for overlap / containment by an interval sweep, and
+ * the ranges are aggregated into the minimal covering CIDR set per address
+ * family — bare IPs are probes, so they only join the aggregate in a family
+ * that has no ranges to probe. Pure + browser-safe; never throws on user input.
  */
 import {
   parseCidr,
@@ -22,6 +23,17 @@ import type { CheckResult, CheckEntry, MembershipEntry, OverlapPair, AggGroup } 
 const ERR_EMPTY = 'Enter one IP or CIDR per line, e.g. 10.0.0.0/24.';
 const ERR_ALL_INVALID = 'None of the lines parsed as an IP or CIDR — details on each line below.';
 const ERR_FALLBACK = 'Not an IP address or CIDR — expected e.g. 10.0.0.5 or 10.0.0.0/24.';
+
+/**
+ * Ceiling on reported overlap pairs. The sweep below is O(n log n + pairs), but
+ * `pairs` itself is quadratic for a degenerate list (400 copies of one block is
+ * 79,800 pairs), so the list is cut off — loudly, never silently, see NOTE_CAP.
+ */
+const MAX_OVERLAP_PAIRS = 5000;
+const NOTE_CAP =
+  `Overlap check stopped after the first ${MAX_OVERLAP_PAIRS.toLocaleString('en-US')} colliding pairs — ` +
+  'this list has more collisions than are worth listing. The pairs below are a sample; ' +
+  'every other section still covers all of the lines.';
 
 /**
  * Targeted diagnosis for a colon-containing address parseIPv6 rejected.
@@ -134,6 +146,9 @@ export function check(input: string): CheckResult {
     norm: string;
     role: 'ip' | 'range';
     display: string;
+    /** Inclusive [first, last] address, computed once — the sweep and the
+     *  aggregation both need it and both used to recompute it per comparison. */
+    range: [bigint, bigint];
   }
 
   const entries: CheckEntry[] = [];
@@ -163,20 +178,31 @@ export function check(input: string): CheckResult {
     };
     if (hostBitsStripped) entry.normalizedFrom = line;
     entries.push(entry);
-    parsed.push({ cidr: { version: c.version, addr: net, prefix: c.prefix }, norm, role, display });
+    const cidr: Cidr = { version: c.version, addr: net, prefix: c.prefix };
+    parsed.push({ cidr, norm, role, display, range: cidrRange(cidr) });
   }
 
   // Membership: every bare IP × every same-family range. A bare IP parses as
   // /32 (or /128), so it is inside a range iff relate() is within or equal.
   const membership: MembershipEntry[] = [];
   const ranges = parsed.filter((p) => p.role === 'range');
+  // Split once, not once per host — a list of thousands of hosts × thousands of
+  // ranges rebuilt this array on every iteration.
+  const rangesByVersion: Record<IpVersion, Parsed[]> = {
+    4: ranges.filter((r) => r.cidr.version === 4),
+    6: ranges.filter((r) => r.cidr.version === 6),
+  };
   for (const host of parsed) {
     if (host.role !== 'ip') continue;
-    const sameFamily = ranges.filter((r) => r.cidr.version === host.cidr.version);
+    const sameFamily = rangesByVersion[host.cidr.version];
     const matches: string[] = [];
+    const seen = new Set<string>();
     for (const r of sameFamily) {
       const rel = relate(host.cidr, r.cidr);
-      if ((rel === 'within' || rel === 'equal') && !matches.includes(r.norm)) matches.push(r.norm);
+      if ((rel === 'within' || rel === 'equal') && !seen.has(r.norm)) {
+        seen.add(r.norm);
+        matches.push(r.norm);
+      }
     }
     // Most specific (longest prefix) first; sort() is stable so ties keep input order.
     matches.sort(
@@ -191,34 +217,99 @@ export function check(input: string): CheckResult {
     });
   }
 
-  // Pairwise overlap / containment (same family only). Pairs where exactly one
-  // side is a bare IP are excluded — those are the membership verdict above,
-  // not a list conflict.
-  const overlaps: OverlapPair[] = [];
-  for (let i = 0; i < parsed.length; i++) {
-    for (let j = i + 1; j < parsed.length; j++) {
-      const a = parsed[i];
-      const b = parsed[j];
-      if (a.cidr.version !== b.cidr.version) continue;
-      if ((a.role === 'ip') !== (b.role === 'ip')) continue;
-      const rel = relate(a.cidr, b.cidr);
-      if (rel === 'disjoint') continue;
-      if (a.role === 'ip' && b.role === 'ip') {
-        // Two bare IPs can only collide by being identical.
-        overlaps.push({ kind: 'equal', relation: `${a.display} is listed twice` });
-        continue;
+  // Overlap / containment, as an interval sweep. This was a pairwise O(n²) scan
+  // running synchronously on every keystroke, which froze the tab for ~18s on
+  // 4,000 lines and ~80s on 8,000 — and the input is a textarea people paste
+  // whole firewall lists into, so that is the normal case.
+  //
+  // Instead: bucket by family + role (cross-family pairs and ip×range pairs are
+  // excluded anyway — the latter are the membership verdict above, not a list
+  // conflict), sort each bucket by start address, then walk it keeping the
+  // entries whose last address is still at or past the cursor. Every entry that
+  // survives that filter provably overlaps the cursor entry, so scanning the
+  // whole active list is paid for by a pair it emits: O(n log n + pairs).
+  //
+  // Note this keeps the *whole* active list rather than only the previous entry
+  // — comparing neighbours alone would miss a block contained in an earlier,
+  // wider one (10.0.0.0/16 · 10.0.1.0/24 · 10.0.9.0/24 → the /16 also contains
+  // the last block). Pairs are collected as input indices and re-sorted, so the
+  // reported pairs and their order are identical to the old nested loop.
+  interface Swept {
+    i: number;
+    start: bigint;
+    end: bigint;
+  }
+  const buckets = new Map<string, Swept[]>();
+  parsed.forEach((p, i) => {
+    const key = `${p.cidr.version}:${p.role}`;
+    const swept: Swept = { i, start: p.range[0], end: p.range[1] };
+    const bucket = buckets.get(key);
+    if (bucket) bucket.push(swept);
+    else buckets.set(key, [swept]);
+  });
+
+  const pairs: [number, number][] = [];
+  let capped = false;
+  for (const bucket of buckets.values()) {
+    if (capped) break;
+    if (bucket.length < 2) continue;
+    bucket.sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
+    const active: Swept[] = [];
+    for (const cur of bucket) {
+      let kept = 0;
+      for (let k = 0; k < active.length; k++) {
+        const other = active[k];
+        if (other.end < cur.start) continue; // ended before the cursor — drop it
+        active[kept++] = other; // compact in place; kept <= k, so this is safe
+        pairs.push(other.i < cur.i ? [other.i, cur.i] : [cur.i, other.i]);
+        if (pairs.length >= MAX_OVERLAP_PAIRS) {
+          capped = true;
+          break;
+        }
       }
-      if (rel === 'equal') overlaps.push({ kind: 'equal', relation: `${a.norm} is the same block as ${b.norm}` });
-      else if (rel === 'contains') overlaps.push({ kind: 'contains', relation: `${a.norm} contains ${b.norm}` });
-      else if (rel === 'within') overlaps.push({ kind: 'within', relation: `${a.norm} is inside ${b.norm}` });
-      else overlaps.push({ kind: 'overlaps', relation: `${a.norm} overlaps ${b.norm}` });
+      if (capped) break;
+      active.length = kept;
+      active.push(cur);
     }
   }
+  // Back into input order: i ascending, then j — what the nested loop produced.
+  pairs.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
 
-  // Aggregate to the minimal covering set, per family (bare IPs participate as /32 // /128).
+  const overlaps: OverlapPair[] = [];
+  // First, not last: a truncation notice buried under 5,000 rows is not a notice.
+  if (capped) overlaps.push({ kind: 'truncated', relation: NOTE_CAP });
+  for (const [i, j] of pairs) {
+    const a = parsed[i];
+    const b = parsed[j];
+    if (a.role === 'ip' && b.role === 'ip') {
+      // Two bare IPs can only collide by being identical.
+      overlaps.push({ kind: 'equal', relation: `${a.display} is listed twice` });
+      continue;
+    }
+    const rel = relate(a.cidr, b.cidr);
+    if (rel === 'equal') overlaps.push({ kind: 'equal', relation: `${a.norm} is the same block as ${b.norm}` });
+    else if (rel === 'contains') overlaps.push({ kind: 'contains', relation: `${a.norm} contains ${b.norm}` });
+    else if (rel === 'within') overlaps.push({ kind: 'within', relation: `${a.norm} is inside ${b.norm}` });
+    else overlaps.push({ kind: 'overlaps', relation: `${a.norm} overlaps ${b.norm}` });
+  }
+
+  // Aggregate to the minimal covering set, per family. A bare IP is a *probe*,
+  // not a member: folding it in used to contradict the verdict above — the card
+  // said 8.8.8.8 was in none of the ranges while the merged set (and Copy all)
+  // handed back a supernet list containing 8.8.8.8/32. So probes are dropped in
+  // any family that has a range to probe against. The decision is per family,
+  // matching the membership verdict: with no same-family range there is nothing
+  // to probe ('no-ranges'), the addresses are the only data, and aggregating
+  // them is the whole point of an all-IPs list.
   const aggregated: AggGroup[] = [];
   for (const version of [4, 6] as IpVersion[]) {
-    const rangeList = parsed.filter((p) => p.cidr.version === version).map((p) => cidrRange(p.cidr));
+    const probesAreMembers = rangesByVersion[version].length === 0;
+    const rangeList: [bigint, bigint][] = [];
+    for (const p of parsed) {
+      if (p.cidr.version !== version) continue;
+      if (p.role === 'ip' && !probesAreMembers) continue; // a probe, not a member
+      rangeList.push(p.range);
+    }
     if (rangeList.length === 0) continue;
     rangeList.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
     const merged: [bigint, bigint][] = [];
@@ -248,6 +339,7 @@ export function check(input: string): CheckResult {
     membership,
     overlaps,
     aggregated,
-    stats: { ok, invalid: entries.length - ok, overlaps: overlaps.length, blocks },
+    // `pairs`, not `overlaps` — the latter may carry a leading cap notice row.
+    stats: { ok, invalid: entries.length - ok, overlaps: pairs.length, blocks },
   };
 }

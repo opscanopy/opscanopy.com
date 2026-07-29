@@ -243,4 +243,162 @@ describe('cidr-checker check()', () => {
       });
     }
   });
+
+  // Every expectation in this block was captured from the O(n²) pairwise
+  // implementation the sweep replaced, so the reported pairs — and their order —
+  // stay byte-identical for the small lists people actually read.
+  describe('overlap sweep — parity with the pairwise output it replaced', () => {
+    const byId = (id: string): string => examples.find((e) => e.id === id)!.input;
+
+    const pinned: [string, string[][], { ok: number; invalid: number; overlaps: number; blocks: number }][] = [
+      ['membership', [['10.0.0.0/24', '172.16.0.0/12']], { ok: 3, invalid: 0, overlaps: 0, blocks: 2 }],
+      ['aggregate', [['192.168.0.0/22']], { ok: 4, invalid: 0, overlaps: 0, blocks: 1 }],
+      ['overlap', [['10.0.0.0/16', '172.16.0.0/12']], { ok: 4, invalid: 0, overlaps: 3, blocks: 2 }],
+      ['mixed', [['10.1.0.0/23'], ['2001:db8::/32']], { ok: 4, invalid: 0, overlaps: 0, blocks: 2 }],
+    ];
+    for (const [id, cidrGroups, stats] of pinned) {
+      it(`keeps example "${id}" producing its documented aggregate and stats`, () => {
+        const r = check(byId(id));
+        expect(r.aggregated.map((g) => g.cidrs)).toEqual(cidrGroups);
+        expect(r.stats).toEqual(stats);
+      });
+    }
+
+    it('keeps the overlap example’s three pairs in input order', () => {
+      expect(check(byId('overlap')).overlaps).toEqual([
+        { kind: 'contains', relation: '10.0.0.0/16 contains 10.0.5.0/24' },
+        { kind: 'contains', relation: '10.0.0.0/16 contains 10.0.5.0/24' },
+        { kind: 'equal', relation: '10.0.5.0/24 is the same block as 10.0.5.0/24' },
+      ]);
+    });
+
+    it('finds containment the entry’s sorted predecessor cannot see', () => {
+      // Sorted by start the list is /16, 10.0.1.0/24, 10.0.9.0/24 — the last
+      // block is disjoint from the one before it, so a sweep that only compared
+      // neighbours would miss that the /16 contains it.
+      const r = check('10.0.0.0/16\n10.0.1.0/24\n10.0.9.0/24');
+      expect(r.overlaps).toEqual([
+        { kind: 'contains', relation: '10.0.0.0/16 contains 10.0.1.0/24' },
+        { kind: 'contains', relation: '10.0.0.0/16 contains 10.0.9.0/24' },
+      ]);
+    });
+
+    it('reports all three pairs of a nested triple', () => {
+      const r = check('10.0.0.0/8\n10.0.0.0/16\n10.0.0.0/24');
+      expect(r.overlaps).toEqual([
+        { kind: 'contains', relation: '10.0.0.0/8 contains 10.0.0.0/16' },
+        { kind: 'contains', relation: '10.0.0.0/8 contains 10.0.0.0/24' },
+        { kind: 'contains', relation: '10.0.0.0/16 contains 10.0.0.0/24' },
+      ]);
+    });
+
+    it('reports all three pairs of a bare IP listed three times', () => {
+      const r = check('10.0.0.5\n10.0.0.5\n10.0.0.5');
+      expect(r.overlaps).toEqual([
+        { kind: 'equal', relation: '10.0.0.5 is listed twice' },
+        { kind: 'equal', relation: '10.0.0.5 is listed twice' },
+        { kind: 'equal', relation: '10.0.0.5 is listed twice' },
+      ]);
+    });
+
+    it('orders ip-pairs and range-pairs together by input position', () => {
+      // Pair (line 1, line 4) precedes pair (line 2, line 3) — the old nested
+      // loop walked i ascending, then j, across both roles.
+      const r = check('10.0.0.5\n10.0.0.0/24\n10.0.0.0/16\n10.0.0.5');
+      expect(r.overlaps).toEqual([
+        { kind: 'equal', relation: '10.0.0.5 is listed twice' },
+        { kind: 'within', relation: '10.0.0.0/24 is inside 10.0.0.0/16' },
+      ]);
+    });
+  });
+
+  describe('large pastes stay interactive', () => {
+    /** n disjoint /24s, `stride` apart, as a paste-shaped multi-line list. */
+    function manyBlocks(n: number, stride: number): string {
+      const out: string[] = [];
+      for (let i = 0; i < n; i++) {
+        const v = i * stride;
+        out.push(`10.${Math.floor(v / 256) % 256}.${v % 256}.0/24`);
+      }
+      return out.join('\n');
+    }
+
+    it('checks 4,000 disjoint /24s in well under a second', () => {
+      const input = manyBlocks(4000, 2);
+      const t0 = performance.now();
+      const r = check(input);
+      const elapsed = performance.now() - t0;
+      expect(r.stats.ok).toBe(4000);
+      expect(r.overlaps).toEqual([]);
+      expect(r.stats.blocks).toBe(4000);
+      expect(elapsed).toBeLessThan(1000);
+    }, 180000);
+
+    it('stays fast when one supernet collides with all 4,000', () => {
+      const input = `10.0.0.0/8\n${manyBlocks(4000, 2)}`;
+      const t0 = performance.now();
+      const r = check(input);
+      const elapsed = performance.now() - t0;
+      expect(r.stats.overlaps).toBe(4000);
+      expect(r.overlaps[0]).toEqual({
+        kind: 'contains',
+        relation: '10.0.0.0/8 contains 10.0.0.0/24',
+      });
+      expect(r.stats.blocks).toBe(1);
+      expect(elapsed).toBeLessThan(1000);
+    }, 180000);
+
+    it('caps the pair list out loud instead of silently skipping work', () => {
+      // 400 identical blocks are 79,800 colliding pairs — more than any human
+      // reads, and enough objects to hurt. The cap has to announce itself.
+      const r = check(Array.from({ length: 400 }, () => '10.0.5.0/24').join('\n'));
+      expect(r.overlaps[0].kind).toBe('truncated');
+      expect(r.overlaps[0].relation).toContain('5,000');
+      expect(r.overlaps).toHaveLength(5001);
+      expect(r.stats.overlaps).toBe(5000);
+      // Everything that is not the pair list still covers all 400 lines.
+      expect(r.stats.ok).toBe(400);
+      expect(r.aggregated[0].cidrs).toEqual(['10.0.5.0/24']);
+    }, 180000);
+  });
+
+  describe('probe addresses stay out of the merged set', () => {
+    it('never merges an out-of-range probe into the aggregate', () => {
+      const r = check('8.8.8.8\n10.0.0.0/8\n192.168.0.0/16');
+      expect(r.membership[0].status).toBe('not-in');
+      expect(r.aggregated).toHaveLength(1);
+      expect(r.aggregated[0].cidrs).toEqual(['10.0.0.0/8', '192.168.0.0/16']);
+      expect(r.stats.blocks).toBe(2);
+      // Still a valid, listed entry — only the aggregate ignores it.
+      expect(r.stats.ok).toBe(3);
+      expect(r.entries[0].role).toBe('ip');
+    });
+
+    it('does the same for an IPv6 probe', () => {
+      const r = check('2001:4860::8888\n2001:db8::/32');
+      expect(r.membership[0].status).toBe('not-in');
+      expect(r.aggregated.find((g) => g.version === 6)?.cidrs).toEqual(['2001:db8::/32']);
+      expect(r.stats.blocks).toBe(1);
+    });
+
+    it('still aggregates an all-IPs list — there is nothing to probe against', () => {
+      const r = check('8.8.8.8\n1.1.1.1\n8.8.4.4');
+      expect(r.membership.every((m) => m.status === 'no-ranges')).toBe(true);
+      expect(r.aggregated[0].cidrs).toEqual(['1.1.1.1/32', '8.8.4.4/32', '8.8.8.8/32']);
+      expect(r.stats.blocks).toBe(3);
+    });
+
+    it('decides per family — a v4 IP with only v6 ranges is not a probe', () => {
+      const r = check('8.8.8.8\n2001:db8::/32');
+      expect(r.membership[0].status).toBe('no-ranges');
+      expect(r.aggregated.map((g) => g.cidrs)).toEqual([['8.8.8.8/32'], ['2001:db8::/32']]);
+      expect(r.stats.blocks).toBe(2);
+    });
+
+    it('leaves the aggregate unchanged for an in-range probe', () => {
+      const r = check(examples[0].input);
+      expect(r.membership[0].status).toBe('in');
+      expect(r.aggregated[0].cidrs).toEqual(['10.0.0.0/24', '172.16.0.0/12']);
+    });
+  });
 });
