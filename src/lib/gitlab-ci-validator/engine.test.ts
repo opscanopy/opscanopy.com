@@ -308,3 +308,451 @@ describe('validate() — never throws on bad input', () => {
     }
   });
 });
+
+/* ────────────────────────────────────────────────────────────────────────── *
+ *  FALSE POSITIVES — valid GitLab CI that the validator used to cry wolf on.
+ *
+ *  Each block pins the false alarm (must be silent) AND the genuine
+ *  true-positive case it must not weaken (must still fire).
+ * ────────────────────────────────────────────────────────────────────────── */
+
+describe('validate() — `run:` steps are an executable surface', () => {
+  // GitLab's `run:` keyword takes a LIST OF STEP RECORDS, not strings, so the
+  // old string-only check reported "job has no script" on a perfectly valid job.
+  it('accepts a job whose only surface is `run:` steps', () => {
+    const r = validate(`job:
+  run:
+    - name: build
+      script: make
+`);
+    expect(r.ok).toBe(true);
+    expect(ids(r.findings)).not.toContain('job-missing-script');
+    expect(r.summary.errors).toBe(0);
+  });
+
+  it('accepts multi-step `run:` with the exec/script step shapes', () => {
+    const r = validate(`job:
+  run:
+    - name: install
+      script: npm ci
+    - name: test
+      exec:
+        command: [npm, test]
+`);
+    expect(ids(r.findings)).not.toContain('job-missing-script');
+  });
+
+  // TRUE POSITIVE — the check must still fire.
+  it('still flags a job with neither script nor run', () => {
+    const r = validate(`job:\n  stage: test\n`);
+    expect(ids(r.findings)).toContain('job-missing-script');
+  });
+
+  it('still flags an empty `run:` list as missing-script', () => {
+    const r = validate(`job:\n  run: []\n`);
+    expect(ids(r.findings)).toContain('job-missing-script');
+  });
+
+  it('still flags a `run:` list whose only entry is an empty mapping', () => {
+    const r = validate(`job:\n  run:\n    - {}\n`);
+    expect(ids(r.findings)).toContain('job-missing-script');
+  });
+});
+
+describe('validate() — GitLab `!reference` tag', () => {
+  // `!reference [.job, keyword]` is core GitLab syntax. js-yaml rejects unknown
+  // tags, so the whole file used to come back as a fatal YAML syntax error.
+  it('parses `!reference` inside a script list instead of failing to parse', () => {
+    const r = validate(`.setup:
+  script:
+    - echo setup
+
+build:
+  stage: build
+  script:
+    - !reference [.setup, script]
+    - make
+`);
+    expect(r.ok).toBe(true);
+    expect(r.error).toBeUndefined();
+    expect(r.summary.errors).toBe(0);
+  });
+
+  it('counts a script that is ONLY a `!reference` as an executable surface', () => {
+    const r = validate(`.setup:
+  script:
+    - echo setup
+
+build:
+  script:
+    - !reference [.setup, script]
+`);
+    expect(r.ok).toBe(true);
+    expect(ids(r.findings)).not.toContain('job-missing-script');
+  });
+
+  it('counts a whole-value `!reference` script as an executable surface', () => {
+    const r = validate(`.setup:
+  script:
+    - echo setup
+
+build:
+  script: !reference [.setup, script]
+`);
+    expect(r.ok).toBe(true);
+    expect(ids(r.findings)).not.toContain('job-missing-script');
+  });
+
+  it('does not mistake a `!reference` rules/image/services value for a bad shape', () => {
+    const r = validate(`.defaults:
+  rules:
+    - if: '$CI_COMMIT_BRANCH'
+  image: node:20
+  services:
+    - postgres:16
+
+build:
+  script: make
+  rules: !reference [.defaults, rules]
+  image: !reference [.defaults, image]
+  services: !reference [.defaults, services]
+`);
+    expect(r.ok).toBe(true);
+    expect(ids(r.findings)).not.toContain('rules-not-list');
+    expect(ids(r.findings)).not.toContain('invalid-image-shape');
+    expect(ids(r.findings)).not.toContain('invalid-services-shape');
+    expect(ids(r.findings)).not.toContain('invalid-service-entry');
+  });
+
+  // TRUE POSITIVE — real YAML syntax errors must still be fatal.
+  it('still fails on a genuine YAML syntax error', () => {
+    const r = validate('job:\n  script: [unterminated\n');
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/parse|YAML/i);
+  });
+
+  it('still fails on a genuinely unknown YAML tag', () => {
+    const r = validate('job:\n  script: !nonsense [a, b]\n');
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/parse|YAML/i);
+  });
+
+  it('still fails on bad indentation', () => {
+    const r = validate('job:\n  script: make\n bad: 1\n');
+    expect(r.ok).toBe(false);
+  });
+});
+
+describe('validate() — cross-project / upstream needs:', () => {
+  it('does not flag a cross-project `needs:` as a missing job', () => {
+    const r = validate(`test:
+  stage: test
+  needs:
+    - project: group/proj
+      job: build
+      ref: main
+      artifacts: true
+  script: make test
+`);
+    expect(r.ok).toBe(true);
+    expect(ids(r.findings)).not.toContain('needs-unknown-job');
+    expect(r.summary.errors).toBe(0);
+  });
+
+  it('does not flag an upstream-pipeline `needs:` as a missing job', () => {
+    const r = validate(`test:
+  stage: test
+  needs:
+    - pipeline: $UPSTREAM_PIPELINE_ID
+      job: build
+  script: make test
+`);
+    expect(ids(r.findings)).not.toContain('needs-unknown-job');
+  });
+
+  // TRUE POSITIVE — a genuinely absent LOCAL job must still error.
+  it('still flags a local `needs:` naming a job that does not exist', () => {
+    const r = validate(`build:
+  stage: build
+  script: make
+test:
+  stage: test
+  needs:
+    - project: group/proj
+      job: elsewhere
+    - nope
+  script: make test
+`);
+    const f = r.findings.find((x) => x.id === 'needs-unknown-job');
+    expect(f).toBeDefined();
+    expect(f!.severity).toBe('error');
+    expect(f!.title).toContain('nope');
+    // the cross-project entry must NOT have produced its own finding
+    expect(r.findings.filter((x) => x.id === 'needs-unknown-job')).toHaveLength(1);
+  });
+
+  it('still flags an object-form local `needs:` naming a missing job', () => {
+    const r = validate(`test:
+  stage: test
+  needs:
+    - job: build
+      artifacts: true
+  script: make test
+`);
+    expect(ids(r.findings)).toContain('needs-unknown-job');
+  });
+});
+
+describe('validate() — stage inherited through extends:', () => {
+  it('does not flag a stage inherited from an extended template', () => {
+    const r = validate(`stages:
+  - build
+
+.base:
+  stage: build
+
+job:
+  extends: .base
+  script: echo hi
+`);
+    expect(r.ok).toBe(true);
+    expect(ids(r.findings)).not.toContain('stage-not-declared');
+    expect(r.summary.errors).toBe(0);
+  });
+
+  it('resolves a stage through a multi-level extends chain', () => {
+    const r = validate(`stages:
+  - build
+
+.root:
+  stage: build
+
+.mid:
+  extends: .root
+
+job:
+  extends: .mid
+  script: echo hi
+`);
+    expect(ids(r.findings)).not.toContain('stage-not-declared');
+  });
+
+  it('resolves a stage through the LIST form of extends', () => {
+    const r = validate(`stages:
+  - build
+
+.image:
+  image: node:20
+
+.staged:
+  stage: build
+
+job:
+  extends:
+    - .image
+    - .staged
+  script: echo hi
+`);
+    expect(ids(r.findings)).not.toContain('stage-not-declared');
+  });
+
+  it('lets the job own `stage:` win over the inherited one', () => {
+    const r = validate(`stages:
+  - build
+  - deploy
+
+.base:
+  stage: build
+
+job:
+  extends: .base
+  stage: deploy
+  script: echo hi
+`);
+    expect(ids(r.findings)).not.toContain('stage-not-declared');
+  });
+
+  it('does not hang or crash on a cyclic extends chain', () => {
+    const r = validate(`stages:
+  - build
+
+.a:
+  extends: .b
+  stage: build
+
+.b:
+  extends: .a
+
+job:
+  extends: .a
+  script: echo hi
+`);
+    expect(r.ok).toBe(true);
+    expect(ids(r.findings)).not.toContain('internal-analysis-incomplete');
+  });
+
+  it('does not hang on a self-referential extends', () => {
+    const r = validate(`job:\n  extends: job\n  script: echo hi\n`);
+    expect(r.ok).toBe(true);
+  });
+
+  // TRUE POSITIVE — a truly undeclared stage must still error.
+  it('still flags an inherited stage that is not declared', () => {
+    const r = validate(`stages:
+  - build
+
+.base:
+  stage: nope
+
+job:
+  extends: .base
+  script: echo hi
+`);
+    const f = r.findings.find((x) => x.id === 'stage-not-declared' && x.title.includes('“job”'));
+    expect(f).toBeDefined();
+    expect(f!.severity).toBe('error');
+    expect(f!.title).toContain('nope');
+  });
+
+  it('still flags a job that inherits no stage when the stages list lacks test', () => {
+    const r = validate(`stages:
+  - build
+
+.base:
+  image: node:20
+
+job:
+  extends: .base
+  script: echo hi
+`);
+    const f = r.findings.find((x) => x.id === 'stage-not-declared');
+    expect(f).toBeDefined();
+    expect(f!.title).toContain('test');
+  });
+});
+
+describe('validate() — include: awareness', () => {
+  const withInclude = `include:
+  - template: Jobs/Build.gitlab-ci.yml
+  - local: /ci/templates.yml
+
+my-build:
+  extends: .build-template
+  stage: build
+  script:
+    - make
+`;
+
+  it('downgrades an unknown extends target to a warning when include: is present', () => {
+    const r = validate(withInclude);
+    expect(r.ok).toBe(true);
+    expect(r.summary.errors).toBe(0);
+    const f = r.findings.find((x) => x.id === 'extends-unknown-target');
+    expect(f).toBeDefined();
+    expect(f!.severity).toBe('warning');
+    expect(f!.detail).toMatch(/include/i);
+  });
+
+  it('downgrades needs / dependencies / stage findings when include: is present', () => {
+    const r = validate(`include:
+  - local: /ci/base.yml
+
+stages:
+  - build
+
+my-test:
+  stage: qa
+  needs:
+    - compile
+  dependencies:
+    - compile
+  script: make test
+`);
+    expect(r.summary.errors).toBe(0);
+    for (const id of ['needs-unknown-job', 'dependencies-unknown-job', 'stage-not-declared']) {
+      const f = r.findings.find((x) => x.id === id);
+      expect(f, id).toBeDefined();
+      expect(f!.severity, id).toBe('warning');
+      expect(f!.detail, id).toMatch(/include/i);
+    }
+  });
+
+  it('keeps unrelated errors at error severity even with include:', () => {
+    const r = validate(`include:
+  - local: /ci/base.yml
+
+broken:
+  stage: test
+  when: sometimes
+  script: make
+`);
+    const f = r.findings.find((x) => x.id === 'invalid-when');
+    expect(f).toBeDefined();
+    expect(f!.severity).toBe('error');
+  });
+
+  it('still reports no-jobs as an error even with include:', () => {
+    const r = validate(`include:\n  - local: /ci/base.yml\n\n.only-a-template:\n  script: make\n`);
+    const f = r.findings.find((x) => x.id === 'no-jobs');
+    expect(f).toBeDefined();
+    expect(f!.severity).toBe('error');
+  });
+
+  // TRUE POSITIVE — without an include, the same config must still be an error.
+  it('keeps the same findings at error severity when there is no include:', () => {
+    const r = validate(withInclude.replace(/^include:\n(?:  - .*\n)+\n/, ''));
+    const f = r.findings.find((x) => x.id === 'extends-unknown-target');
+    expect(f).toBeDefined();
+    expect(f!.severity).toBe('error');
+    expect(f!.detail).not.toMatch(/include/i);
+    expect(r.summary.errors).toBeGreaterThan(0);
+  });
+});
+
+/* ────────────────────────────────────────────────────────────────────────── *
+ *  Bundled examples — each must still produce exactly its documented findings.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+describe('bundled examples produce their documented findings', () => {
+  const byId = (id: string) => examples.find((e) => e.id === id)!.yaml;
+
+  it('clean → no findings at all', () => {
+    const r = validate(byId('clean'));
+    expect(r.ok).toBe(true);
+    expect(r.summary).toEqual({ errors: 0, warnings: 0, infos: 0 });
+  });
+
+  it('extends → no findings at all', () => {
+    const r = validate(byId('extends'));
+    expect(r.ok).toBe(true);
+    expect(r.summary).toEqual({ errors: 0, warnings: 0, infos: 0 });
+  });
+
+  it('undefined-stage → exactly one stage-not-declared error for release-job', () => {
+    const r = validate(byId('undefined-stage'));
+    expect(r.summary.errors).toBe(1);
+    expect(ids(r.findings)).toEqual(['stage-not-declared']);
+    expect(r.findings[0].title).toContain('release');
+    expect(r.findings[0].line).toBe(115 - 104 + 1); // `stage: release` line within the snippet
+  });
+
+  it('bad-needs → needs-unknown-job + extends-unknown-target, both errors', () => {
+    const r = validate(byId('bad-needs'));
+    expect(r.summary.errors).toBe(2);
+    expect(ids(r.findings).sort()).toEqual(['extends-unknown-target', 'needs-unknown-job']);
+    expect(r.findings.every((f) => f.severity === 'error')).toBe(true);
+  });
+
+  it('no-script → one job-missing-script error + one legacy-only-except info', () => {
+    const r = validate(byId('no-script'));
+    expect(r.summary).toEqual({ errors: 1, warnings: 0, infos: 1 });
+    expect(ids(r.findings)).toContain('job-missing-script');
+    expect(ids(r.findings)).toContain('legacy-only-except');
+  });
+
+  it('bad-when → invalid-when + rules-not-list, both errors', () => {
+    const r = validate(byId('bad-when'));
+    expect(r.summary.errors).toBe(2);
+    expect(ids(r.findings).sort()).toEqual(['invalid-when', 'rules-not-list']);
+  });
+});

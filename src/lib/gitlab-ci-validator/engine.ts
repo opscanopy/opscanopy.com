@@ -29,6 +29,20 @@
  * │  It parses YAML for structure, then attaches honest line numbers via a raw  │
  * │  line scan where the parsed tree cannot. It NEVER throws: a YAML parse       │
  * │  failure returns { ok:false, error } with zero findings.                    │
+ * │                                                                            │
+ * │  WHAT IT DELIBERATELY DOES NOT FLAG — the tool's value is that a clean      │
+ * │  pipeline reports clean, so these valid shapes must stay silent:            │
+ * │                                                                            │
+ * │    • `run:` steps — GitLab's newer executable surface is a list of step     │
+ * │      RECORDS, not command strings, and counts as a script.                  │
+ * │    • `!reference [.job, keyword]` — registered as a real YAML tag and        │
+ * │      treated as an opaque "provided elsewhere" value.                        │
+ * │    • cross-project / upstream `needs:` (`project:` / `pipeline:`) — their     │
+ * │      `job:` lives in another pipeline, so it is not resolved locally.        │
+ * │    • a `stage:` inherited through `extends:` — jobs are merged with their     │
+ * │      `extends:` ancestors before the stage is read.                          │
+ * │    • with a top-level `include:` present, the four "not defined in this      │
+ * │      file" rules soften to warnings: the browser cannot fetch includes.      │
  * └──────────────────────────────────────────────────────────────────────────┘
  */
 
@@ -37,7 +51,20 @@
 // type-checks under strict mode without adding a dependency.
 declare module 'js-yaml' {
   export function load(input: string, options?: unknown): unknown;
-  const _default: { load: typeof load };
+  /** A js-yaml schema. `extend` returns a NEW schema with extra tag types. */
+  export interface YamlSchema {
+    extend(types: unknown): YamlSchema;
+  }
+  /** A custom YAML tag type (tag name + kind/resolve/construct options). */
+  export class Type {
+    constructor(tag: string, options?: unknown);
+  }
+  export const DEFAULT_SCHEMA: YamlSchema;
+  const _default: {
+    load: typeof load;
+    Type: typeof Type;
+    DEFAULT_SCHEMA: YamlSchema;
+  };
   export default _default;
 }
 
@@ -65,6 +92,38 @@ interface PipelineJob {
   'before_script'?: unknown;
   'after_script'?: unknown;
 }
+
+/* ────────────────────────────────────────────────────────────────────────── *
+ *  GitLab's `!reference` tag.
+ *
+ *  `!reference [.job, keyword]` is core GitLab CI syntax for pulling a keyword
+ *  out of another job. js-yaml rejects any tag it does not know, so WITHOUT this
+ *  registration a perfectly valid pipeline came back as a fatal YAML syntax
+ *  error. We resolve the tag into an opaque marker meaning "this value is
+ *  provided elsewhere": a job whose only `script:` is a `!reference` still counts
+ *  as having one, and a `!reference` sitting in a shape-checked position
+ *  (`rules:`/`image:`/`services:`) is not judged against the literal shape rules.
+ *
+ *  Only the sequence form exists in GitLab, so a scalar or mapping `!reference`
+ *  still fails to parse — as it should.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+class ReferenceTag {
+  constructor(readonly path: unknown) {}
+}
+
+/** True when a parsed value came from a GitLab `!reference [...]` tag. */
+function isReferenceTag(v: unknown): v is ReferenceTag {
+  return v instanceof ReferenceTag;
+}
+
+/** `DEFAULT_SCHEMA` plus `!reference`. */
+const GITLAB_CI_SCHEMA = yaml.DEFAULT_SCHEMA.extend([
+  new yaml.Type('!reference', {
+    kind: 'sequence',
+    construct: (data: unknown) => new ReferenceTag(data),
+  }),
+]);
 
 /* ────────────────────────────────────────────────────────────────────────── *
  *  Vocabulary — the keywords GitLab reserves at the top level and the values
@@ -95,6 +154,23 @@ const GLOBAL_KEYWORDS = new Set<string>([
 /** The five implicit stages GitLab always provides, in pipeline order. */
 const DEFAULT_STAGES = ['.pre', 'build', 'test', 'deploy', '.post'];
 
+/**
+ * Rules that assert "this name is not defined in this file". A top-level
+ * `include:` can define jobs, hidden templates and stages that this in-browser
+ * validator cannot see (it never fetches remote/local includes), so with an
+ * `include:` present these soften from error to warning instead of crying wolf.
+ */
+const INCLUDE_SENSITIVE_IDS = new Set<string>([
+  'extends-unknown-target',
+  'needs-unknown-job',
+  'dependencies-unknown-job',
+  'stage-not-declared',
+]);
+
+/** Appended to a softened finding's detail so the reason is explicit. */
+const INCLUDE_NOTE =
+  ' This pipeline has a top-level `include:`, so the target may be defined in an included file that the browser cannot fetch — reported as a warning rather than an error. Verify it manually, or check with GitLab’s own CI Lint (which resolves includes).';
+
 /** Allowed values for a job/rule `when:` (GitLab `when` keyword reference). */
 const WHEN_VALUES = new Set<string>([
   'on_success',
@@ -119,17 +195,78 @@ function isHidden(jobId: string): boolean {
 }
 
 /**
- * True when a `script:`/`run:` value is an executable surface: a non-empty
- * string, or an array containing at least one non-empty string. An empty string
- * or empty/all-empty array is rejected by GitLab (the job does nothing), so it
- * must not count as present.
+ * True when a `script:` value is an executable surface: a non-empty string, a
+ * `!reference` (provided elsewhere), or an array containing at least one of
+ * those. An empty string or empty/all-empty array is rejected by GitLab (the job
+ * does nothing), so it must not count as present.
  */
 function isNonEmptyCommand(v: unknown): boolean {
+  if (isReferenceTag(v)) return true;
   if (typeof v === 'string') return v.trim() !== '';
-  if (Array.isArray(v)) return v.some((item) => typeof item === 'string' && item.trim() !== '');
-  // A non-string, non-array truthy value (e.g. a mapping for `run:`) is treated
-  // as present — we only special-case the empty string/array surfaces.
+  if (Array.isArray(v)) {
+    return v.some((item) => isReferenceTag(item) || (typeof item === 'string' && item.trim() !== ''));
+  }
+  // A non-string, non-array truthy value is treated as present — we only
+  // special-case the empty string/array surfaces.
   return v !== undefined && v !== null;
+}
+
+/**
+ * True when a `run:` value is an executable surface. GitLab's `run:` keyword is
+ * a list of STEP RECORDS (`- name: build` + `script:`/`exec:`/`action:`), not a
+ * list of command strings — so the string-only `script:` test above reports a
+ * false "job has no script" on every valid `run:` job. A step is any non-empty
+ * mapping; a `!reference` counts too. An empty list or a list of empty mappings
+ * still does nothing, so it must not count as present.
+ */
+function isNonEmptyRunSteps(v: unknown): boolean {
+  if (isReferenceTag(v)) return true;
+  if (typeof v === 'string') return v.trim() !== '';
+  if (Array.isArray(v)) {
+    return v.some(
+      (item) =>
+        isReferenceTag(item) ||
+        (isRecord(item) && Object.keys(item).length > 0) ||
+        (typeof item === 'string' && item.trim() !== ''),
+    );
+  }
+  return v !== undefined && v !== null;
+}
+
+/**
+ * The `extends:` targets of a job. `extends:` is a single name or a list of
+ * names; anything else yields no targets (the caller reports the bad shape).
+ */
+function extendsTargets(v: unknown): string[] {
+  if (typeof v === 'string') return [v];
+  if (Array.isArray(v)) return v.filter((t): t is string => typeof t === 'string');
+  return [];
+}
+
+/**
+ * The job as GitLab actually sees it: every `extends:` ancestor merged in, with
+ * the job's OWN keys winning. Without this, a `stage:` inherited from a template
+ * looks absent and the validator wrongly reports an undeclared stage.
+ *
+ * `visited` guards against a cyclic `extends:` chain — it is shared across
+ * sibling branches so the walk stays O(jobs) instead of blowing up on a deep
+ * diamond (a grandparent already merged via the first parent is not re-merged).
+ */
+function resolveEffectiveJob(
+  jobId: string,
+  root: Record<string, unknown>,
+  visited: Set<string> = new Set<string>(),
+): Record<string, unknown> {
+  if (visited.has(jobId)) return {};
+  visited.add(jobId);
+  const raw = root[jobId];
+  if (!isRecord(raw)) return {};
+  let merged: Record<string, unknown> = {};
+  // GitLab merges parents left → right, then the job's own keys on top.
+  for (const parent of extendsTargets(raw.extends)) {
+    merged = { ...merged, ...resolveEffectiveJob(parent, root, visited) };
+  }
+  return { ...merged, ...raw };
 }
 
 function escapeRegExp(s: string): string {
@@ -259,10 +396,11 @@ export function validate(yamlText: string): ValidateResult {
     };
   }
 
-  // 1. Parse YAML. Any failure is a line-referenced, fatal error.
+  // 1. Parse YAML with the GitLab schema (DEFAULT_SCHEMA + `!reference`). Any
+  // remaining failure is a genuine syntax error: line-referenced and fatal.
   let doc: unknown;
   try {
-    doc = yaml.load(yamlText);
+    doc = yaml.load(yamlText, { schema: GITLAB_CI_SCHEMA });
   } catch (e) {
     return {
       ok: false,
@@ -285,7 +423,19 @@ export function validate(yamlText: string): ValidateResult {
   const lines = yamlText.split(/\r?\n/);
   const lineIndex = buildTopLevelLineIndex(lines);
   const findings: Finding[] = [];
-  const add = (f: Finding) => findings.push(f);
+
+  // A top-level `include:` pulls in jobs, templates and stages from files this
+  // browser-only validator cannot fetch. Anything it would flag as "not defined
+  // in this file" may legitimately come from there, so those four rules soften
+  // from error to warning — the tool must not cry wolf on a valid pipeline.
+  const hasInclude = isRecord(doc) && doc.include !== undefined && doc.include !== null;
+  const add = (f: Finding) => {
+    if (hasInclude && f.severity === 'error' && INCLUDE_SENSITIVE_IDS.has(f.id)) {
+      findings.push({ ...f, severity: 'warning', detail: `${f.detail}${INCLUDE_NOTE}` });
+      return;
+    }
+    findings.push(f);
+  };
 
   try {
     const root = doc as Record<string, unknown>;
@@ -295,7 +445,7 @@ export function validate(yamlText: string): ValidateResult {
     const stageNames = resolveStageNames(root);
     const declaredStages = collectStages(root.stages);
     for (const jobId of [...jobIds, ...templateIds]) {
-      checkJob(jobId, root[jobId], jobIds, templateIds, stageNames, declaredStages, lines, lineIndex, add);
+      checkJob(jobId, root[jobId], root, jobIds, templateIds, stageNames, declaredStages, lines, lineIndex, add);
     }
     if (jobIds.length === 0) {
       add({
@@ -470,6 +620,7 @@ function checkStages(
 function checkJob(
   jobId: string,
   rawJob: unknown,
+  root: Record<string, unknown>,
   jobIds: string[],
   templateIds: string[],
   stageNames: Set<string>,
@@ -505,7 +656,7 @@ function checkJob(
   // An empty `script:` (`[]` or `''`) is NOT an executable surface — GitLab
   // rejects it — so it must not count as present.
   const hasScript = isNonEmptyCommand(job.script);
-  const hasRun = isNonEmptyCommand(job.run);
+  const hasRun = isNonEmptyRunSteps(job.run);
   const hasTrigger = job.trigger !== undefined && job.trigger !== null;
   const hasExtends = job.extends !== undefined && job.extends !== null;
   if (!hidden && !hasScript && !hasRun && !hasTrigger && !hasExtends) {
@@ -520,25 +671,32 @@ function checkJob(
     });
   }
 
-  // (2) `stage` must be one of the declared (or default) stages.
-  if (job.stage !== undefined && job.stage !== null) {
-    if (typeof job.stage !== 'string') {
+  // (2) `stage` must be one of the declared (or default) stages — read from the
+  // job MERGED WITH its `extends:` ancestors, because a stage inherited from a
+  // template is just as real as one written inline. Only `stage` is taken from
+  // the merged view: reporting an inherited bad `when:`/`rules:` once per
+  // descendant would duplicate a finding the template itself already raises.
+  const effectiveStage = resolveEffectiveJob(jobId, root).stage;
+  if (effectiveStage !== undefined && effectiveStage !== null) {
+    if (typeof effectiveStage !== 'string') {
       add({
         id: 'stage-not-string',
         severity: 'error',
         title: `Job “${jobId}” has a non-string \`stage\`.`,
         detail: 'A job `stage:` must be a single stage name (a string).',
-        line: findLine(lines, (l) => /^\s+stage\s*:/.test(l), jobLine, toLine),
+        line: findLine(lines, (l) => /^\s+stage\s*:/.test(l), jobLine, toLine) ?? jobLine,
         remediation: 'Set `stage:` to one of the names in your `stages:` list.',
       });
-    } else if (!stageNames.has(job.stage)) {
+    } else if (!stageNames.has(effectiveStage)) {
       add({
         id: 'stage-not-declared',
         severity: 'error',
-        title: `Job “${jobId}” uses stage “${job.stage}” which is not in \`stages:\`.`,
+        title: `Job “${jobId}” uses stage “${effectiveStage}” which is not in \`stages:\`.`,
         detail: `GitLab rejects a job whose stage is not declared. Available stages: ${[...stageNames].join(', ')}.`,
-        line: findLine(lines, (l) => new RegExp(`^\\s+stage\\s*:\\s*['"]?${escapeRegExp(job.stage as string)}`).test(l), jobLine, toLine),
-        remediation: `Add “${job.stage}” to the top-level \`stages:\` list, or change the job's stage to a declared one.`,
+        line:
+          findLine(lines, (l) => new RegExp(`^\\s+stage\\s*:\\s*['"]?${escapeRegExp(effectiveStage)}`).test(l), jobLine, toLine) ??
+          jobLine,
+        remediation: `Add “${effectiveStage}” to the top-level \`stages:\` list, or change the job's stage to a declared one.`,
       });
     }
   } else if (!hidden) {
@@ -583,7 +741,8 @@ function checkJob(
   }
 
   // (7) `rules` must be a list; legacy `only`/`except` → info recommending rules.
-  if (job.rules !== undefined && job.rules !== null && !Array.isArray(job.rules)) {
+  // A `rules: !reference [.x, rules]` resolves to a list elsewhere — not a bad shape.
+  if (job.rules !== undefined && job.rules !== null && !Array.isArray(job.rules) && !isReferenceTag(job.rules)) {
     add({
       id: 'rules-not-list',
       severity: 'error',
@@ -622,6 +781,10 @@ function checkNeeds(
   if (!Array.isArray(job.needs)) return; // `needs:` may also be a map form; only validate the simple list
   const known = new Set(jobIds);
   for (const need of job.needs) {
+    // A cross-project (`project:`) or upstream-pipeline (`pipeline:`) need names
+    // a job in ANOTHER pipeline. Its `job:` will never be a local job id, so
+    // resolving it against this file reports a job that is not missing at all.
+    if (isRecord(need) && ('project' in need || 'pipeline' in need)) continue;
     // A need is either a bare job name (string) or an object with `job:`.
     const target =
       typeof need === 'string'
@@ -680,12 +843,7 @@ function checkExtends(
   add: (f: Finding) => void,
 ): void {
   if (job.extends === undefined || job.extends === null) return;
-  const targets =
-    typeof job.extends === 'string'
-      ? [job.extends]
-      : Array.isArray(job.extends)
-        ? job.extends.filter((t): t is string => typeof t === 'string')
-        : [];
+  const targets = extendsTargets(job.extends);
   if (targets.length === 0) {
     add({
       id: 'extends-bad-shape',
@@ -729,6 +887,8 @@ function checkImageShape(
   toLine?: number,
 ): void {
   if (typeof image === 'string') return;
+  // `image: !reference [.x, image]` resolves to a valid shape elsewhere.
+  if (isReferenceTag(image)) return;
   if (isRecord(image) && typeof image.name === 'string' && image.name.trim() !== '') return;
   // At the global level (fromLine undefined) the declaration is at column 0, so
   // match `^image:` — an indented `^\s*image:` would wrongly latch onto the
@@ -766,6 +926,8 @@ function checkServicesShape(
     fromLine === undefined
       ? (l: string) => /^services\s*:/.test(l)
       : (l: string) => /^\s*services\s*:/.test(l);
+  // `services: !reference [.x, services]` resolves to a list elsewhere.
+  if (isReferenceTag(services)) return;
   if (!Array.isArray(services)) {
     add({
       id: 'invalid-services-shape',
@@ -778,6 +940,7 @@ function checkServicesShape(
     return;
   }
   services.forEach((svc) => {
+    if (isReferenceTag(svc)) return; // an entry pulled in from another job
     const okString = typeof svc === 'string' && svc.trim() !== '';
     const okMapping = isRecord(svc) && typeof svc.name === 'string' && svc.name.trim() !== '';
     if (!okString && !okMapping) {
