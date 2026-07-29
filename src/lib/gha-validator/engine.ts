@@ -56,6 +56,22 @@ interface WorkflowJob {
   uses?: unknown;
   steps?: unknown;
   permissions?: unknown;
+  needs?: unknown;
+}
+
+/**
+ * A job paired with the source lines we resolved for it. Built ONCE (see
+ * `indexJobs`) and shared by the structural and security passes so every
+ * per-job / per-step finding can point at its own line instead of collapsing
+ * onto the job header.
+ */
+interface JobEntry {
+  id: string;
+  raw: unknown;
+  /** 1-based line of the `<job-id>:` key, when locatable. */
+  line?: number;
+  /** 1-based line of each `- ` sequence item under this job's `steps:`. */
+  stepLines: number[];
 }
 
 interface Workflow {
@@ -111,6 +127,96 @@ function findLine(
     if (test(lines[i])) return i + 1;
   }
   return undefined;
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Width of a line's leading whitespace (YAML forbids tabs for indentation). */
+function indentOf(line: string): number {
+  return line.length - line.replace(/^[ \t]+/, '').length;
+}
+
+/** Blank lines and whole-line comments carry no structure — skip them. */
+function isSkippableLine(line: string): boolean {
+  return line.trim() === '' || /^\s*#/.test(line);
+}
+
+/**
+ * 1-based line of a DIRECT child key of the job declared at `jobLine`.
+ * Scoped by indentation so a `needs:`/`steps:` nested deeper (inside a `with:`
+ * block, say) can never be mistaken for the job's own key.
+ */
+function findJobChildLine(
+  lines: string[],
+  jobLine: number | undefined,
+  key: string,
+): number | undefined {
+  if (jobLine === undefined || jobLine < 1 || jobLine > lines.length) return undefined;
+  const jobIndent = indentOf(lines[jobLine - 1]);
+  const re = new RegExp(`^\\s*${escapeRegExp(key)}\\s*:`);
+  let bodyIndent = -1;
+  for (let i = jobLine; i < lines.length; i++) {
+    const l = lines[i];
+    if (isSkippableLine(l)) continue;
+    const ind = indentOf(l);
+    if (ind <= jobIndent) break; // dedent → left this job's block
+    if (bodyIndent === -1) bodyIndent = ind;
+    if (ind === bodyIndent && re.test(l)) return i + 1;
+  }
+  return undefined;
+}
+
+/**
+ * Resolve the 1-based source line of EACH `- ` sequence item under a job's
+ * `steps:` key. YAML allows the items to sit at the same indent as `steps:` or
+ * deeper, so the first item fixes the item indent and siblings must match it.
+ * Returns [] when the block cannot be located — callers fall back to the job line.
+ */
+function findStepLines(lines: string[], jobLine: number | undefined): number[] {
+  const stepsLine = findJobChildLine(lines, jobLine, 'steps');
+  if (stepsLine === undefined) return [];
+  const stepsIndent = indentOf(lines[stepsLine - 1]);
+
+  const out: number[] = [];
+  let itemIndent = -1;
+  for (let i = stepsLine; i < lines.length; i++) {
+    const l = lines[i];
+    if (isSkippableLine(l)) continue;
+    const ind = indentOf(l);
+    if (ind < stepsIndent) break; // dedent out of the job entirely
+    const isItem = /^\s*-(\s|$)/.test(l);
+    if (itemIndent === -1) {
+      if (!isItem) break; // `steps:` is not a sequence — nothing to index
+      itemIndent = ind;
+    }
+    if (ind < itemIndent) break; // sibling key of `steps:`
+    if (ind === itemIndent) {
+      if (!isItem) break; // a sibling key at the item indent ends the list
+      out.push(i + 1);
+    }
+    // Deeper lines belong to the step already recorded.
+  }
+  return out;
+}
+
+/**
+ * Pair every job with its source lines, ONCE. Job keys are searched in document
+ * order from a moving cursor (falling back to a full scan below `jobs:`) so two
+ * jobs never resolve to the same line.
+ */
+function indexJobs(wf: Workflow, lines: string[]): JobEntry[] {
+  if (!isRecord(wf.jobs)) return [];
+  const jobsLine = findLine(lines, (l) => /^\s*jobs\s*:/.test(l)) ?? 1;
+  let cursor = jobsLine + 1;
+
+  return Object.entries(wf.jobs as Record<string, unknown>).map(([id, raw]) => {
+    const test = (l: string) => new RegExp(`^\\s+${escapeRegExp(id)}\\s*:`).test(l);
+    const line = findLine(lines, test, cursor) ?? findLine(lines, test, jobsLine + 1);
+    if (line !== undefined) cursor = line + 1;
+    return { id, raw, line, stepLines: findStepLines(lines, line) };
+  });
 }
 
 /* ────────────────────────────────────────────────────────────────────────── *
@@ -202,8 +308,10 @@ export function validate(yamlText: string): ValidateResult {
 
   try {
     const wf = doc as Workflow;
-    runStructuralChecks(wf, lines, add);
-    runSecurityChecks(wf, yamlText, lines, add);
+    // Resolve job/step source lines once and share them across both passes.
+    const jobs = indexJobs(wf, lines);
+    runStructuralChecks(wf, lines, jobs, add);
+    runSecurityChecks(wf, lines, jobs, add);
   } catch (e) {
     // The contract says never throw. If a heuristic trips on unexpected input,
     // degrade gracefully to an info note rather than losing the whole run.
@@ -222,9 +330,55 @@ export function validate(yamlText: string): ValidateResult {
  *  Structural checks — is this a well-formed workflow at all?
  * ────────────────────────────────────────────────────────────────────────── */
 
+/**
+ * Every event GitHub can trigger a workflow on. A name outside this list is a
+ * typo (`pusssh`) or an invented event, and the workflow will simply never run
+ * — GitHub reports it only as a workflow-file error after you push.
+ * Source: GitHub docs, "Events that trigger workflows".
+ */
+const KNOWN_EVENTS = new Set<string>([
+  'branch_protection_rule',
+  'check_run',
+  'check_suite',
+  'create',
+  'delete',
+  'deployment',
+  'deployment_protection_rule',
+  'deployment_status',
+  'discussion',
+  'discussion_comment',
+  'fork',
+  'gollum',
+  'issue_comment',
+  'issues',
+  'label',
+  'merge_group',
+  'milestone',
+  'page_build',
+  'project',
+  'project_card',
+  'project_column',
+  'public',
+  'pull_request',
+  'pull_request_review',
+  'pull_request_review_comment',
+  'pull_request_target',
+  'push',
+  'registry_package',
+  'release',
+  'repository_dispatch',
+  'schedule',
+  'status',
+  'watch',
+  'workflow_call',
+  'workflow_dispatch',
+  'workflow_run',
+]);
+
 function runStructuralChecks(
   wf: Workflow,
   lines: string[],
+  jobs: JobEntry[],
   add: (f: Finding) => void,
 ): void {
   // A workflow MUST declare a trigger. js-yaml (YAML 1.2 core schema) keeps the
@@ -241,6 +395,24 @@ function runStructuralChecks(
       line: findLine(lines, (l) => /^\s*on\s*:/.test(l)),
       remediation: 'Add a top-level `on:` block, e.g. `on: [push]` or `on: { pull_request: {} }`.',
     });
+  } else {
+    // Every trigger name must be a real GitHub event; a typo silently means the
+    // workflow never runs.
+    for (const event of collectTriggers(wf.on)) {
+      if (KNOWN_EVENTS.has(event)) continue;
+      add({
+        id: 'unknown-trigger',
+        severity: 'error',
+        title: `Unknown workflow trigger “${event}”.`,
+        detail:
+          'GitHub only accepts a fixed set of event names under `on:`. An unrecognised name (often a typo, like `pusssh` for `push`) makes the workflow file invalid, so it never runs.',
+        line:
+          findLine(lines, (l) => new RegExp(`\\b${escapeRegExp(event)}\\b`).test(l)) ??
+          findLine(lines, (l) => /^\s*on\s*:/.test(l)),
+        remediation:
+          'Use a documented event name such as `push`, `pull_request`, `workflow_dispatch`, `schedule`, or `workflow_call`.',
+      });
+    }
   }
 
   // A workflow MUST define jobs, and `jobs:` must be a mapping of job-id → job.
@@ -268,8 +440,7 @@ function runStructuralChecks(
     return;
   }
 
-  const jobEntries = Object.entries(wf.jobs as Record<string, unknown>);
-  if (jobEntries.length === 0) {
+  if (jobs.length === 0) {
     add({
       id: 'jobs-empty',
       severity: 'error',
@@ -281,19 +452,19 @@ function runStructuralChecks(
     return;
   }
 
-  for (const [jobId, rawJob] of jobEntries) {
-    checkJob(jobId, rawJob, lines, add);
+  const jobIds = new Set(jobs.map((j) => j.id));
+  for (const job of jobs) {
+    checkJob(job, lines, jobIds, add);
   }
 }
 
 function checkJob(
-  jobId: string,
-  rawJob: unknown,
+  entry: JobEntry,
   lines: string[],
+  jobIds: Set<string>,
   add: (f: Finding) => void,
 ): void {
-  // Locate the job's declaration line so its findings point at the right place.
-  const jobLine = findLine(lines, (l) => new RegExp(`^\\s+${escapeRegExp(jobId)}\\s*:`).test(l));
+  const { id: jobId, raw: rawJob, line: jobLine, stepLines } = entry;
 
   if (!isRecord(rawJob)) {
     add({
@@ -321,6 +492,23 @@ function checkJob(
         'A job must specify the runner it executes on (`runs-on:`) or reference a reusable workflow (`uses:`).',
       line: jobLine,
       remediation: 'Add `runs-on: ubuntu-latest` (or another runner), or `uses:` a reusable workflow.',
+    });
+  }
+
+  // Every `needs:` entry must name a job that actually exists in this file —
+  // GitHub rejects the whole workflow otherwise (and a rename is the usual cause).
+  for (const dep of toStringList(job.needs)) {
+    if (jobIds.has(dep)) continue;
+    add({
+      id: 'job-needs-unknown',
+      severity: 'error',
+      title: `Job “${jobId}” needs “${dep}”, which is not a job in this workflow.`,
+      detail:
+        'Every value under `needs:` must be the ID of another job in the same workflow file. A stale or misspelled ID makes the workflow invalid, so no job runs.',
+      line: findJobChildLine(lines, jobLine, 'needs') ?? jobLine,
+      remediation: `Point \`needs:\` at an existing job ID${
+        jobIds.size ? ` (one of: ${[...jobIds].join(', ')})` : ''
+      }, or remove the dependency.`,
     });
   }
 
@@ -352,35 +540,69 @@ function checkJob(
   }
 
   job.steps.forEach((rawStep, idx) => {
+    // Point each step's findings at THAT step's own line; fall back to the job
+    // header only when the raw source could not be indexed.
+    const stepLine = stepLines[idx] ?? jobLine;
+
     if (!isRecord(rawStep)) {
       add({
         id: 'step-not-mapping',
         severity: 'error',
         title: `Step ${idx + 1} in job “${jobId}” is not a mapping.`,
         detail: 'Each step must be an object containing either `uses:` or `run:`.',
-        line: jobLine,
+        line: stepLine,
         remediation: 'Write each step as `- uses: …` or `- run: …`.',
       });
       return;
     }
     const step = rawStep as WorkflowStep;
+    const usesDeclared = Object.prototype.hasOwnProperty.call(step, 'uses');
     const hasUses = typeof step.uses === 'string' && step.uses.trim() !== '';
     const hasRun = typeof step.run === 'string' && step.run.trim() !== '';
-    if (!hasUses && !hasRun) {
+
+    if (hasUses && hasRun) {
+      // GitHub rejects the workflow rather than guessing which one you meant.
+      add({
+        id: 'step-uses-and-run',
+        severity: 'error',
+        title: `Step ${idx + 1} in job “${jobId}” declares both \`uses\` and \`run\`.`,
+        detail:
+          'A step either invokes an action (`uses:`) or executes a shell command (`run:`) — never both. GitHub rejects a step that sets both keys.',
+        line: stepLine,
+        remediation:
+          'Split it into two steps: one with `uses:` for the action and one with `run:` for the command.',
+      });
+    } else if (usesDeclared && !hasUses) {
+      add({
+        id: 'step-empty-uses',
+        severity: 'error',
+        title: `Step ${idx + 1} in job “${jobId}” has an empty \`uses\`.`,
+        detail:
+          'The step declares `uses:` but gives no action reference, so there is nothing to run.',
+        line: stepLine,
+        remediation:
+          'Give `uses:` an action reference (`owner/repo@<sha>`, `./local-action`, or `docker://image`), or delete the key.',
+      });
+    } else if (!hasUses && !hasRun) {
       add({
         id: 'step-missing-action',
         severity: 'error',
         title: `Step ${idx + 1} in job “${jobId}” has neither \`uses\` nor \`run\`.`,
         detail: 'A step must either run a shell command (`run:`) or invoke an action (`uses:`).',
-        line: jobLine,
+        line: stepLine,
         remediation: 'Add a `run:` command or a `uses:` action reference to the step.',
       });
     }
   });
 }
 
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** Normalise a scalar-or-sequence YAML value (e.g. `needs:`) into a string list. */
+function toStringList(v: unknown): string[] {
+  if (typeof v === 'string') return v.trim() === '' ? [] : [v.trim()];
+  if (Array.isArray(v)) {
+    return v.filter((x): x is string => typeof x === 'string' && x.trim() !== '').map((x) => x.trim());
+  }
+  return [];
 }
 
 /* ────────────────────────────────────────────────────────────────────────── *
@@ -389,15 +611,15 @@ function escapeRegExp(s: string): string {
 
 function runSecurityChecks(
   wf: Workflow,
-  text: string,
   lines: string[],
+  jobs: JobEntry[],
   add: (f: Finding) => void,
 ): void {
   const triggers = collectTriggers(wf.on);
   const usesPullRequestTarget = triggers.has('pull_request_target');
   const usesPullRequest = triggers.has('pull_request');
 
-  checkPwnRequest(usesPullRequestTarget, text, lines, add);
+  checkPwnRequest(usesPullRequestTarget, jobs, lines, add);
   checkScriptInjection(wf, lines, add);
   checkUnpinnedActions(lines, add);
   checkPermissions(wf, lines, add);
@@ -429,36 +651,61 @@ function collectTriggers(on: unknown): Set<string> {
  * `ref: refs/pull/.../merge`), it executes attacker-controlled code with that
  * privileged token. This is the canonical "pwn request" supply-chain hole.
  */
+/** A checkout `ref:` that resolves to attacker-controlled PR head code. */
+const UNTRUSTED_CHECKOUT_REF_RE =
+  /\$\{\{\s*github\.(?:event\.pull_request\.head\.(?:sha|ref|label)|event\.pull_request\.merge_commit_sha|head_ref)\s*\}\}/i;
+
+function isUntrustedCheckoutRef(ref: string): boolean {
+  return UNTRUSTED_CHECKOUT_REF_RE.test(ref) || /refs\/pull\//i.test(ref);
+}
+
 function checkPwnRequest(
   usesPullRequestTarget: boolean,
-  text: string,
+  jobs: JobEntry[],
   lines: string[],
   add: (f: Finding) => void,
 ): void {
   if (!usesPullRequestTarget) return;
 
-  const hasCheckout = /uses:\s*actions\/checkout@/i.test(text);
-  // Checking out the PR head specifically — the dangerous bit.
-  const checksOutPrHead =
-    /ref:\s*\$\{\{\s*github\.event\.pull_request\.head\.(?:sha|ref)\s*\}\}/i.test(text) ||
-    /ref:\s*\$\{\{\s*github\.head_ref\s*\}\}/i.test(text) ||
-    /ref:\s*refs\/pull\//i.test(text);
+  // IMPORTANT: this rule reads the PARSED tree only. A raw text scan cannot
+  // tell a real `ref:` from the same words inside a `#` comment (or a docstring
+  // in a `run:` block), and used to raise a false ERROR on safe workflows that
+  // merely *document* the pattern they are avoiding.
+  let hasCheckout = false;
+  let flagged = false;
 
-  if (hasCheckout && checksOutPrHead) {
-    const line =
-      findLine(lines, (l) => /ref:\s*\$\{\{\s*github\.(?:event\.pull_request\.head|head_ref)/i.test(l)) ??
-      findLine(lines, (l) => /pull_request_target/i.test(l));
-    add({
-      id: 'pull-request-target-checkout',
-      severity: 'error',
-      title: 'pull_request_target checks out untrusted PR code.',
-      detail:
-        'This workflow triggers on `pull_request_target` (privileged token + secrets) and checks out the pull request head. Any fork contributor can run arbitrary code with your repository’s write token — the classic “pwn request” vulnerability.',
-      line,
-      remediation:
-        'Do not check out PR head in `pull_request_target`. Use `pull_request` for untrusted code, or split into a privileged job (no checkout of PR code) and an unprivileged build job, and never expose secrets to checked-out PR code.',
+  for (const { raw, line: jobLine, stepLines } of jobs) {
+    if (!isRecord(raw)) continue;
+    const steps = (raw as WorkflowJob).steps;
+    if (!Array.isArray(steps)) continue;
+
+    steps.forEach((rawStep, idx) => {
+      if (!isRecord(rawStep)) return;
+      const step = rawStep as WorkflowStep;
+      // Only `actions/checkout` can place PR code on the runner's disk.
+      if (!/^actions\/checkout@/i.test(asString(step.uses).trim())) return;
+      hasCheckout = true;
+
+      // Inspect ONLY this step's own `with.ref`; the default (no `ref:`) checks
+      // out the BASE repo under pull_request_target, which is the safe case.
+      const ref = isRecord(step.with) ? asString(step.with.ref).trim() : '';
+      if (ref === '' || !isUntrustedCheckoutRef(ref)) return;
+
+      flagged = true;
+      add({
+        id: 'pull-request-target-checkout',
+        severity: 'error',
+        title: 'pull_request_target checks out untrusted PR code.',
+        detail:
+          'This workflow triggers on `pull_request_target` (privileged token + secrets) and checks out the pull request head. Any fork contributor can run arbitrary code with your repository’s write token — the classic “pwn request” vulnerability.',
+        line: stepLines[idx] ?? jobLine,
+        remediation:
+          'Do not check out PR head in `pull_request_target`. Use `pull_request` for untrusted code, or split into a privileged job (no checkout of PR code) and an unprivileged build job, and never expose secrets to checked-out PR code.',
+      });
     });
-  } else if (hasCheckout) {
+  }
+
+  if (!flagged && hasCheckout) {
     // Checkout present but we could not prove it targets the PR head — still
     // worth a warning, because the default checkout under pull_request_target
     // is the base ref (safer) but the combination is easy to make unsafe.
@@ -707,11 +954,13 @@ function checkSecretsInPullRequest(
 const SEVERITY_ORDER: Record<Severity, number> = { error: 0, warning: 1, info: 2 };
 
 function finalize(findings: Finding[]): ValidateResult {
-  // De-duplicate identical (id, line) findings that two passes might both emit.
+  // De-duplicate identical findings that two passes might both emit. The TITLE
+  // is part of the key: distinct problems can legitimately share a rule id and
+  // a line (or an unresolved line), and collapsing them hid real findings.
   const seen = new Set<string>();
   const deduped: Finding[] = [];
   for (const f of findings) {
-    const key = `${f.id}@${f.line ?? '-'}`;
+    const key = `${f.id}@${f.line ?? '-'}@${f.title}`;
     if (seen.has(key)) continue;
     seen.add(key);
     deduped.push(f);
