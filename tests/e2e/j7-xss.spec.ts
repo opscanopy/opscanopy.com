@@ -38,8 +38,20 @@ test.describe('J7 XSS probe', () => {
 
       const titleBefore = await page.title();
 
-      await setInput(page, fixture, fixture.xssPayload);
       const results = resultsOf(page, fixture);
+      // Snapshot the seeded render first. Every playground debounces (130-220ms) and then
+      // holds the PREVIOUS results while the new value is pending, so reading innerHTML
+      // straight after setInput returns the seeded output — the security assertions below
+      // would then pass vacuously against stale markup, and the escaping assertion would
+      // fail on a tool that is actually correct. Wait for the container to change.
+      const htmlBefore = await results.innerHTML();
+      await setInput(page, fixture, fixture.xssPayload);
+      await expect
+        .poll(async () => (await results.innerHTML()) !== htmlBefore, {
+          message: 'results never re-rendered after the payload was entered',
+          timeout: 5000,
+        })
+        .toBe(true);
       await expect(results).not.toBeEmpty();
 
       const tag = firstTagName(fixture.xssPayload);
