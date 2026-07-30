@@ -1,0 +1,1776 @@
+---
+/**
+ * JqPlayground — the interactive jq Playground island.
+ *
+ * TWO CodeMirror editors: the jq program (no language package — none exists for
+ * jq) and the JSON input (`@codemirror/lang-json`). Between them sits the flags
+ * row (-r / -s / -n / -c) and the version badge, which is read from the WASM
+ * binary itself rather than typed here — that badge IS the tool's ground-truth
+ * claim, so it must never become a literal.
+ *
+ * WASM lifecycle: the shell, both editors and the seeded state render
+ * immediately; the ~907 KB (≈324 KB gzipped) jq binary is fetched at idle via
+ * `requestIdleCallback`, behind a one-time "Loading jq" status in the results
+ * panel. If instantiation fails the panel keeps a persistent card with a Retry
+ * button — `getJq()` clears its memo on rejection precisely so Retry can work.
+ *
+ * UX contract (CLAUDE.md, ported from CidrCheckerPlayground — never from
+ * IpConverter, and never SubnetCalculator's hash handling): example chips at
+ * `var(--radius-pill)`, ONE ~220ms debounce with the exact hint line, a ~600ms
+ * calm-error hold before anything goes red, per-row copy + `data-copy-all` +
+ * `data-copy-link`, one visible `role="status"` summary plus an sr-only
+ * copy-status span, a results container that is NOT `aria-live`, glossary
+ * captions instead of tooltips, and `escapeHtml()` on every injected value.
+ *
+ * The hash is written ONLY on a valid, user-initiated evaluation — never on the
+ * boot seed, never on an error, never past the 2000-char cap.
+ *
+ * Runtime contract (all lazy-imported inside the boot closure so neither
+ * CodeMirror nor the WASM glue touches the page-shell path):
+ *   ../lib/jq-playground/engine   → configureJq, getJq, runJq, unboundedRiskHint
+ *   ../lib/jq-playground/hash     → encodeState, decodeState
+ *   ../lib/jq-playground/examples → examples: JqExample[]
+ *   jq-wasm/jq.wasm?url           → the hashed same-origin WASM asset
+ *
+ * Only the example LABELS are read at build time (so the chips exist before
+ * hydration); the payloads come from the lazy import by index, which keeps
+ * multi-line JSON out of HTML attributes entirely.
+ */
+import { examples } from '../lib/jq-playground/examples';
+---
+
+<section class="jqp-pg" aria-label="jq expression playground">
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Example chips ────────────────────────────────────────────────── */}
+    <div class="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:px-5">
+      <span class="eyebrow shrink-0">Examples</span>
+      <div id="jq-chips" class="jqp-chips" role="group" aria-label="Examples">
+        {
+          examples.map((ex, i) => (
+            <button type="button" class="jqp-chip" data-example-idx={String(i)} aria-pressed="false">
+              {ex.label}
+            </button>
+          ))
+        }
+      </div>
+    </div>
+
+    {/* ── jq program editor (dark instrument slab) ─────────────────────── */}
+    <div class="jqp-pane jqp-pane--program bg-inverse">
+      <div class="jqp-pane__bar">
+        <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+          <span class="jqp-pane__dot"></span>
+          <span class="jqp-pane__dot"></span>
+          <span class="jqp-pane__dot"></span>
+        </span>
+        <span class="jqp-pane__name code-mono">filter.jq</span>
+        <span class="jqp-pane__tag code-mono">program</span>
+      </div>
+      <div id="jq-program" class="jqp-editor jqp-editor--program"></div>
+    </div>
+
+    {/* ── Flags + version badge ───────────────────────────────────────── */}
+    <div class="jqp-flags border-b border-hairline px-4 py-4 sm:px-5">
+      <div class="jqp-flags__row">
+        <span class="eyebrow shrink-0" id="jq-flags-label">Flags</span>
+        <div id="jq-flag-group" class="jqp-chips" role="group" aria-labelledby="jq-flags-label">
+          <button type="button" class="jqp-flag code-mono" data-flag="rawOutput" aria-pressed="false">
+            -r
+          </button>
+          <button type="button" class="jqp-flag code-mono" data-flag="slurp" aria-pressed="false">
+            -s
+          </button>
+          <button type="button" class="jqp-flag code-mono" data-flag="nullInput" aria-pressed="false">
+            -n
+          </button>
+          <button type="button" class="jqp-flag code-mono" data-flag="compact" aria-pressed="false">
+            -c
+          </button>
+        </div>
+        <span class="jqp-badge-wrap">
+          <span id="jq-version" class="jqp-badge code-mono" hidden></span>
+        </span>
+      </div>
+      <p class="jqp-gloss caption text-mute">
+        <span class="code-mono">-r</span> prints string results without JSON quotes ·
+        <span class="code-mono">-s</span> slurps the whole input stream into one array ·
+        <span class="code-mono">-n</span> runs the filter once with <span class="code-mono">null</span>
+        as input (read the stream with <span class="code-mono">inputs</span>) ·
+        <span class="code-mono">-c</span> prints one line per result instead of pretty-printing.
+      </p>
+      <p id="jq-version-note" class="jqp-gloss caption text-mute">
+        The version above is read out of the WebAssembly binary at runtime, not written into this
+        page — it is real jq, not a JavaScript re-implementation.
+      </p>
+      <p id="jq-risk" class="jqp-risk caption" hidden></p>
+    </div>
+
+    {/* ── JSON input editor (dark instrument slab) ─────────────────────── */}
+    <div class="jqp-pane jqp-pane--input bg-inverse">
+      <div class="jqp-pane__bar">
+        <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+          <span class="jqp-pane__dot"></span>
+          <span class="jqp-pane__dot"></span>
+          <span class="jqp-pane__dot"></span>
+        </span>
+        <span class="jqp-pane__name code-mono">input.json</span>
+        <span class="jqp-pane__tag code-mono">stdin</span>
+      </div>
+      <div id="jq-input" class="jqp-editor jqp-editor--input"></div>
+    </div>
+
+    {/* ── Hints + snapshots ───────────────────────────────────────────── */}
+    <div class="border-b border-hairline px-4 pt-3 pb-4 sm:px-5">
+      <p id="jq-run-hint" class="jqp-hint caption text-mute">
+        Results update as you type — press Enter to run now.
+      </p>
+      <p class="jqp-hint caption text-mute">
+        Press <kbd class="jqp-kbd">Esc</kbd> to release keyboard focus from either editor;
+        <kbd class="jqp-kbd">⌘</kbd>/<kbd class="jqp-kbd">Ctrl</kbd> + <kbd class="jqp-kbd">Enter</kbd>
+        runs and leaves the editor. Nothing you paste is uploaded — jq runs inside this tab.
+      </p>
+      <p class="jqp-hint caption text-mute">
+        A jq <strong class="font-medium text-body">filter</strong> produces a
+        <strong class="font-medium text-body">stream</strong> of results, not one value: each card
+        below is one output, exactly as jq would print it on its own line. Input is capped at 2 MB,
+        and a filter that never terminates (an unguarded <span class="code-mono">repeat</span>) will
+        freeze this tab until you reload it.
+      </p>
+      <div class="jqp-snap-row mt-3 flex flex-wrap items-center gap-2">
+        <button id="jq-snap-save" type="button" class="jqp-snap-btn">Save snapshot</button>
+        <select
+          id="jq-snap-select"
+          class="jqp-snap-select"
+          aria-label="Load a saved snapshot"
+          disabled
+        >
+          <option value="">No snapshots yet</option>
+        </select>
+        <button
+          id="jq-snap-delete"
+          type="button"
+          class="jqp-snap-delete"
+          aria-label="Delete this snapshot"
+          hidden>&times;</button
+        >
+      </div>
+    </div>
+
+    {/* ── Result ──────────────────────────────────────────────────────── */}
+    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <span class="flex flex-wrap items-center gap-2">
+          <span class="eyebrow">Result</span>
+          <button
+            id="jq-share"
+            type="button"
+            class="jqp-copy jqp-copy--labeled"
+            data-copy-link
+            data-copy=""
+            data-copy-label="Copy link"
+            hidden
+          >
+            <svg
+              class="jqp-copy-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6.75 9.25l2.5-2.5"></path>
+              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
+              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
+            </svg>
+            <svg
+              class="jqp-check-icon hidden"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="jqp-copy-label">Copy link</span>
+          </button>
+          <button
+            id="jq-copy-all"
+            type="button"
+            class="jqp-copy jqp-copy--labeled"
+            data-copy-all
+            data-copy=""
+            data-copy-label="Copy all"
+            hidden
+          >
+            <svg
+              class="jqp-copy-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="5" y="5" width="9" height="9" rx="1.5"></rect>
+              <path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"></path>
+            </svg>
+            <svg
+              class="jqp-check-icon hidden"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="jqp-copy-label">Copy all</span>
+          </button>
+        </span>
+        <span
+          id="jq-summary"
+          class="jqp-summary code-mono text-mute"
+          role="status"
+          aria-live="polite"></span>
+      </div>
+      <div id="jq-results" class="jqp-results">
+        <p class="jqp-empty body-sm text-mute">
+          Loading jq — the real binary, compiled to WebAssembly (about 324 KB over the wire, cached
+          after your first visit). The example below runs as soon as it lands.
+        </p>
+      </div>
+      <span id="jq-copy-status" class="sr-only" role="status" aria-live="polite"></span>
+    </div>
+  </div>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  /* ── Chips: examples + flags share the geometry ──────────────────────── */
+  .jqp-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-width: 0;
+  }
+  .jqp-chip,
+  .jqp-flag {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-brand-strong);
+    cursor: pointer;
+    touch-action: manipulation;
+    transition:
+      background 0.12s ease,
+      box-shadow 0.12s ease;
+  }
+  .jqp-chip:hover,
+  .jqp-chip[aria-pressed='true'],
+  .jqp-flag:hover,
+  .jqp-flag[aria-pressed='true'] {
+    background: var(--color-brand-soft);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+  }
+  .jqp-chip:focus-visible,
+  .jqp-flag:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  .jqp-flag {
+    min-width: 44px;
+    justify-content: center;
+    font-size: 12.5px;
+  }
+
+  /* ── Flags row ───────────────────────────────────────────────────────── */
+  .jqp-flags__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+  }
+  .jqp-badge-wrap {
+    margin-left: auto;
+  }
+  .jqp-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: var(--radius-pill);
+    background: var(--color-brand-soft);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+    color: var(--color-brand-strong);
+    font-size: 11.5px;
+    line-height: 16px;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+  .jqp-gloss {
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 17px;
+    text-wrap: pretty;
+  }
+  .jqp-gloss .code-mono {
+    font-size: 12px;
+  }
+  .jqp-risk {
+    margin-top: 8px;
+    padding: 7px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--color-warning-soft);
+    color: var(--color-warning-deep);
+    font-size: 12px;
+    line-height: 17px;
+    text-wrap: pretty;
+  }
+
+  /* ── Editor panes (dark instrument slabs) ────────────────────────────── */
+  .jqp-pane {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+  }
+  .jqp-pane__bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .jqp-pane__dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.18);
+  }
+  .jqp-pane__name {
+    /* 0.72 alpha over --color-inverse clears 4.5:1 in both themes. */
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 12px;
+  }
+  .jqp-pane__tag {
+    margin-left: auto;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  /* CodeMirror host. Transparent background so the slab shows through: One
+     Dark's own #282c34 is LIGHTER than --color-inverse, and its dimmest token
+     only clears 4.5:1 against the darker slab. */
+  .jqp-editor {
+    overflow: hidden;
+    padding-inline: 4px;
+  }
+  .jqp-editor :global(.cm-editor) {
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .jqp-editor :global(.cm-editor.cm-focused) {
+    outline: 2px solid var(--color-link);
+    outline-offset: -2px;
+  }
+  .jqp-editor :global(.cm-scroller) {
+    overflow: auto;
+    font-family: var(--font-mono);
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+  }
+  .jqp-editor :global(.cm-scroller)::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .jqp-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: var(--radius-pill);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  /* The program is usually one line; grow with it instead of reserving a
+     screenful, and keep the JSON pane the tall one. */
+  .jqp-editor--program :global(.cm-scroller) {
+    min-height: 64px;
+    max-height: 240px;
+  }
+  .jqp-editor--input :global(.cm-scroller) {
+    min-height: 200px;
+    max-height: 400px;
+  }
+  .jqp-editor :global(.cm-gutters) {
+    background: transparent;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  /* One Dark's gutter foreground is below 4.5:1 — lift it. */
+  .jqp-editor :global(.cm-lineNumbers .cm-gutterElement) {
+    color: #a9a39a;
+  }
+  .jqp-editor :global(.cm-content) {
+    padding: 12px 0 14px;
+  }
+  .jqp-editor :global(.cm-line) {
+    padding-inline: 4px;
+  }
+  /* Invalid input: a hairline red rule down the offending editor, never a flash. */
+  .jqp-pane--error .jqp-editor :global(.cm-editor) {
+    box-shadow: inset 2px 0 0 0 var(--color-error);
+  }
+
+  .jqp-hint {
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  .jqp-hint + .jqp-hint {
+    margin-top: 4px;
+  }
+  .jqp-hint .code-mono {
+    font-size: 12px;
+  }
+  .jqp-kbd {
+    border: 1px solid currentColor;
+    border-radius: var(--radius-xs);
+    padding: 0 3px;
+    font-size: 0.85em;
+  }
+
+  /* ── Snapshot row ────────────────────────────────────────────────────── */
+  .jqp-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition:
+      background 0.12s ease,
+      box-shadow 0.12s ease;
+  }
+  .jqp-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .jqp-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .jqp-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .jqp-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition:
+      background 0.12s ease,
+      color 0.12s ease;
+  }
+  .jqp-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
+
+  /* ── Result panel ────────────────────────────────────────────────────── */
+  .jqp-summary {
+    min-width: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+  .jqp-results {
+    min-height: 120px;
+  }
+  .jqp-copy-status--fail {
+    display: block;
+    margin-top: 10px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-error-deep);
+  }
+
+  /* ── Runtime-injected markup (Astro scoped styles never reach it) ────── */
+  :global(.jqp-out) {
+    border-radius: var(--radius-md);
+    background: var(--color-inverse);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+    animation: jqp-rise 0.18s ease both;
+  }
+  :global(.jqp-out + .jqp-out) {
+    margin-top: 10px;
+  }
+  :global(.jqp-out--dim) {
+    opacity: 0.72;
+  }
+  :global(.jqp-out__bar) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px 6px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  :global(.jqp-out__name) {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.72);
+  }
+  :global(.jqp-out__meta) {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+    white-space: nowrap;
+  }
+  :global(.jqp-out__pre) {
+    margin: 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+    color: #eae7e0;
+    white-space: pre;
+    tab-size: 2;
+  }
+
+  :global(.jqp-block) {
+    margin-top: 12px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+    animation: jqp-rise 0.18s ease both;
+  }
+  :global(.jqp-block__head) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+  :global(.jqp-block__meta) {
+    margin-left: auto;
+    text-transform: none;
+    letter-spacing: 0;
+    white-space: nowrap;
+  }
+  :global(.jqp-block__sub) {
+    margin: 0;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-mute);
+    text-wrap: pretty;
+  }
+  :global(.jqp-note) {
+    margin: 0;
+    padding: 9px 14px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-body);
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+  }
+  :global(.jqp-note + .jqp-note) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.jqp-cap) {
+    margin: 10px 0 0;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-mute);
+    text-wrap: pretty;
+  }
+
+  :global(.jqp-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+  }
+  :global(.jqp-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.jqp-error__body) {
+    min-width: 0;
+  }
+  :global(.jqp-error__title) {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.jqp-error__detail) {
+    margin-top: 2px;
+    font-size: 13px;
+    line-height: 19px;
+    text-wrap: pretty;
+    overflow-wrap: anywhere;
+  }
+  :global(.jqp-error__where) {
+    display: inline-block;
+    margin-top: 4px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    line-height: 16px;
+    opacity: 0.9;
+  }
+  :global(.jqp-error__excerpt) {
+    margin: 8px 0 0;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 17px;
+    color: var(--color-ink);
+    white-space: pre;
+  }
+  :global(.jqp-retry) {
+    margin-top: 10px;
+    min-height: 36px;
+    padding: 0 12px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+  }
+  :global(.jqp-retry:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  :global(.jqp-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 96px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+
+  /* ── Copy buttons: icon-only per row, labeled in the header ──────────── */
+  :global(.jqp-copy) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    touch-action: manipulation;
+    transition:
+      color 0.12s ease,
+      background 0.12s ease;
+  }
+  :global(.jqp-copy:hover) {
+    color: var(--color-brand-strong);
+    background: var(--color-hairline);
+  }
+  :global(.jqp-copy:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  /* Row copy buttons sit on the dark slab. */
+  :global(.jqp-out__bar .jqp-copy) {
+    color: rgba(255, 255, 255, 0.72);
+  }
+  :global(.jqp-out__bar .jqp-copy:hover) {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.12);
+  }
+  :global(.jqp-copy--labeled) {
+    width: auto;
+    height: 26px;
+    gap: 6px;
+    padding: 0 10px;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  :global(.jqp-copy--copied) {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+
+  /* Coarse-pointer tap targets, in the two tiers the contract defines: chips
+     and icon-only per-row copy buttons at 44px, labeled header copy controls at
+     36px (wide text targets, not the primary in-result action). */
+  @media (pointer: coarse) {
+    .jqp-chip,
+    .jqp-flag {
+      min-height: 44px;
+    }
+    :global(.jqp-copy) {
+      width: 44px;
+      height: 44px;
+    }
+    :global(.jqp-copy--labeled) {
+      width: auto;
+      height: auto;
+      min-height: 36px;
+    }
+  }
+
+  @keyframes jqp-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.jqp-out),
+    :global(.jqp-block) {
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  import { escapeHtml } from '../lib/escape-html';
+  import { copyTextToClipboard } from '../lib/clipboard';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  import type { EditorView } from '@codemirror/view';
+
+  /* ---- Engine contract, mirrored structurally (never statically imported) -- */
+  type Flags = { rawOutput: boolean; slurp: boolean; nullInput: boolean; compact: boolean };
+  type ErrorKind = 'compile' | 'runtime' | 'input' | 'engine';
+  type Ok = {
+    ok: true;
+    outputs: string[];
+    outputsExact: boolean;
+    truncated: boolean;
+    totalOutputs: number;
+    stdout: string;
+    outputText: string;
+    elapsedMs: number;
+    flags: string[];
+    version: string;
+    exitCode: number;
+    stderr: string;
+    notices: string[];
+    noticesTruncated: boolean;
+    totalNotices: number;
+  };
+  type Err = {
+    ok: false;
+    errorKind: ErrorKind;
+    error: string;
+    errorLine?: number;
+    errorColumn?: number;
+    errorScope: 'program' | 'input' | null;
+    excerpt?: string;
+    partialOutputs: string[];
+    partialTruncated: boolean;
+    totalPartialOutputs: number;
+    elapsedMs: number;
+    flags: string[];
+    version: string;
+    exitCode: number;
+    stderr: string;
+    notices: string[];
+    noticesTruncated: boolean;
+    totalNotices: number;
+  };
+  type RunResult = Ok | Err;
+  type ShareState = { program: string; input: string | null; flags: Flags };
+  type Example = { id: string; label: string; program: string; input: string; flags: Flags };
+  type EngineModule = {
+    configureJq: (init: { wasmURL?: string }) => void;
+    getJq: (init?: { wasmURL?: string }) => Promise<{ readonly version: string }>;
+    runJq: (program: string, input: string, options?: Partial<Flags>) => Promise<RunResult>;
+    unboundedRiskHint: (program: string) => string | null;
+  };
+  type HashModule = {
+    encodeState: (state: ShareState) => string;
+    decodeState: (hash?: string) => ShareState | null;
+  };
+
+  const ROOT_SEL = '.jqp-pg';
+  const SLUG = 'jq-playground';
+  /* One debounce, at the top of the contract's 130–220ms band: jq is fast but
+     it is also synchronous, so re-running on every keystroke is not free. */
+  const DEBOUNCE_MS = 220;
+  /* Nothing goes red until the typing has been idle this long. */
+  const ERROR_HOLD_MS = 600;
+  const RESET_MS = 1800;
+  /* Past ~2000 chars a fragment stops being a dependable URL (browser, proxy and
+     chat-client limits), so we neither write it nor offer the share link — the
+     playground itself keeps working on inputs of any size. */
+  const MAX_HASH_LEN = 2000;
+  /* A single output can be megabytes. Clip what goes into the DOM, keep the
+     whole value on the copy button, and say so. */
+  const MAX_ROW_DISPLAY_CHARS = 4000;
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.jqWired === 'true') return;
+      root.dataset.jqWired = 'true';
+      void init(root);
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  function normaliseFlags(raw: unknown): Flags {
+    const o = (raw ?? {}) as Record<string, unknown>;
+    return {
+      rawOutput: o.rawOutput === true,
+      slurp: o.slurp === true,
+      nullInput: o.nullInput === true,
+      compact: o.compact === true,
+    };
+  }
+
+  function normaliseExamples(raw: unknown): Example[] {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((item, i) => {
+        const o = (item ?? {}) as Record<string, unknown>;
+        return {
+          id: typeof o.id === 'string' && o.id ? o.id : `example-${i + 1}`,
+          label: typeof o.label === 'string' && o.label ? o.label : `Example ${i + 1}`,
+          program: typeof o.program === 'string' ? o.program : '',
+          input: typeof o.input === 'string' ? o.input : '',
+          flags: normaliseFlags(o.flags),
+        } satisfies Example;
+      })
+      .filter((e) => e.program.length > 0 && e.input.length > 0);
+  }
+
+  /* ---- Icons (decorative) ------------------------------------------------- */
+
+  const ALERT_SVG =
+    '<svg class="jqp-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const COPY_ICON_SVG =
+    '<svg class="jqp-copy-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"/></svg>';
+  const CHECK_ICON_SVG =
+    '<svg class="jqp-check-icon hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
+
+  /* ---- Pure render helpers ------------------------------------------------ */
+
+  function plural(n: number, word: string): string {
+    return `${group(n)} ${word}${n === 1 ? '' : 's'}`;
+  }
+
+  /** `1234` → `1,234`, without depending on the runtime's ICU data. */
+  function group(n: number): string {
+    const digits = String(Math.trunc(Math.abs(n)));
+    let out = '';
+    for (let i = 0; i < digits.length; i += 1) {
+      if (i > 0 && (digits.length - i) % 3 === 0) out += ',';
+      out += digits[i];
+    }
+    return (n < 0 ? '-' : '') + out;
+  }
+
+  const ERROR_TITLES: Record<ErrorKind, string> = {
+    compile: 'That program does not compile',
+    input: 'That input is not valid JSON',
+    runtime: 'jq stopped with a runtime error',
+    engine: 'jq could not run',
+  };
+
+  /** One card per jq output. `dim` marks partial output from a failed run. */
+  function outputsHtml(rows: string[], total: number, truncated: boolean, dim: boolean): string {
+    return rows
+      .map((row, i) => {
+        const clipped = row.length > MAX_ROW_DISPLAY_CHARS;
+        const shown = clipped ? row.slice(0, MAX_ROW_DISPLAY_CHARS) : row;
+        const lines = row.length === 0 ? 1 : row.split('\n').length;
+        const meta = clipped
+          ? `clipped to ${group(MAX_ROW_DISPLAY_CHARS)} of ${group(row.length)} chars`
+          : `${plural(lines, 'line')} · ${plural(row.length, 'char')}`;
+        const label = truncated || total > rows.length ? `output ${group(i + 1)} of ${group(total)}` : `output ${group(i + 1)}`;
+        return (
+          `<div class="jqp-out${dim ? ' jqp-out--dim' : ''}">` +
+          '<div class="jqp-out__bar">' +
+          `<span class="jqp-out__name">${escapeHtml(label)}</span>` +
+          `<span class="jqp-out__meta">${escapeHtml(meta)}</span>` +
+          `<button class="jqp-copy" type="button" data-jq-row="${i}" data-copy="" ` +
+          `aria-label="Copy output ${group(i + 1)} to clipboard" title="Copy">` +
+          COPY_ICON_SVG +
+          CHECK_ICON_SVG +
+          '</button></div>' +
+          // tabindex makes a horizontally scrollable output reachable by
+          // keyboard (WCAG 2.1.1) — a long line is otherwise unreadable
+          // without a pointer.
+          `<pre class="jqp-out__pre" tabindex="0"><code>${escapeHtml(shown)}${
+            clipped ? '\n…' : ''
+          }</code></pre>` +
+          '</div>'
+        );
+      })
+      .join('');
+  }
+
+  function capNoteHtml(text: string): string {
+    return `<p class="jqp-cap">${escapeHtml(text)}</p>`;
+  }
+
+  function noticesHtml(
+    notices: string[],
+    total: number,
+    truncated: boolean,
+    exitCode: number,
+  ): string {
+    if (notices.length === 0) return '';
+    const sub =
+      exitCode === 0
+        ? 'jq exited 0 but still wrote to stderr. Its exit code only reflects the LAST input, so ' +
+          'a filter that failed on an earlier input can still look like a clean run.'
+        : 'Everything else jq wrote to stderr for this run.';
+    return (
+      '<div class="jqp-block">' +
+      '<div class="jqp-block__head"><span>jq also wrote to stderr</span>' +
+      `<span class="jqp-block__meta">${escapeHtml(plural(total, 'line'))}</span></div>` +
+      `<p class="jqp-block__sub">${escapeHtml(sub)}</p>` +
+      notices.map((line) => `<p class="jqp-note">${escapeHtml(line)}</p>`).join('') +
+      (truncated
+        ? `<p class="jqp-note">Showing the first ${group(notices.length)} of ${group(total)} lines.</p>`
+        : '') +
+      '</div>'
+    );
+  }
+
+  function errorCardHtml(result: Err, isAlert: boolean, withRetry: boolean): string {
+    const where =
+      result.errorScope !== null && result.errorLine !== undefined
+        ? `${result.errorScope === 'program' ? 'program' : 'JSON input'} line ${group(result.errorLine)}` +
+          (result.errorColumn !== undefined ? `, column ${group(result.errorColumn)}` : '')
+        : '';
+    return (
+      `<div class="jqp-error"${isAlert ? ' role="alert"' : ''}>` +
+      ALERT_SVG +
+      '<div class="jqp-error__body">' +
+      `<p class="jqp-error__title">${escapeHtml(ERROR_TITLES[result.errorKind] ?? ERROR_TITLES.engine)}</p>` +
+      `<p id="jq-error-detail" class="jqp-error__detail">${escapeHtml(result.error)}</p>` +
+      (where ? `<span class="jqp-error__where">${escapeHtml(where)}</span>` : '') +
+      (result.excerpt ? `<pre class="jqp-error__excerpt"><code>${escapeHtml(result.excerpt)}</code></pre>` : '') +
+      (withRetry
+        ? '<button type="button" class="jqp-retry" data-jq-retry>Retry loading jq</button>'
+        : '') +
+      '</div></div>'
+    );
+  }
+
+  /* ---- Instance init ----------------------------------------------------- */
+
+  async function init(root: HTMLElement): Promise<void> {
+    const programHost = el<HTMLElement>(root, '#jq-program');
+    const inputHost = el<HTMLElement>(root, '#jq-input');
+    const programPane = el<HTMLElement>(root, '.jqp-pane--program');
+    const inputPane = el<HTMLElement>(root, '.jqp-pane--input');
+    const resultsBox = el<HTMLElement>(root, '#jq-results');
+    const summaryEl = el<HTMLElement>(root, '#jq-summary');
+    const shareBtn = el<HTMLButtonElement>(root, '#jq-share');
+    const copyAllBtn = el<HTMLButtonElement>(root, '#jq-copy-all');
+    const copyStatus = el<HTMLElement>(root, '#jq-copy-status');
+    const versionBadge = el<HTMLElement>(root, '#jq-version');
+    const riskEl = el<HTMLElement>(root, '#jq-risk');
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#jq-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#jq-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#jq-snap-delete');
+    const chips = Array.from(root.querySelectorAll<HTMLButtonElement>('#jq-chips .jqp-chip'));
+    const flagBtns = Array.from(root.querySelectorAll<HTMLButtonElement>('#jq-flag-group .jqp-flag'));
+
+    if (
+      !programHost ||
+      !inputHost ||
+      !programPane ||
+      !inputPane ||
+      !resultsBox ||
+      !summaryEl ||
+      !shareBtn ||
+      !copyAllBtn ||
+      !copyStatus ||
+      !versionBadge ||
+      !riskEl ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
+    ) {
+      return;
+    }
+
+    /* ---- Copy plumbing --------------------------------------------------- */
+
+    function setCopyStatus(message: string, failed: boolean): void {
+      copyStatus!.textContent = message;
+      copyStatus!.classList.toggle('sr-only', !failed);
+      copyStatus!.classList.toggle('jqp-copy-status--fail', failed);
+    }
+
+    function setCopied(btn: HTMLButtonElement, copied: boolean): void {
+      btn.classList.toggle('jqp-copy--copied', copied);
+      btn.querySelector('.jqp-copy-icon')?.classList.toggle('hidden', copied);
+      btn.querySelector('.jqp-check-icon')?.classList.toggle('hidden', !copied);
+      const label = btn.querySelector<HTMLElement>('.jqp-copy-label');
+      if (label) {
+        label.textContent = copied ? 'Copied' : (btn.dataset.copyLabel ?? 'Copy');
+      } else if (copied) {
+        btn.dataset.prevAriaLabel = btn.getAttribute('aria-label') ?? '';
+        btn.setAttribute('aria-label', 'Copied');
+      } else if (btn.dataset.prevAriaLabel) {
+        btn.setAttribute('aria-label', btn.dataset.prevAriaLabel);
+        delete btn.dataset.prevAriaLabel;
+      }
+    }
+
+    async function handleCopy(btn: HTMLButtonElement): Promise<void> {
+      const text = btn.dataset.copy ?? '';
+      const okCopy = await copyTextToClipboard(text);
+      if (okCopy) {
+        setCopied(btn, true);
+        setCopyStatus('Copied to clipboard.', false);
+        window.clearTimeout(Number(btn.dataset.copyTimer));
+        btn.dataset.copyTimer = String(
+          window.setTimeout(() => {
+            setCopied(btn, false);
+            if (copyStatus!.textContent === 'Copied to clipboard.') setCopyStatus('', false);
+          }, RESET_MS),
+        );
+      } else {
+        setCopyStatus('Copy failed — select the value manually.', true);
+      }
+    }
+
+    root.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      const copyBtn = target.closest<HTMLButtonElement>('.jqp-copy');
+      if (copyBtn && root.contains(copyBtn)) {
+        void handleCopy(copyBtn);
+        return;
+      }
+      if (target.closest('[data-jq-retry]')) void loadEngine(true);
+    });
+
+    /* ---- Lazy engine + examples + CodeMirror ----------------------------- */
+
+    let engine: EngineModule;
+    let hashApi: HashModule;
+    let examples: Example[] = [];
+    let wasmURL = '';
+    let EditorState: typeof import('@codemirror/state').EditorState;
+    let EditorViewCtor: typeof import('@codemirror/view').EditorView;
+    let keymap: typeof import('@codemirror/view').keymap;
+    let lineNumbers: typeof import('@codemirror/view').lineNumbers;
+    let highlightActiveLine: typeof import('@codemirror/view').highlightActiveLine;
+    let defaultKeymap: typeof import('@codemirror/commands').defaultKeymap;
+    // Named `cmHistory`, not `history`: a bare `history` would shadow
+    // `window.history`, which `writeHash` needs for replaceState.
+    let cmHistory: typeof import('@codemirror/commands').history;
+    let historyKeymap: typeof import('@codemirror/commands').historyKeymap;
+    let indentWithTab: typeof import('@codemirror/commands').indentWithTab;
+    let jsonLang: typeof import('@codemirror/lang-json').json;
+    let oneDark: typeof import('@codemirror/theme-one-dark').oneDark;
+
+    try {
+      const [
+        engineMod,
+        hashMod,
+        examplesMod,
+        wasmMod,
+        stateMod,
+        viewMod,
+        commandsMod,
+        jsonMod,
+        themeMod,
+      ] = await Promise.all([
+        import('../lib/jq-playground/engine'),
+        import('../lib/jq-playground/hash'),
+        import('../lib/jq-playground/examples'),
+        // The `?url` form is the ONLY supported way to get this asset: Vite
+        // hashes it into /_astro/ and serves it same-origin, which the CSP
+        // (connect-src 'self') requires. Never hand-copy it into public/.
+        import('jq-wasm/jq.wasm?url'),
+        import('@codemirror/state'),
+        import('@codemirror/view'),
+        import('@codemirror/commands'),
+        import('@codemirror/lang-json'),
+        import('@codemirror/theme-one-dark'),
+      ]);
+      engine = engineMod as unknown as EngineModule;
+      hashApi = hashMod as unknown as HashModule;
+      examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+      wasmURL = String((wasmMod as { default?: unknown }).default ?? '');
+      ({ EditorState } = stateMod);
+      ({ EditorView: EditorViewCtor, keymap, lineNumbers, highlightActiveLine } = viewMod);
+      ({ history: cmHistory, defaultKeymap, historyKeymap, indentWithTab } = commandsMod);
+      ({ json: jsonLang } = jsonMod);
+      ({ oneDark } = themeMod);
+    } catch (err) {
+      summaryEl.textContent = '';
+      resultsBox.innerHTML =
+        '<div class="jqp-error" role="alert">' +
+        ALERT_SVG +
+        '<div class="jqp-error__body"><p class="jqp-error__title">The playground failed to load</p>' +
+        '<p class="jqp-error__detail">Its editor or engine code could not be fetched. Reload the ' +
+        'page to try again.</p></div></div>';
+      console.error('[JqPlayground] engine/CodeMirror import failed:', err);
+      return;
+    }
+
+    /* ---- State ----------------------------------------------------------- */
+
+    type EvalSource = 'type' | 'commit' | 'seed';
+    type UiState = 'empty' | 'valid' | 'pending' | 'invalid' | 'loading' | 'failed';
+
+    let flags: Flags = { rawOutput: false, slurp: false, nullInput: false, compact: false };
+    let uiState: UiState = 'loading';
+    let evalTimer: number | undefined;
+    let errTimer: number | undefined;
+    let lastWrittenHash: string | null = null;
+    let liveReady = false;
+    let engineReady = false;
+    /** Monotonic run id: an async result that is not the newest is discarded. */
+    let runSeq = 0;
+
+    function clearTimers(): void {
+      window.clearTimeout(evalTimer);
+      window.clearTimeout(errTimer);
+    }
+
+    /* ---- Editors --------------------------------------------------------- */
+
+    function makeEditor(
+      host: HTMLElement,
+      doc: string,
+      label: string,
+      language: readonly unknown[],
+    ): EditorView {
+      const view: EditorView = new EditorViewCtor({
+        state: EditorState.create({
+          doc,
+          extensions: [
+            lineNumbers(),
+            cmHistory(),
+            highlightActiveLine(),
+            ...(language as never[]),
+            oneDark,
+            EditorViewCtor.lineWrapping,
+            // CodeMirror puts role="textbox" on the content DOM; without a name
+            // that is an unlabelled input field for a screen reader (and an axe
+            // violation). aria-describedby points at the live-eval hint line.
+            EditorViewCtor.contentAttributes.of({
+              'aria-label': label,
+              'aria-describedby': 'jq-run-hint',
+            }),
+            keymap.of([
+              // Ours FIRST, so they win over defaultKeymap's Enter/Escape.
+              {
+                key: 'Mod-Enter',
+                run: () => {
+                  clearTimers();
+                  evaluate('commit');
+                  view.contentDOM.blur();
+                  return true;
+                },
+              },
+              {
+                // Plain Enter must still insert the newline (jq programs are
+                // often multi-line), so this returns false and lets
+                // insertNewlineAndIndent run — the eval is flushed on the next
+                // tick, once the doc includes the newline.
+                key: 'Enter',
+                run: () => {
+                  window.setTimeout(() => {
+                    clearTimers();
+                    evaluate('commit');
+                  }, 0);
+                  return false;
+                },
+              },
+              {
+                // The Tab-trap escape hatch: indentWithTab means Tab indents,
+                // so Escape is the documented way out of the editor.
+                key: 'Escape',
+                run: (v) => {
+                  v.contentDOM.blur();
+                  return true;
+                },
+              },
+              ...defaultKeymap,
+              ...historyKeymap,
+              indentWithTab,
+            ]),
+            EditorViewCtor.updateListener.of((u) => {
+              if (!u.docChanged || !liveReady) return;
+              setActiveChip(null);
+              clearTimers();
+              evalTimer = window.setTimeout(() => evaluate('type'), DEBOUNCE_MS);
+            }),
+            EditorViewCtor.theme({
+              '&': { color: '#eae7e0' },
+              '.cm-content': { caretColor: '#eae7e0' },
+              '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#eae7e0' },
+              '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
+                backgroundColor: 'rgba(79, 138, 200, 0.34)',
+              },
+              '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.04)' },
+              '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+            }),
+          ],
+        }),
+        parent: host,
+      });
+      return view;
+    }
+
+    function setEditorDoc(view: EditorView, doc: string): void {
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
+      view.requestMeasure();
+    }
+
+    /* ---- Chrome ---------------------------------------------------------- */
+
+    function setSummary(text: string, isError: boolean): void {
+      summaryEl!.textContent = text;
+      summaryEl!.classList.toggle('text-error-deep', isError);
+      summaryEl!.classList.toggle('text-mute', !isError);
+    }
+
+    /**
+     * Flag the editor that actually owns the problem: a compile or runtime error
+     * is fixed in the program, a parse error in the JSON. Pointing at the wrong
+     * one would be a small confident lie.
+     */
+    function setErrorState(target: 'program' | 'input' | null): void {
+      const pairs: [HTMLElement, EditorView, 'program' | 'input'][] = [
+        [programPane!, programView, 'program'],
+        [inputPane!, inputView, 'input'],
+      ];
+      for (const [pane, view, which] of pairs) {
+        const on = target === which;
+        pane.classList.toggle('jqp-pane--error', on);
+        if (on) {
+          view.contentDOM.setAttribute('aria-invalid', 'true');
+          view.contentDOM.setAttribute('aria-describedby', 'jq-run-hint jq-error-detail');
+        } else {
+          view.contentDOM.removeAttribute('aria-invalid');
+          view.contentDOM.setAttribute('aria-describedby', 'jq-run-hint');
+        }
+      }
+    }
+
+    function hideActions(): void {
+      shareBtn!.hidden = true;
+      shareBtn!.dataset.copy = '';
+      copyAllBtn!.hidden = true;
+      copyAllBtn!.dataset.copy = '';
+    }
+
+    function setActiveChip(idx: number | null): void {
+      chips.forEach((chip) => {
+        chip.setAttribute(
+          'aria-pressed',
+          idx !== null && chip.dataset.exampleIdx === String(idx) ? 'true' : 'false',
+        );
+      });
+    }
+
+    function applyFlagChrome(): void {
+      flagBtns.forEach((btn) => {
+        const key = btn.dataset.flag as keyof Flags | undefined;
+        btn.setAttribute('aria-pressed', key && flags[key] ? 'true' : 'false');
+      });
+    }
+
+    function applyRiskHint(): void {
+      let hint: string | null = null;
+      try {
+        hint = engine.unboundedRiskHint(programView.state.doc.toString());
+      } catch {
+        hint = null;
+      }
+      riskEl!.textContent = hint ?? '';
+      riskEl!.hidden = hint === null;
+    }
+
+    /* ---- Deep link / share ---------------------------------------------- */
+
+    function currentFragment(): string {
+      try {
+        return hashApi.encodeState({
+          program: programView.state.doc.toString(),
+          input: inputView.state.doc.toString(),
+          flags,
+        });
+      } catch {
+        return '';
+      }
+    }
+
+    function writeHash(fragment: string | null): void {
+      const target = fragment ?? '';
+      if (target === lastWrittenHash) return;
+      // Safari throttles replaceState (~100 per 30s) and throws — never let
+      // that break typing.
+      try {
+        if (fragment) {
+          window.history.replaceState(null, '', fragment);
+        } else {
+          window.history.replaceState(null, '', location.pathname + location.search);
+        }
+        lastWrittenHash = target;
+      } catch {
+        /* ignore */
+      }
+    }
+
+    /* ---- Render ---------------------------------------------------------- */
+
+    function renderLoading(): void {
+      uiState = 'loading';
+      hideActions();
+      setSummary('loading jq…', false);
+      resultsBox!.innerHTML =
+        '<p class="jqp-empty body-sm text-mute">Loading jq — the real binary, compiled to ' +
+        'WebAssembly (about 324 KB over the wire, cached after your first visit). The example ' +
+        'below runs as soon as it lands.</p>';
+    }
+
+    function renderEmpty(message: string): void {
+      uiState = 'empty';
+      setErrorState(null);
+      hideActions();
+      setSummary('', false);
+      resultsBox!.innerHTML = `<p class="jqp-empty body-sm text-mute">${escapeHtml(message)}</p>`;
+    }
+
+    function okSummary(result: Ok): string {
+      const parts: string[] = [];
+      if (result.truncated) {
+        parts.push(`showing ${group(result.outputs.length)} of ${plural(result.totalOutputs, 'output')}`);
+      } else {
+        parts.push(plural(result.totalOutputs, 'output'));
+      }
+      if (result.flags.length > 0) parts.push(result.flags.join(' '));
+      parts.push(`${group(result.elapsedMs)} ms`);
+      if (result.totalNotices > 0) parts.push(plural(result.totalNotices, 'stderr line'));
+      return parts.join(' · ');
+    }
+
+    function renderOk(result: Ok): void {
+      const notes: string[] = [];
+      if (result.truncated) {
+        notes.push(
+          `Showing the first ${group(result.outputs.length)} of ${group(result.totalOutputs)} ` +
+            `outputs — "Copy all" still copies every one.`,
+        );
+      }
+      if (!result.outputsExact) {
+        notes.push(
+          `jq produced ${plural(result.totalOutputs, 'output')}, but with -r a raw string can ` +
+            `contain newlines, so the boundaries are not recoverable from the text — the whole ` +
+            `raw output is shown as one block instead of guessing at rows.`,
+        );
+      }
+      const body =
+        result.outputs.length === 0
+          ? '<div class="jqp-block"><div class="jqp-block__head"><span>No output</span>' +
+            '<span class="jqp-block__meta">exit 0</span></div>' +
+            '<p class="jqp-block__sub">This is a real result, not a failure: the filter matched ' +
+            'nothing, so jq emitted an empty stream and exited 0. <span class="code-mono">empty' +
+            '</span>, a false <span class="code-mono">select()</span> and ' +
+            '<span class="code-mono">.[]?</span> on a non-iterable all do this.</p></div>'
+          : outputsHtml(result.outputs, result.totalOutputs, result.truncated, false);
+
+      resultsBox!.innerHTML =
+        body +
+        notes.map(capNoteHtml).join('') +
+        noticesHtml(result.notices, result.totalNotices, result.noticesTruncated, result.exitCode);
+      // Newlines round-trip badly through HTML attributes, so per-row payloads
+      // are set on the live elements instead.
+      resultsBox!.querySelectorAll<HTMLButtonElement>('[data-jq-row]').forEach((btn) => {
+        const idx = Number(btn.dataset.jqRow);
+        const row = result.outputs[idx];
+        if (typeof row === 'string') btn.dataset.copy = row;
+      });
+    }
+
+    function renderErr(result: Err, isAlert: boolean): void {
+      const withRetry = result.errorKind === 'engine' && !engineReady;
+      const partials =
+        result.partialOutputs.length > 0
+          ? capNoteHtml(
+              `jq had already emitted ${plural(result.totalPartialOutputs, 'output')} before it ` +
+                `stopped. They are shown below, dimmed.`,
+            ) +
+            outputsHtml(
+              result.partialOutputs,
+              result.totalPartialOutputs,
+              result.partialTruncated,
+              true,
+            )
+          : '';
+      resultsBox!.innerHTML =
+        errorCardHtml(result, isAlert, withRetry) +
+        partials +
+        noticesHtml(result.notices, result.totalNotices, result.noticesTruncated, result.exitCode);
+      resultsBox!.querySelectorAll<HTMLButtonElement>('[data-jq-row]').forEach((btn) => {
+        const idx = Number(btn.dataset.jqRow);
+        const row = result.partialOutputs[idx];
+        if (typeof row === 'string') btn.dataset.copy = row;
+      });
+    }
+
+    function showError(result: Err, source: EvalSource): void {
+      uiState = 'invalid';
+      clearTimers();
+      setErrorState(
+        result.errorKind === 'input' ? 'input' : result.errorKind === 'engine' ? null : 'program',
+      );
+      hideActions();
+      const label =
+        result.errorKind === 'compile'
+          ? 'compile error'
+          : result.errorKind === 'input'
+            ? 'input parse error'
+            : result.errorKind === 'runtime'
+              ? `runtime error · exit ${group(result.exitCode)}`
+              : 'jq unavailable';
+      setSummary(label, true);
+      renderErr(result, source === 'commit');
+      if (source !== 'seed') writeHash(null);
+    }
+
+    /* ---- Evaluate -------------------------------------------------------- */
+
+    function evaluate(source: EvalSource): void {
+      clearTimers();
+      applyRiskHint();
+      if (!engineReady) return;
+
+      const program = programView.state.doc.toString();
+      const input = inputView.state.doc.toString();
+      if (program.trim().length === 0) {
+        renderEmpty(
+          'Write a jq filter above — "." is the identity filter and prints the input unchanged.',
+        );
+        if (source !== 'seed') writeHash(null);
+        return;
+      }
+      if (input.trim().length === 0 && !flags.nullInput) {
+        renderEmpty(
+          'Paste some JSON below — or turn on -n to run the filter once with null as its input.',
+        );
+        if (source !== 'seed') writeHash(null);
+        return;
+      }
+
+      const seq = ++runSeq;
+      void engine
+        .runJq(program, input, flags)
+        .then((result) => {
+          if (seq !== runSeq) return; // a newer run superseded this one
+          if (result.ok) {
+            uiState = 'valid';
+            setErrorState(null);
+            renderOk(result);
+            setSummary(okSummary(result), false);
+            copyAllBtn!.hidden = false;
+            copyAllBtn!.dataset.copy = result.outputText;
+            const fragment = currentFragment();
+            if (fragment.length > 0 && fragment.length <= MAX_HASH_LEN) {
+              shareBtn!.hidden = false;
+              shareBtn!.dataset.copy =
+                location.origin + location.pathname + location.search + fragment;
+              if (source !== 'seed') {
+                writeHash(fragment);
+                recordToolLastInput(SLUG, fragment);
+              }
+            } else {
+              // Too long to be a dependable link: keep running, drop the share.
+              shareBtn!.hidden = true;
+              shareBtn!.dataset.copy = '';
+              if (source !== 'seed') writeHash(null);
+            }
+            return;
+          }
+
+          if (source !== 'type') {
+            showError(result, source);
+            return;
+          }
+          // Mid-typing: hold the previous card, nothing goes red yet. The error
+          // only surfaces once the typing has been idle for ERROR_HOLD_MS.
+          uiState = 'pending';
+          setErrorState(null);
+          hideActions();
+          setSummary('', false);
+          errTimer = window.setTimeout(() => {
+            if (seq !== runSeq) return;
+            showError(result, 'type');
+          }, ERROR_HOLD_MS);
+        })
+        .catch((err: unknown) => {
+          // runJq is documented never to reject; this is belt and braces.
+          console.error('[JqPlayground] runJq rejected:', err);
+        });
+    }
+
+    /* ---- Seed (before any listener fires, so nothing writes the hash) ---- */
+
+    const firstExample = examples[0];
+    let seedProgram = firstExample?.program ?? '.';
+    let seedInput = firstExample?.input ?? '';
+    let seedChip: number | null = firstExample ? 0 : null;
+    if (firstExample) flags = { ...firstExample.flags };
+
+    function applyShareState(state: ShareState): void {
+      seedProgram = state.program;
+      // A hand-written `#q=.items[].name` carries no input. Seeding the first
+      // example's input is the honest reading: the fragment asked for a
+      // program, and a program with nothing to run against shows nothing.
+      seedInput = state.input === null ? (firstExample?.input ?? '') : state.input;
+      flags = { ...state.flags };
+      seedChip = null;
+    }
+
+    let fromHash = false;
+    try {
+      const shared = hashApi.decodeState(window.location.hash);
+      if (shared && shared.program.trim().length > 0) {
+        applyShareState(shared);
+        fromHash = true;
+      }
+    } catch {
+      /* malformed fragment — fall through to the restore/example tiers */
+    }
+
+    if (!fromHash) {
+      const restored = getRestoredLastInput(SLUG);
+      if (restored) {
+        try {
+          const state = hashApi.decodeState(restored);
+          if (state && state.program.trim().length > 0) applyShareState(state);
+        } catch {
+          /* malformed stored value — keep the example seed */
+        }
+      }
+    }
+
+    const programView = makeEditor(programHost, seedProgram, 'jq program', []);
+    const inputView = makeEditor(inputHost, seedInput, 'JSON input', [jsonLang()]);
+    applyFlagChrome();
+    setActiveChip(seedChip);
+    applyRiskHint();
+    renderLoading();
+
+    /* ---- Events ---------------------------------------------------------- */
+
+    flagBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.flag as keyof Flags | undefined;
+        if (!key) return;
+        flags = { ...flags, [key]: !flags[key] };
+        applyFlagChrome();
+        // The active example no longer describes what is on screen.
+        setActiveChip(null);
+        clearTimers();
+        evaluate('commit');
+      });
+    });
+
+    chips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const idx = Number(chip.dataset.exampleIdx);
+        if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+        const ex = examples[idx];
+        flags = { ...ex.flags };
+        applyFlagChrome();
+        liveReady = false;
+        setEditorDoc(programView, ex.program);
+        setEditorDoc(inputView, ex.input);
+        liveReady = true;
+        setActiveChip(idx);
+        clearTimers();
+        evaluate('commit');
+      });
+    });
+
+    // Committing on blur means a half-typed filter that the user tabbed away
+    // from still explains itself, instead of sitting silently in `pending`.
+    [programView, inputView].forEach((view) => {
+      view.contentDOM.addEventListener('blur', () => {
+        if (uiState === 'pending') {
+          clearTimers();
+          evaluate('commit');
+        }
+      });
+    });
+
+    wireSnapshotUI({
+      slug: SLUG,
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      // The snapshot payload is the same `#q=` fragment the share link uses, so
+      // the program, the input AND the four flags all come back together.
+      getValue: () => currentFragment(),
+      setValue: (value) => {
+        let state: ShareState | null = null;
+        try {
+          state = hashApi.decodeState(value);
+        } catch {
+          return;
+        }
+        if (!state) return;
+        flags = { ...state.flags };
+        applyFlagChrome();
+        liveReady = false;
+        setEditorDoc(programView, state.program);
+        if (state.input !== null) setEditorDoc(inputView, state.input);
+        liveReady = true;
+        setActiveChip(null);
+        clearTimers();
+        evaluate('commit');
+      },
+    });
+
+    /* ---- WASM: fetched at idle, never on the critical path --------------- */
+
+    async function loadEngine(userInitiated: boolean): Promise<void> {
+      if (engineReady) return;
+      if (userInitiated) renderLoading();
+      try {
+        engine.configureJq({ wasmURL });
+        const handle = await engine.getJq({ wasmURL });
+        engineReady = true;
+        versionBadge!.textContent = handle.version;
+        versionBadge!.hidden = false;
+        // The seed evaluation — deliberately `'seed'`, so it writes no hash and
+        // records no last-input even though it happens after boot.
+        evaluate('seed');
+      } catch (err) {
+        uiState = 'failed';
+        hideActions();
+        setSummary('jq unavailable', true);
+        renderErr(
+          {
+            ok: false,
+            errorKind: 'engine',
+            error:
+              'The jq WebAssembly module could not be loaded: ' +
+              (err instanceof Error ? err.message : 'unknown error') +
+              '. It is served from this site, so an offline tab, a blocked request or a corrupted ' +
+              'cache entry are the usual causes.',
+            errorScope: null,
+            partialOutputs: [],
+            partialTruncated: false,
+            totalPartialOutputs: 0,
+            elapsedMs: 0,
+            flags: [],
+            version: '',
+            exitCode: 0,
+            stderr: '',
+            notices: [],
+            noticesTruncated: false,
+            totalNotices: 0,
+          },
+          true,
+        );
+        console.error('[JqPlayground] jq WASM load failed:', err);
+      }
+    }
+
+    liveReady = true;
+    requestAnimationFrame(() => {
+      programView.requestMeasure();
+      inputView.requestMeasure();
+    });
+
+    const idle = (window as unknown as { requestIdleCallback?: (cb: () => void) => number })
+      .requestIdleCallback;
+    if (typeof idle === 'function') idle(() => void loadEngine(false));
+    else window.setTimeout(() => void loadEngine(false), 60);
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

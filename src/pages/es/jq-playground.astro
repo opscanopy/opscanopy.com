@@ -1,0 +1,540 @@
+---
+/**
+ * jq Playground — la página de la herramienta jq-playground (superficie SEO).
+ *
+ * Cada salida de jq, cada mensaje de error, cada código de salida y cada
+ * resultado de builtin citado en esta página lo produjo el binario real de
+ * jq 1.8.2 y está fijado en `src/lib/jq-playground/engine.test.ts` bajo
+ * «claims the tool page makes».
+ */
+import Shell from '../../components/Shell.astro';
+import JqPlayground from '../../components/JqPlayground.astro';
+import Button from '../../components/Button.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import ToolHero from '../../components/ToolHero.astro';
+import ToolGapVisual from '../../components/ToolGapVisual.astro';
+import ToolPipeline from '../../components/ToolPipeline.astro';
+import FaqList from '../../components/FaqList.astro';
+import ToolCrossLinks from '../../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../../data/site';
+import { getTool } from '../../data/tools';
+import { softwareAppLd, faqPageLd } from '../../lib/jsonld';
+import type { Locale as __Locale } from '../../i18n/config';
+import { localizeKey as __l } from '../../i18n/utils';
+const __lang = (Astro.currentLocale ?? 'en') as __Locale;
+
+const tool = getTool('jq-playground');
+const pagePath = '/jq-playground/';
+const pageUrl = `${site.url}${pagePath}`;
+
+const faqs = [
+  {
+    q: '¿Es jq de verdad o una reimplementación en JavaScript?',
+    a: 'Es jq de verdad. La página carga jq 1.8.2 compilado a WebAssembly — el programa en C real, 907 KB sin comprimir y unos 324 KB por la red — y pasa tu filtro por él. La insignia de versión que aparece junto a los flags se lee de ese binario en tiempo de ejecución, no está escrita en la página, así que no puede quedarse desactualizada. Aquí no se aproxima el comportamiento de jq, porque aquí no se reimplementa nada: el mismo código que corre en tu portátil corre en tu pestaña.',
+  },
+  {
+    q: '¿Mi JSON sale alguna vez de mi navegador?',
+    a: 'No. No hay servidor, ni API, ni registro de nada. jq se descarga una sola vez desde este sitio como archivo estático y después se ejecuta por completo dentro de tu pestaña, que es justo la diferencia con un playground que corre en un servidor: con jqplay.org y similares, el JSON que pegas viaja a la máquina de otra persona para ser evaluado. Aquí puedes pegar sin miedo salidas de kubectl de producción, respuestas de API con tokens dentro y líneas de log con datos de clientes.',
+  },
+  {
+    q: '¿Qué flags están disponibles y cuáles no?',
+    a: 'Cuatro interruptores: -r (salida de cadenas en crudo), -s (recoger todo el flujo de entrada en un array), -n (ejecutar una vez con null como entrada) y -c (compacto, una línea por resultado). No están en esta versión: --arg y --argjson, la carga de módulos (-L, include, import — jq responde «module not found»), --seq, la salida en color, los argumentos de fichero y la lectura desde una URL. A --arg puedes sustituirlo dentro del propio programa: ("prod") as $ns | … enlaza un valor igual de bien.',
+  },
+  {
+    q: '¿Por qué falla aquí el jq que escribió un asistente de IA?',
+    a: 'Casi siempre porque usó un builtin que no existe en jq 1.8.2. leaf_paths es el caso clásico — se eliminó, y jq responde «leaf_paths/0 is not defined»; la forma que sí funciona es paths(scalars). Lo mismo pasa con flags inventados y con builtins de otras herramientas (jaq, gojq, JMESPath) que nunca existieron en jq. Un error de compilación aquí cita el mensaje propio de jq, la línea, la columna y el fragmento con el caret, así que ves exactamente qué token rechazó en lugar de adivinarlo.',
+  },
+  {
+    q: '¿Cuál es la diferencia entre -s e inputs?',
+    a: '-s lee todos los valores del flujo de entrada en un único array y ejecuta tu filtro una vez sobre ese array: 1 2 3 se convierte en [1,2,3]. -n ejecuta el filtro una vez con null como entrada y te entrega el flujo a través del generador inputs, así que [inputs] sobre 1 2 3 también da [1,2,3] — pero tú controlas cuándo se extrae cada valor, y eso es lo que te permite emparejar valores, saltarte un registro de cabecera o parar antes de tiempo. -s lo almacena todo primero; -n con inputs va en flujo.',
+  },
+  {
+    q: '¿Por qué -r sigue imprimiendo JSON para mi objeto?',
+    a: 'Porque -r solo quita las comillas alrededor de los resultados que son cadenas. Todo lo que no sea una cadena — un objeto, un array, un número, un booleano o null — se sigue imprimiendo como JSON, y por eso . sobre {"a":1} se ve idéntico con y sin -r. Si quieres texto a partir de algo que no es una cadena, conviértelo en el filtro: tostring, @csv, @tsv, join(",") o una cadena interpolada como "\\(.name) → \\(.image)".',
+  },
+  {
+    q: '¿Cómo saco CSV o TSV de jq?',
+    a: 'Construye un array por fila y pásalo por @csv o @tsv, y después activa -r para que la fila se imprima como texto y no como una cadena JSON entre comillas. ["web",3] | @csv da "web",3 — cadenas entrecomilladas, números desnudos — y @tsv da web, luego un tabulador real, luego 3. Los dos rechazan valores anidados: un array o un objeto dentro de una fila es un error de ejecución («array ([\\"a\\"]) is not valid in a csv row»), y null se convierte en un campo vacío.',
+  },
+  {
+    q: '¿Qué hace // en realidad?',
+    a: 'a // b produce a, salvo que a sea false, null, o no produzca ninguna salida; en ese caso produce b. La trampa es que no significa «si está vacío»: en jq el 0 y la cadena vacía son verdaderos, así que {"a":0} | .a // "fallback" da 0, no "fallback". Si lo que quieres es «cuando falta la clave», pregúntalo explícitamente: if has("a") then .a else "fallback" end.',
+  },
+  {
+    q: '¿jq redondea los números grandes igual que JavaScript?',
+    a: 'No, mientras el valor siga intacto. jq 1.8 conserva el literal que le diste, así que {"n":9007199254740993} | .n imprime exactamente 9007199254740993 — un número que JavaScript no puede representar — y 1.0 sigue siendo 1.0 en lugar de colapsar a 1. En cuanto haces aritmética con él, la garantía termina: .n + 0 pasa a ser 9007199254740992, porque el cálculo va por un doble de 64 bits. Es una propiedad de jq, no del navegador; jq en la línea de comandos responde lo mismo.',
+  },
+  {
+    q: '¿Qué tamaño de entrada puedo pegar y qué pasa si mi filtro no termina nunca?',
+    a: 'La entrada está limitada a 2 MB (2.000.000 de bytes) y el panel de resultados muestra las primeras 200 salidas, siempre con el número real al lado — «Copy all» sigue copiando todas. jq se ejecuta de forma síncrona, así que un filtro que no termina sí bloquea la pestaña; en la práctica agota la memoria WebAssembly de jq y aborta en aproximadamente un segundo en lugar de colgarse para siempre, y el playground convierte eso en un mensaje de error normal. Las dos formas que lo provocan son un repeat sin freno y recurse(.field), que llega a null y luego recursa sobre null eternamente — escribe recurse(.field?; . != null).',
+  },
+];
+
+const softwareApp = softwareAppLd({
+  name: 'jq Playground',
+  description:
+    'Playground de jq gratuito en el navegador con el binario real de jq 1.8.2 compilado a WebAssembly. Una tarjeta por salida, clasificación exacta de errores de compilación, ejecución y parseo, interruptores -r/-s/-n/-c. Sin subidas, sin registro.',
+  url: pageUrl,
+  subCategory: 'Logs',
+  featureList: [
+    'Ejecuta el binario real de jq 1.8.2, compilado a WebAssembly',
+    'Insignia de versión leída del binario, nunca escrita a mano',
+    'Una tarjeta de resultado por salida de jq, con copia por salida',
+    'Separa errores de compilación, de ejecución y de parseo de la entrada',
+    '-r / -s / -n / -c como interruptores de un toque, incluidos en el enlace',
+    '100 % en el cliente, sin subidas, sin registro',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+const faqPage = faqPageLd(faqs);
+
+const pipeline = [
+  {
+    title: 'Descargar el binario real, una vez.',
+    body: 'jq 1.8.2 como WebAssembly — 907 KB sin comprimir, unos 324 KB por la red — servido desde este sitio como archivo estático con hash en el nombre y guardado en la caché de tu navegador. Se carga mientras lees, no mientras esperas.',
+  },
+  {
+    title: 'Compilar el filtro.',
+    body: 'jq compila tu programa antes de ver ninguna entrada. Un error de sintaxis o una función no definida terminan con código 3 — y obtienes el mensaje propio de jq con su línea, su columna y su fragmento con el caret, no un «expresión no válida».',
+  },
+  {
+    title: 'Ejecutarlo sobre tu entrada.',
+    body: 'Tu JSON llega a jq por stdin, solo con los flags que muestra la fila de flags. jq emite un flujo de resultados, y cada uno pasa a ser su propia tarjeta — porque un flujo de cuatro valores no es la misma respuesta que un array de cuatro.',
+  },
+  {
+    title: 'Clasificar lo que vuelve.',
+    body: 'jq usa el código de salida 5 para dos cosas: un error de ejecución y una entrada que no se puede parsear. Aquí se distinguen por el prefijo de stderr y se señalan en el editor al que pertenecen. Las salidas producidas antes del fallo se conservan, y todo lo que jq escribió en stderr se muestra incluso cuando terminó con 0.',
+  },
+];
+
+/**
+ * Los builtins de jq más usados. Cada par de entrada y salida se ejecutó contra
+ * jq 1.8.2 a través del motor de esta herramienta.
+ */
+const cheatsheet = [
+  {
+    filter: '.a.b',
+    input: '{"a":{"b":42}}',
+    output: '42',
+    note: 'Acceso por ruta. Una clave que falta es null, no un error — indexar algo que no es un objeto sí lo es: .a sobre [1,2] falla con «Cannot index array with string».',
+  },
+  {
+    filter: '.items[] | .name',
+    input: '{"items":[{"name":"web"},{"name":"api"}]}',
+    output: '"web"\n"api"',
+    note: 'DOS salidas, no un array. Envuelve todo el filtro en [ … ] cuando quieras uno.',
+  },
+  {
+    filter: '.[] | select(.ms > 100)',
+    input: '[{"ms":41},{"ms":998}]',
+    output: '{"ms":998}',
+    note: 'select conserva la entrada cuando la condición es verdadera y no emite nada cuando es falsa.',
+  },
+  {
+    filter: 'map(.ms)',
+    input: '[{"ms":41},{"ms":998}]',
+    output: '[41,998]',
+    note: 'map(f) es [.[] | f] — toma un array y devuelve un array.',
+  },
+  {
+    filter: 'keys',
+    input: '{"b":1,"a":2}',
+    output: '["a","b"]',
+    note: 'keys ORDENA. Usa keys_unsorted para el orden del documento — la misma entrada da ["b","a"].',
+  },
+  {
+    filter: 'length',
+    input: '{"a":1,"b":2}',
+    output: '2',
+    note: 'Claves en un objeto, elementos en un array, puntos de código en una cadena («héllo» son 5), valor absoluto en un número, 0 en null.',
+  },
+  {
+    filter: 'add',
+    input: '[1,2,3]',
+    output: '6',
+    note: 'Suma los elementos de un array — lo que también concatena cadenas y fusiona objetos.',
+  },
+  {
+    filter: 'group_by(.k) | map({ k: .[0].k, n: length })',
+    input: '[{"k":"a"},{"k":"a"},{"k":"b"}]',
+    output: '[{"k":"a","n":2},{"k":"b","n":1}]',
+    note: 'El idioma para contar por campo. group_by ordena primero, así que los grupos vuelven en orden de clave.',
+  },
+  {
+    filter: 'unique',
+    input: '[3,1,3]',
+    output: '[1,3]',
+    note: 'Además de quitar duplicados, ordena. Para objetos, unique_by(f).',
+  },
+  {
+    filter: 'sort_by(-.n)',
+    input: '[{"n":1},{"n":9}]',
+    output: '[{"n":9},{"n":1}]',
+    note: 'Negar la clave es la forma de ordenar de mayor a menor; sort_by no tiene un flag reverse.',
+  },
+  {
+    filter: 'to_entries',
+    input: '{"a":1}',
+    output: '[{"key":"a","value":1}]',
+    note: 'El puente objeto ⇄ lista. from_entries vuelve atrás; en un ARRAY las claves son los índices.',
+  },
+  {
+    filter: 'with_entries(.value += 1)',
+    input: '{"a":1,"b":2}',
+    output: '{"a":2,"b":3}',
+    note: 'to_entries | map(f) | from_entries en un solo paso — la manera de mapear sobre los valores de un objeto.',
+  },
+  {
+    filter: 'del(.b)',
+    input: '{"a":1,"b":2}',
+    output: '{"a":1}',
+    note: 'Toma una ruta, así que del(.a[1]) y del(.a, .b) también funcionan.',
+  },
+  {
+    filter: '.a // "fallback"',
+    input: '{"a":null}',
+    output: '"fallback"',
+    note: 'Solo entra con null, false y «ninguna salida». {"a":0} da 0 — el cero es verdadero en jq.',
+  },
+  {
+    filter: 'has("a")',
+    input: '{"a":null}',
+    output: 'true',
+    note: 'Pregunta por la CLAVE, no por el valor — así distingues «falta» de «es null».',
+  },
+  {
+    filter: '[paths(scalars)]',
+    input: '{"a":{"b":1}}',
+    output: '[["a","b"]]',
+    note: 'Todas las rutas hasta una hoja. leaf_paths ya no existe en jq 1.8.2; esto es su sustituto.',
+  },
+  {
+    filter: 'flatten',
+    input: '[[1,[2]],[3]]',
+    output: '[1,2,3]',
+    note: 'Hasta el fondo por defecto; flatten(1) para un solo nivel.',
+  },
+  {
+    filter: 'test("^ERR"; "i")',
+    input: '"error: x"',
+    output: 'true',
+    note: 'Regex de Oniguruma con una cadena de flags. match / capture / sub / gsub / splits toman el mismo par.',
+  },
+  {
+    filter: 'capture("(?<code>[0-9]{3})")',
+    input: '"status 503 here"',
+    output: '{"code":"503"}',
+    note: 'Los grupos con nombre pasan a ser claves del objeto — la vía más rápida de una línea de log a campos.',
+  },
+  {
+    filter: '@csv',
+    input: '["web",3]',
+    output: '"web",3',
+    note: 'Con -r. Cadenas entrecomilladas, números desnudos, null vacío; un array u objeto anidado es un error de ejecución. @tsv usa un tabulador real.',
+  },
+  {
+    filter: '@base64d',
+    input: '"aGVsbG8="',
+    output: 'hello',
+    note: 'Con -r. El decodificador de secretos de Kubernetes. Un base64 no válido es un error de ejecución, no un silencio.',
+  },
+  {
+    filter: 'todate',
+    input: '1700000000',
+    output: '2023-11-14T22:13:20Z',
+    note: 'fromdate vuelve atrás. Para cualquier otro formato, strftime("%Y-%m-%d").',
+  },
+  {
+    filter: 'limit(2; .[])',
+    input: '[1,2,3]',
+    output: '1\n2',
+    note: 'Detiene el generador después de n salidas — y es también el freno que vuelve seguro un filtro sin límite.',
+  },
+  {
+    filter: '.[1:3]',
+    input: '[1,2,3,4]',
+    output: '[2,3]',
+    note: 'Corta arrays y cadenas; .[-1:] toma el último elemento.',
+  },
+  {
+    filter: '.. | numbers',
+    input: '{"a":[1,2]}',
+    output: '1\n2',
+    note: '.. es el descenso recursivo; numbers / strings / objects / arrays / nulls / booleans filtran por tipo.',
+  },
+  {
+    filter: '$__loc__',
+    input: 'null',
+    output: '{"file":"<top-level>","line":1}',
+    note: 'Dónde estás dentro del programa. El fichero es «<top-level>» — no «<stdin>», diga lo que diga un autocompletado.',
+  },
+];
+
+const streamInput = `1 "x" 2 "y" 3`;
+/** Exactamente lo que el panel de arriba muestra para esa entrada. */
+const streamOutput = `3 outputs · 3 ms · 2 stderr lines
+
+output 1        2
+output 2        3
+output 3        4
+
+jq also wrote to stderr                 2 lines
+string ("x") and number (1) cannot be added
+string ("y") and number (1) cannot be added`;
+---
+
+<Shell
+  title="jq Playground — jq 1.8.2 real en tu navegador"
+  description="Prueba expresiones jq contra tu propio JSON con el binario real de jq 1.8.2 compilado a WebAssembly. Una tarjeta por salida, clasificación exacta de errores. Sin subidas."
+  canonical="/jq-playground"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <ToolHero
+    slug="jq-playground"
+    eyebrow="jq Playground · Logs"
+    badges={[
+      { label: 'jq 1.8.2 real (WebAssembly)', variant: 'live' },
+      { label: 'Corre en tu navegador', variant: 'neutral' },
+      { label: 'Sin registro', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">jq Playground — prueba expresiones jq en línea.</Fragment>
+    <Fragment slot="lead">
+      Ni una reimplementación ni un viaje de ida y vuelta a un servidor: el binario real de jq 1.8.2,
+      compilado a WebAssembly y ejecutándose dentro de esta pestaña. Pega tu JSON, escribe el filtro
+      y mira cada salida que jq emite — junto al error exacto que imprimiría si el filtro está mal.
+    </Fragment>
+  </ToolHero>
+
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pt-8 pb-20 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">jq Playground</h2>
+      <JqPlayground />
+    </div>
+  </section>
+
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">La brecha</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            Builtins inventados — y el servidor de otra persona.
+          </h2>
+          <ToolGapVisual />
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            Pídele a un asistente una línea de jq y recibirás algo que parece exactamente correcto y
+            falla en la primera ejecución. El fallo favorito es un builtin que no existe:
+            <span class="code-mono">leaf_paths</span> desapareció de jq 1.8.2, así que jq responde
+            <span class="code-mono">leaf_paths/0 is not defined</span> — y la solución,
+            <span class="code-mono">paths(scalars)</span>, no es la que te habían dicho. Lo mismo
+            pasa con flags prestados de <span class="code-mono" translate="no">jaq</span> y
+            <span class="code-mono" translate="no">gojq</span>, y con afirmaciones muy seguras sobre
+            <span class="code-mono">//</span> que se rompen sin ruido con <span class="code-mono">0</span>.
+          </p>
+          <p class="body-md text-pretty text-body">
+            La otra opción es un playground que corre en un servidor, que funciona — subiendo el JSON
+            que solo querías inspeccionar. Un intercambio extraño para la salida de
+            <span class="code-mono">kubectl get secret</span>, para una respuesta de API con un token
+            bearer dentro o para una línea de log con el correo de un cliente.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Esta página responde con verdad comprobable. El jq que corre aquí es el programa en C,
+            compilado a WebAssembly, descargado una vez desde este sitio y ejecutado en tu pestaña —
+            y la insignia de versión junto a los flags se lee de ese binario en lugar de teclearse en
+            la página. Cada resultado de builtin de la tabla de referencia de abajo salió del mismo
+            binario y está fijado por un test, así que esta página no puede alejarse de lo que jq
+            hace de verdad.
+          </p>
+          <p class="body-sm text-mute">
+            ¿Trabajas con logs y no con JSON? El
+            <a class="link-inline" href={__l('/regex-log-tester', __lang)}>probador de regex para logs</a>
+            hace lo mismo con las líneas sin estructura.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="El proceso"
+    heading="Cómo funciona."
+    lead="Cuatro pasos, todos dentro de la pestaña de tu navegador — y el tercero es el binario real de jq, no una imitación."
+    steps={pipeline}
+  />
+
+  <section id="examples" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Con un ejemplo</p>
+        <h2 class="display-lg mt-3 text-ink">jq puede fallar dos veces y aun así devolver 0.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          El código de salida de jq refleja solo la ÚLTIMA entrada que procesó. Dale un flujo en el
+          que dos valores rompan el filtro y el último no, y un paso de CI que comprueba
+          <span class="code-mono">$?</span> verá una ejecución limpia.
+        </p>
+      </div>
+      <div class="mx-auto mt-10 grid max-w-5xl gap-8 lg:grid-cols-2">
+        <div class="min-w-0">
+          <h3 class="display-sm text-ink">Cinco entradas, dos de ellas mal</h3>
+          <p class="body-sm mt-2 mb-4 text-pretty text-body">
+            Un flujo de cinco valores JSON y el filtro <span class="code-mono">.+1</span>. Las
+            cadenas no se pueden sumar a números, así que dos de las cinco fallan.
+          </p>
+          <CodeBlock lang="text" filename="stdin" code={streamInput} />
+        </div>
+        <div class="min-w-0">
+          <h3 class="display-sm text-ink">Tres resultados, dos errores, salida 0</h3>
+          <p class="body-sm mt-2 mb-4 text-pretty text-body">
+            El playground muestra las tres salidas Y las dos líneas de stderr, y explica por qué el
+            código de salida es 0 — mueve la cadena al final del flujo y el mismo filtro termina con 5.
+          </p>
+          <CodeBlock lang="text" filename="results.txt" code={streamOutput} />
+        </div>
+      </div>
+      <p class="caption mx-auto mt-6 max-w-3xl text-center text-pretty text-mute">
+        Pruébalo arriba: el panel de resultados lista las dos líneas de stderr bajo «jq also wrote to
+        stderr», con el código de salida al lado. No se esconde nada solo porque jq considere que la
+        ejecución fue un éxito.
+      </p>
+    </div>
+  </section>
+
+  <section id="reference" class="scroll-mt-24 border-t border-hairline bg-canvas-soft">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Referencia</p>
+        <h2 class="display-lg mt-3 text-ink">Los builtins de jq que de verdad usas.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          {cheatsheet.length} filtros, cada uno con una entrada real y la salida exacta que jq 1.8.2
+          produjo para ella. Teclea el filtro de cualquier fila en el playground de arriba y míralo
+          correr sobre tus propios datos.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 max-w-5xl">
+        <div class="card-soft overflow-x-auto">
+          <table class="jqc-table w-full text-left">
+            <thead>
+              <tr>
+                <th class="eyebrow px-4 py-3">Filtro</th>
+                <th class="eyebrow px-4 py-3">Entrada</th>
+                <th class="eyebrow px-4 py-3">Salida — jq 1.8.2</th>
+              </tr>
+            </thead>
+            <tbody>
+              {
+                cheatsheet.map((row) => (
+                  <tr class="border-t border-hairline align-top">
+                    <td class="code-mono px-4 py-2.5 text-brand-strong" translate="no">
+                      {row.filter}
+                    </td>
+                    <td class="code-mono px-4 py-2.5 text-ink" translate="no">
+                      {row.input}
+                    </td>
+                    <td class="px-4 py-2.5">
+                      <span class="code-mono jqc-out text-ink" translate="no">
+                        {row.output}
+                      </span>
+                      <span class="caption mt-0.5 block text-mute">{row.note}</span>
+                    </td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+        <p class="caption mx-auto mt-6 max-w-3xl text-center text-pretty text-mute">
+          Las salidas se muestran como jq las imprime con <span class="code-mono">-c</span>; las
+          filas de <span class="code-mono">@csv</span>, <span class="code-mono">@base64d</span> y
+          <span class="code-mono">todate</span> dan por hecho <span class="code-mono">-r</span>,
+          porque sin él jq imprime el resultado como una cadena JSON entrecomillada.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section id="next" class="scroll-mt-24 bg-inverse text-inverse-fg">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+        <div class="min-w-0">
+          <p class="eyebrow !text-cyan">Siguiente paso</p>
+          <h2 class="display-lg mt-3 text-balance text-inverse-fg">
+            ¿Tu entrada es YAML? Conviértela primero.
+          </h2>
+          <p class="body-md mt-4 text-pretty text-white/70">
+            jq lee JSON, y un manifiesto de Kubernetes o una configuración de CI son YAML. Pásalo por
+            el <span translate="no">conversor JSON ↔ YAML</span> — que además informa de cada
+            comentario, ancla y marca de tiempo que cuesta la conversión — y trae el JSON de vuelta
+            aquí para trocearlo.
+          </p>
+          <div class="mt-7 flex flex-wrap items-center gap-3">
+            <Button href={__l('/json-yaml-converter', __lang) + '/'} variant="secondary">
+              Abrir el conversor JSON ↔ YAML
+            </Button>
+            <Button href={__l('/regex-log-tester', __lang) + '/'} variant="secondary">
+              Probador de regex para logs
+            </Button>
+          </div>
+        </div>
+        <CodeBlock
+          lang="text"
+          filename="results.txt"
+          code={`4 outputs · -r · 3 ms
+output 1        web-7d9f8c-2xk4t
+output 2        web-7d9f8c-9pl2m
+output 3        api-5b4c7d-qq8rn
+output 4        batch-1a2b3c-zzz01`}
+        />
+      </div>
+    </div>
+  </section>
+
+  <FaqList faqs={faqs} />
+
+  <ToolCrossLinks slug="jq-playground" lang={__lang}>
+    <Fragment slot="lead">
+      El jq Playground es una de las herramientas de
+      <span translate="no">{site.name}</span> — una copa creciente de validadores, conversores y
+      probadores que funcionan en el navegador y nunca tocan un servidor.
+    </Fragment>
+    <Fragment slot="links">
+      Relacionado: el
+      <a class="link-inline" href={__l('/regex-log-tester', __lang)}>probador de regex para logs</a>
+      para las líneas que todavía no son JSON, el
+      <a class="link-inline" href={__l('/json-yaml-converter', __lang)}>conversor JSON ↔ YAML</a>
+      para convertir un manifiesto en algo que jq pueda leer, y el
+      <a class="link-inline" href={__l('/jwt-decoder', __lang)}>decodificador de JWT</a> cuando el
+      JSON interesante está dentro de un token — o explora el
+      <a class="link-inline" href={__l(navLinks[0].href, __lang)}>directorio de herramientas</a>
+      completo.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      Se ofrece tal cual, por comodidad; jq es un proyecto de código abierto independiente y esta
+      página no está afiliada a él. <span translate="no">{site.name}</span> es gratis y abierto.
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>
+
+<style>
+  @reference "../../styles/global.css";
+
+  .jqc-table th {
+    font-weight: inherit;
+    white-space: nowrap;
+  }
+  .jqc-table td {
+    font-size: 13px;
+    line-height: 18px;
+  }
+  .jqc-table .code-mono {
+    overflow-wrap: anywhere;
+  }
+  /* Las filas con varias salidas llevan un salto de línea real. */
+  .jqc-table .jqc-out {
+    white-space: pre-wrap;
+  }
+</style>

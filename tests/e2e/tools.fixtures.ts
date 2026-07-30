@@ -159,6 +159,31 @@ export const TOOL_FIXTURES: ToolFixture[] = [
     inputSelector: '#dsz-size',
     resultsSelector: '#dsz-results',
   },
+  {
+    // Tool 4 — jq Playground, the only `cm-wasm` fixture: the family is what
+    // makes `waitForEngineReady` sit on the "Loading jq" placeholder until the
+    // ~324 KB WebAssembly binary has been fetched and instantiated.
+    //
+    // The island has TWO CodeMirror editors. `inputSelector` points at the
+    // PROGRAM one (first in DOM order), which is what makes the two payloads
+    // below jq programs rather than JSON:
+    //   - `invalidInput` is a compile error, and every prefix of it (`.`, `.f`,
+    //     `.fo`, `.foo`) is a VALID program against the boot-seeded object, so
+    //     J2 really measures the calm hold instead of tripping over an
+    //     intermediate diagnostic. `engine.test.ts` pins that property.
+    //   - `xssPayload` is a jq string literal, so the program is valid and the
+    //     payload is echoed straight into an output card — the one place this
+    //     tool renders untrusted text.
+    slug: 'jq-playground',
+    family: 'cm-wasm',
+    hashKey: '#q=',
+    seededResultString: 'web-7d9f8c-2xk4t',
+    invalidInput: '.foo(',
+    calmErrorString: "syntax error, unexpected '(', expecting end of file",
+    xssPayload: '"<img src=x onerror=alert(1)>"',
+    inputSelector: '#jq-program .cm-content',
+    resultsSelector: '#jq-results',
+  },
 ];
 
 /** Fixtures for one family — used by the family-gated journey steps. */
