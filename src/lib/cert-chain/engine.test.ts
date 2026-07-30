@@ -247,7 +247,7 @@ describe('analyzeChain — never throws, never rejects', () => {
     ['begin only', '-----BEGIN CERTIFICATE-----'],
     ['end only', '-----END CERTIFICATE-----'],
     ['nested markers', '-----BEGIN CERTIFICATE-----BEGIN CERTIFICATE-----END CERTIFICATE-----'],
-    ['null bytes', '   -----BEGIN CERTIFICATE----- '],
+    ['null bytes', '\u0000\u0000\u0000-----BEGIN CERTIFICATE-----\u0000'],
     ['emoji', '🌍🌎🌏'.repeat(200)],
     ['lone surrogate', '\ud800'],
     ['json', '{"cert":"-----BEGIN CERTIFICATE-----"}'],
