@@ -1,0 +1,1528 @@
+---
+/**
+ * CertificateDecoderPlayground — the Certificate Decoder & Chain Checker island.
+ *
+ * Paste one certificate or a whole chain (an `openssl s_client -showcerts`
+ * transcript works as-is) and get: a card per certificate leaf-first, the chain
+ * order corrected with the reason it was wrong, a TRI-STATE signature verdict on
+ * every chain edge, expiry with urgency, and — optionally — an RFC 6125 hostname
+ * check.
+ *
+ * Ported from `CidrCheckerPlayground.astro` (the contract reference): example
+ * chips at `var(--radius-pill)`, one debounce plus a 600 ms calm-error hold, the
+ * exact run hint line, per-row copy plus a `data-copy-all` report button, one
+ * visible `role="status"` summary and one sr-only copy status, NO `aria-live` on
+ * the results container, `escapeHtml()` on every injected value, and the two
+ * coarse-pointer tap-target tiers.
+ *
+ * THREE DELIBERATE DEVIATIONS, each with a reason:
+ *
+ *  1. **No deep link, and no `data-copy-link` at all.** One certificate is
+ *     1.5–2.5 KB of base64; a chain is three of them. That is an order of
+ *     magnitude past the ~2000-character fragment cap every other tool here
+ *     respects, so there is nothing to share. The contract's share affordance
+ *     becomes a "Copy report" button carrying `data-copy-all`, which already
+ *     emits `result_copied` through Layout.astro's listener. Nothing in this file
+ *     reads or writes `location.hash`.
+ *
+ *  2. **Plain textarea, no CodeMirror.** The input is opaque base64. Syntax
+ *     highlighting has nothing to highlight, and CM would add ~150 KB for zero
+ *     value (chmod-calculator and subnet-calculator set the same precedent).
+ *
+ *  3. **Signature verdicts are asynchronous**, because Web Crypto is. Renders are
+ *     guarded by a run counter so a slow evaluation can never overwrite a newer
+ *     one.
+ *
+ * Runtime contract (lazy-imported inside the boot closure so the engine and its
+ * fixtures code-split away from the page shell):
+ *   ../lib/cert-chain/engine → analyzeChain(pemText, now?): Promise<CertReport>
+ *   ../lib/cert-chain/chain  → matchHostname(cert, hostname): HostnameResult
+ */
+import { examples } from '../lib/cert-chain/examples';
+---
+
+<section class="cd-pg" aria-label="Certificate decoder and chain checker playground">
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Example chips ─────────────────────────────────────────────────── */}
+    <div class="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:px-5">
+      <span class="eyebrow">Examples</span>
+      <div id="cd-chips" class="cd-chips" role="group" aria-label="Examples">
+        {
+          examples.map((ex, i) => (
+            <button
+              type="button"
+              class="cd-chip"
+              data-example-idx={String(i)}
+              aria-pressed="false"
+            >
+              {ex.label}
+            </button>
+          ))
+        }
+      </div>
+    </div>
+
+    {/* ── Input ─────────────────────────────────────────────────────────── */}
+    <div class="border-b border-hairline px-4 py-4 sm:px-5">
+      <label class="eyebrow mb-2 block" for="cd-input">
+        Certificate PEM — one or more blocks
+      </label>
+      <textarea
+        id="cd-input"
+        class="cd-input code-mono"
+        spellcheck="false"
+        autocapitalize="off"
+        autocorrect="off"
+        autocomplete="off"
+        rows="10"
+        placeholder="-----BEGIN CERTIFICATE-----&#10;MIIF…&#10;-----END CERTIFICATE-----"
+        aria-describedby="cd-input-hint cd-run-hint"></textarea>
+      <p id="cd-input-hint" class="cd-hint caption text-mute">
+        Paste a certificate, a <span class="code-mono">fullchain.pem</span>, or the whole output of
+        <span class="code-mono">openssl s_client -showcerts</span> — everything outside the
+        BEGIN/END markers is ignored. A private key is recognised and skipped, never parsed:
+        there is no server here to send it to.
+      </p>
+      <p id="cd-run-hint" class="cd-hint caption text-mute">Results update as you type — press Enter to run now.</p>
+
+      <div class="cd-host-row">
+        <label class="eyebrow mb-2 block" for="cd-host">Hostname to check (optional)</label>
+        <input
+          id="cd-host"
+          class="cd-host code-mono"
+          type="text"
+          spellcheck="false"
+          autocapitalize="off"
+          autocorrect="off"
+          autocomplete="off"
+          placeholder="www.example.com"
+          aria-describedby="cd-host-hint"
+        />
+        <p id="cd-host-hint" class="cd-hint caption text-mute">
+          RFC 6125: a wildcard covers exactly one leftmost label, and an IP address must appear as
+          an IP SAN. commonName is only consulted when the certificate has no SAN at all.
+        </p>
+      </div>
+
+      <div class="cd-snap-row mt-3 flex flex-wrap items-center gap-2">
+        <button id="cd-snap-save" type="button" class="cd-snap-btn">Save snapshot</button>
+        <select id="cd-snap-select" class="cd-snap-select" aria-label="Load a saved snapshot" disabled>
+          <option value="">No snapshots yet</option>
+        </select>
+        <button id="cd-snap-delete" type="button" class="cd-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
+      </div>
+    </div>
+
+    {/* ── Results ───────────────────────────────────────────────────────── */}
+    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <span class="flex flex-wrap items-center gap-2">
+          <span class="eyebrow">Result</span>
+          <button
+            id="cd-copy-report"
+            type="button"
+            class="cd-copy cd-copy--labeled"
+            data-copy-all
+            data-copy=""
+            data-copy-label="Copy report"
+            hidden
+          >
+            <svg
+              class="cd-copy-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="5" y="5" width="9" height="9" rx="1.5"></rect>
+              <path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"></path>
+            </svg>
+            <svg
+              class="cd-check-icon hidden"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="cd-copy-label">Copy report</span>
+          </button>
+        </span>
+        <span id="cd-summary" class="cd-summary code-mono text-mute" role="status" aria-live="polite"></span>
+      </div>
+      <div id="cd-results" class="cd-results">
+        <p class="cd-empty body-sm text-mute">
+          Paste a certificate or a whole chain to see every field decoded, the chain order checked,
+          and each signature verified — all inside this tab.
+        </p>
+      </div>
+      <span id="cd-copy-status" class="sr-only" role="status" aria-live="polite"></span>
+    </div>
+  </div>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  /* ── Example chips ───────────────────────────────────────────────────── */
+  .cd-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 26px;
+  }
+  .cd-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-brand-strong);
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .cd-chip:hover,
+  .cd-chip[aria-pressed='true'] {
+    background: var(--color-brand-soft);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+  }
+  .cd-chip:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+
+  /* ── Inputs ──────────────────────────────────────────────────────────── */
+  .cd-input {
+    width: 100%;
+    min-height: 210px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 12.5px;
+    line-height: 19px;
+    resize: vertical;
+    transition: box-shadow 0.15s ease;
+    overflow-wrap: anywhere;
+  }
+  .cd-input::placeholder,
+  .cd-host::placeholder {
+    color: var(--color-mute);
+  }
+  .cd-input:hover,
+  .cd-host:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .cd-input:focus,
+  .cd-host:focus {
+    outline: none;
+  }
+  .cd-input:focus-visible,
+  .cd-host:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-link);
+    outline: none;
+  }
+  .cd-input--error {
+    box-shadow: inset 0 0 0 1px var(--color-error);
+  }
+  .cd-host-row {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--color-hairline);
+  }
+  .cd-host {
+    width: 100%;
+    max-width: 420px;
+    height: 40px;
+    padding: 0 12px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 13px;
+  }
+  .cd-hint {
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  .cd-hint + .cd-hint {
+    margin-top: 2px;
+  }
+  .cd-hint .code-mono {
+    font-size: 12px;
+  }
+
+  /* ── Snapshot row (same shape as every other playground) ─────────────── */
+  .cd-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .cd-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .cd-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .cd-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .cd-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .cd-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
+
+  .cd-summary {
+    min-width: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+  .cd-results {
+    min-height: 44px;
+  }
+  .cd-copy-status--fail {
+    display: block;
+    margin-top: 10px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-error-deep);
+  }
+
+  /* ── Runtime-injected: blocks, cards, rows ───────────────────────────── */
+  :global(.cd-block) {
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+  }
+  :global(.cd-block + .cd-block),
+  :global(.cd-block + .cd-edge),
+  :global(.cd-edge + .cd-block) {
+    margin-top: 12px;
+  }
+  :global(.cd-block__head) {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+  :global(.cd-block__actions) {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+  :global(.cd-block__sub) {
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-mute);
+    text-wrap: pretty;
+  }
+  :global(.cd-none) {
+    padding: 10px 14px;
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--color-mute);
+  }
+
+  /* Certificate card head: CN + role badge + countdown pill */
+  :global(.cd-cert__head) {
+    display: flex;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+  }
+  :global(.cd-cert__cn) {
+    flex: 1 1 220px;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 22px;
+    color: var(--color-ink);
+    overflow-wrap: anywhere;
+  }
+  :global(.cd-cert__cn-gloss) {
+    display: block;
+    margin-top: 2px;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 18px;
+    color: var(--color-mute);
+    text-wrap: pretty;
+  }
+  :global(.cd-badge) {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    padding: 2px 9px;
+    border-radius: var(--radius-pill);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    line-height: 16px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    background: var(--color-canvas-soft-2);
+    color: var(--color-body);
+  }
+  :global(.cd-badge--leaf) {
+    background: var(--color-brand-soft);
+    color: var(--color-brand-strong);
+  }
+  :global(.cd-badge--warn) {
+    background: var(--color-warning-soft);
+    color: var(--color-warning-deep);
+  }
+  :global(.cd-badge--bad) {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
+  :global(.cd-badge--ok) {
+    background: var(--color-brand-soft);
+    color: var(--color-brand-strong);
+  }
+
+  /* Field rows */
+  :global(.cd-row) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 4px 12px;
+    padding: 8px 14px;
+  }
+  :global(.cd-row + .cd-row) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.cd-row__k) {
+    flex: 0 0 128px;
+    font-size: 12px;
+    line-height: 20px;
+    color: var(--color-mute);
+  }
+  :global(.cd-row__v-wrap) {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    flex: 1 1 200px;
+    min-width: 0;
+  }
+  :global(.cd-row__v) {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 20px;
+    color: var(--color-ink);
+    overflow-wrap: anywhere;
+  }
+  :global(.cd-row__note) {
+    display: block;
+    margin-top: 2px;
+    font-family: var(--font-sans);
+    font-size: 11.5px;
+    line-height: 17px;
+    color: var(--color-mute);
+    text-wrap: pretty;
+  }
+  :global(.cd-row__v.is-quiet) {
+    color: var(--color-mute);
+  }
+
+  /* SAN chips */
+  :global(.cd-sans) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 4px 0 0;
+  }
+  :global(.cd-san) {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: var(--radius-pill);
+    background: var(--color-canvas-soft);
+    box-shadow: var(--shadow-hairline);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    line-height: 18px;
+    color: var(--color-body);
+    overflow-wrap: anywhere;
+  }
+  :global(.cd-san--match) {
+    background: var(--color-brand-soft);
+    color: var(--color-brand-strong);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+  }
+
+  /* Chain-edge connector between two cards */
+  :global(.cd-edge) {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 9px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas-soft-2);
+    color: var(--color-body);
+    font-size: 12.5px;
+    line-height: 19px;
+    text-wrap: pretty;
+  }
+  :global(.cd-edge--verified) {
+    background: var(--color-brand-soft);
+    color: var(--color-brand-strong);
+  }
+  :global(.cd-edge--failed) {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
+  :global(.cd-edge__icon) {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    margin-top: 2px;
+  }
+  /* No `opacity` here on purpose. Fading brand-strong toward the brand-soft
+     background produced #4d7a46 on #e2eeda = 4.17:1, which axe fails at this
+     11.5px size — the algorithm name is de-emphasised by size and letter-spacing
+     instead, and keeps the palette pair the contrast gate already validates. */
+  :global(.cd-edge__algo) {
+    display: block;
+    margin-top: 2px;
+    font-size: 11.5px;
+    line-height: 17px;
+    letter-spacing: 0.01em;
+    overflow-wrap: anywhere;
+  }
+
+  /* Diagnostic / note rows */
+  :global(.cd-note) {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 9px 14px;
+    font-size: 12.5px;
+    line-height: 19px;
+    color: var(--color-body);
+    text-wrap: pretty;
+  }
+  :global(.cd-note + .cd-note) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.cd-note--error) {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
+  :global(.cd-note--warning) {
+    background: var(--color-warning-soft);
+    color: var(--color-warning-deep);
+  }
+  :global(.cd-note__icon) {
+    flex: 0 0 auto;
+    width: 15px;
+    height: 15px;
+    margin-top: 2px;
+  }
+
+  /* Hard error card + empty state */
+  :global(.cd-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+  }
+  :global(.cd-error + .cd-block) {
+    margin-top: 12px;
+  }
+  :global(.cd-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.cd-error__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.cd-error__detail) {
+    margin-top: 2px;
+    font-size: 13px;
+    line-height: 19px;
+    text-wrap: pretty;
+    overflow-wrap: anywhere;
+  }
+  :global(.cd-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+
+  /* ── Copy buttons: two coarse-pointer tiers, matching the reference ──── */
+  :global(.cd-copy) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease;
+  }
+  :global(.cd-copy:hover) {
+    color: var(--color-brand-strong);
+    background: var(--color-hairline);
+  }
+  :global(.cd-copy:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  :global(.cd-copy--labeled) {
+    width: auto;
+    height: 26px;
+    gap: 6px;
+    padding: 0 10px;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  :global(.cd-copy--copied) {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+  @media (pointer: coarse) {
+    :global(.cd-copy) {
+      width: 44px;
+      height: 44px;
+    }
+    :global(.cd-copy--labeled) {
+      width: auto;
+      height: auto;
+      min-height: 44px;
+    }
+    .cd-chip {
+      min-height: 44px;
+    }
+  }
+</style>
+
+<script>
+  import { escapeHtml } from '../lib/escape-html';
+  import { copyTextToClipboard } from '../lib/clipboard';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  import { examples } from '../lib/cert-chain/examples';
+  import type { CertReport, HostnameResult, ReportCert } from '../lib/cert-chain/types';
+
+  type EngineModule = {
+    analyzeChain: (pemText: string, now?: Date | number) => Promise<CertReport>;
+  };
+  type ChainModule = {
+    matchHostname: (cert: ReportCert, hostname: string) => HostnameResult;
+  };
+
+  const ROOT_SEL = '.cd-pg';
+  const SLUG = 'certificate-decoder';
+  const DEBOUNCE_MS = 200;
+  const ERROR_HOLD_MS = 600;
+  const RESET_MS = 1800;
+  /**
+   * Rendered certificate cards. The engine already caps parsing at 50, but 50
+   * cards × ~14 rows × a copy button each is the thing that stalls the tab —
+   * the same lesson as MAX_OVERLAP_PAIRS in cidr-checker and the row cap in
+   * SubnetSplitterPlayground.
+   */
+  const MAX_RENDERED_CERTS = 12;
+  /** SAN chips per certificate. Some appliance certificates carry hundreds. */
+  const MAX_RENDERED_SANS = 50;
+  /** Chain/diagnostic rows rendered in one block. */
+  const MAX_RENDERED_NOTES = 12;
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.cdWired === 'true') return;
+      root.dataset.cdWired = 'true';
+      void init(root);
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  const ALERT_SVG =
+    '<svg class="cd-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const WARN_SVG =
+    '<svg class="cd-note__icon" width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const INFO_SVG =
+    '<svg class="cd-note__icon" width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7.5"></circle><path d="M10 9v4.5"></path><path d="M10 6.4v.01"></path></svg>';
+  const COPY_ICON_SVG =
+    '<svg class="cd-copy-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"/></svg>';
+  const CHECK_ICON_SVG =
+    '<svg class="cd-check-icon hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
+  const EDGE_OK_SVG =
+    '<svg class="cd-edge__icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M5.2 8.3l2 2 3.6-4.2"/></svg>';
+  const EDGE_BAD_SVG =
+    '<svg class="cd-edge__icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4"/></svg>';
+  const EDGE_UNKNOWN_SVG =
+    '<svg class="cd-edge__icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.25" stroke-dasharray="2.4 2.2"/><path d="M6.4 6.3a1.6 1.6 0 1 1 2.3 1.7c-.45.25-.7.55-.7 1.05"/><path d="M8 11.2v.01"/></svg>';
+
+  const ROLE_LABEL: Record<string, string> = {
+    leaf: 'Leaf',
+    intermediate: 'Intermediate',
+    root: 'Root · self-signed',
+    'self-signed': 'Self-signed',
+    extra: 'Not in chain',
+  };
+
+  const ROLE_GLOSS: Record<string, string> = {
+    leaf: 'The certificate this server presents for its own name — the end of the chain.',
+    intermediate:
+      'An intermediate: a CA certificate that signs leaves on a root’s behalf. This is the one deployments forget to send.',
+    root: 'A root: it signed itself, and a client trusts it only because its own trust store already contains it.',
+    'self-signed': 'This certificate issued itself, so nothing outside it vouches for the name.',
+    extra: 'Present in the paste but not linked into the chain above.',
+  };
+
+  const KEY_USAGE_LABELS: Record<string, string> = {
+    digitalSignature: 'Digital Signature',
+    nonRepudiation: 'Non Repudiation',
+    keyEncipherment: 'Key Encipherment',
+    dataEncipherment: 'Data Encipherment',
+    keyAgreement: 'Key Agreement',
+    keyCertSign: 'Certificate Sign',
+    cRLSign: 'CRL Sign',
+    encipherOnly: 'Encipher Only',
+    decipherOnly: 'Decipher Only',
+  };
+
+  /** `2031-06-01 00:00:00 UTC` — the exact instant, never a rounded one. */
+  function utcStamp(date: Date): string {
+    return `${date.toISOString().slice(0, 10)} ${date.toISOString().slice(11, 19)} UTC`;
+  }
+
+  async function init(root: HTMLElement): Promise<void> {
+    const input = el<HTMLTextAreaElement>(root, '#cd-input');
+    const hostInput = el<HTMLInputElement>(root, '#cd-host');
+    const chipsWrap = el<HTMLElement>(root, '#cd-chips');
+    const resultsBox = el<HTMLElement>(root, '#cd-results');
+    const summaryEl = el<HTMLElement>(root, '#cd-summary');
+    const reportBtn = el<HTMLButtonElement>(root, '#cd-copy-report');
+    const copyStatus = el<HTMLElement>(root, '#cd-copy-status');
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#cd-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#cd-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#cd-snap-delete');
+    if (
+      !input ||
+      !hostInput ||
+      !chipsWrap ||
+      !resultsBox ||
+      !summaryEl ||
+      !reportBtn ||
+      !copyStatus ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
+    )
+      return;
+
+    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>('.cd-chip'));
+
+    /* ------------------------------------------------------------------ */
+    /* Copy plumbing                                                      */
+    /* ------------------------------------------------------------------ */
+
+    // Payloads live in an array, not in a data- attribute: a PEM body and a
+    // multi-line report do not round-trip through HTML attributes.
+    let payloads: string[] = [];
+
+    function setCopyStatus(message: string, failed: boolean): void {
+      copyStatus!.textContent = message;
+      copyStatus!.classList.toggle('sr-only', !failed);
+      copyStatus!.classList.toggle('cd-copy-status--fail', failed);
+    }
+
+    function setCopied(btn: HTMLButtonElement, copied: boolean): void {
+      btn.classList.toggle('cd-copy--copied', copied);
+      btn.querySelector('.cd-copy-icon')?.classList.toggle('hidden', copied);
+      btn.querySelector('.cd-check-icon')?.classList.toggle('hidden', !copied);
+      const label = btn.querySelector<HTMLElement>('.cd-copy-label');
+      if (label) {
+        label.textContent = copied ? 'Copied' : (btn.dataset.copyLabel ?? 'Copy');
+      } else if (copied) {
+        btn.dataset.prevAriaLabel = btn.getAttribute('aria-label') ?? '';
+        btn.setAttribute('aria-label', 'Copied');
+      } else if (btn.dataset.prevAriaLabel) {
+        btn.setAttribute('aria-label', btn.dataset.prevAriaLabel);
+        delete btn.dataset.prevAriaLabel;
+      }
+    }
+
+    async function handleCopy(btn: HTMLButtonElement): Promise<void> {
+      const ok = await copyTextToClipboard(btn.dataset.copy ?? '');
+      if (ok) {
+        setCopied(btn, true);
+        setCopyStatus('Copied to clipboard.', false);
+        window.clearTimeout(Number(btn.dataset.copyTimer));
+        btn.dataset.copyTimer = String(
+          window.setTimeout(() => {
+            setCopied(btn, false);
+            if (copyStatus!.textContent === 'Copied to clipboard.') setCopyStatus('', false);
+          }, RESET_MS),
+        );
+      } else {
+        setCopyStatus('Copy failed — select the value manually.', true);
+      }
+    }
+
+    function copyBtnHtml(label: string, payload: string): string {
+      const ref = payloads.push(payload) - 1;
+      return (
+        `<button class="cd-copy" type="button" data-copy="" data-copy-ref="${ref}" ` +
+        `aria-label="Copy ${escapeHtml(label)}" title="Copy">` +
+        COPY_ICON_SVG +
+        CHECK_ICON_SVG +
+        '</button>'
+      );
+    }
+
+    function bindPayloads(): void {
+      resultsBox!.querySelectorAll<HTMLButtonElement>('[data-copy-ref]').forEach((btn) => {
+        btn.dataset.copy = payloads[Number(btn.dataset.copyRef)] ?? '';
+      });
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Rendering                                                          */
+    /* ------------------------------------------------------------------ */
+
+    function setSummary(text: string, isError: boolean): void {
+      summaryEl!.textContent = text;
+      summaryEl!.classList.toggle('text-error-deep', isError);
+      summaryEl!.classList.toggle('text-mute', !isError);
+    }
+
+    function renderEmpty(): void {
+      setSummary('', false);
+      payloads = [];
+      resultsBox!.innerHTML =
+        '<p class="cd-empty body-sm text-mute">Paste a certificate or a whole chain to see every ' +
+        'field decoded, the chain order checked, and each signature verified — all inside this tab.</p>';
+    }
+
+    function rowHtml(
+      key: string,
+      value: string,
+      opts: { note?: string; copy?: string; copyLabel?: string; quiet?: boolean } = {},
+    ): string {
+      const note = opts.note
+        ? `<span class="cd-row__note">${escapeHtml(opts.note)}</span>`
+        : '';
+      const copy =
+        opts.copy === undefined ? '' : copyBtnHtml(opts.copyLabel ?? key, opts.copy);
+      return (
+        '<div class="cd-row">' +
+        `<div class="cd-row__k">${escapeHtml(key)}</div>` +
+        '<div class="cd-row__v-wrap">' +
+        `<span class="cd-row__v${opts.quiet ? ' is-quiet' : ''}">${escapeHtml(value)}${note}</span>` +
+        copy +
+        '</div></div>'
+      );
+    }
+
+    function noteRowsHtml(
+      items: { severity: string; message: string }[],
+      cap = MAX_RENDERED_NOTES,
+    ): string {
+      const shown = items.slice(0, cap);
+      const rows = shown
+        .map((item) => {
+          const icon =
+            item.severity === 'error' ? WARN_SVG : item.severity === 'warning' ? WARN_SVG : INFO_SVG;
+          return (
+            `<div class="cd-note cd-note--${escapeHtml(item.severity)}">` +
+            icon +
+            `<span>${escapeHtml(item.message)}</span></div>`
+          );
+        })
+        .join('');
+      const more =
+        items.length > cap
+          ? `<p class="cd-none">…and ${items.length - cap} more finding${items.length - cap === 1 ? '' : 's'}, not shown.</p>`
+          : '';
+      return rows + more;
+    }
+
+    function findingsBlockHtml(report: CertReport): string {
+      const items = [
+        ...report.diagnostics.map((d) => ({ severity: d.severity, message: d.message })),
+        ...report.inputIssues.map((i) => ({ severity: i.severity, message: i.message })),
+      ];
+      const certWarnings = report.certs.flatMap((cert) =>
+        cert.warnings.map((message) => ({
+          severity: 'warning',
+          message: `${cert.commonName || cert.subject.text}: ${message}`,
+        })),
+      );
+      const all = [...items, ...certWarnings];
+      if (all.length === 0) {
+        return (
+          '<div class="cd-block">' +
+          '<div class="cd-block__head"><span>Findings</span></div>' +
+          '<p class="cd-none">Nothing to report: the chain is in order, every signature that could ' +
+          'be checked verified, and nothing is close to expiry.</p></div>'
+        );
+      }
+      const errors = all.filter((i) => i.severity === 'error').length;
+      const warnings = all.filter((i) => i.severity === 'warning').length;
+      const counts = [
+        errors > 0 ? `${errors} error${errors === 1 ? '' : 's'}` : '',
+        warnings > 0 ? `${warnings} warning${warnings === 1 ? '' : 's'}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      const order = { error: 0, warning: 1, info: 2 } as Record<string, number>;
+      all.sort((a, b) => (order[a.severity] ?? 3) - (order[b.severity] ?? 3));
+      return (
+        '<div class="cd-block">' +
+        '<div class="cd-block__head"><span>Findings</span>' +
+        (counts ? `<span class="cd-block__actions">${escapeHtml(counts)}</span>` : '') +
+        '</div>' +
+        noteRowsHtml(all) +
+        '</div>'
+      );
+    }
+
+    function hostnameBlockHtml(result: HostnameResult): string {
+      const cls = result.matched ? 'cd-badge--ok' : 'cd-badge--bad';
+      const verdict = result.matched ? 'Matches' : 'No match';
+      return (
+        '<div class="cd-block">' +
+        '<div class="cd-block__head"><span>Hostname check</span>' +
+        `<span class="cd-block__actions"><span class="cd-badge ${cls}">${verdict}</span></span></div>` +
+        '<p class="cd-block__sub">RFC 6125 name matching, against the leaf certificate only.</p>' +
+        rowHtml('Hostname', result.hostname, { copy: result.hostname, copyLabel: 'the hostname' }) +
+        `<div class="cd-note">${result.matched ? INFO_SVG : WARN_SVG}<span>${escapeHtml(result.reason)}</span></div>` +
+        '</div>'
+      );
+    }
+
+    function edgeHtml(report: CertReport, subjectIndex: number): string {
+      const edge = report.edges.find(
+        (e) => e.subjectIndex === subjectIndex && e.issuerIndex !== subjectIndex,
+      );
+      const self = report.edges.find(
+        (e) => e.subjectIndex === subjectIndex && e.issuerIndex === subjectIndex,
+      );
+      const chosen = edge ?? self;
+      if (!chosen) return '';
+      const issuerName =
+        report.certs[chosen.issuerIndex]?.commonName ||
+        report.certs[chosen.issuerIndex]?.subject.text ||
+        'its issuer';
+      let cls = 'cd-edge';
+      let icon = EDGE_UNKNOWN_SVG;
+      let text: string;
+      if (chosen.status === 'verified') {
+        cls = 'cd-edge cd-edge--verified';
+        icon = EDGE_OK_SVG;
+        text = chosen.selfSigned
+          ? 'Self-signature verified with this certificate’s own public key.'
+          : `Signature verified — ${issuerName} really did sign this certificate.`;
+      } else if (chosen.status === 'failed') {
+        cls = 'cd-edge cd-edge--failed';
+        icon = EDGE_BAD_SVG;
+        text = `Signature check FAILED against ${issuerName}. ${chosen.reason ?? ''}`.trim();
+      } else {
+        text = `Signature not checked. ${chosen.reason ?? ''}`.trim();
+      }
+      const note = chosen.note ? ` ${chosen.note}` : '';
+      return (
+        `<div class="${cls}">` +
+        icon +
+        `<span>${escapeHtml(text + note)}` +
+        `<span class="cd-edge__algo">${escapeHtml(chosen.algorithm)}</span></span></div>`
+      );
+    }
+
+    function sansHtml(cert: ReportCert, hostResult: HostnameResult | null): string {
+      if (cert.sans.length === 0) {
+        return rowHtml('SANs', 'none', {
+          quiet: true,
+          note: 'No subjectAltName. Browsers ignore commonName, so this certificate matches no hostname at all.',
+        });
+      }
+      const shown = cert.sans.slice(0, MAX_RENDERED_SANS);
+      const chipsHtml = shown
+        .map((san) => {
+          const isMatch = hostResult?.matched === true && hostResult.matchedSan === san.value;
+          return (
+            `<span class="cd-san${isMatch ? ' cd-san--match' : ''}">` +
+            `${escapeHtml(san.kind === 'dns' ? san.value : `${san.kind}: ${san.value}`)}</span>`
+          );
+        })
+        .join('');
+      const more =
+        cert.sans.length > MAX_RENDERED_SANS
+          ? `<span class="cd-san">…and ${cert.sans.length - MAX_RENDERED_SANS} more</span>`
+          : '';
+      const payload = cert.sans.map((san) => san.value).join('\n');
+      return (
+        '<div class="cd-row">' +
+        `<div class="cd-row__k">SANs (${cert.sans.length})</div>` +
+        '<div class="cd-row__v-wrap">' +
+        `<span class="cd-row__v"><span class="cd-sans">${chipsHtml}${more}</span></span>` +
+        copyBtnHtml('every subject alternative name', payload) +
+        '</div></div>'
+      );
+    }
+
+    function certCardHtml(
+      cert: ReportCert,
+      index: number,
+      report: CertReport,
+      hostResult: HostnameResult | null,
+    ): string {
+      const roleLabel = ROLE_LABEL[cert.role] ?? cert.role;
+      const roleClass =
+        cert.role === 'leaf'
+          ? 'cd-badge--leaf'
+          : cert.role === 'self-signed'
+            ? 'cd-badge--warn'
+            : '';
+      const expiry = cert.expiry;
+      const expiryClass =
+        expiry.state !== 'valid'
+          ? 'cd-badge--bad'
+          : expiry.urgency === 'warn7' || expiry.urgency === 'warn30'
+            ? 'cd-badge--warn'
+            : 'cd-badge--ok';
+      const cn = cert.commonName || '(no commonName)';
+
+      const rows =
+        rowHtml('Subject', cert.subject.text, {
+          copy: cert.subject.text,
+          copyLabel: 'the subject',
+        }) +
+        rowHtml('Issuer', cert.issuer.text, {
+          copy: cert.issuer.text,
+          copyLabel: 'the issuer',
+          note: cert.selfIssued ? 'Subject and issuer are identical — this certificate is self-issued.' : undefined,
+        }) +
+        rowHtml('Serial', cert.serialHex, {
+          copy: cert.serialHex,
+          copyLabel: 'the serial number',
+          note: `decimal ${cert.serialDecimal}`,
+        }) +
+        rowHtml('Not before', utcStamp(cert.notBefore), {
+          note: `encoded as ${cert.notBeforeKind === 'utc' ? 'UTCTime' : 'GeneralizedTime'}`,
+        }) +
+        rowHtml('Not after', utcStamp(cert.notAfter), {
+          note: `${expiry.text}${expiry.approximate ? ' (day count truncated, not rounded)' : ''}`,
+        }) +
+        rowHtml('Public key', cert.spki.summary) +
+        rowHtml('Signature', cert.sigAlgDisplay, { note: cert.sigAlgName }) +
+        sansHtml(cert, index === 0 ? hostResult : null) +
+        rowHtml('SHA-256', cert.fingerprints.sha256, {
+          copy: cert.fingerprints.sha256,
+          copyLabel: 'the SHA-256 fingerprint',
+          note: 'over the whole DER — the same bytes openssl x509 -fingerprint hashes',
+        }) +
+        rowHtml('SHA-1', cert.fingerprints.sha1, {
+          copy: cert.fingerprints.sha1,
+          copyLabel: 'the SHA-1 fingerprint',
+        }) +
+        (cert.ski
+          ? rowHtml('Subject key ID', cert.ski, { copy: cert.ski, copyLabel: 'the subject key identifier' })
+          : '') +
+        (cert.aki?.keyId
+          ? rowHtml('Authority key ID', cert.aki.keyId, {
+              copy: cert.aki.keyId,
+              copyLabel: 'the authority key identifier',
+              note: 'points at the issuer’s subject key identifier — this is how the chain is linked',
+            })
+          : '') +
+        rowHtml(
+          'Key usage',
+          cert.keyUsage.length > 0
+            ? cert.keyUsage.map((usage) => KEY_USAGE_LABELS[usage] ?? usage).join(', ')
+            : 'not restricted',
+          { quiet: cert.keyUsage.length === 0 },
+        ) +
+        rowHtml(
+          'Extended key usage',
+          cert.extKeyUsage.names.length > 0 ? cert.extKeyUsage.names.join(', ') : 'not restricted',
+          { quiet: cert.extKeyUsage.names.length === 0 },
+        ) +
+        rowHtml(
+          'Basic constraints',
+          cert.basicConstraints
+            ? cert.basicConstraints.ca
+              ? `CA:TRUE${cert.basicConstraints.pathLen === undefined ? '' : `, pathlen:${cert.basicConstraints.pathLen}`}`
+              : 'CA:FALSE'
+            : 'absent',
+          {
+            quiet: !cert.basicConstraints,
+            note:
+              cert.basicConstraints?.pathLen === 0
+                ? 'pathlen:0 — this CA may sign leaves, but no further CAs.'
+                : undefined,
+          },
+        ) +
+        rowHtml('Version', `v${cert.version}`, {
+          note: `${cert.extensions.length} extension${cert.extensions.length === 1 ? '' : 's'}`,
+        });
+
+      return (
+        '<div class="cd-block">' +
+        '<div class="cd-cert__head">' +
+        `<span class="cd-cert__cn">${escapeHtml(cn)}` +
+        `<span class="cd-cert__cn-gloss">${escapeHtml(ROLE_GLOSS[cert.role] ?? '')}</span></span>` +
+        `<span class="cd-badge ${roleClass}">${escapeHtml(roleLabel)}</span>` +
+        `<span class="cd-badge ${expiryClass}">${escapeHtml(expiry.text)}</span>` +
+        '</div>' +
+        rows +
+        '</div>' +
+        edgeHtml(report, index)
+      );
+    }
+
+    /** The plaintext report behind the Copy report button. */
+    function reportText(report: CertReport, hostResult: HostnameResult | null): string {
+      const lines: string[] = [];
+      lines.push(`OpsCanopy certificate report — ${report.summary}`);
+      lines.push(`checked against ${utcStamp(report.now)}`);
+      lines.push('');
+      report.certs.forEach((cert, index) => {
+        lines.push(`[${index + 1}] ${ROLE_LABEL[cert.role] ?? cert.role}: ${cert.commonName || '(no commonName)'}`);
+        lines.push(`  subject:   ${cert.subject.text}`);
+        lines.push(`  issuer:    ${cert.issuer.text}`);
+        lines.push(`  serial:    ${cert.serialHex}`);
+        lines.push(`  validity:  ${utcStamp(cert.notBefore)} → ${utcStamp(cert.notAfter)} (${cert.expiry.text})`);
+        lines.push(`  key:       ${cert.spki.summary}`);
+        lines.push(`  signature: ${cert.sigAlgDisplay}`);
+        if (cert.sans.length > 0) lines.push(`  sans:      ${cert.sans.map((s) => s.value).join(', ')}`);
+        lines.push(`  sha256:    ${cert.fingerprints.sha256}`);
+        const edge = report.edges.find((e) => e.subjectIndex === index);
+        if (edge) {
+          const verdict =
+            edge.status === 'verified'
+              ? 'verified'
+              : edge.status === 'failed'
+                ? 'FAILED'
+                : `not verified (${edge.reason ?? 'no reason given'})`;
+          lines.push(`  signature check: ${verdict} — ${edge.algorithm}`);
+        }
+        lines.push('');
+      });
+      if (hostResult) {
+        lines.push(`hostname ${hostResult.hostname}: ${hostResult.matched ? 'MATCH' : 'NO MATCH'}`);
+        lines.push(`  ${hostResult.reason}`);
+        lines.push('');
+      }
+      const findings = [
+        ...report.diagnostics.map((d) => `[${d.severity}] ${d.message}`),
+        ...report.inputIssues.map((i) => `[${i.severity}] ${i.message}`),
+      ];
+      if (findings.length > 0) {
+        lines.push('findings:');
+        findings.forEach((line) => lines.push(`  ${line}`));
+      } else {
+        lines.push('findings: none');
+      }
+      lines.push('');
+      lines.push('Decoded entirely in the browser at https://opscanopy.com/certificate-decoder/');
+      return lines.join('\n');
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Engine                                                             */
+    /* ------------------------------------------------------------------ */
+
+    let engine: EngineModule;
+    let chainLib: ChainModule;
+    try {
+      const [engineMod, chainMod] = await Promise.all([
+        import('../lib/cert-chain/engine'),
+        import('../lib/cert-chain/chain'),
+      ]);
+      engine = engineMod as unknown as EngineModule;
+      chainLib = chainMod as unknown as ChainModule;
+    } catch (err) {
+      setSummary('', true);
+      resultsBox.innerHTML =
+        '<div class="cd-error" role="alert">' +
+        ALERT_SVG +
+        '<div><p class="cd-error__title">Decoder unavailable</p>' +
+        '<p class="cd-error__detail">The certificate engine failed to load. Reload the page to try ' +
+        'again — nothing you pasted was sent anywhere.</p></div></div>';
+      console.error('[CertificateDecoder] engine import failed:', err);
+      return;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* State machine: EMPTY | VALID | PENDING | INVALID                   */
+    /* ------------------------------------------------------------------ */
+
+    type State = 'empty' | 'valid' | 'pending' | 'invalid';
+    let state: State = 'empty';
+    /** Previous textarea value, so one `input` event's delta can be measured. */
+    let prevValue = input.value;
+    let evalTimer: number | undefined;
+    let errTimer: number | undefined;
+    /**
+     * Monotonic run id. `analyzeChain` is async (Web Crypto), so a slow run must
+     * never paint over a newer one — every render checks that its id is still
+     * current before touching the DOM.
+     */
+    let runId = 0;
+
+    function clearTimers(): void {
+      window.clearTimeout(evalTimer);
+      window.clearTimeout(errTimer);
+    }
+
+    function setErrorState(on: boolean): void {
+      input!.classList.toggle('cd-input--error', on);
+      if (on) {
+        input!.setAttribute('aria-invalid', 'true');
+        input!.setAttribute('aria-describedby', 'cd-input-hint cd-run-hint cd-error-detail');
+      } else {
+        input!.removeAttribute('aria-invalid');
+        input!.setAttribute('aria-describedby', 'cd-input-hint cd-run-hint');
+      }
+    }
+
+    function hideActions(): void {
+      reportBtn!.hidden = true;
+      reportBtn!.dataset.copy = '';
+    }
+
+    function setActiveChip(idx: number | null): void {
+      chips.forEach((chip) => {
+        chip.setAttribute(
+          'aria-pressed',
+          idx !== null && chip.dataset.exampleIdx === String(idx) ? 'true' : 'false',
+        );
+      });
+    }
+
+    function toEmpty(): void {
+      state = 'empty';
+      clearTimers();
+      runId += 1;
+      setErrorState(false);
+      hideActions();
+      renderEmpty();
+      setActiveChip(null);
+    }
+
+    /** The single hard-error card: shown when NOTHING parsed. */
+    function showError(report: CertReport, isAlert: boolean): void {
+      state = 'invalid';
+      clearTimers();
+      setErrorState(true);
+      hideActions();
+      payloads = [];
+      const worst =
+        report.inputIssues.find((i) => i.severity === 'error') ??
+        report.inputIssues.find((i) => i.severity === 'warning') ??
+        report.inputIssues[0];
+      const others = report.inputIssues.filter((i) => i !== worst);
+      setSummary('no certificates found', true);
+      resultsBox!.innerHTML =
+        `<div class="cd-error"${isAlert ? ' role="alert"' : ''}>` +
+        ALERT_SVG +
+        '<div><p class="cd-error__title">No certificate to decode yet</p>' +
+        `<p id="cd-error-detail" class="cd-error__detail">${escapeHtml(worst?.message ?? '')}</p>` +
+        '</div></div>' +
+        (others.length > 0
+          ? `<div class="cd-block"><div class="cd-block__head"><span>Also noticed</span></div>${noteRowsHtml(others)}</div>`
+          : '');
+      bindPayloads();
+    }
+
+    function renderValid(report: CertReport): void {
+      state = 'valid';
+      setErrorState(false);
+      payloads = [];
+      const hostname = hostInput!.value.trim();
+      const hostResult =
+        hostname.length > 0 && report.certs[0]
+          ? chainLib.matchHostname(report.certs[0], hostname)
+          : null;
+
+      const shown = report.certs.slice(0, MAX_RENDERED_CERTS);
+      const capNote =
+        report.certs.length > MAX_RENDERED_CERTS
+          ? `<p class="cd-none">Showing the first ${MAX_RENDERED_CERTS} of ${report.certs.length} certificates. Copy report includes every one.</p>`
+          : '';
+
+      resultsBox!.innerHTML =
+        findingsBlockHtml(report) +
+        (hostResult ? hostnameBlockHtml(hostResult) : '') +
+        shown.map((cert, index) => certCardHtml(cert, index, report, hostResult)).join('') +
+        capNote;
+      bindPayloads();
+
+      setSummary(
+        hostResult
+          ? `${report.summary} · hostname ${hostResult.matched ? 'matches' : 'does not match'}`
+          : report.summary,
+        report.stats.errors > 0,
+      );
+      reportBtn!.hidden = false;
+      reportBtn!.dataset.copy = reportText(report, hostResult);
+    }
+
+    async function evaluate(source: 'type' | 'bulk' | 'commit' | 'seed'): Promise<void> {
+      clearTimers();
+      const value = input!.value;
+      prevValue = value;
+      if (value.trim().length === 0) {
+        toEmpty();
+        return;
+      }
+
+      runId += 1;
+      const myRun = runId;
+      let report: CertReport;
+      try {
+        report = await engine.analyzeChain(value);
+      } catch (err) {
+        console.error('[CertificateDecoder] analyze failed:', err);
+        return;
+      }
+      // A newer keystroke already started its own run — drop this one.
+      if (myRun !== runId) return;
+
+      if (report.ok) {
+        renderValid(report);
+        // Only a fully valid, user-initiated evaluation is allowed to persist.
+        // A seeded boot must never write, and neither must a partial paste:
+        // poisoning `oc-last-v1` makes the NEXT visit boot broken.
+        if (source !== 'seed') recordToolLastInput(SLUG, value);
+        return;
+      }
+
+      if (source !== 'type') {
+        showError(report, source === 'commit');
+        return;
+      }
+
+      // Mid-typing: hold the error. No red border, no error card — just keep the
+      // previous card until the person stops typing for ERROR_HOLD_MS.
+      const wasInvalid = state === 'invalid';
+      state = 'pending';
+      setErrorState(false);
+      hideActions();
+      setSummary('', false);
+      if (wasInvalid) {
+        payloads = [];
+        resultsBox!.innerHTML =
+          '<p class="cd-empty body-sm text-mute">Still typing — results appear once a complete ' +
+          'certificate block is there.</p>';
+      }
+      errTimer = window.setTimeout(() => {
+        if (myRun === runId) showError(report, false);
+      }, ERROR_HOLD_MS);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Events                                                             */
+    /* ------------------------------------------------------------------ */
+
+    root.addEventListener('click', (evt) => {
+      const target = evt.target as HTMLElement;
+      const chip = target.closest<HTMLButtonElement>('.cd-chip');
+      if (chip && chipsWrap!.contains(chip)) {
+        const idx = Number(chip.dataset.exampleIdx);
+        const example = examples[idx];
+        if (!example) return;
+        input!.value = example.input;
+        hostInput!.value = example.hostname ?? '';
+        setActiveChip(idx);
+        void evaluate('commit');
+        return;
+      }
+      const copy = target.closest<HTMLButtonElement>('.cd-copy');
+      if (copy) void handleCopy(copy);
+    });
+
+    input.addEventListener('input', (e) => {
+      clearTimers();
+      const value = input.value;
+      // Only GROWTH beyond one character is a paste. `Math.abs(delta) > 1` would
+      // treat a backspace over a selection as a paste, flash a red border
+      // mid-edit, and break the calm-error contract. Deletions and IME
+      // composition debounce like typing.
+      const grew = value.length - prevValue.length > 1;
+      const composing = (e as InputEvent).isComposing === true;
+      prevValue = value;
+      setActiveChip(null);
+      if (value.trim().length === 0) {
+        toEmpty();
+        return;
+      }
+      if (grew && !composing) {
+        void evaluate('bulk');
+        return;
+      }
+      evalTimer = window.setTimeout(() => void evaluate('type'), DEBOUNCE_MS);
+    });
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        void evaluate('commit');
+        if (window.matchMedia?.('(pointer: coarse)').matches) input.blur();
+        return;
+      }
+      // Plain Enter must still insert the newline — a PEM is multi-line. Flush on
+      // the next tick, once the textarea value includes it.
+      window.setTimeout(() => void evaluate('commit'), 0);
+    });
+
+    input.addEventListener('blur', () => {
+      if (state === 'pending') void evaluate('commit');
+    });
+
+    let hostTimer: number | undefined;
+    hostInput.addEventListener('input', () => {
+      window.clearTimeout(hostTimer);
+      // The hostname is a lens over an already-parsed chain, never a reason to
+      // flag the PEM as invalid, so it re-renders on its own short debounce and
+      // never touches the error state.
+      hostTimer = window.setTimeout(() => {
+        if (input!.value.trim().length > 0) void evaluate('commit');
+      }, DEBOUNCE_MS);
+    });
+
+    hostInput.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      window.clearTimeout(hostTimer);
+      void evaluate('commit');
+    });
+
+    wireSnapshotUI({
+      slug: SLUG,
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      // Snapshots carry the PEM only. The hostname is a lens on it, not part of
+      // the document, and storing it would make "restore" silently change a
+      // verdict the visitor did not save.
+      getValue: () => input!.value,
+      setValue: (value) => {
+        input!.value = value;
+        setActiveChip(null);
+        void evaluate('commit');
+      },
+    });
+
+    /* ------------------------------------------------------------------ */
+    /* First load: typed value → restored last input → first example.     */
+    /* There is NO deep link for this tool (a single certificate exceeds   */
+    /* the fragment cap), so nothing here reads or writes location.hash.   */
+    /* ------------------------------------------------------------------ */
+
+    const restored = getRestoredLastInput(SLUG);
+    if (input.value.trim()) {
+      void evaluate('seed');
+    } else if (restored) {
+      input.value = restored;
+      void evaluate('seed');
+    } else if (examples[0]) {
+      input.value = examples[0].input;
+      hostInput.value = examples[0].hostname ?? '';
+      setActiveChip(0);
+      void evaluate('seed');
+    } else {
+      renderEmpty();
+    }
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

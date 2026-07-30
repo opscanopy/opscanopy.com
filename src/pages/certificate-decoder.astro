@@ -1,0 +1,413 @@
+---
+/**
+ * Certificate Decoder & Chain Checker — the certificate-decoder tool page.
+ *
+ * Decode PEM certificates, check chain order and completeness, verify each chain
+ * edge's signature with Web Crypto, and match a hostname per RFC 6125 — all
+ * client-side, with a hand-rolled DER parser and no uploads.
+ */
+import Shell from '../components/Shell.astro';
+import CertificateDecoderPlayground from '../components/CertificateDecoderPlayground.astro';
+import Button from '../components/Button.astro';
+import CodeBlock from '../components/CodeBlock.astro';
+import ToolHero from '../components/ToolHero.astro';
+import ToolGapVisual from '../components/ToolGapVisual.astro';
+import ToolPipeline from '../components/ToolPipeline.astro';
+import FaqList from '../components/FaqList.astro';
+import ToolCrossLinks from '../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../data/site';
+import { getTool } from '../data/tools';
+import { softwareAppLd, faqPageLd } from '../lib/jsonld';
+
+const tool = getTool('certificate-decoder');
+const pagePath = '/certificate-decoder/';
+const pageUrl = `${site.url}${pagePath}`;
+
+const faqs = [
+  {
+    q: 'What does "unable to get local issuer certificate" mean?',
+    a: 'It means the chain your server sent stops before it reaches anything the client trusts — almost always because an intermediate certificate is missing. A client walks upward from the leaf: leaf → intermediate → root. It only has roots in its trust store, so if the intermediate that links the two is absent, the walk dead-ends and OpenSSL reports error 20 with that message. Paste your chain here and the missing intermediate is named by its exact distinguished name, which is the string you need to find the right file to append.',
+  },
+  {
+    q: 'Why does my certificate work in a browser but fail in curl or CI?',
+    a: 'Because browsers repair incomplete chains and command-line clients do not. When an intermediate is missing, Chrome, Edge and Safari can fetch it from the URL in the certificate\'s authorityInfoAccess extension, or reuse one they cached from a different site — so the padlock appears and the problem stays invisible. curl, openssl s_client, Go\'s crypto/tls, Python\'s requests and most language runtimes do none of that: they use exactly the certificates you sent them and fail. That asymmetry is why "it works in my browser" is not evidence, and it is the single most common cause of a deploy that passes a manual check and breaks a webhook.',
+  },
+  {
+    q: 'Should fullchain.pem include the root certificate?',
+    a: 'No — and it does no harm either. A client trusts a root because that root is already in its own trust store; a copy sent over the wire proves nothing, because an attacker could send any root they liked. So including it only adds around 1–2 KB to every single handshake. What you must include is the leaf first, then every intermediate above it. This tool labels each certificate by role and tells you which of the two situations you are in: a root that is merely redundant, or an intermediate that is genuinely missing.',
+  },
+  {
+    q: 'What is the difference between a leaf, an intermediate and a root?',
+    a: 'The leaf is the certificate for your hostname: it carries the subjectAltName list, it has CA:FALSE in its basicConstraints, and it is what the server presents. An intermediate is a CA certificate that signs leaves on a root\'s behalf; it has CA:TRUE, usually with pathlen:0 to stop it delegating further. A root is a CA certificate that signed itself — its subject and issuer are identical — and it is trusted only because it ships inside operating systems and browsers. CAs keep roots offline and sign through intermediates precisely so that a compromised signing key can be replaced without reissuing the root.',
+  },
+  {
+    q: 'Does this tool tell me whether a certificate is trusted?',
+    a: 'Deliberately not, and that is the honest answer rather than a limitation to work around. "Trusted" is a property of the client, not of the certificate: Chrome, Firefox, macOS, Windows and your Java runtime all carry different root lists, and roots get distrusted between releases. Shipping a copy of one trust store into this page would let it print a confident "trusted" for a root that was removed from Chrome last month — exactly the class of confidently-wrong answer this tool exists to catch. What it does instead is checkable arithmetic: the chain is internally consistent, each signature verified against the key above it, and the fingerprints are there for you to compare against what a CA publishes.',
+  },
+  {
+    q: 'How does a wildcard certificate actually match a hostname?',
+    a: 'A wildcard replaces exactly one label, and only the leftmost one (RFC 6125 §6.4.3). So *.example.com matches api.example.com and www.example.com; it does not match a.b.example.com, because that needs two labels, and it does not match bare example.com, because there is no label to replace — which is why certificates normally list the apex as a second SAN. A wildcard is also never honoured in the top two labels (*.com is meaningless) and never inside a label (w*.example.com is not a valid pattern to match against). The hostname field on this page applies each of those rules and tells you which one decided the verdict.',
+  },
+  {
+    q: 'Is it safe to paste a certificate here — or a private key?',
+    a: 'A certificate is public by design: it is sent in cleartext at the start of every TLS handshake, and for any publicly trusted certificate it is already published in Certificate Transparency logs. So there is nothing to protect. A private key is the opposite, and this page still handles it safely: the whole tool is a static page with no server behind it, so if you paste a PRIVATE KEY block it is recognised by its label, never parsed, and never sent anywhere — the page tells you so explicitly. That is not something most certificate decoders can say, because most of them post your input to a backend. If you did paste a key into one of those, rotate it.',
+  },
+  {
+    q: 'Why does a signature sometimes say "not checked" instead of "failed"?',
+    a: 'Because those are two completely different answers and merging them would be a lie. "Failed" means the issuer\'s public key was applied to the signature and it did not match — the certificate was altered, or that is not the issuer. "Not checked" means the check could not be performed at all, and the reason is always named: RSASSA-PSS carries its hash, salt length and mask function inside its parameters and this tool declines to guess them; SHA-224, MD5 and DSA are not implemented by Web Crypto; Ed25519 needs Chrome 137 or Safari 17. A boolean would print "not verified" for all of those and let you read it as "forged". Every chain link here is one of three states, never two.',
+  },
+  {
+    q: 'My certificate has the right commonName. Why do browsers still reject it?',
+    a: 'Because browsers stopped reading commonName in 2017. Chrome 58 and Firefox 48 removed the fallback, and every current client requires the hostname to appear in the subjectAltName extension instead — a certificate with a perfect CN and no SAN matches nothing at all and produces NET::ERR_CERT_COMMON_NAME_INVALID. It is still legal to put the name in the CN as well, and most CAs do, but it is decoration. This tool shows the SAN list separately from the subject for exactly that reason, and warns when a certificate has no SAN at all.',
+  },
+];
+
+const softwareApp = softwareAppLd({
+  name: 'Certificate Decoder & Chain Checker',
+  description:
+    'Free online certificate decoder: read every X.509 field from a PEM certificate, check chain order and completeness, verify each signature with Web Crypto and match a hostname per RFC 6125 — 100% in-browser.',
+  url: pageUrl,
+  subCategory: 'Security',
+  featureList: [
+    'Decode every X.509 field from one certificate or a whole chain',
+    'Chain order, missing intermediates and cross-signed pairs named explicitly',
+    'Per-edge signature verification: verified, failed, or not-checked with the algorithm named',
+    'RFC 6125 hostname and wildcard matching, plus SHA-256 and SHA-1 fingerprints',
+    '100% client-side, no upload, no signup',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+const faqPage = faqPageLd(faqs);
+
+const pipeline = [
+  {
+    title: 'Find the blocks, ignore everything else.',
+    body: 'Only text between BEGIN and END markers is read, so an openssl s_client transcript pastes as-is. A PRIVATE KEY block is recognised by its label and skipped without being parsed; a CSR or a PKCS#7 bundle gets told what it is and which command converts it.',
+  },
+  {
+    title: 'Base64 to DER, DER to structure.',
+    body: 'A hand-rolled reader walks the DER — no parser library, so nothing throws on a mangled paste. DER is a canonical encoding, which is what lets a minimal reader be exact rather than merely permissive: BER-only constructs like indefinite lengths are refused instead of guessed at.',
+  },
+  {
+    title: 'Read X.509 the way RFC 5280 defines it.',
+    body: 'Serial as exact BigInt decimal, a multi-valued RDN joined rather than flattened, the UTCTime pivot at 2049 respected, and IPv4 and IPv6 SANs formatted properly. Values are shown verbatim — a decoder that sanitised what is in the certificate would be hiding the thing you came to see.',
+  },
+  {
+    title: 'Link the chain by key identifier, not by name.',
+    body: 'Each certificate\'s authorityKeyIdentifier is matched against its issuer\'s subjectKeyIdentifier, so a rolled-over CA with the same name as its predecessor resolves correctly and a cross-signed pair is reported as a cross-signed pair instead of a duplicate.',
+  },
+  {
+    title: 'Verify each signature with Web Crypto.',
+    body: 'The signed bytes are the tbsCertificate slice, checked against the issuer\'s public key: RSA PKCS#1 v1.5 with SHA-1/256/384/512, ECDSA on P-256/384/521, Ed25519 where the browser has it. Every link is verified, failed, or not-checked with the algorithm named — never a bare boolean.',
+  },
+];
+
+/** The reference table: the message you got ↔ what it actually means. */
+const errors = [
+  {
+    message: 'unable to get local issuer certificate',
+    where: 'curl, openssl, Python, Node',
+    meaning:
+      'The chain stops below a root the client trusts — an intermediate is missing. Append it to the file the server sends.',
+  },
+  {
+    message: 'x509: certificate signed by unknown authority',
+    where: 'Go',
+    meaning:
+      'The same fault in Go\'s wording: either a missing intermediate, or a private CA root that this machine does not trust.',
+  },
+  {
+    message: 'self-signed certificate in certificate chain',
+    where: 'curl, openssl',
+    meaning:
+      'The chain includes a self-signed certificate the client does not trust. Usually a private CA root, sometimes a root sent needlessly.',
+  },
+  {
+    message: 'self-signed certificate',
+    where: 'curl, openssl',
+    meaning:
+      'The leaf issued itself. Nothing outside it vouches for the name — fine for a test box, never for a public endpoint.',
+  },
+  {
+    message: 'NET::ERR_CERT_AUTHORITY_INVALID',
+    where: 'Chrome, Edge',
+    meaning:
+      'The browser could not build a path to a trusted root: a missing intermediate it could not fetch, or an untrusted CA.',
+  },
+  {
+    message: 'NET::ERR_CERT_COMMON_NAME_INVALID',
+    where: 'Chrome, Edge',
+    meaning:
+      'No subjectAltName matches the hostname. A matching commonName does not help — browsers stopped reading it in 2017.',
+  },
+  {
+    message: 'NET::ERR_CERT_DATE_INVALID · certificate has expired',
+    where: 'everywhere',
+    meaning:
+      'notAfter is in the past, or notBefore is in the future, or the clock on the complaining machine is wrong.',
+  },
+  {
+    message: 'certificate is not yet valid',
+    where: 'curl, openssl, Java',
+    meaning:
+      'notBefore has not arrived. Either the certificate was issued ahead of a rotation, or clock skew — check both ends.',
+  },
+  {
+    message: 'unsupported certificate purpose',
+    where: 'openssl verify',
+    meaning:
+      'The extendedKeyUsage does not include serverAuth, so the certificate is not usable for TLS server authentication.',
+  },
+];
+
+const chainOrder = `fullchain.pem — leaf first, root optional and last
+
+  1  CN = shop.example.com                 ← leaf   (CA:FALSE, carries the SANs)
+  2  CN = Example Labs Intermediate R3     ← signs the leaf   (CA:TRUE, pathlen:0)
+  3  CN = Example Labs Root X1             ← self-signed; the client already has it
+
+  each certificate's authorityKeyIdentifier
+  points at the subjectKeyIdentifier of the one below it`;
+
+const fingerprintCheck = `# The chain your server actually sends, ready to paste above
+openssl s_client -connect example.com:443 -servername example.com -showcerts </dev/null
+
+# The claim this page makes is checkable against openssl on your own machine
+openssl x509 -in isrgrootx1.pem -noout -fingerprint -sha256
+  SHA256 Fingerprint=96:BC:EC:06:26:49:76:F3:74:60:77:9A:CF:28:C5:A7:
+                     CF:E8:A3:C0:AA:E1:1A:8F:FC:EE:05:C0:BD:DF:08:C6
+
+# ...and against the value ISRG publishes for Root X1. Three sources, one answer.`;
+---
+
+<Shell
+  title="Certificate Decoder & SSL Chain Checker — Free Online"
+  description="Decode PEM certificates and check the chain in your browser. Every X.509 field, chain order, real signature verification and SAN matching. Nothing uploaded."
+  canonical="/certificate-decoder"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <ToolHero
+    slug="certificate-decoder"
+    eyebrow="Certificate Decoder · Security"
+    badges={[
+      { label: 'Runs in your browser', variant: 'live' },
+      { label: 'Signatures really verified', variant: 'neutral' },
+      { label: 'No upload, no signup', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">Certificate Decoder &amp; Chain Checker</Fragment>
+    <Fragment slot="lead">
+      Paste one certificate, a <span class="code-mono text-ink" translate="no">fullchain.pem</span>,
+      or the whole output of <span class="code-mono text-ink" translate="no">openssl s_client
+      -showcerts</span>. Every X.509 field is decoded, the chain order is checked and corrected with
+      the reason it was wrong, and each link gets a real signature verdict — verified, failed, or
+      not-checked with the algorithm named. A private key in the paste is skipped, never parsed, and
+      never sent anywhere: there is no server here to send it to.
+    </Fragment>
+  </ToolHero>
+
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pt-8 pb-20 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">Certificate decoder and chain checker playground</h2>
+      <CertificateDecoderPlayground />
+    </div>
+  </section>
+
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">The Gap</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            It works in your browser. That is not evidence.
+          </h2>
+          <ToolGapVisual />
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            A browser repairs a broken certificate chain for you. If an intermediate is missing,
+            Chrome and Safari can fetch it from the certificate&rsquo;s own
+            <span class="code-mono text-ink" translate="no">authorityInfoAccess</span> URL, or reuse
+            one they cached from an unrelated site — the padlock appears and the fault stays
+            invisible. <span class="code-mono text-ink" translate="no">curl</span>, Go, Python and
+            every CI runner do none of that. They use exactly the certificates you sent and fail with
+            <span class="code-mono text-ink" translate="no">unable to get local issuer
+            certificate</span>. That asymmetry is the single most common way a certificate deploy
+            passes a manual check and breaks a webhook at 2am.
+          </p>
+          <p class="body-md text-pretty text-body">
+            The other half of the problem is that certificate output is unreadable on purpose.
+            <span class="code-mono text-ink" translate="no">openssl x509 -text</span> is 60 lines of
+            hex per certificate, chains have no visible order, and the question you actually have —
+            <em>is anything missing, is anything expired, does this cover my hostname</em> — is
+            nowhere in that dump. This page answers those three questions first and keeps the full
+            field list underneath.
+          </p>
+          <p class="body-md text-pretty text-body">
+            It is also the wrong thing to ask a chatbot. A language model reading a certificate dump
+            is pattern-matching text: it reads
+            <span class="code-mono text-ink" translate="no">notAfter</span> off the wrong
+            certificate, does date arithmetic wrong in both directions, cheerfully asserts that a
+            wildcard covers two labels, and cannot verify a signature at all because verifying one
+            requires actually doing the maths. This page parses the DER byte by byte and runs the
+            signature through Web Crypto — so you can check the answer you were given against a
+            result you can reproduce with <span class="code-mono text-ink" translate="no">openssl</span>
+            on your own machine.
+          </p>
+          <p class="body-sm text-mute">
+            Working on a token rather than a certificate? The
+            <a class="link-inline" href="/jwt-decoder/">JWT Decoder</a> reads and verifies a JWS, and
+            the <a class="link-inline" href="/hash-generator/">Hash Generator</a> computes the same
+            SHA-256 you would compare a fingerprint against.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="The Pipeline"
+    heading="How it works."
+    lead="Five deterministic steps, all inside your browser tab — a hand-rolled DER reader that returns null instead of throwing, and Web Crypto for the one part that is real cryptography."
+    steps={pipeline}
+  />
+
+  <section id="reference" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Reference</p>
+        <h2 class="display-lg mt-3 text-ink">The error you got, and what it means.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          Nine messages cover almost every certificate failure in production. Most of them are the
+          same two faults — a missing intermediate, or a name that is not in the SAN list — wearing
+          different vendors&rsquo; wording.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 grid max-w-5xl items-start gap-8 lg:grid-cols-[1.15fr_0.85fr]">
+        <div class="card-soft overflow-x-auto">
+          <table class="cd-table w-full text-left">
+            <thead>
+              <tr>
+                <th class="eyebrow px-4 py-3">Message</th>
+                <th class="eyebrow px-4 py-3">What it actually means</th>
+              </tr>
+            </thead>
+            <tbody>
+              {
+                errors.map((row) => (
+                  <tr class="border-t border-hairline align-top">
+                    <td class="px-4 py-2.5">
+                      <span class="code-mono text-ink" translate="no">{row.message}</span>
+                      <span class="caption mt-0.5 block text-mute">{row.where}</span>
+                    </td>
+                    <td class="px-4 py-2.5 text-body">{row.meaning}</td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="min-w-0 space-y-8">
+          <div>
+            <h3 class="display-sm text-ink">What correct chain order looks like</h3>
+            <p class="body-sm mt-2 mb-4 text-pretty text-body">
+              Leaf first, then every intermediate. The root is optional — and when it is present it
+              is only bytes, because trust comes from the client&rsquo;s own store.
+            </p>
+            <CodeBlock lang="text" filename="fullchain.pem" code={chainOrder} />
+          </div>
+          <div>
+            <h3 class="display-sm text-ink">Get the chain, then check the claim</h3>
+            <p class="body-sm mt-2 mb-4 text-pretty text-body">
+              A ground-truth tool should be verifiable against something else. Every fingerprint on
+              this page is the SHA-256 of the whole DER — the same bytes
+              <span class="code-mono" translate="no">openssl x509 -fingerprint</span> hashes.
+            </p>
+            <CodeBlock lang="bash" filename="verify.sh" code={fingerprintCheck} />
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="next" class="scroll-mt-24 bg-inverse text-inverse-fg">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+        <div class="min-w-0">
+          <p class="eyebrow !text-cyan">Next Step</p>
+          <h2 class="display-lg mt-3 text-balance text-inverse-fg">
+            The chain is fine. Now check what it is protecting.
+          </h2>
+          <p class="body-md mt-4 text-pretty text-white/70">
+            A certificate is one link in a chain of things that have to agree: the
+            <span translate="no">JWT Decoder</span> reads and verifies the tokens the endpoint hands
+            out, the <span translate="no">Hash Generator</span> computes the digest you compare a
+            fingerprint against, and the <span translate="no">Reverse DNS / PTR Helper</span> checks
+            that the name in the certificate is the name that resolves. All of them, like this page,
+            run entirely in your browser.
+          </p>
+          <div class="mt-7 flex flex-wrap items-center gap-3">
+            <Button href="/jwt-decoder/" variant="secondary">Open the JWT Decoder</Button>
+            <Button href="/hash-generator/" variant="secondary">Open the Hash Generator</Button>
+          </div>
+        </div>
+        <CodeBlock
+          lang="text"
+          filename="chain-check.txt"
+          code={`3 certificates — chain order OK
+  leaf          shop.example.com          notAfter 2031-06-01
+  intermediate  Example Labs Intermediate R3
+  root          Example Labs Root X1      self-signed
+
+signature verified   leaf  ←  intermediate   RSA PKCS#1 v1.5 with SHA-256
+signature verified   int   ←  root           RSA PKCS#1 v1.5 with SHA-256
+hostname www.shop.example.com   covered by *.shop.example.com`}
+        />
+      </div>
+    </div>
+  </section>
+
+  <FaqList faqs={faqs} />
+
+  <ToolCrossLinks slug="certificate-decoder">
+    <Fragment slot="lead">
+      The Certificate Decoder is one tool in <span translate="no">{site.name}</span> — a growing
+      canopy of browser-based validators, converters and testers that never touch a server.
+    </Fragment>
+    <Fragment slot="links">
+      Related security tools: the <a class="link-inline" href="/jwt-decoder/">JWT Decoder</a>, the
+      <a class="link-inline" href="/hash-generator/">Hash Generator</a> for the digests behind a
+      fingerprint, and the
+      <a class="link-inline" href="/reverse-dns-ptr/">Reverse DNS / PTR Helper</a> for checking that
+      the name in a certificate is the name that resolves — or browse the full
+      <a class="link-inline" href={`${navLinks[0].href}/`}>tools directory</a>.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      Provided as-is for convenience. This page reports what is inside a certificate and whether each
+      signature checks out; it does not and will not claim a certificate is
+      <em>trusted</em> — trust lives in the client&rsquo;s own root store, and there is no revocation
+      or Certificate Transparency check here either (both need the network).
+      <span translate="no">{site.name}</span> is free and open.
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>
+
+<style>
+  @reference "../styles/global.css";
+
+  .cd-table th {
+    font-weight: inherit;
+    white-space: nowrap;
+  }
+  .cd-table td {
+    font-size: 13px;
+    line-height: 18px;
+  }
+  .cd-table .code-mono {
+    font-size: 12.5px;
+    overflow-wrap: anywhere;
+  }
+</style>

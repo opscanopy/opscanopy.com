@@ -91,6 +91,16 @@
  */
 
 /**
+ * The one exception to "pure data table": the certificate decoder's XSS payload
+ * has to be a REAL, signed certificate whose subject carries the markup, and
+ * that certificate already exists as a named constant in the engine's fixture
+ * corpus. Importing it beats pasting 25 lines of base64 that a transcription slip
+ * would quietly turn into an unparsable block — at which point J7 would prove
+ * nothing about escaping.
+ */
+import { DEMO_LEAF_XSS_SUBJECT } from '../../src/lib/cert-chain/fixtures';
+
+/**
  * Input surface + engine-loading shape of a tool's playground. Drives the
  * family-specific branches in the journeys (see `family` above).
  */
@@ -158,6 +168,52 @@ export const TOOL_FIXTURES: ToolFixture[] = [
     xssPayload: '1 GB <img src=x onerror=alert(1)>',
     inputSelector: '#dsz-size',
     resultsSelector: '#dsz-results',
+  },
+  {
+    // Tool 5 — Certificate Decoder & Chain Checker.
+    //
+    // `hashKey: null` on purpose and permanently: one certificate is 1.5–2.5 KB
+    // of base64 and a chain is three of them, an order of magnitude past the
+    // ~2000-char fragment cap. The playground therefore omits `data-copy-link`
+    // entirely and never touches `location.hash` — J3 asserts both halves of
+    // that (no fragment ever written, and an unknown `#s=` key ignored rather
+    // than parsed).
+    //
+    // `seededResultString` is the ISSUER commonName of the boot-seeded demo
+    // chain, not the leaf's: the leaf name would also be echoed by the optional
+    // hostname field, and J4 needs a string that disappears the moment the
+    // input becomes invalid.
+    //
+    // `calmErrorString` is pinned byte-for-byte by
+    // `src/lib/cert-chain/engine.test.ts` ("names a truncated block"). It is
+    // reachable by typing, which matters: J2 types `invalidInput` one character
+    // at a time, so it has to be short — a full PEM at 40 ms/key would take a
+    // minute.
+    //
+    // `xssPayload` is a real certificate whose subject O and CN both contain the
+    // markup (`src/lib/cert-chain/fixtures.ts` → DEMO_LEAF_XSS_SUBJECT). The
+    // payload lives inside signed DER, so it genuinely reaches the rendered
+    // subject row instead of being rejected at the door.
+    //
+    // The trailing comment line is not decoration. J7 derives the tag name it
+    // hunts for by regexing the PAYLOAD STRING (`firstTagName`), which assumes
+    // the markup is literally in the input — true for a YAML value or a URL
+    // param, false for anything carried inside base64. Repeating the markup as
+    // plain noise outside the BEGIN/END markers satisfies that without touching
+    // the shared harness, and makes the probe stronger rather than weaker: the
+    // engine must ignore the literal copy (it is outside the markers) AND escape
+    // the copy it decodes out of the DER.
+    slug: 'certificate-decoder',
+    family: 'textarea',
+    hashKey: null,
+    seededResultString: 'Example Labs Intermediate R3',
+    invalidInput: '-----BEGIN CERTIFICATE-----',
+    calmErrorString:
+      'A "-----BEGIN CERTIFICATE-----" line has no matching "-----END CERTIFICATE-----" line — the paste looks truncated.',
+    xssPayload: `${DEMO_LEAF_XSS_SUBJECT}
+# and again as plain text outside the markers: <img src=x onerror=alert(1)>`,
+    inputSelector: '#cd-input',
+    resultsSelector: '#cd-results',
   },
 ];
 
