@@ -144,6 +144,21 @@ export const TOOL_FIXTURES: ToolFixture[] = [
     inputSelector: '#uc-input',
     resultsSelector: '#uc-results',
   },
+  {
+    slug: 'data-size-converter',
+    family: 'textarea',
+    hashKey: '#q=',
+    // The exact byte count of the boot-seeded first chip (1.5 GiB), grouped the
+    // way the engine groups it — space separators above four integer digits.
+    seededResultString: '1 610 612 736',
+    invalidInput: '1 gigglebyte',
+    calmErrorString: 'Unknown unit "gigglebyte". Did you mean GB, Gb, GiB or Gib?',
+    // Valid grammar up to the unit, so the engine echoes the token back inside
+    // its own diagnostic — which is where this tool renders untrusted input.
+    xssPayload: '1 GB <img src=x onerror=alert(1)>',
+    inputSelector: '#dsz-size',
+    resultsSelector: '#dsz-results',
+  },
 ];
 
 /** Fixtures for one family — used by the family-gated journey steps. */

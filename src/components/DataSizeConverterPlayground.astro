@@ -1,0 +1,1481 @@
+---
+/**
+ * DataSizeConverterPlayground — the interactive Data Size & Transfer-Rate island.
+ *
+ * Two plain single-line inputs, no CodeMirror (one short token each — the
+ * chmod-calculator / subnet-calculator precedent). Band 1 converts a size and
+ * prints the exact bit/byte counts plus the paired SI|IEC ladder; band 2 is
+ * optional and divides that size by a link speed, always showing a 90%-of-line-
+ * rate row next to the theoretical best case. Everything is exact BigInt
+ * rational math, runs entirely client-side, and is shareable via `#q=`.
+ *
+ * Runtime contract (engine lazy-imported inside boot, for code-splitting):
+ *   ../lib/data-size/engine → convert(input): ConvertResult
+ *                             transferTime(size, rate): TransferResult
+ *                             significantLadder(ladder): LadderPair[]
+ *                             encodeState(state) / parseState(fragment)
+ *                             decodeState(): DataSizeState | null
+ */
+import { examples } from '../lib/data-size/examples';
+---
+
+<section class="dsz-pg" aria-label="Data Size Converter playground">
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Toolbar: example chips ───────────────────────────────────────── */}
+    <div class="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:px-5">
+      <span class="eyebrow">Examples</span>
+      <div id="dsz-chips" class="dsz-chips" role="group" aria-label="Examples">
+        {
+          examples.map((ex) => (
+            <button
+              type="button"
+              class="dsz-chip"
+              data-size={ex.size}
+              data-rate={ex.rate}
+              aria-label={`${ex.label} — ${ex.size}${ex.rate ? ` over ${ex.rate}` : ''}`}
+            >
+              {ex.label}
+            </button>
+          ))
+        }
+      </div>
+    </div>
+
+    {/* ── Band 1: the size ─────────────────────────────────────────────── */}
+    <div class="border-b border-hairline px-4 py-4 sm:px-5">
+      <label class="eyebrow mb-1 block" for="dsz-size">Data size</label>
+      <p class="dsz-gloss caption text-mute">
+        Two conventions share the same words: SI (<span class="code-mono" translate="no">kB</span>,
+        <span class="code-mono" translate="no">MB</span>,
+        <span class="code-mono" translate="no">GB</span>) counts in 1000s, IEC (<span
+          class="code-mono"
+          translate="no">KiB</span
+        >, <span class="code-mono" translate="no">MiB</span>,
+        <span class="code-mono" translate="no">GiB</span>) counts in 1024s — that is
+        <span translate="no">ISO/IEC 80000-13</span>. Drives are sold in SI; Windows,
+        <span class="code-mono" translate="no">ls -l</span> and Kubernetes report in IEC.
+      </p>
+      <div class="dsz-input-wrap mt-2">
+        <svg
+          class="dsz-input-icon pointer-events-none"
+          viewBox="0 0 20 20"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <ellipse cx="10" cy="5.75" rx="6.25" ry="2.5"></ellipse>
+          <path d="M3.75 5.75v8.5c0 1.38 2.8 2.5 6.25 2.5s6.25-1.12 6.25-2.5v-8.5"></path>
+          <path d="M3.75 10c0 1.38 2.8 2.5 6.25 2.5s6.25-1.12 6.25-2.5"></path>
+        </svg>
+        <input
+          id="dsz-size"
+          type="text"
+          class="dsz-input code-mono"
+          spellcheck="false"
+          autocapitalize="off"
+          autocorrect="off"
+          autocomplete="off"
+          enterkeyhint="done"
+          placeholder="1.5 GiB"
+          aria-describedby="dsz-size-detect dsz-size-hint dsz-run-hint"
+        />
+      </div>
+      <p id="dsz-size-detect" class="dsz-detect caption"></p>
+      <p id="dsz-size-hint" class="dsz-hint caption text-mute">
+        A bare number means bytes. <span class="code-mono" translate="no">b</span> is always bits and
+        <span class="code-mono" translate="no">B</span> always bytes, so
+        <span class="code-mono" translate="no">128 Mb</span> is not
+        <span class="code-mono" translate="no">128 MB</span>. Kubernetes forms like
+        <span class="code-mono" translate="no">500Gi</span> work too.
+      </p>
+      <p id="dsz-run-hint" class="dsz-hint caption text-mute">
+        Results update as you type — press Enter to run now.
+      </p>
+    </div>
+
+    {/* ── Band 2: the link speed (optional) ────────────────────────────── */}
+    <div class="border-b border-hairline px-4 py-4 sm:px-5">
+      <label class="eyebrow mb-1 block" for="dsz-rate">
+        Link speed <span class="dsz-optional">optional</span>
+      </label>
+      <p class="dsz-gloss caption text-mute">
+        A link speed is a <em>line rate</em> in bits per second — the ceiling, not the throughput.
+        <span class="code-mono" translate="no">1 Gbps</span> moves at most
+        <span class="code-mono" translate="no">125 MB</span> per second, before TCP, TLS and
+        filesystem overhead.
+      </p>
+      <div class="dsz-input-wrap mt-2">
+        <svg
+          class="dsz-input-icon pointer-events-none"
+          viewBox="0 0 20 20"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M2.5 14.5h15"></path>
+          <path d="M5.5 14.5v-3.5"></path>
+          <path d="M10 14.5V7.5"></path>
+          <path d="M14.5 14.5v-10"></path>
+        </svg>
+        <input
+          id="dsz-rate"
+          type="text"
+          class="dsz-input code-mono"
+          spellcheck="false"
+          autocapitalize="off"
+          autocorrect="off"
+          autocomplete="off"
+          enterkeyhint="done"
+          placeholder="1 Gbps"
+          aria-describedby="dsz-rate-hint"
+        />
+      </div>
+      <p id="dsz-rate-hint" class="dsz-hint caption text-mute">
+        Leave empty to skip the transfer maths. Accepts
+        <span class="code-mono" translate="no">1 Gbps</span>,
+        <span class="code-mono" translate="no">100 Mb/s</span>,
+        <span class="code-mono" translate="no">50 MB/s</span> or
+        <span class="code-mono" translate="no">1.5 MiB/s</span>.
+      </p>
+      <div class="dsz-snap-row mt-3 flex flex-wrap items-center gap-2">
+        <button id="dsz-snap-save" type="button" class="dsz-snap-btn">Save snapshot</button>
+        <select
+          id="dsz-snap-select"
+          class="dsz-snap-select"
+          aria-label="Load a saved snapshot"
+          disabled
+        >
+          <option value="">No snapshots yet</option>
+        </select>
+        <button
+          id="dsz-snap-delete"
+          type="button"
+          class="dsz-snap-delete"
+          aria-label="Delete this snapshot"
+          hidden>&times;</button
+        >
+      </div>
+    </div>
+
+    {/* ── Results panel ────────────────────────────────────────────────── */}
+    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <span class="flex flex-wrap items-center gap-2">
+          <span class="eyebrow">Result</span>
+          <button
+            id="dsz-share"
+            type="button"
+            class="dsz-copy dsz-copy--labeled"
+            data-copy-link
+            data-copy=""
+            data-copy-label="Copy link"
+            hidden
+          >
+            <svg
+              class="dsz-copy-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6.75 9.25l2.5-2.5"></path>
+              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
+              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
+            </svg>
+            <svg
+              class="dsz-check-icon hidden"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="dsz-copy-label">Copy link</span>
+          </button>
+          <button
+            id="dsz-copy-all"
+            type="button"
+            class="dsz-copy dsz-copy--labeled"
+            data-copy-all
+            data-copy=""
+            data-copy-label="Copy all"
+            hidden
+          >
+            <svg
+              class="dsz-copy-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="5" y="5" width="9" height="9" rx="1.5"></rect>
+              <path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"></path>
+            </svg>
+            <svg
+              class="dsz-check-icon hidden"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="dsz-copy-label">Copy all</span>
+          </button>
+        </span>
+        <span
+          id="dsz-summary"
+          class="dsz-summary code-mono text-mute"
+          role="status"
+          aria-live="polite"></span>
+      </div>
+      <div id="dsz-results" class="dsz-results">
+        <p class="dsz-empty body-sm text-mute">
+          Type a size — or tap an example — to see its exact byte count, both unit ladders and how
+          long it takes to move.
+        </p>
+      </div>
+      <span id="dsz-copy-status" class="sr-only" role="status" aria-live="polite"></span>
+    </div>
+  </div>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  /* ── Example + cross-tool chips (shared recipe) ─────────────────────── */
+  .dsz-chips,
+  :global(.dsz-xchips) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  :global(.dsz-xchips) {
+    margin-top: 12px;
+  }
+  .dsz-chip,
+  :global(.dsz-xchip) {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-brand-strong);
+    text-decoration: none;
+    cursor: pointer;
+    transition:
+      background 0.12s ease,
+      box-shadow 0.12s ease;
+  }
+  .dsz-chip:hover,
+  .dsz-chip[aria-pressed='true'],
+  :global(.dsz-xchip:hover) {
+    background: var(--color-brand-soft);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+  }
+  .dsz-chip:focus-visible,
+  :global(.dsz-xchip:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+
+  /* ── Inputs ─────────────────────────────────────────────────────────── */
+  .dsz-input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .dsz-input-icon {
+    position: absolute;
+    left: 14px;
+    width: 18px;
+    height: 18px;
+    color: var(--color-mute);
+  }
+  .dsz-input {
+    width: 100%;
+    height: 48px;
+    padding: 0 16px 0 42px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 15px;
+    line-height: 24px;
+    letter-spacing: 0.01em;
+    transition: box-shadow 0.15s ease;
+  }
+  .dsz-input::placeholder {
+    color: var(--color-mute);
+  }
+  .dsz-input:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .dsz-input:focus {
+    outline: none;
+  }
+  .dsz-input:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-link);
+    outline: none;
+  }
+  .dsz-input.dsz-input--error {
+    box-shadow: inset 0 0 0 1px var(--color-error);
+  }
+  .dsz-input.dsz-input--error:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-error);
+  }
+  .dsz-optional {
+    margin-left: 4px;
+    font-family: var(--font-sans);
+    font-size: 10.5px;
+    font-weight: 400;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+  .dsz-gloss {
+    max-width: 68ch;
+    font-size: 12px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  .dsz-gloss .code-mono,
+  .dsz-hint .code-mono {
+    font-size: 12px;
+  }
+  .dsz-hint {
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  .dsz-hint + .dsz-hint {
+    margin-top: 2px;
+  }
+  /* The live detection line: same caption weight, brand ink when it reads. */
+  .dsz-detect {
+    margin-top: 8px;
+    min-height: 18px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-brand-strong);
+    overflow-wrap: anywhere;
+  }
+  .dsz-detect:empty {
+    margin-top: 0;
+    min-height: 0;
+  }
+
+  .dsz-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition:
+      background 0.12s ease,
+      box-shadow 0.12s ease;
+  }
+  .dsz-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .dsz-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .dsz-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .dsz-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition:
+      background 0.12s ease,
+      color 0.12s ease;
+  }
+  .dsz-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
+
+  .dsz-summary {
+    min-width: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+  .dsz-results {
+    min-height: 260px;
+  }
+  /* Copy failure message flips from sr-only to a visible caption. */
+  .dsz-copy-status--fail {
+    display: block;
+    margin-top: 10px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-error-deep);
+  }
+
+  /* ── Runtime-injected markup ─────────────────────────────────────────── */
+  :global(.dsz-block) {
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+    animation: dsz-rise 0.18s ease both;
+  }
+  :global(.dsz-block + .dsz-block) {
+    margin-top: 12px;
+  }
+  :global(.dsz-block__head) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px 10px;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+  :global(.dsz-block__meta) {
+    font-size: 11px;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--color-ink);
+    overflow-wrap: anywhere;
+  }
+  :global(.dsz-block__sub) {
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-mute);
+    text-wrap: pretty;
+  }
+
+  /* Key → value rows (exact size, transfer time) */
+  :global(.dsz-rows) {
+    margin: 0;
+  }
+  :global(.dsz-row) {
+    display: grid;
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+    gap: 2px 12px;
+    padding: 9px 14px;
+    align-items: baseline;
+  }
+  @media (max-width: 519px) {
+    :global(.dsz-row) {
+      grid-template-columns: 1fr;
+    }
+  }
+  :global(.dsz-row + .dsz-row) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.dsz-row__k) {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 18px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+  :global(.dsz-row__gloss) {
+    display: block;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    line-height: 16px;
+    letter-spacing: normal;
+    text-transform: none;
+    color: var(--color-mute);
+    text-wrap: pretty;
+  }
+  :global(.dsz-row__v-wrap) {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    margin: 0;
+  }
+  :global(.dsz-row__v) {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 13.5px;
+    line-height: 20px;
+    color: var(--color-ink);
+    overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+  :global(.dsz-row__v.is-hero) {
+    font-size: 18px;
+    line-height: 26px;
+    font-weight: 600;
+    color: var(--color-brand-strong);
+  }
+  :global(.dsz-row__cap) {
+    display: block;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--color-mute);
+  }
+
+  /* The SI ↔ IEC ladder */
+  :global(.dsz-rung) {
+    padding: 10px 14px;
+  }
+  :global(.dsz-rung + .dsz-rung) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.dsz-rung__head) {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+  :global(.dsz-rung__gap) {
+    flex: 0 0 auto;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--color-accent-ink);
+  }
+  :global(.dsz-rung__cells) {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  @media (min-width: 560px) {
+    :global(.dsz-rung__cells) {
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+  }
+  :global(.dsz-cellbox) {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 5px 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas-soft);
+  }
+  :global(.dsz-cellbox__u) {
+    flex: 0 0 auto;
+    min-width: 30px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    color: var(--color-mute);
+  }
+  :global(.dsz-cellbox__v) {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--color-ink);
+    overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+  :global(.dsz-approx) {
+    color: var(--color-mute);
+  }
+
+  /* Notes */
+  :global(.dsz-notelist) {
+    margin: 0;
+    padding: 4px 14px 10px;
+    list-style: none;
+  }
+  :global(.dsz-note) {
+    display: flex;
+    gap: 8px;
+    padding: 6px 0;
+    font-size: 13px;
+    line-height: 19px;
+    color: var(--color-body);
+    text-wrap: pretty;
+  }
+  :global(.dsz-note + .dsz-note) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.dsz-note__mark) {
+    flex: 0 0 auto;
+    font-family: var(--font-mono);
+    color: var(--color-accent-ink);
+  }
+
+  @keyframes dsz-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.dsz-block) {
+      animation: none;
+    }
+  }
+
+  :global(.dsz-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+  }
+  :global(.dsz-error + .dsz-block),
+  :global(.dsz-block + .dsz-error) {
+    margin-top: 12px;
+  }
+  :global(.dsz-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.dsz-error__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.dsz-error__detail) {
+    margin-top: 2px;
+    font-size: 13px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  :global(.dsz-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+
+  /* ── Copy buttons: icon-only per row, labeled in the header ──────────── */
+  :global(.dsz-copy) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition:
+      color 0.12s ease,
+      background 0.12s ease;
+  }
+  :global(.dsz-copy:hover) {
+    color: var(--color-brand-strong);
+    background: var(--color-hairline);
+  }
+  :global(.dsz-copy:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  :global(.dsz-copy--labeled) {
+    width: auto;
+    height: 26px;
+    gap: 6px;
+    padding: 0 10px;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  :global(.dsz-copy--copied) {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+  @media (pointer: coarse) {
+    .dsz-chip,
+    :global(.dsz-xchip) {
+      min-height: 44px; /* site touch-target standard */
+    }
+    :global(.dsz-copy) {
+      width: 44px;
+      height: 44px;
+    }
+    /* Labeled header controls are wide text targets, not the primary in-result
+       action — the reference playground pins them at 36px on purpose. */
+    :global(.dsz-copy--labeled) {
+      width: auto;
+      height: auto;
+      min-height: 36px;
+    }
+  }
+</style>
+
+<script>
+  import { escapeHtml } from '../lib/escape-html';
+  import { copyTextToClipboard } from '../lib/clipboard';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+
+  type ValueCell = { value: string; display: string; approx: boolean };
+  type SizeRow = {
+    unit: string;
+    unitName: string;
+    family: 'si' | 'iec';
+    base: 1000 | 1024;
+    exponent: number;
+    cell: ValueCell;
+    copy: string;
+  };
+  type LadderPair = {
+    exponent: number;
+    label: string;
+    si: SizeRow;
+    iec: SizeRow;
+    divergencePercent: string;
+  };
+  type Detection = {
+    raw: string;
+    normalized: string;
+    unit: string;
+    unitName: string;
+    family: 'si' | 'iec';
+    base: 1000 | 1024;
+    exponent: number;
+    measures: 'bits' | 'bytes';
+    wholeBytes: boolean;
+    caption: string;
+  };
+  type ConvertResult = {
+    valid: boolean;
+    error?: string;
+    suggestions?: string[];
+    detection?: Detection;
+    bits?: ValueCell;
+    bytes?: ValueCell;
+    ladder?: LadderPair[];
+    notes: string[];
+    summary?: string;
+  };
+  type RateDetection = {
+    raw: string;
+    bitForm: string;
+    byteForm: string;
+    bitsPerSecond: ValueCell;
+    bytesPerSecond: ValueCell;
+    caption: string;
+  };
+  type DurationCell = { seconds: ValueCell; humanized: string };
+  type TransferResult = {
+    valid: boolean;
+    error?: string;
+    errorField?: 'size' | 'rate';
+    size?: Detection;
+    sizeBits?: ValueCell;
+    sizeBytes?: ValueCell;
+    rate?: RateDetection;
+    ideal?: DurationCell;
+    realistic?: { percent: number; duration: DurationCell };
+    notes: string[];
+    summary?: string;
+  };
+  type State = { size?: string; rate?: string };
+  type EngineModule = {
+    convert: (input: string) => ConvertResult;
+    transferTime: (size: string, rate: string) => TransferResult;
+    significantLadder: (ladder: LadderPair[], minimum?: number) => LadderPair[];
+    encodeState: (state: State) => string;
+    parseState: (fragment: string) => State | null;
+    decodeState: () => State | null;
+  };
+
+  const ROOT_SEL = '.dsz-pg';
+  const SLUG = 'data-size-converter';
+  const DEBOUNCE_MS = 160;
+  const ERROR_HOLD_MS = 600;
+  const RESET_MS = 1800;
+  // Past ~2000 chars a fragment stops being a dependable URL (browser, proxy and
+  // chat-client limits), so we neither write it nor offer the share button.
+  const MAX_HASH_LEN = 2000;
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.dszWired === 'true') return;
+      root.dataset.dszWired = 'true';
+      void init(root);
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  const ALERT_SVG =
+    '<svg class="dsz-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const COPY_ICON_SVG =
+    '<svg class="dsz-copy-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"/></svg>';
+  const CHECK_ICON_SVG =
+    '<svg class="dsz-check-icon hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
+
+  /** Prefix tool paths with the current locale so cross-links stay in-locale. */
+  function localePath(path: string): string {
+    const match = window.location.pathname.match(/^\/(de|es|fr|pt-br)\//);
+    return match ? `/${match[1]}${path}` : path;
+  }
+
+  function copyBtnHtml(label: string, value: string): string {
+    return (
+      `<button class="dsz-copy" type="button" aria-label="Copy ${escapeHtml(label)}" data-copy="${escapeHtml(value)}">` +
+      COPY_ICON_SVG +
+      CHECK_ICON_SVG +
+      '</button>'
+    );
+  }
+
+  /** A rendered number: the ≈ marker is display-only, never part of the copy. */
+  function cellHtml(cell: ValueCell): string {
+    return (
+      (cell.approx ? '<span class="dsz-approx">&#8776;&#8202;</span>' : '') +
+      escapeHtml(cell.display)
+    );
+  }
+
+  function rowHtml(
+    label: string,
+    cellOrText: ValueCell | string,
+    options: { gloss?: string; caption?: string; hero?: boolean; copy?: string } = {},
+  ): string {
+    const isCell = typeof cellOrText !== 'string';
+    const shown = isCell ? cellHtml(cellOrText) : escapeHtml(cellOrText);
+    const copyValue = options.copy ?? (isCell ? cellOrText.value : cellOrText);
+    const gloss = options.gloss
+      ? `<span class="dsz-row__gloss">${escapeHtml(options.gloss)}</span>`
+      : '';
+    const caption = options.caption
+      ? `<span class="dsz-row__cap">${escapeHtml(options.caption)}</span>`
+      : '';
+    return (
+      '<div class="dsz-row">' +
+      `<dt class="dsz-row__k">${escapeHtml(label)}${gloss}</dt>` +
+      '<dd class="dsz-row__v-wrap">' +
+      `<span class="dsz-row__v${options.hero ? ' is-hero' : ''}">${shown}${caption}</span>` +
+      copyBtnHtml(label, copyValue) +
+      '</dd></div>'
+    );
+  }
+
+  function exactBlockHtml(result: ConvertResult): string {
+    const detection = result.detection;
+    const bytes = result.bytes;
+    const bits = result.bits;
+    if (!detection || !bytes || !bits) return '';
+    return (
+      '<div class="dsz-block">' +
+      '<div class="dsz-block__head"><span>Exact size</span>' +
+      `<span class="dsz-block__meta">${escapeHtml(detection.normalized)}</span></div>` +
+      '<dl class="dsz-rows">' +
+      rowHtml('Bytes', bytes, { hero: true, gloss: 'the number every filesystem counts in' }) +
+      rowHtml('Bits', bits, { gloss: '8 bits per byte, exactly' }) +
+      '</dl></div>'
+    );
+  }
+
+  function transferBlockHtml(transfer: TransferResult): string {
+    const { rate, ideal, realistic } = transfer;
+    if (!rate || !ideal || !realistic) return '';
+    return (
+      '<div class="dsz-block">' +
+      '<div class="dsz-block__head"><span>Transfer time</span>' +
+      `<span class="dsz-block__meta">${escapeHtml(rate.caption)}</span></div>` +
+      '<dl class="dsz-rows">' +
+      rowHtml('At line rate', ideal.humanized, {
+        hero: true,
+        gloss: 'the theoretical best case',
+        // "≈ 4000.5 s exactly" contradicted itself; say "exactly" only when it is.
+        caption: ideal.seconds.approx
+          ? `≈ ${ideal.seconds.display} s`
+          : `${ideal.seconds.display} s exactly`,
+        copy: ideal.humanized,
+      }) +
+      rowHtml(`At ${realistic.percent}% of line rate`, realistic.duration.humanized, {
+        gloss: 'what real transfers land near',
+        caption: `${realistic.duration.seconds.approx ? '≈ ' : ''}${realistic.duration.seconds.display} s`,
+        copy: realistic.duration.humanized,
+      }) +
+      rowHtml('Speed in bits', rate.bitForm, { gloss: 'how links are sold' }) +
+      rowHtml('Speed in bytes', rate.byteForm, { gloss: 'how transfers are measured' }) +
+      '</dl></div>'
+    );
+  }
+
+  function ladderBlockHtml(rungs: LadderPair[]): string {
+    if (rungs.length === 0) return '';
+    const body = rungs
+      .map((rung) => {
+        const cellBox = (row: SizeRow): string =>
+          '<div class="dsz-cellbox">' +
+          `<span class="dsz-cellbox__u">${escapeHtml(row.unit)}</span>` +
+          `<span class="dsz-cellbox__v">${cellHtml(row.cell)}</span>` +
+          copyBtnHtml(`${row.cell.value} ${row.unit}`, row.copy) +
+          '</div>';
+        return (
+          '<div class="dsz-rung">' +
+          '<div class="dsz-rung__head">' +
+          `<span>${escapeHtml(rung.label)}</span>` +
+          `<span class="dsz-rung__gap">IEC is ${escapeHtml(rung.divergencePercent)}% bigger</span>` +
+          '</div>' +
+          `<div class="dsz-rung__cells">${cellBox(rung.si)}${cellBox(rung.iec)}</div>` +
+          '</div>'
+        );
+      })
+      .join('');
+    return (
+      '<div class="dsz-block">' +
+      '<div class="dsz-block__head"><span>SI &harr; IEC ladder</span>' +
+      '<span class="dsz-block__meta">1000-based vs 1024-based</span></div>' +
+      '<p class="dsz-block__sub">The same size in both conventions, rung by rung. Values marked ' +
+      '&#8776; are rounded to six decimals; the copy button always copies the number shown.</p>' +
+      body +
+      '</div>'
+    );
+  }
+
+  function notesBlockHtml(notes: string[]): string {
+    if (notes.length === 0) return '';
+    const items = notes
+      .map(
+        (note) =>
+          '<li class="dsz-note"><span class="dsz-note__mark" aria-hidden="true">&#9679;</span>' +
+          `<span>${escapeHtml(note)}</span></li>`,
+      )
+      .join('');
+    return (
+      '<div class="dsz-block">' +
+      '<div class="dsz-block__head"><span>Notes</span>' +
+      `<span class="dsz-block__meta">${notes.length} note${notes.length === 1 ? '' : 's'}</span></div>` +
+      `<ul class="dsz-notelist">${items}</ul></div>`
+    );
+  }
+
+  function crossLinksHtml(): string {
+    const chip = (href: string, text: string): string =>
+      `<a class="dsz-xchip" href="${escapeHtml(href)}">${escapeHtml(text)}</a>`;
+    return (
+      '<div class="dsz-xchips">' +
+      chip(localePath('/kubernetes-resource-calculator/'), 'Size a Kubernetes request') +
+      chip(localePath('/subnet-calculator/'), 'Size a subnet') +
+      chip(localePath('/chmod-calculator/'), 'Read a file mode') +
+      '</div>'
+    );
+  }
+
+  function errorCardHtml(title: string, detail: string, isAlert: boolean, detailId: string): string {
+    return (
+      `<div class="dsz-error"${isAlert ? ' role="alert"' : ''}>` +
+      ALERT_SVG +
+      `<div><p class="dsz-error__title">${escapeHtml(title)}</p>` +
+      `<p id="${detailId}" class="dsz-error__detail">${escapeHtml(detail)}</p></div></div>`
+    );
+  }
+
+  /** "Label: value" lines for Copy all. */
+  function buildCopyAll(result: ConvertResult, transfer: TransferResult | null): string {
+    const lines: string[] = [];
+    if (result.detection) lines.push(`Size: ${result.detection.normalized}`);
+    if (result.bytes) lines.push(`Bytes: ${result.bytes.value}`);
+    if (result.bits) lines.push(`Bits: ${result.bits.value}`);
+    for (const rung of result.ladder ?? []) {
+      lines.push(`${rung.si.unit}: ${rung.si.cell.value}`);
+      lines.push(`${rung.iec.unit}: ${rung.iec.cell.value}`);
+    }
+    if (transfer?.valid && transfer.rate && transfer.ideal && transfer.realistic) {
+      lines.push(`Link speed: ${transfer.rate.bitForm} (${transfer.rate.byteForm})`);
+      lines.push(`At line rate: ${transfer.ideal.humanized} (${transfer.ideal.seconds.value} s)`);
+      lines.push(
+        `At ${transfer.realistic.percent}%: ${transfer.realistic.duration.humanized} ` +
+          `(${transfer.realistic.duration.seconds.value} s)`,
+      );
+    }
+    for (const note of result.notes) lines.push(`Note: ${note}`);
+    for (const note of transfer?.notes ?? []) lines.push(`Note: ${note}`);
+    return lines.join('\n');
+  }
+
+  async function init(root: HTMLElement): Promise<void> {
+    const sizeInput = el<HTMLInputElement>(root, '#dsz-size');
+    const rateInput = el<HTMLInputElement>(root, '#dsz-rate');
+    const detectEl = el<HTMLElement>(root, '#dsz-size-detect');
+    const resultsBox = el<HTMLElement>(root, '#dsz-results');
+    const summaryEl = el<HTMLElement>(root, '#dsz-summary');
+    const shareBtn = el<HTMLButtonElement>(root, '#dsz-share');
+    const copyAllBtn = el<HTMLButtonElement>(root, '#dsz-copy-all');
+    const copyStatus = el<HTMLElement>(root, '#dsz-copy-status');
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#dsz-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#dsz-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#dsz-snap-delete');
+    const chips = Array.from(root.querySelectorAll<HTMLButtonElement>('#dsz-chips .dsz-chip'));
+    if (
+      !sizeInput ||
+      !rateInput ||
+      !detectEl ||
+      !resultsBox ||
+      !summaryEl ||
+      !shareBtn ||
+      !copyAllBtn ||
+      !copyStatus ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
+    )
+      return;
+
+    /* ------------------------------------------------------------------ */
+    /* Copy plumbing (row buttons, Copy all, Copy link)                    */
+    /* ------------------------------------------------------------------ */
+
+    function setCopyStatus(message: string, failed: boolean): void {
+      copyStatus!.textContent = message;
+      copyStatus!.classList.toggle('sr-only', !failed);
+      copyStatus!.classList.toggle('dsz-copy-status--fail', failed);
+    }
+
+    function setCopied(btn: HTMLButtonElement, copied: boolean): void {
+      btn.classList.toggle('dsz-copy--copied', copied);
+      btn.querySelector('.dsz-copy-icon')?.classList.toggle('hidden', copied);
+      btn.querySelector('.dsz-check-icon')?.classList.toggle('hidden', !copied);
+      const label = btn.querySelector<HTMLElement>('.dsz-copy-label');
+      if (label) {
+        label.textContent = copied ? 'Copied' : (btn.dataset.copyLabel ?? 'Copy');
+      } else if (copied) {
+        btn.dataset.prevAriaLabel = btn.getAttribute('aria-label') ?? '';
+        btn.setAttribute('aria-label', 'Copied');
+      } else if (btn.dataset.prevAriaLabel) {
+        btn.setAttribute('aria-label', btn.dataset.prevAriaLabel);
+        delete btn.dataset.prevAriaLabel;
+      }
+    }
+
+    async function handleCopy(btn: HTMLButtonElement): Promise<void> {
+      const ok = await copyTextToClipboard(btn.dataset.copy ?? '');
+      if (ok) {
+        setCopied(btn, true);
+        setCopyStatus('Copied to clipboard.', false);
+        window.clearTimeout(Number(btn.dataset.copyTimer));
+        btn.dataset.copyTimer = String(
+          window.setTimeout(() => {
+            setCopied(btn, false);
+            if (copyStatus!.textContent === 'Copied to clipboard.') setCopyStatus('', false);
+          }, RESET_MS),
+        );
+      } else {
+        setCopyStatus('Copy failed — select the value manually.', true);
+      }
+    }
+
+    root.addEventListener('click', (event) => {
+      const btn = (event.target as HTMLElement).closest<HTMLButtonElement>('.dsz-copy');
+      if (btn) void handleCopy(btn);
+    });
+
+    /* ------------------------------------------------------------------ */
+    /* Engine                                                              */
+    /* ------------------------------------------------------------------ */
+
+    let engine: EngineModule;
+    try {
+      engine = (await import('../lib/data-size/engine')) as unknown as EngineModule;
+    } catch (err) {
+      summaryEl.textContent = '';
+      resultsBox.innerHTML = errorCardHtml(
+        'Converter unavailable',
+        'The converter engine failed to load. Reload the page to try again.',
+        true,
+        'dsz-error-detail',
+      );
+      console.error('[DataSizeConverter] engine import failed:', err);
+      return;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* State machine: EMPTY | VALID | PENDING | INVALID                    */
+    /* ------------------------------------------------------------------ */
+
+    type EvalSource = 'type' | 'commit' | 'seed';
+    let state: 'empty' | 'valid' | 'pending' | 'invalid' = 'empty';
+    let evalTimer: number | undefined;
+    let errorTimer: number | undefined;
+    let lastWrittenHash: string | null = null;
+
+    function clearTimers(): void {
+      window.clearTimeout(evalTimer);
+      window.clearTimeout(errorTimer);
+    }
+
+    function setSummary(text: string, isError: boolean): void {
+      summaryEl!.textContent = text;
+      summaryEl!.classList.toggle('text-error-deep', isError);
+      summaryEl!.classList.toggle('text-mute', !isError);
+    }
+
+    function setDetection(text: string): void {
+      detectEl!.textContent = text;
+    }
+
+    function setFieldError(field: 'size' | 'rate' | null, detailId: string | null): void {
+      for (const [name, input, base] of [
+        ['size', sizeInput!, 'dsz-size-detect dsz-size-hint dsz-run-hint'],
+        ['rate', rateInput!, 'dsz-rate-hint'],
+      ] as const) {
+        const on = field === name;
+        input.classList.toggle('dsz-input--error', on);
+        if (on) {
+          input.setAttribute('aria-invalid', 'true');
+          input.setAttribute('aria-describedby', detailId ? `${base} ${detailId}` : base);
+        } else {
+          input.removeAttribute('aria-invalid');
+          input.setAttribute('aria-describedby', base);
+        }
+      }
+    }
+
+    function hideActions(): void {
+      shareBtn!.hidden = true;
+      shareBtn!.dataset.copy = '';
+      copyAllBtn!.hidden = true;
+      copyAllBtn!.dataset.copy = '';
+    }
+
+    function syncChips(): void {
+      const size = sizeInput!.value.trim();
+      const rate = rateInput!.value.trim();
+      chips.forEach((chip) => {
+        const match = (chip.dataset.size ?? '') === size && (chip.dataset.rate ?? '') === rate;
+        chip.setAttribute('aria-pressed', match ? 'true' : 'false');
+      });
+    }
+
+    function writeHash(fragment: string | null): void {
+      if (fragment === lastWrittenHash) return;
+      // Safari throttles replaceState (~100/30s) and throws — never let that break input.
+      try {
+        if (fragment) history.replaceState(null, '', fragment);
+        else history.replaceState(null, '', location.pathname + location.search);
+        lastWrittenHash = fragment;
+      } catch {
+        /* ignore */
+      }
+    }
+
+    function renderEmpty(): void {
+      state = 'empty';
+      clearTimers();
+      setFieldError(null, null);
+      hideActions();
+      setSummary('', false);
+      setDetection('');
+      syncChips();
+      resultsBox!.innerHTML =
+        '<p class="dsz-empty body-sm text-mute">Type a size — or tap an example — to see its ' +
+        'exact byte count, both unit ladders and how long it takes to move.</p>';
+    }
+
+    function showError(field: 'size' | 'rate', message: string, keep: string): void {
+      state = 'invalid';
+      clearTimers();
+      setFieldError(field, 'dsz-error-detail');
+      hideActions();
+      setSummary(`Invalid — ${message}`, true);
+      if (field === 'size') setDetection('');
+      resultsBox!.innerHTML =
+        errorCardHtml(
+          field === 'rate' ? 'Could not read that link speed' : 'Could not read that size',
+          message,
+          false,
+          'dsz-error-detail',
+        ) + keep;
+      syncChips();
+    }
+
+    function evaluate(source: EvalSource): void {
+      clearTimers();
+      const size = sizeInput!.value.trim();
+      const rate = rateInput!.value.trim();
+      if (size.length === 0 && rate.length === 0) {
+        renderEmpty();
+        if (source !== 'seed') writeHash(null);
+        return;
+      }
+
+      let result: ConvertResult | null = null;
+      try {
+        result = engine.convert(size);
+      } catch {
+        result = null;
+      }
+
+      if (!result || result.valid === false) {
+        const message = result?.error ?? 'Unexpected error while converting.';
+        if (source === 'type') {
+          // Mid-typing: hold the last card, no red yet — and never while the
+          // value still ends in a separator someone is about to complete.
+          state = 'pending';
+          setFieldError(null, null);
+          hideActions();
+          setSummary('', false);
+          setDetection('');
+          if (!/[.,_+\-\s]$/.test(sizeInput!.value)) {
+            errorTimer = window.setTimeout(() => showError('size', message, ''), ERROR_HOLD_MS);
+          }
+          return;
+        }
+        showError('size', message, '');
+        return;
+      }
+
+      let transfer: TransferResult | null = null;
+      if (rate.length > 0) {
+        try {
+          transfer = engine.transferTime(size, rate);
+        } catch {
+          transfer = null;
+        }
+      }
+
+      const notes = [...result.notes, ...(transfer?.valid ? transfer.notes : [])];
+      const ladder = engine.significantLadder(result.ladder ?? []);
+      const body =
+        exactBlockHtml(result) +
+        (transfer?.valid ? transferBlockHtml(transfer) : '') +
+        ladderBlockHtml(ladder) +
+        notesBlockHtml(notes) +
+        crossLinksHtml();
+
+      // Clear any stale field flag up front. When the rate is broken, showError re-applies it
+      // — either now or when the hold expires. Leaving it to the gated call below stranded the
+      // field red with an aria-describedby pointing at an error card that had been removed.
+      setFieldError(null, null);
+
+      // A broken rate never hides a good size answer — it annotates it.
+      if (transfer && transfer.valid === false) {
+        const message = transfer.error ?? 'Unexpected error while timing the transfer.';
+        if (source === 'type' && !/[.,_+\-\s/]$/.test(rateInput!.value)) {
+          errorTimer = window.setTimeout(() => showError('rate', message, body), ERROR_HOLD_MS);
+        } else if (source !== 'type') {
+          showError('rate', message, body);
+          return;
+        }
+      }
+
+      state = 'valid';
+      setDetection(result.detection ? `Detected: ${result.detection.caption}` : '');
+      setSummary(
+        transfer?.valid && transfer.summary ? transfer.summary : (result.summary ?? ''),
+        false,
+      );
+      resultsBox!.innerHTML = body;
+
+      copyAllBtn!.hidden = false;
+      copyAllBtn!.dataset.copy = buildCopyAll(result, transfer);
+
+      // A half-typed rate must not reach the address bar or last-input storage: a stored
+      // invalid rate boots the next visit straight into an error card with no interaction.
+      const shareable = !transfer || transfer.valid;
+      const fragment = engine.encodeState({ size, rate });
+      if (fragment.length > MAX_HASH_LEN || !shareable) {
+        shareBtn!.hidden = true;
+        shareBtn!.dataset.copy = '';
+      } else {
+        shareBtn!.hidden = false;
+        shareBtn!.dataset.copy =
+          location.origin + location.pathname + location.search + fragment;
+        if (source !== 'seed') {
+          writeHash(fragment);
+          recordToolLastInput(SLUG, fragment);
+        }
+      }
+      syncChips();
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Events                                                              */
+    /* ------------------------------------------------------------------ */
+
+    // Previous value per field, so a keystroke can be told apart from a paste.
+    const seen = new WeakMap<HTMLInputElement, string>();
+    function remember(): void {
+      seen.set(sizeInput!, sizeInput!.value);
+      seen.set(rateInput!, rateInput!.value);
+    }
+
+    for (const input of [sizeInput, rateInput]) {
+      input.addEventListener('input', () => {
+        const previous = seen.get(input) ?? '';
+        // A jump of more than one character is a paste, a cut or an autofill —
+        // a FINISHED value, not a half-typed one. The calm-error hold exists to
+        // avoid flashing red mid-composition; applying it to a paste would just
+        // make the tool look slow, so pasted values commit straight away.
+        const pasted = Math.abs(input.value.length - previous.length) > 1;
+        remember();
+        clearTimers();
+        syncChips();
+        if (pasted) {
+          evaluate('commit');
+          return;
+        }
+        evalTimer = window.setTimeout(() => evaluate('type'), DEBOUNCE_MS);
+      });
+      input.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        evaluate('commit');
+        // Dismiss the on-screen keyboard so the answer is visible.
+        if (window.matchMedia?.('(pointer: coarse)').matches) input.blur();
+      });
+      input.addEventListener('blur', () => {
+        if (state === 'pending') evaluate('commit');
+      });
+    }
+
+    chips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        sizeInput.value = chip.dataset.size ?? '';
+        rateInput.value = chip.dataset.rate ?? '';
+        remember();
+        evaluate('commit');
+      });
+    });
+
+    wireSnapshotUI({
+      slug: SLUG,
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      // Snapshot the same serialized state the share link carries, so a restored
+      // snapshot brings BOTH bands back, not just the size.
+      getValue: () =>
+        engine.encodeState({ size: sizeInput!.value.trim(), rate: rateInput!.value.trim() }),
+      setValue: (value) => {
+        const restored = engine.parseState(value);
+        sizeInput!.value = restored?.size ?? value;
+        rateInput!.value = restored?.rate ?? '';
+        remember();
+        evaluate('commit');
+      },
+    });
+
+    /* ------------------------------------------------------------------ */
+    /* First load: typed value → #q= → restored last input → first chip.   */
+    /* Seeding never writes the hash — only user actions do.               */
+    /* ------------------------------------------------------------------ */
+
+    const shared = engine.decodeState();
+    const restored = shared ? null : engine.parseState(getRestoredLastInput(SLUG) ?? '');
+
+    if (sizeInput.value.trim() || rateInput.value.trim()) {
+      remember();
+      evaluate('seed');
+    } else if (shared) {
+      sizeInput.value = shared.size ?? '';
+      rateInput.value = shared.rate ?? '';
+      remember();
+      evaluate('seed');
+    } else if (restored) {
+      sizeInput.value = restored.size ?? '';
+      rateInput.value = restored.rate ?? '';
+      remember();
+      evaluate('seed');
+    } else if (chips[0]) {
+      sizeInput.value = chips[0].dataset.size ?? '';
+      rateInput.value = chips[0].dataset.rate ?? '';
+      remember();
+      evaluate('seed');
+    } else {
+      renderEmpty();
+    }
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

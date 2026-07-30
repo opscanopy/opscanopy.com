@@ -657,6 +657,26 @@ export const tools: Tool[] = [
     ],
     accent: 'preview',
   },
+  {
+    slug: 'data-size-converter',
+    name: 'Data Size Converter',
+    tagline: 'GiB vs GB, bits vs bytes — and how long that transfer really takes.',
+    description:
+      'Convert data sizes between SI (kB, MB, GB) and IEC (KiB, MiB, GiB) units with exact BigInt maths, tell bits from bytes without guessing, and get the transfer time for any link speed. Pure client-side.',
+    status: 'planned',
+    category: 'Utilities',
+    keywords: [
+      'data size converter',
+      'gib to gb converter',
+      'mib to mb',
+      'is 1 tb 1000 or 1024 gb',
+      'bits to bytes converter',
+      'mbps to mb/s converter',
+      'file transfer time calculator',
+      'kibibyte vs kilobyte',
+    ],
+    accent: 'develop',
+  },
 ];
 
 export const liveTools = tools.filter((t) => t.status === 'live');
