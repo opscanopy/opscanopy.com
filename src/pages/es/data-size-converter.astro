@@ -1,0 +1,352 @@
+---
+/**
+ * Conversor de tamaños de datos — la página del tool data-size-converter
+ * (superficie SEO). GiB frente a GB, MiB frente a MB, bits frente a bytes y
+ * cuánto tarda de verdad una transferencia a una velocidad de enlace dada.
+ * Aritmética racional exacta con BigInt, todo del lado del cliente.
+ */
+import Shell from '../../components/Shell.astro';
+import DataSizeConverterPlayground from '../../components/DataSizeConverterPlayground.astro';
+import Button from '../../components/Button.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import ToolHero from '../../components/ToolHero.astro';
+import ToolPipeline from '../../components/ToolPipeline.astro';
+import FaqList from '../../components/FaqList.astro';
+import ToolCrossLinks from '../../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../../data/site';
+import { getTool } from '../../data/tools';
+import { softwareAppLd, faqPageLd } from '../../lib/jsonld';
+
+const tool = getTool('data-size-converter');
+const pagePath = '/data-size-converter/';
+const pageUrl = `${site.url}${pagePath}`;
+
+const faqs = [
+  {
+    q: '¿1 TB son 1000 GB o 1024 GB?',
+    a: 'Ambas cosas, según qué unidad se quiera decir — y ahí está exactamente la confusión. 1 TB son 1000 GB: los prefijos SI son potencias de 1000, así que 1 TB = 1 000 000 000 000 bytes. La unidad basada en 1024 tiene su propio nombre y símbolo: 1 TiB (tebibyte) = 1 099 511 627 776 bytes, que son 1024 GiB. Por tanto «1 TB = 1024 GB» mezcla dos sistemas. Si una herramienta muestra cifras basadas en 1024 con etiquetas SI —como hace Windows— en realidad está mostrando TiB y llamándolo TB.',
+  },
+  {
+    q: '¿Cuál es la diferencia entre GiB y GB?',
+    a: 'Un GB (gigabyte) son 10^9 = 1 000 000 000 bytes. Un GiB (gibibyte) son 2^30 = 1 073 741 824 bytes: un 7,37 % más. Los prefijos IEC (Ki, Mi, Gi, Ti…) existen precisamente para poder decir «basado en 1024» sin ambigüedad; ISO/IEC 80000-13 los estandarizó en 2008. Kubernetes, Java, ls -l y la mayoría del ecosistema Linux usan los valores binarios; los fabricantes de discos, el equipamiento de red y macOS usan los decimales.',
+  },
+  {
+    q: '¿Por qué mi disco de 1 TB solo muestra 931 GB?',
+    a: 'No falta nada: se están comparando dos unidades. El disco contiene realmente 1 000 000 000 000 bytes (1 TB, SI). Windows divide tres veces entre 1024 y etiqueta el resultado como «GB», dando 931,32 — que en realidad son 931,32 GiB. La brecha es 1024^4 / 1000^4 = 9,95 % por terabyte, unos 74 GB de capacidad aparente por cada TB comprado. Escriba 1 TB arriba y el escalón GiB mostrará 931,322575 directamente.',
+  },
+  {
+    q: '¿Cuál es la diferencia entre Mb y MB?',
+    a: 'Toda la diferencia está en las mayúsculas: una b minúscula significa bits, una B mayúscula significa bytes, y hay 8 bits en un byte. Así que 128 Mb son 16 MB, y un enlace de 100 Mbps mueve como máximo 12,5 MB/s. Los equipos de red y los operadores citan bits; los archivos y los discos se miden en bytes. Este conversor nunca adivina: lee la letra final exactamente como la escribió y le dice cuál de las dos ha pedido.',
+  },
+  {
+    q: '¿Cómo convierto Mbps a MB/s?',
+    a: 'Divida entre 8. 100 Mbps = 12,5 MB/s, 1 Gbps = 125 MB/s, 10 Gbps = 1250 MB/s. La división es exacta porque ambas unidades están basadas en 1000; no hay redondeo. Introduzca la velocidad en el campo «Link speed» y la herramienta imprime ambas formas una al lado de la otra, para que pueda citar cualquiera sin hacer cuentas de cabeza.',
+  },
+  {
+    q: '¿Cuánto tarda en transferirse 500 GB por 1 Gbps?',
+    a: '500 GB son 4 000 000 000 000 bits, y 1 Gbps son 1 000 000 000 bits por segundo, así que la respuesta a velocidad de línea es exactamente 4000 segundos: 1 h 6 min 40 s. Ese es el suelo teórico. Las cabeceras TCP/IP, TLS, el sistema de archivos y los tiempos de disco suelen costar entre un 5 y un 15 %, por eso la herramienta muestra además la fila al 90 % de la velocidad de línea: 1 h 14 min 4 s. Cite esa cuando planifique una ventana de migración.',
+  },
+  {
+    q: '¿Qué es un kibibyte?',
+    a: 'Un kibibyte (KiB) son 1024 bytes: la contraparte binaria del kilobyte (kB), que son 1000 bytes. El nombre es una contracción de «kilo binary byte». Sus hermanos son el mebibyte (MiB, 1024^2), el gibibyte (GiB, 1024^3), el tebibyte (TiB), el pebibyte (PiB), el exbibyte (EiB), el zebibyte (ZiB) y el yobibyte (YiB). Son la forma inequívoca de escribir tamaños basados en 1024, y este conversor siempre los muestra junto a los valores SI.',
+  },
+  {
+    q: '¿Por qué Kubernetes usa Mi y Gi en lugar de MB y GB?',
+    a: 'Porque la memoria se asigna en unidades binarias y Kubernetes quiso que la notación lo dijera. Una cantidad como 512Mi son 512 × 1024^2 = 536 870 912 bytes, mientras que 512M son 512 × 1000^2 = 512 000 000 bytes: un 7 % de diferencia en la misma línea del manifiesto. Kubernetes acepta una k minúscula para 1000 y Ki/Mi/Gi/Ti/Pi/Ei para el conjunto binario, y rechaza una K mayúscula suelta. Esta herramienta interpreta las formas de Kubernetes directamente, así que puede pegar 500Gi y ver si ese PVC cabe en un disco de 512 GB (no cabe: 500Gi son 536,87 GB).',
+  },
+  {
+    q: '¿Se sube algo de lo que escribo?',
+    a: 'No. La conversión es aritmética exacta con BigInt ejecutándose al 100 % en su navegador: no hay servidor, ni cuenta, ni registros. Los tamaños y velocidades que introduce nunca salen de su dispositivo. El botón opcional «Copy link» construye un fragmento #q= localmente, así que incluso un enlace compartido lleva sus datos en la URL y no a través de nosotros.',
+  },
+];
+
+const softwareApp = softwareAppLd({
+  name: 'Data Size Converter',
+  description:
+    'Conversor gratuito de tamaños de datos y velocidades de transferencia. GiB frente a GB, MiB frente a MB, bits frente a bytes, cantidades Mi/Gi de Kubernetes y cuánto tarda exactamente una transferencia a cualquier velocidad de enlace. Aritmética exacta con BigInt, 100 % en el navegador, sin registro.',
+  url: pageUrl,
+  subCategory: 'Utilities',
+  featureList: [
+    'Escaleras SI e IEC emparejadas (kB…YB frente a KiB…YiB) desde una sola entrada',
+    'Recuentos exactos de bits y bytes: nunca hay redondeo de coma flotante',
+    'Detección de bits frente a bytes con una nota concreta cuando Mb quería decir MB',
+    'Tiempo de transferencia a velocidad de línea y al 90 % de esa velocidad',
+    '100 % del lado del cliente, sin subidas, sin registro',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+const faqPage = faqPageLd(faqs);
+
+const pipeline = [
+  {
+    title: 'Leer el token exactamente como está escrito.',
+    body: 'Signo, número (con , _ o espacios como separadores de miles, . o , como decimal, exponentes e±N) y unidad. La letra final lo decide todo: b son bits, B son bytes, y una i antes significa basado en 1024.',
+  },
+  {
+    title: 'Convertir a un número exacto de bits.',
+    body: 'El valor se convierte en un número racional sobre BigInt: los dígitos que escribió como numerador, potencias de 10 y de 1024 como denominador. Sin double, sin redondeo, sin 6.044629098073146e24.',
+  },
+  {
+    title: 'Bajar por las dos escaleras.',
+    body: 'El mismo recuento de bits se expresa en cada unidad SI y en cada unidad IEC, escalón a escalón, con la divergencia entre ambas en porcentaje. Todo valor que necesite más de seis decimales se marca con ≈.',
+  },
+  {
+    title: 'Dividir entre la velocidad del enlace.',
+    body: 'Bits ÷ bits por segundo es el tiempo de transferencia en segundos: exacto y luego humanizado en días, horas, minutos y segundos. A su lado va siempre la fila al 90 % de la velocidad de línea, porque velocidad de línea no es rendimiento real.',
+  },
+];
+
+/** Escalones de la escalera de referencia SI ↔ IEC, exactos al byte. */
+const ladder = [
+  { n: 1, si: 'kB', siBytes: '1 000', iec: 'KiB', iecBytes: '1 024', gap: '+2.40%' },
+  { n: 2, si: 'MB', siBytes: '1 000 000', iec: 'MiB', iecBytes: '1 048 576', gap: '+4.86%' },
+  { n: 3, si: 'GB', siBytes: '1 000 000 000', iec: 'GiB', iecBytes: '1 073 741 824', gap: '+7.37%' },
+  {
+    n: 4,
+    si: 'TB',
+    siBytes: '1 000 000 000 000',
+    iec: 'TiB',
+    iecBytes: '1 099 511 627 776',
+    gap: '+9.95%',
+  },
+  {
+    n: 5,
+    si: 'PB',
+    siBytes: '1 000 000 000 000 000',
+    iec: 'PiB',
+    iecBytes: '1 125 899 906 842 624',
+    gap: '+12.59%',
+  },
+  {
+    n: 6,
+    si: 'EB',
+    siBytes: '1 000 000 000 000 000 000',
+    iec: 'EiB',
+    iecBytes: '1 152 921 504 606 846 976',
+    gap: '+15.29%',
+  },
+  {
+    n: 7,
+    si: 'ZB',
+    siBytes: '1 000 000 000 000 000 000 000',
+    iec: 'ZiB',
+    iecBytes: '1 180 591 620 717 411 303 424',
+    gap: '+18.06%',
+  },
+  {
+    n: 8,
+    si: 'YB',
+    siBytes: '1 000 000 000 000 000 000 000 000',
+    iec: 'YiB',
+    iecBytes: '1 208 925 819 614 629 174 706 176',
+    gap: '+20.89%',
+  },
+];
+
+/** Construida, no maquetada a mano, para que las columnas no se desalineen. */
+const ladderTable = [
+  `n  ${'SI'.padEnd(5)}${'bytes (1000^n)'.padEnd(34)}${'IEC'.padEnd(6)}${'bytes (1024^n)'.padEnd(34)}IEC is`,
+  ...ladder.map(
+    (row) =>
+      `${row.n}  ${row.si.padEnd(5)}${row.siBytes.padEnd(34)}${row.iec.padEnd(6)}${row.iecBytes.padEnd(34)}${row.gap}`,
+  ),
+].join('\n');
+
+const bitsTable = `b  = bit    B  = byte     8 bits = 1 byte
+kb = 1000 bits        kB = 1000 bytes       Kib = 1024 bits    KiB = 1024 bytes
+
+100 Mbps  = 12.5 MB/s        1 Gbps  = 125 MB/s        10 Gbps = 1250 MB/s
+128 Mb    = 16 MB            1 Kb    = 125 bytes       1 Kib   = 128 bytes
+
+Kubernetes: 512Mi = 536 870 912 B  ·  512M = 512 000 000 B  ·  bare K is invalid`;
+
+import type { Locale as __Locale } from '../../i18n/config';
+import { localizeKey as __l } from '../../i18n/utils';
+const __lang = (Astro.currentLocale ?? 'en') as __Locale;
+---
+
+<Shell
+  title="Conversor de tamaños — GiB frente a GB, bits y bytes"
+  description="Conversor gratuito de tamaños de datos: GiB frente a GB, MiB frente a MB, bits frente a bytes, Mi/Gi de Kubernetes y el tiempo exacto de transferencia. 100 % en tu navegador."
+  canonical="/data-size-converter"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <ToolHero
+    slug="data-size-converter"
+    eyebrow="Data Size Converter · Utilities"
+    badges={[
+      { label: 'Funciona en tu navegador', variant: 'live' },
+      { label: 'Aritmética exacta con BigInt', variant: 'neutral' },
+      { label: 'Sin registro', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">¿GiB o GB? El recuento exacto de bytes, en ambos sistemas.</Fragment>
+    <Fragment slot="lead">
+      Escriba un tamaño — <span class="code-mono text-ink" translate="no">1.5 GiB</span>,
+      <span class="code-mono text-ink" translate="no">500 GB</span>,
+      <span class="code-mono text-ink" translate="no">128 Mb</span>,
+      <span class="code-mono text-ink" translate="no">500Gi</span> — y vea su recuento exacto de bits
+      y bytes junto a cada unidad SI e IEC. Añada una velocidad de enlace y obtendrá también el tiempo
+      de transferencia, a velocidad de línea y a un 90 % realista. Aritmética entera exacta,
+      enteramente en su navegador.
+    </Fragment>
+  </ToolHero>
+
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pt-8 pb-20 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">Playground del conversor de tamaños de datos</h2>
+      <DataSizeConverterPlayground />
+    </div>
+  </section>
+
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">La brecha</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            1000 o 1024 — y 74 GB perdidos por terabyte.
+          </h2>
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            La industria nunca zanjó la cuestión. Los fabricantes de discos cuentan en miles, así que
+            una unidad vendida como <span class="code-mono text-ink" translate="no">1 TB</span>
+            contiene exactamente <span class="code-mono text-ink" translate="no"
+              >1 000 000 000 000</span
+            > bytes. Windows divide entre 1024 e imprime
+            <span class="code-mono text-ink" translate="no">931 GB</span>. Ninguno miente, y el ticket
+            de soporte que dice «pagué 1 TB y recibí 931 GB» es en realidad un error de unidades: un
+            9,95 % de la cifra, unos 74 GB por terabyte.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Pregunte a un LLM y obtendrá cualquiera de las dos convenciones afirmada con la misma
+            seguridad, a menudo en la misma respuesta:
+            <span class="code-mono text-ink" translate="no">1 TB = 1024 GB</span> en una frase y
+            <span class="code-mono text-ink" translate="no">1 TB = 10^12 bytes</span> en la siguiente.
+            El mismo lanzamiento de moneda decide si
+            <span class="code-mono text-ink" translate="no">500Gi</span> cabe en un disco de 512 GB (no
+            cabe: <span class="code-mono text-ink" translate="no">500Gi</span> son 536,87 GB) y si
+            <span class="code-mono text-ink" translate="no">128 Mb</span> son 16 MB o 128 MB.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Este conversor se niega a adivinar. Lee lo que usted escribió — una
+            <span class="code-mono text-ink" translate="no">b</span> final significa bits, una
+            <span class="code-mono text-ink" translate="no">B</span> significa bytes, una
+            <span class="code-mono text-ink" translate="no">i</span> significa 1024 —, le dice en qué
+            convención ha caído e imprime ambas escaleras lado a lado con la divergencia detallada.
+            Cada número es aritmética entera exacta, así que
+            <span class="code-mono text-ink" translate="no">5 YiB</span> muestra sus 25 dígitos en
+            lugar de un flotante disfrazado.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="El proceso"
+    heading="Cómo funciona."
+    lead="Cuatro pasos deterministas convierten un token corto en un recuento exacto de bytes, ambas escaleras de unidades y una ventana de transferencia — todo dentro de la pestaña de su navegador."
+    steps={pipeline}
+  />
+
+  <section id="reference" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Referencia de unidades</p>
+        <h2 class="display-lg mt-3 text-ink">La escalera completa, en ambos sentidos.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          Ocho escalones, dos convenciones. La brecha empieza en el 2,4 % para kilo y se acumula hasta
+          el 20,89 % en yotta — por eso la unidad que escriba importa más cuanto mayor es la cifra.
+        </p>
+      </div>
+      <div class="mx-auto mt-10 grid max-w-5xl gap-8">
+        <div class="min-w-0">
+          <h3 class="display-sm text-ink">SI (1000<sup>n</sup>) &harr; IEC (1024<sup>n</sup>)</h3>
+          <p class="body-sm mt-2 mb-4 text-pretty text-body">
+            Prefijos decimales a la izquierda, binarios a la derecha, exactos al byte en ambas
+            columnas.
+          </p>
+          <CodeBlock lang="text" filename="si-vs-iec.txt" code={ladderTable} />
+        </div>
+        <div class="min-w-0">
+          <h3 class="display-sm text-ink">Bits, bytes y velocidades</h3>
+          <p class="body-sm mt-2 mb-4 text-pretty text-body">
+            La otra mitad de la confusión: una letra de mayúscula o minúscula, y un factor de ocho.
+          </p>
+          <CodeBlock lang="text" filename="bits-vs-bytes.txt" code={bitsTable} />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="next" class="scroll-mt-24 bg-inverse text-inverse-fg">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+        <div class="min-w-0">
+          <p class="eyebrow !text-cyan">Siguiente paso</p>
+          <h2 class="display-lg mt-3 text-balance text-inverse-fg">
+            Ahora dimensione la carga que lo contiene.
+          </h2>
+          <p class="body-md mt-4 text-pretty text-white/70">
+            Cuando ya sabe qué es realmente <span class="code-mono" translate="no">500Gi</span>, la
+            siguiente pregunta suele ser un manifiesto: cuánta memoria pedir, qué límite fijar,
+            cuántas réplicas caben en el nodo. La Calculadora de recursos de Kubernetes hace esa
+            aritmética en las mismas unidades binarias — sin servidor, sin registro.
+          </p>
+          <div class="mt-7 flex flex-wrap items-center gap-3">
+            <Button href={__l('/kubernetes-resource-calculator', __lang)} variant="secondary">
+              Abrir la Calculadora de recursos de Kubernetes
+            </Button>
+            <Button href={__l('/subnet-calculator', __lang)} variant="secondary">
+              Abrir la Calculadora de subredes
+            </Button>
+          </div>
+        </div>
+        <CodeBlock
+          lang="text"
+          filename="sizes.txt"
+          code={`1.5 GiB   = 1 610 612 736 bytes   (1.610613 GB)
+1 TB      = 1 000 000 000 000 B    (931.322575 GiB)
+500Gi     = 536 870 912 000 bytes  (536.87 GB)
+128 Mb    = 16 000 000 bytes       (16 MB)
+
+500 GB over 1 Gbps = 4000 s = 1 h 6 min 40 s
+            at 90% = 4444.44 s = 1 h 14 min 4 s`}
+        />
+      </div>
+    </div>
+  </section>
+
+  <FaqList faqs={faqs} />
+
+  <ToolCrossLinks slug="data-size-converter" lang={__lang}>
+    <Fragment slot="lead">
+      El Data Size Converter es una de las herramientas de
+      <span translate="no">{site.name}</span> — una copa creciente de validadores, conversores y
+      testers que funcionan en el navegador y nunca tocan un servidor.
+    </Fragment>
+    <Fragment slot="links">
+      Herramientas relacionadas: la
+      <a class="link-inline" href={__l('/kubernetes-resource-calculator', __lang)}
+        >Calculadora de recursos de Kubernetes</a
+      > para requests y limits en <span class="code-mono" translate="no">Mi</span>/<span
+        class="code-mono"
+        translate="no">Gi</span
+      >, la
+      <a class="link-inline" href={__l('/subnet-calculator', __lang)}>Calculadora de subredes</a> y el
+      <a class="link-inline" href={__l('/cidr-checker', __lang)}>Comprobador CIDR</a> para aritmética
+      de espacios de direcciones, o la
+      <a class="link-inline" href={__l('/chmod-calculator', __lang)}>Calculadora chmod</a> — o explore
+      el <a class="link-inline" href={__l(navLinks[0].href, __lang)}>directorio de herramientas</a>
+      completo.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      Se ofrece tal cual por comodidad; confirme siempre las estimaciones de capacidad y
+      transferencia contra el dispositivo o el enlace que vaya a usar realmente.
+      <span translate="no">{site.name}</span> es gratuito y abierto.
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>
