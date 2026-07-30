@@ -635,6 +635,28 @@ export const tools: Tool[] = [
     ],
     accent: 'develop',
   },
+  {
+    slug: 'url-encoder-decoder',
+    name: 'URL Encoder / Decoder',
+    tagline: 'Percent-encode, decode, and parse query strings — with per-component RFC 3986 rules.',
+    description:
+      'Percent-encode a value for the position it actually lands in, decode one that came back mangled, or split a whole URL into its components and a decoded query-parameter table. Double-encoding, + vs %20, punycode hosts and repeated keys are named, not guessed. Pure client-side.',
+    status: 'planned',
+    category: 'Encoding',
+    keywords: [
+      'url encoder decoder',
+      'url decode online',
+      'url encode online',
+      'percent encoding',
+      'query string parser',
+      'parse query string online',
+      'urlencode',
+      'urldecode',
+      'encodeuricomponent vs encodeuri',
+      'double url encoding fix',
+    ],
+    accent: 'preview',
+  },
 ];
 
 export const liveTools = tools.filter((t) => t.status === 'live');

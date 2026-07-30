@@ -1,0 +1,422 @@
+---
+/**
+ * URL Encoder / Decoder — the url-encoder-decoder tool page (SEO surface).
+ * Percent-encode and decode text under per-component RFC 3986 rules, and split
+ * a URL into its WHATWG components plus a decoded query-parameter table.
+ */
+import Shell from '../../components/Shell.astro';
+import UrlCodecPlayground from '../../components/UrlCodecPlayground.astro';
+import Button from '../../components/Button.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import ToolHero from '../../components/ToolHero.astro';
+import ToolGapVisual from '../../components/ToolGapVisual.astro';
+import ToolPipeline from '../../components/ToolPipeline.astro';
+import FaqList from '../../components/FaqList.astro';
+import ToolCrossLinks from '../../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../../data/site';
+import { getTool } from '../../data/tools';
+import { softwareAppLd, faqPageLd } from '../../lib/jsonld';
+
+const tool = getTool('url-encoder-decoder');
+const pagePath = '/url-encoder-decoder/';
+const pageUrl = `${site.url}${pagePath}`;
+
+const faqs = [
+  {
+    q: 'Qual é a diferença entre encodeURI e encodeURIComponent?',
+    a: 'encodeURIComponent() escapa quase tudo, então é o que você usa em um único pedaço de URL — um valor de query, um segmento de caminho. encodeURI() deixa em paz os caracteres reservados : / ? # & = + e até o #, então é o que você usa em uma URL já montada que só precisa se livrar dos espaços e dos caracteres não ASCII. Passe uma URL inteira para encodeURIComponent e ela vira um bloco opaco (https%3A%2F%2F…); passe um único valor para encodeURI e qualquer & dentro dele silenciosamente se torna um separador de parâmetros. O modo Encode aqui expõe os dois: o padrão é a regra de componente, e a caixa «Whole URL» é encodeURI() byte a byte.',
+  },
+  {
+    q: 'Por que um espaço às vezes vira + e às vezes %20?',
+    a: 'Os dois estão certos, em lugares diferentes. A RFC 3986 só conhece %20. A convenção do + vem do envio de formulários HTML (application/x-www-form-urlencoded) e vale para corpos de formulário e, por hábito antigo, para query strings — por isso URLSearchParams decodifica + como espaço, mas o deixa intacto dentro de um caminho. Ou seja: %20 é sempre seguro, enquanto + só é espaço se quem produziu o valor decidiu assim. O modo Decode mostra qual convenção foi aplicada e deixa você inverter, para distinguir «Ada+Lovelace» o nome de «Ada Lovelace» as duas palavras.',
+  },
+  {
+    q: 'O que é codificação percentual, exatamente?',
+    a: 'A codificação percentual substitui um byte por um % seguido daquele byte escrito em dois dígitos hexadecimais. Uma URL só pode carregar um conjunto pequeno de caracteres ASCII, então todo o resto — um espaço, um acento, um emoji ou um caractere reservado usado como dado — primeiro é convertido em bytes UTF-8 e depois cada byte é escrito como %XX. é tem dois bytes, então vira %C3%A9. Decodificar faz o inverso: juntar os bytes e lê-los de volta como UTF-8.',
+  },
+  {
+    q: 'Como conserto uma URL codificada duas vezes (%2520)?',
+    a: 'Decodifique duas vezes. %2520 significa que o % de %20 também foi codificado, virando %25 — o que acontece quando um cliente chama encodeURIComponent() em um valor que já estava codificado: o clássico bug do redirect_uri do OAuth. Esta ferramenta detecta isso: cole o valor no modo Decode e ela avisa que a primeira passada ainda contém escapes, mostra o que uma segunda passada produz e oferece o botão «Decode again». O conserto de verdade é mais acima: codificar exatamente uma vez, no momento em que o valor entra na URL.',
+  },
+  {
+    q: 'Por que meu texto decodificado mostra � em vez de um acento?',
+    a: 'Porque os bytes escapados não são UTF-8 válido. %C3%A9 é uma sequência de dois bytes bem formada e decodifica para é, mas %E9 sozinho é o byte Latin-1 (ISO-8859-1) de é e não é UTF-8 legal, então decodifica para U+FFFD, o caractere de substituição. Esta ferramenta nomeia os bytes problemáticos em vez de lançar o URIError que decodeURIComponent() lançaria, o que diz a você que o valor foi codificado a partir da codificação de origem errada, em vez de deixar você no escuro.',
+  },
+  {
+    q: 'O que acontece quando uma query string repete a mesma chave?',
+    a: 'Nada no padrão de URL diz qual vence, então aqui cada linha é listada e as posteriores são marcadas como duplicadas. Na prática, PHP e Express ficam com o último valor, r.URL.Query() do Go devolve todos, o ASP.NET junta com vírgulas, e o Rails só agrupa quando a chave termina em []. Essa discordância é justamente o motivo pelo qual uma ferramenta deve mostrar todos os valores em vez de escolher um em silêncio.',
+  },
+  {
+    q: 'O que é punycode e por que meu host mudou?',
+    a: 'Punycode é a codificação ASCII de um nome de domínio internacionalizado. O DNS só carrega rótulos ASCII, então münchen.example é convertido para xn--mnchen-3ya.example antes de qualquer resolução — e essa forma ASCII também é a que um certificado TLS precisa casar. O parser aqui mostra o host convertido com o nome que você digitou logo abaixo, para você identificar um domínio sósia. Ele deliberadamente não converte punycode de volta para Unicode: exibir como Unicode bonitinho um nome fornecido por um atacante é exatamente como funciona o phishing homográfico.',
+  },
+  {
+    q: 'Quais caracteres nunca precisam ser codificados em uma URL?',
+    a: 'O conjunto não reservado da RFC 3986 §2.3: A–Z, a–z, 0–9 e as quatro marcas - . _ ~. Eles são seguros em qualquer posição e nunca devem ser codificados sem motivo, porque %2D e - são a mesma URL e recodificá-los quebra esquemas de assinatura que fazem hash da string bruta. Repare: encodeURIComponent() também deixa em paz ! \' ( ) *, uma herança do antigo conjunto «mark» da RFC 2396. A RFC 3986 lista esses cinco como subdelimitadores, então o modo de componente aqui os escapa e avisa quando discorda da função nativa do navegador.',
+  },
+  {
+    q: 'Um ponto e vírgula pode separar parâmetros de query?',
+    a: 'Não mais. O HTML já sugeriu que servidores aceitassem ; ao lado de & como separador de parâmetros, e esse conselho foi retirado da especificação em 2014. Navegadores e URLSearchParams nunca trataram o ; como separador, então a=1;b=2 é um único parâmetro chamado a cujo valor é o literal 1;b=2. Esta ferramenta reproduz esse comportamento e avisa quando vê um ponto e vírgula, porque um backend legado pode ainda dividir por ele e discordar do navegador que está na frente dele.',
+  },
+  {
+    q: 'É seguro colar uma URL que contém um token?',
+    a: 'Sim: a ferramenta inteira é uma página estática sem servidor por trás. Analisar, codificar e decodificar acontecem na sua aba, nada é enviado, não há log e não há conta. Isso pesa mais aqui do que na maioria das ferramentas, porque query strings são exatamente onde acabam tokens de acesso, URLs assinadas, ids de sessão e endereços de e-mail. Se quiser uma segunda opinião, abra o painel de rede das ferramentas de desenvolvedor enquanto digita: não há requisição alguma para ver.',
+  },
+];
+
+const softwareApp = softwareAppLd({
+  name: 'URL Encoder / Decoder & Query-String Parser',
+  description:
+    'Codificador e decodificador de URL grátis com parser de query string. Codificação percentual pela RFC 3986, conserto de dupla codificação e separação de qualquer URL em componentes — 100% no navegador.',
+  url: pageUrl,
+  subCategory: 'Encoding',
+  featureList: [
+    'Codificação percentual para um componente de URL ou uma URL inteira (RFC 3986)',
+    'Decodificação com + como espaço, detecção de dupla codificação e diagnósticos no nível do byte',
+    'Separação de uma URL em componentes WHATWG e em uma tabela de parâmetros decodificada',
+    '100% no lado do cliente, sem upload, sem cadastro',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+const faqPage = faqPageLd(faqs);
+
+const pipeline = [
+  {
+    title: 'Primeiro, dividir o texto bruto.',
+    body: 'A entrada é cortada nos seus próprios ? e # antes de qualquer parser tocá-la, para que um diagnóstico possa apontar o caractere exato: o padrão de URL remove tabulações e quebras de linha em silêncio.',
+  },
+  {
+    title: 'Decodificar cada parte sozinha.',
+    body: 'Nomes e valores são decodificados separadamente, então um %26 dentro de um valor nunca vira separador e um %3D nunca divide um nome.',
+  },
+  {
+    title: 'Ler os bytes como UTF-8.',
+    body: 'Escapes viram bytes e bytes viram texto. Uma sequência malformada é nomeada byte por byte em vez de lançar o URIError que decodeURIComponent() lançaria.',
+  },
+  {
+    title: 'Normalizar como um navegador e mostrar os dois.',
+    body: 'O parser WHATWG fornece o que qualquer cliente HTTP realmente vai enviar — host em punycode, porta padrão descartada — com o seu texto bruto ao lado.',
+  },
+];
+
+const reserved = [
+  {
+    ch: '/',
+    role: 'gen-delim',
+    path: 'Precisa ser codificado (%2F), senão divide o segmento',
+    query: 'Seguro como dado, mas alguns proxies normalizam',
+  },
+  {
+    ch: '?',
+    role: 'gen-delim',
+    path: 'Precisa ser codificado (%3F): ele abre a query',
+    query: 'Seguro depois do primeiro ?',
+  },
+  {
+    ch: '#',
+    role: 'gen-delim',
+    path: 'Precisa ser codificado (%23)',
+    query: 'Precisa ser codificado (%23): ele abre o fragmento',
+  },
+  {
+    ch: '[  ]',
+    role: 'gen-delim',
+    path: 'Precisa ser codificado (%5B %5D)',
+    query: 'Precisa ser codificado, mesmo em um nome no estilo tags[]',
+  },
+  { ch: ':  @', role: 'gen-delim', path: 'Seguro após o primeiro segmento', query: 'Seguro' },
+  {
+    ch: '&',
+    role: 'sub-delim',
+    path: 'Seguro como dado',
+    query: 'Precisa ser codificado (%26): ele separa parâmetros',
+  },
+  {
+    ch: '=',
+    role: 'sub-delim',
+    path: 'Seguro como dado',
+    query: 'Precisa ser codificado (%3D) no nome; seguro no valor',
+  },
+  {
+    ch: '+',
+    role: 'sub-delim',
+    path: 'Seguro como dado',
+    query: 'Precisa ser codificado (%2B): cru, ele é lido como espaço',
+  },
+  {
+    ch: ';',
+    role: 'sub-delim',
+    path: 'Seguro como dado',
+    query: 'Seguro hoje, mas um backend legado pode dividir por ele',
+  },
+  {
+    ch: "!  $  '  (  )  *  ,",
+    role: 'sub-delim',
+    path: 'Seguro como dado',
+    query: 'Seguro como dado — mas encodeURIComponent() discorda em ! \' ( ) *',
+  },
+  {
+    ch: '%',
+    role: 'marcador de escape',
+    path: 'Sempre %25',
+    query: 'Sempre %25: é de um % cru que nasce a dupla codificação',
+  },
+  {
+    ch: 'space',
+    role: 'não permitido',
+    path: '%20',
+    query: '%20, ou + em um corpo de formulário',
+  },
+];
+
+const safeSets = `mode                       left alone (everything else → %XX)
+
+RFC 3986 component         A-Z a-z 0-9 - . _ ~
+RFC 3986 whole URL         …plus  : / ? # [ ] @ ! $ & ' ( ) * + , ; =
+form-urlencoded            A-Z a-z 0-9 * - . _        (space → +)
+encodeURIComponent()       A-Z a-z 0-9 - . _ ~ ! ' ( ) *
+                                                 ^^^^^^^^^^
+                                       RFC 2396 leftovers — encoded here`;
+
+const doubleEncodeExample = `once   https%3A%2F%2Fapp.example.com%2Fcb   →  https://app.example.com/cb
+twice  https%253A%252F%252Fapp.example.com  →  https%3A%2F%2Fapp.example.com
+                 ^^^                            still escaped: decode again
+
+space  %20    →  " "
+       %2520  →  "%20"  →  " "        (the % became %25)`;
+import type { Locale as __Locale } from '../../i18n/config';
+import { localizeKey as __l } from '../../i18n/utils';
+const __lang = (Astro.currentLocale ?? 'en') as __Locale;
+---
+
+<Shell
+  title="Codificador / Decodificador de URL — grátis"
+  description="Codificador e decodificador de URL grátis com parser de query string. Codificação percentual RFC 3986, conserto de dupla codificação, separação de URLs. 100% no seu navegador."
+  canonical="/url-encoder-decoder"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <ToolHero
+    eyebrow="URL Encoder / Decoder · Encoding"
+    badges={[
+      { label: 'Roda no seu navegador', variant: 'live' },
+      { label: 'RFC 3986 por componente', variant: 'neutral' },
+      { label: 'Sem cadastro', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">Codificador / Decodificador de URL &amp; parser de query string</Fragment>
+    <Fragment slot="lead">
+      Codifique um valor do jeito que a posição dele realmente exige, decodifique um que voltou
+      estragado, ou cole uma URL inteira e leia cada parâmetro de query com o texto bruto ao lado.
+      Dupla codificação, <span class="code-mono text-ink" translate="no">+</span> contra
+      <span class="code-mono text-ink" translate="no">%20</span>, hosts em punycode e chaves repetidas
+      são todos apontados pelo nome — no lado do cliente, sem enviar nada.
+    </Fragment>
+  </ToolHero>
+
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pt-8 pb-20 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">
+        Playground do codificador, decodificador e parser de query string de URL
+      </h2>
+      <UrlCodecPlayground />
+    </div>
+  </section>
+
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">A lacuna</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            Um botão e um palpite escondido sobre onde o valor vai parar.
+          </h2>
+          <ToolGapVisual />
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            Quase toda caixa de «URL encode» da web é um único botão ligado a
+            <span class="code-mono text-ink" translate="no">encodeURIComponent()</span>, e nunca diz
+            isso. Essa é a regra certa para um valor de query e a errada para uma URL que você já
+            montou: dê um link a ela e cada
+            <span class="code-mono text-ink" translate="no">:</span> e
+            <span class="code-mono text-ink" translate="no">/</span> volta como
+            <span class="code-mono text-ink" translate="no">%3A</span> e
+            <span class="code-mono text-ink" translate="no">%2F</span>. Codifique duas vezes sem
+            querer e você tem <span class="code-mono text-ink" translate="no">%2520</span>, o bug que
+            quebra as idas e voltas do
+            <span class="code-mono text-ink" translate="no">redirect_uri</span> do OAuth e deixa um
+            callback de webhook em 404 às 3 da manhã.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Esta ferramenta torna a escolha explícita em vez de esconder. Regras de componente ou de
+            URL inteira, <span class="code-mono text-ink" translate="no">+</span> ou
+            <span class="code-mono text-ink" translate="no">%20</span> e — no modo Parse — os
+            componentes que um navegador vai realmente enviar ao lado do texto bruto que você colou,
+            com cada parâmetro decodificado e etiquetado: duplicado, chave sem valor, valor vazio,
+            codificado duas vezes.
+          </p>
+          <p class="body-md text-pretty text-body">
+            É também o motivo para não perguntar a um chatbot. Um modelo de linguagem a quem se pede
+            «codifique isto para URL» está prevendo caracteres: ele mistura
+            <span class="code-mono text-ink" translate="no">+</span> e
+            <span class="code-mono text-ink" translate="no">%20</span> na mesma string, esquece que
+            <span class="code-mono text-ink" translate="no">é</span> tem dois bytes e «conserta» com
+            toda a confiança um valor duplamente codificado codificando-o uma terceira vez. Esta
+            página roda o algoritmo real, byte a byte, e fixa cada regra que aplica com um vetor de
+            teste — para você conferir a resposta que recebeu contra a especificação, e não contra um
+            parágrafo confiante.
+          </p>
+          <p class="body-sm text-mute">
+            Trabalhando em um token em vez de uma URL? O
+            <a class="link-inline" href={__l('/jwt-decoder', __lang)}>JWT Decoder</a> divide e
+            decodifica em base64url um JWT, e o
+            <a class="link-inline" href={__l('/base64-encoder-decoder', __lang)}
+              >Codificador / Decodificador Base64</a
+            > dá conta do alfabeto <span class="code-mono" translate="no">base64url</span>.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="O pipeline"
+    heading="Como funciona."
+    lead="Quatro passos determinísticos, todos dentro da sua aba: o texto bruto é diagnosticado antes de o parser de URL ter permissão para normalizar qualquer coisa."
+    steps={pipeline}
+  />
+
+  <section id="reference" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Referência</p>
+        <h2 class="display-lg mt-3 text-ink">Caracteres reservados, por componente.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          A RFC 3986 não tem uma lista única de caracteres «inseguros». Um caractere é reservado
+          porque <em>significa</em> algo em uma posição específica — então se ele precisa ser escapado
+          depende inteiramente de onde ele está.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 grid max-w-5xl items-start gap-8 lg:grid-cols-[1.15fr_0.85fr]">
+        <div class="card-soft overflow-x-auto">
+          <table class="uc-table w-full text-left">
+            <thead>
+              <tr>
+                <th class="eyebrow px-4 py-3">Caractere</th>
+                <th class="eyebrow px-4 py-3">Em um segmento de caminho</th>
+                <th class="eyebrow px-4 py-3">Em nome / valor de query</th>
+              </tr>
+            </thead>
+            <tbody>
+              {
+                reserved.map((r) => (
+                  <tr class="border-t border-hairline align-top">
+                    <td class="px-4 py-2.5">
+                      <span class="code-mono text-ink" translate="no">{r.ch}</span>
+                      <span class="caption mt-0.5 block text-mute">{r.role}</span>
+                    </td>
+                    <td class="px-4 py-2.5 text-body">{r.path}</td>
+                    <td class="px-4 py-2.5 text-body">{r.query}</td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="min-w-0 space-y-8">
+          <div>
+            <h3 class="display-sm text-ink">O que cada modo deixa em paz</h3>
+            <p class="body-sm mt-2 mb-4 text-pretty text-body">
+              O conjunto seguro é toda a diferença entre os modos — e entre a RFC 3986 e a função
+              nativa do navegador.
+            </p>
+            <CodeBlock lang="text" filename="safe-sets" code={safeSets} />
+          </div>
+          <div>
+            <h3 class="display-sm text-ink">Codificado uma vez contra duas</h3>
+            <p class="body-sm mt-2 mb-4 text-pretty text-body">
+              Um valor duplamente codificado não está corrompido: está correto, só uma camada fundo
+              demais.
+            </p>
+            <CodeBlock lang="text" filename="double-encoding" code={doubleEncodeExample} />
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="next" class="scroll-mt-24 bg-inverse text-inverse-fg">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+        <div class="min-w-0">
+          <p class="eyebrow !text-cyan">Próximo passo</p>
+          <h2 class="display-lg mt-3 text-balance text-inverse-fg">
+            O parâmetro que você acabou de decodificar é um token. Leia ele.
+          </h2>
+          <p class="body-md mt-4 text-pretty text-white/70">
+            Query strings carregam tokens de acesso, URLs assinadas e ids de sessão. Depois que um
+            valor está decodificado, o <span translate="no">JWT Decoder</span> divide e verifica um
+            token <span translate="no">base64url</span>, e o
+            <span translate="no">Base64 Encoder / Decoder</span> cuida de tudo que está apenas
+            codificado e não assinado — os dois, como esta página, inteiramente no seu navegador.
+          </p>
+          <div class="mt-7 flex flex-wrap items-center gap-3">
+            <Button href={__l('/jwt-decoder', __lang)} variant="secondary">Abrir o JWT Decoder</Button>
+            <Button href={__l('/base64-encoder-decoder', __lang)} variant="secondary">Abrir o Base64</Button>
+          </div>
+        </div>
+        <CodeBlock
+          lang="text"
+          filename="callback.txt"
+          code={`?state=abc%3D%3D          →  state    = abc==
+&channel=%23alerts       →  channel  = #alerts
+&next=%252Fsettings      →  next     = %2Fsettings   ← decode again
+&utm_source=a&utm_source=b  →  two rows, no winner`}
+        />
+      </div>
+    </div>
+  </section>
+
+  <FaqList faqs={faqs} />
+
+  <ToolCrossLinks lang={__lang}>
+    <Fragment slot="lead">
+      O URL Encoder / Decoder é uma das ferramentas do
+      <span translate="no">{site.name}</span> — uma copa crescente de validadores, conversores e
+      testadores que rodam no navegador e nunca tocam um servidor.
+    </Fragment>
+    <Fragment slot="links">
+      Ferramentas de codificação relacionadas: o
+      <a class="link-inline" href={__l('/base64-encoder-decoder', __lang)}>Codificador / Decodificador Base64</a>,
+      o <a class="link-inline" href={__l('/jwt-decoder', __lang)}>JWT Decoder</a> e o
+      <a class="link-inline" href={__l('/slugify', __lang)}>Slugify</a>, para transformar um título em
+      um caminho limpo, ou explore o
+      <a class="link-inline" href={__l(navLinks[0].href, __lang)}>diretório completo de ferramentas</a>.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      Fornecido como está, por conveniência; codificação percentual é uma codificação, não uma
+      proteção — um token em uma query string continua sendo um token em um arquivo de log.
+      <span translate="no">{site.name}</span> é livre e gratuito.
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>
+
+<style>
+  @reference "../../styles/global.css";
+
+  .uc-table th {
+    font-weight: inherit;
+    white-space: nowrap;
+  }
+  .uc-table td {
+    font-size: 13px;
+    line-height: 18px;
+  }
+  .uc-table .code-mono {
+    font-size: 13px;
+    white-space: pre;
+  }
+</style>

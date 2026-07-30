@@ -128,6 +128,22 @@ export const TOOL_FIXTURES: ToolFixture[] = [
     inputSelector: '#jy-input .cm-content',
     resultsSelector: '#jy-results',
   },
+  {
+    // Tool 2 — URL Encoder / Decoder + Query-String Parser.
+    // `calmErrorString` is pinned by `src/lib/url-codec/engine.test.ts`
+    // ("bad-escape names the sequence and the index"); index 18 is where `%ZZ`
+    // starts in `invalidInput`, counted against the whole input.
+    slug: 'url-encoder-decoder',
+    family: 'textarea',
+    hashKey: '#in=',
+    seededResultString: '#alerts',
+    invalidInput: 'https://x.test/?a=%ZZ',
+    calmErrorString:
+      'Invalid percent-escape "%ZZ" at index 18 — "%" must be followed by two hex digits (0-9, A-F).',
+    xssPayload: 'https://x.test/?q=<img src=x onerror=alert(1)>',
+    inputSelector: '#uc-input',
+    resultsSelector: '#uc-results',
+  },
 ];
 
 /** Fixtures for one family — used by the family-gated journey steps. */

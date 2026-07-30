@@ -70,6 +70,7 @@ const TOOL_PATHS = {
     lib: 'json-yaml-converter',
     component: 'JsonYamlConverterPlayground.astro',
   },
+  'url-encoder-decoder': { lib: 'url-codec', component: 'UrlCodecPlayground.astro' },
 };
 
 const missing = liveTools.map((t) => t.slug).filter((slug) => !TOOL_PATHS[slug]);
