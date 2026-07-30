@@ -18,16 +18,26 @@
  * ── COPY-PASTE SNIPPET — add one entry, at the end of TOOL_FIXTURES ──────────
  *
  *   {
- *     slug: 'json-yaml-converter',
+ *     slug: 'my-tool',
  *     family: 'cm',
- *     hashKey: '#in=',
- *     seededResultString: 'replicas: 3',
- *     invalidInput: '{"a": 1,,}',
- *     calmErrorString: 'Unexpected token , in JSON at position 8',
- *     xssPayload: '{"name": "<img src=x onerror=alert(1)>"}',
- *     inputSelector: '#jy-input .cm-content',
- *     resultsSelector: '#jy-results',
+ *     hashKey: '#s=',
+ *     seededResultString: 'something the first example always renders',
+ *     invalidInput: 'input the engine rejects with a specific diagnostic',
+ *     calmErrorString: 'the engine diagnostic, byte-for-byte from its vectors',
+ *     xssPayload: 'valid input carrying <img src=x onerror=alert(1)>',
+ *     inputSelector: '#mt-input .cm-content',
+ *     resultsSelector: '#mt-results',
  *   },
+ *
+ * Two traps this snippet used to walk into, both now real entries below:
+ *   - `calmErrorString` must NOT be a raw `JSON.parse` message. V8 rewords them
+ *     between Node releases ("Unexpected token , in JSON at position 8" became
+ *     "Expected double-quoted property name in JSON at position 8 (line 1
+ *     column 9)"), so engines here translate parse errors into their own stable
+ *     wording — pin THAT.
+ *   - `invalidInput` and `xssPayload` must be valid/invalid in the direction the
+ *     BOOT SEED selects, not in whichever direction reads more naturally. A
+ *     bidirectional tool evaluates them against the seeded direction only.
  *
  * ── FIELD RULES (get these wrong and the journeys assert the wrong thing) ────
  *
@@ -100,7 +110,25 @@ export interface ToolFixture {
 }
 
 /** Append one entry per tool, at the end. Empty = every journey is a no-op. */
-export const TOOL_FIXTURES: ToolFixture[] = [];
+export const TOOL_FIXTURES: ToolFixture[] = [
+  {
+    // Boot seeds example 1 (Kubernetes Deployment → JSON), so the seeded
+    // direction is YAML → JSON. `invalidInput` and `xssPayload` are therefore
+    // both written as YAML: a payload that is invalid in the OTHER direction
+    // would produce a different diagnostic than the one pinned here.
+    slug: 'json-yaml-converter',
+    family: 'cm',
+    hashKey: '#s=',
+    seededResultString: '"replicas": 3',
+    // Single-line on purpose: J2 types this with pressSequentially, and a
+    // multi-line burst into CodeMirror also fights auto-indent.
+    invalidInput: 'key: !Ref Thing',
+    calmErrorString: 'Unknown YAML tag "!Ref"',
+    xssPayload: 'name: "<img src=x onerror=alert(1)>"',
+    inputSelector: '#jy-input .cm-content',
+    resultsSelector: '#jy-results',
+  },
+];
 
 /** Fixtures for one family — used by the family-gated journey steps. */
 export function byFamily(family: ToolFamily): ToolFixture[] {

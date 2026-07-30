@@ -1,0 +1,1766 @@
+---
+/**
+ * JsonYamlConverterPlayground — the interactive JSON ↔ YAML Converter island.
+ *
+ * ONE CodeMirror editor (the input) plus a read-only, fully escaped output pane.
+ * The editor's language rides a CM `Compartment` and follows the direction:
+ * YAML highlighting for YAML → JSON, JSON highlighting for JSON → YAML. Three
+ * controls sit above it — a direction radiogroup, an indent radiogroup, and a
+ * "Sort keys" checkbox — and all three ride the `#s=` deep link and snapshots,
+ * so a shared URL restores the exact conversion, not just the text.
+ *
+ * The differentiator, and the reason the results pane has two halves: the
+ * converted document AND a report of everything the conversion cost. Comments,
+ * anchors, merge keys, timestamps, multi-document streams and out-of-range
+ * integers all vanish on the way through, and every one of them is named.
+ *
+ * UX contract (CLAUDE.md, ported from CidrCheckerPlayground /
+ * SubnetCalculatorPlayground): example chips at `var(--radius-pill)`, one
+ * ~180ms debounce with the exact hint line, a ~600ms calm-error hold before
+ * anything goes red, per-row copy + `data-copy-all` + `data-copy-link`, a
+ * single visible `role="status"` summary plus an sr-only copy-status span, a
+ * results container that is NOT `aria-live`, glossary captions instead of
+ * tooltips, and `escapeHtml()` on every injected value.
+ *
+ * Runtime contract (lazy-imported inside the boot closure so the engine and
+ * CodeMirror code-split away from the page shell):
+ *   ../lib/json-yaml-converter/engine   → convert, detectFormat,
+ *                                         encodeState, decodeState
+ *   ../lib/json-yaml-converter/examples → examples: ConverterExample[]
+ *
+ * Only the example LABELS are read at build time (for server-rendered chips, so
+ * they exist before hydration); the chip payloads come from the lazy import by
+ * index, which keeps multi-line YAML out of HTML attributes entirely.
+ */
+import { examples } from '../lib/json-yaml-converter/examples';
+---
+
+<section class="jy-pg" aria-label="JSON ↔ YAML Converter playground">
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Example chips ────────────────────────────────────────────────── */}
+    <div class="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:px-5">
+      <span class="eyebrow shrink-0">Examples</span>
+      <div id="jy-chips" class="jy-chips" role="group" aria-label="Examples">
+        {
+          examples.map((ex, i) => (
+            <button
+              type="button"
+              class="jy-chip"
+              data-example-idx={String(i)}
+              aria-pressed="false"
+            >
+              {ex.label}
+            </button>
+          ))
+        }
+      </div>
+    </div>
+
+    {/* ── Controls: direction, indent, sort ────────────────────────────── */}
+    <div class="jy-controls border-b border-hairline px-4 py-4 sm:px-5">
+      <div class="jy-control">
+        <span class="eyebrow" id="jy-dir-label">Direction</span>
+        <div class="jy-seg" role="radiogroup" aria-labelledby="jy-dir-label">
+          <button
+            id="jy-dir-y2j"
+            type="button"
+            role="radio"
+            aria-checked="true"
+            tabindex="0"
+            class="jy-seg__btn code-mono"
+          >
+            YAML → JSON
+          </button>
+          <button
+            id="jy-dir-j2y"
+            type="button"
+            role="radio"
+            aria-checked="false"
+            tabindex="-1"
+            class="jy-seg__btn code-mono"
+          >
+            JSON → YAML
+          </button>
+        </div>
+        <p class="jy-gloss caption text-mute">
+          Every JSON file is already valid YAML — YAML 1.2 is a superset of JSON. The reverse is
+          not true, which is why the direction is yours to pick.
+        </p>
+        <button id="jy-switch" type="button" class="jy-switch" hidden></button>
+      </div>
+
+      <div class="jy-control">
+        <span class="eyebrow" id="jy-indent-label">Indent</span>
+        <div class="jy-seg" role="radiogroup" aria-labelledby="jy-indent-label">
+          <button
+            id="jy-indent-2"
+            type="button"
+            role="radio"
+            aria-checked="true"
+            tabindex="0"
+            class="jy-seg__btn code-mono"
+          >
+            2 spaces
+          </button>
+          <button
+            id="jy-indent-4"
+            type="button"
+            role="radio"
+            aria-checked="false"
+            tabindex="-1"
+            class="jy-seg__btn code-mono"
+          >
+            4 spaces
+          </button>
+        </div>
+      </div>
+
+      <div class="jy-control">
+        <span class="eyebrow" id="jy-keys-label">Keys</span>
+        <label class="jy-check" for="jy-sort">
+          <input type="checkbox" id="jy-sort" />
+          <span>Sort keys</span>
+        </label>
+        <p class="jy-gloss caption text-mute">
+          Off by default: the order you wrote is kept, except for integer-like keys.
+        </p>
+      </div>
+    </div>
+
+    {/* ── Input editor (dark instrument slab) ──────────────────────────── */}
+    <div class="jy-pane bg-inverse">
+      <div class="jy-pane__bar">
+        <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+          <span class="jy-pane__dot"></span>
+          <span class="jy-pane__dot"></span>
+          <span class="jy-pane__dot"></span>
+        </span>
+        <span id="jy-input-name" class="jy-pane__name code-mono">input.yaml</span>
+        <span class="jy-pane__tag code-mono">input</span>
+      </div>
+      <div id="jy-input" class="jy-editor"></div>
+    </div>
+
+    {/* ── Hints + snapshots ────────────────────────────────────────────── */}
+    <div class="border-b border-hairline px-4 pt-3 pb-4 sm:px-5">
+      <p id="jy-run-hint" class="jy-hint caption text-mute">
+        Results update as you type — press Enter to run now.
+      </p>
+      <p class="jy-hint caption text-mute">
+        Press <kbd class="jy-kbd">Esc</kbd> to release keyboard focus from the editor;
+        <kbd class="jy-kbd">⌘</kbd>/<kbd class="jy-kbd">Ctrl</kbd> + <kbd class="jy-kbd">Enter</kbd>
+        converts and leaves the editor. Nothing you paste is uploaded.
+      </p>
+      <p class="jy-hint caption text-mute">
+        An <strong class="font-medium text-body">anchor</strong> (<span class="code-mono">&amp;name</span>)
+        marks a value so an <strong class="font-medium text-body">alias</strong>
+        (<span class="code-mono">*name</span>) can reuse it. JSON has neither, so every alias is
+        written out as a full copy.
+      </p>
+      <div class="jy-snap-row mt-3 flex flex-wrap items-center gap-2">
+        <button id="jy-snap-save" type="button" class="jy-snap-btn">Save snapshot</button>
+        <select
+          id="jy-snap-select"
+          class="jy-snap-select"
+          aria-label="Load a saved snapshot"
+          disabled
+        >
+          <option value="">No snapshots yet</option>
+        </select>
+        <button
+          id="jy-snap-delete"
+          type="button"
+          class="jy-snap-delete"
+          aria-label="Delete this snapshot"
+          hidden>&times;</button
+        >
+      </div>
+    </div>
+
+    {/* ── Result ───────────────────────────────────────────────────────── */}
+    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <span class="flex flex-wrap items-center gap-2">
+          <span class="eyebrow">Result</span>
+          <button
+            id="jy-share"
+            type="button"
+            class="jy-copy jy-copy--labeled"
+            data-copy-link
+            data-copy=""
+            data-copy-label="Copy link"
+            hidden
+          >
+            <svg
+              class="jy-copy-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6.75 9.25l2.5-2.5"></path>
+              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
+              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
+            </svg>
+            <svg
+              class="jy-check-icon hidden"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="jy-copy-label">Copy link</span>
+          </button>
+          <button
+            id="jy-copy-all"
+            type="button"
+            class="jy-copy jy-copy--labeled"
+            data-copy-all
+            data-copy=""
+            data-copy-label="Copy output"
+            hidden
+          >
+            <svg
+              class="jy-copy-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="5" y="5" width="9" height="9" rx="1.5"></rect>
+              <path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"></path>
+            </svg>
+            <svg
+              class="jy-check-icon hidden"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="jy-copy-label">Copy output</span>
+          </button>
+        </span>
+        <span
+          id="jy-summary"
+          class="jy-summary code-mono text-mute"
+          role="status"
+          aria-live="polite"></span>
+      </div>
+      <div id="jy-results" class="jy-results">
+        <p class="jy-empty body-sm text-mute">
+          Paste JSON or YAML above — or tap an example — to see the converted document here, plus
+          every comment, anchor, timestamp and out-of-range number the conversion costs you.
+        </p>
+      </div>
+      <span id="jy-copy-status" class="sr-only" role="status" aria-live="polite"></span>
+    </div>
+  </div>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  /* ── Example chips ───────────────────────────────────────────────────── */
+  .jy-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .jy-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-brand-strong);
+    cursor: pointer;
+    touch-action: manipulation;
+    transition:
+      background 0.12s ease,
+      box-shadow 0.12s ease;
+  }
+  .jy-chip:hover,
+  .jy-chip[aria-pressed='true'] {
+    background: var(--color-brand-soft);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+  }
+  .jy-chip:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+
+  /* ── Control row: direction / indent / sort ──────────────────────────── */
+  .jy-controls {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  @media (min-width: 720px) {
+    .jy-controls {
+      grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
+      gap: 20px;
+      align-items: start;
+    }
+  }
+  .jy-control {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .jy-seg {
+    display: inline-flex;
+    align-self: flex-start;
+    max-width: 100%;
+    padding: 2px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas-soft-2);
+    box-shadow: var(--shadow-hairline);
+  }
+  .jy-seg__btn {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--color-mute);
+    font-size: 12px;
+    line-height: 16px;
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    white-space: nowrap;
+    touch-action: manipulation;
+    transition:
+      background 0.15s ease,
+      color 0.15s ease;
+  }
+  .jy-seg__btn:hover {
+    color: var(--color-body);
+  }
+  .jy-seg__btn[aria-checked='true'] {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+  }
+  .jy-seg__btn:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  .jy-check {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    gap: 8px;
+    min-height: 28px;
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--color-body);
+    cursor: pointer;
+  }
+  .jy-check input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--color-brand-strong);
+    cursor: pointer;
+  }
+  .jy-gloss {
+    margin: 0;
+    font-size: 12px;
+    line-height: 17px;
+    text-wrap: pretty;
+  }
+  /* The "looks like YAML — switch?" nudge. Never auto-switches; one tap does. */
+  .jy-switch {
+    align-self: flex-start;
+    padding: 5px 10px;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: var(--color-warning-soft);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-warning-deep);
+    font-size: 12px;
+    line-height: 16px;
+    text-align: left;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .jy-switch:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+
+  /* ── Input pane (dark instrument slab) ───────────────────────────────── */
+  .jy-pane {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+  }
+  .jy-pane__bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .jy-pane__dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.18);
+  }
+  .jy-pane__name {
+    /* 0.72 alpha over --color-inverse clears 4.5:1 in both themes. */
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 12px;
+  }
+  .jy-pane__tag {
+    margin-left: auto;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  /* CodeMirror host. Background is transparent so the slab shows through —
+     that is deliberate: One Dark's own #282c34 is LIGHTER than
+     --color-inverse, and its dimmest token (comments, #7d8799) only clears
+     4.5:1 against the darker slab. */
+  .jy-editor {
+    overflow: hidden;
+    padding-inline: 4px;
+  }
+  .jy-editor :global(.cm-editor) {
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .jy-editor :global(.cm-editor.cm-focused) {
+    outline: 2px solid var(--color-link);
+    outline-offset: -2px;
+  }
+  .jy-editor :global(.cm-scroller) {
+    overflow: auto;
+    min-height: 240px;
+    max-height: 440px;
+    font-family: var(--font-mono);
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+  }
+  .jy-editor :global(.cm-scroller)::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .jy-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: var(--radius-pill);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  .jy-editor :global(.cm-gutters) {
+    background: transparent;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  /* One Dark's gutter foreground is below 4.5:1 — lift it. */
+  .jy-editor :global(.cm-lineNumbers .cm-gutterElement) {
+    color: #a9a39a;
+  }
+  .jy-editor :global(.cm-content) {
+    padding: 14px 0 16px;
+  }
+  .jy-editor :global(.cm-line) {
+    padding-inline: 4px;
+  }
+  /* Invalid input: a hairline red rule down the editor, never a flash. */
+  .jy-pane.jy-pane--error .jy-editor :global(.cm-editor) {
+    box-shadow: inset 2px 0 0 0 var(--color-error);
+  }
+
+  .jy-hint {
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  .jy-hint + .jy-hint {
+    margin-top: 4px;
+  }
+  .jy-hint .code-mono {
+    font-size: 12px;
+  }
+  .jy-kbd {
+    border: 1px solid currentColor;
+    border-radius: var(--radius-xs);
+    padding: 0 3px;
+    font-size: 0.85em;
+  }
+
+  /* ── Snapshot row ────────────────────────────────────────────────────── */
+  .jy-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition:
+      background 0.12s ease,
+      box-shadow 0.12s ease;
+  }
+  .jy-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .jy-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .jy-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .jy-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition:
+      background 0.12s ease,
+      color 0.12s ease;
+  }
+  .jy-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
+
+  /* ── Result panel ────────────────────────────────────────────────────── */
+  .jy-summary {
+    min-width: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+  .jy-results {
+    min-height: 120px;
+  }
+  /* Copy failure message flips from sr-only to a visible caption. */
+  .jy-copy-status--fail {
+    display: block;
+    margin-top: 10px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-error-deep);
+  }
+
+  /* ── Runtime-injected markup (Astro scoped styles never reach it) ────── */
+  :global(.jy-out) {
+    border-radius: var(--radius-md);
+    background: var(--color-inverse);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+    animation: jy-rise 0.18s ease both;
+  }
+  :global(.jy-out__bar) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px 7px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  :global(.jy-out__name) {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.72);
+  }
+  :global(.jy-out__meta) {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+    white-space: nowrap;
+  }
+  :global(.jy-out__pre) {
+    margin: 0;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+    color: #eae7e0;
+    white-space: pre;
+    tab-size: 2;
+  }
+
+  :global(.jy-block) {
+    margin-top: 12px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+    animation: jy-rise 0.18s ease both;
+  }
+  :global(.jy-block__head) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+  :global(.jy-block__meta) {
+    margin-left: auto;
+    text-transform: none;
+    letter-spacing: 0;
+    white-space: nowrap;
+  }
+  :global(.jy-block__sub) {
+    margin: 0;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-mute);
+    text-wrap: pretty;
+  }
+  :global(.jy-diag) {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 9px 10px 9px 14px;
+  }
+  :global(.jy-diag + .jy-diag) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.jy-diag__sev) {
+    flex: 0 0 auto;
+    margin-top: 1px;
+    padding: 1px 7px;
+    border-radius: var(--radius-pill);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  :global(.jy-diag--error .jy-diag__sev) {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
+  :global(.jy-diag--warning .jy-diag__sev) {
+    background: var(--color-warning-soft);
+    color: var(--color-warning-deep);
+  }
+  :global(.jy-diag--note .jy-diag__sev) {
+    background: var(--color-canvas-soft-2);
+    color: var(--color-body);
+  }
+  :global(.jy-diag__body) {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  :global(.jy-diag__msg) {
+    margin: 0;
+    font-size: 13px;
+    line-height: 19px;
+    color: var(--color-ink);
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+  }
+  :global(.jy-diag__loc) {
+    display: inline-block;
+    margin-top: 3px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    color: var(--color-mute);
+    overflow-wrap: anywhere;
+  }
+  :global(.jy-clean) {
+    margin: 0;
+    padding: 12px 14px;
+    font-size: 13px;
+    line-height: 19px;
+    color: var(--color-body);
+    text-wrap: pretty;
+  }
+
+  :global(.jy-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+  }
+  :global(.jy-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.jy-error__title) {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.jy-error__detail) {
+    margin-top: 2px;
+    font-size: 13px;
+    line-height: 19px;
+    text-wrap: pretty;
+    overflow-wrap: anywhere;
+  }
+  :global(.jy-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 96px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+
+  /* ── Copy buttons: icon-only per row, labeled in the header ──────────── */
+  :global(.jy-copy) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    touch-action: manipulation;
+    transition:
+      color 0.12s ease,
+      background 0.12s ease;
+  }
+  :global(.jy-copy:hover) {
+    color: var(--color-brand-strong);
+    background: var(--color-hairline);
+  }
+  :global(.jy-copy:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  /* The output block's copy button sits on the dark slab. */
+  :global(.jy-out__bar .jy-copy) {
+    color: rgba(255, 255, 255, 0.72);
+  }
+  :global(.jy-out__bar .jy-copy:hover) {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.12);
+  }
+  :global(.jy-copy--labeled) {
+    width: auto;
+    height: 26px;
+    gap: 6px;
+    padding: 0 10px;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  :global(.jy-copy--copied) {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+
+  /* Coarse-pointer tap targets, in the two tiers the contract defines:
+     chips and icon-only per-row copy buttons at 44px, labeled header copy
+     controls at 36px (wide text targets, not the primary in-result action). */
+  @media (pointer: coarse) {
+    .jy-chip {
+      min-height: 44px;
+    }
+    .jy-seg__btn,
+    .jy-switch {
+      min-height: 36px;
+    }
+    :global(.jy-copy) {
+      width: 44px;
+      height: 44px;
+    }
+    :global(.jy-copy--labeled) {
+      width: auto;
+      height: auto;
+      min-height: 36px;
+    }
+  }
+
+  @keyframes jy-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.jy-out),
+    :global(.jy-block) {
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  import { escapeHtml } from '../lib/escape-html';
+  import { copyTextToClipboard } from '../lib/clipboard';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  import type { Extension } from '@codemirror/state';
+  import type { EditorView } from '@codemirror/view';
+
+  /* ---- Engine contract, mirrored structurally (never statically imported) -- */
+  type Direction = 'json-to-yaml' | 'yaml-to-json';
+  type Detected = 'json' | 'yaml' | 'ambiguous';
+  type Severity = 'error' | 'warning' | 'note';
+  type Indent = 2 | 4;
+  type Diagnostic = {
+    id: string;
+    severity: Severity;
+    message: string;
+    line?: number;
+    column?: number;
+    path?: string;
+  };
+  type Stats = { docs: number; keys: number; depth: number };
+  type Result = {
+    ok: boolean;
+    direction: Direction;
+    output: string;
+    diagnostics: Diagnostic[];
+    stats: Stats;
+    detected: Detected;
+  };
+  type ShareState = { direction: Direction; indent: Indent; sortKeys: boolean; text: string };
+  type EngineModule = {
+    convert: (
+      input: string,
+      options: { direction: Direction; indent?: Indent; sortKeys?: boolean },
+    ) => Result;
+    encodeState: (state: ShareState) => string;
+    decodeState: (hash?: string) => ShareState | null;
+  };
+  type Example = { id: string; label: string; direction: Direction; input: string };
+
+  const ROOT_SEL = '.jy-pg';
+  const SLUG = 'json-yaml-converter';
+  /* One debounce, inside the contract's 130–220ms band. */
+  const DEBOUNCE_MS = 180;
+  /* Nothing goes red until the typing has been idle this long. */
+  const ERROR_HOLD_MS = 600;
+  const RESET_MS = 1800;
+  /* Past ~2000 chars a fragment stops being a dependable URL (browser, proxy
+     and chat-client limits), so we neither write it nor offer the share link —
+     the converter itself keeps working on documents of any size. */
+  const MAX_HASH_LEN = 2000;
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.jyWired === 'true') return;
+      root.dataset.jyWired = 'true';
+      void init(root);
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  function normaliseExamples(raw: unknown): Example[] {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((item, i) => {
+        const o = (item ?? {}) as Record<string, unknown>;
+        return {
+          id: typeof o.id === 'string' && o.id ? o.id : `example-${i + 1}`,
+          label: typeof o.label === 'string' && o.label ? o.label : `Example ${i + 1}`,
+          direction: o.direction === 'json-to-yaml' ? 'json-to-yaml' : 'yaml-to-json',
+          input: typeof o.input === 'string' ? o.input : '',
+        } satisfies Example;
+      })
+      .filter((e) => e.input.length > 0);
+  }
+
+  /* ---- Icons (decorative) ------------------------------------------------- */
+
+  const ALERT_SVG =
+    '<svg class="jy-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const COPY_ICON_SVG =
+    '<svg class="jy-copy-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"/></svg>';
+  const CHECK_ICON_SVG =
+    '<svg class="jy-check-icon hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
+
+  /* ---- Pure render helpers ------------------------------------------------ */
+
+  const SEV_LABEL: Record<Severity, string> = {
+    error: 'Error',
+    warning: 'Warning',
+    note: 'Note',
+  };
+
+  function plural(n: number, word: string): string {
+    return `${n} ${word}${n === 1 ? '' : 's'}`;
+  }
+
+  function directionLabel(direction: Direction): string {
+    return direction === 'yaml-to-json' ? 'YAML → JSON' : 'JSON → YAML';
+  }
+
+  function outputName(direction: Direction): string {
+    return direction === 'yaml-to-json' ? 'output.json' : 'output.yaml';
+  }
+
+  /** `line 3, column 1` / `$.spec.replicas` — whichever the engine supplied. */
+  function locationText(d: Diagnostic): string {
+    if (typeof d.path === 'string' && d.path.length > 0) return d.path;
+    if (typeof d.line !== 'number') return '';
+    return typeof d.column === 'number' ? `line ${d.line}, column ${d.column}` : `line ${d.line}`;
+  }
+
+  /** One plain-text line per diagnostic, for its per-row copy button. */
+  function diagnosticText(d: Diagnostic): string {
+    const where = locationText(d);
+    return `${SEV_LABEL[d.severity] ?? 'Note'}${where ? ` (${where})` : ''}: ${d.message}`;
+  }
+
+  function outputBlockHtml(direction: Direction, output: string, stats: Stats): string {
+    const lines = output.length === 0 ? 0 : output.replace(/\n$/, '').split('\n').length;
+    const meta = `${plural(lines, 'line')} · ${plural(stats.keys, 'key')}`;
+    return (
+      '<div class="jy-out">' +
+      '<div class="jy-out__bar">' +
+      `<span class="jy-out__name">${escapeHtml(outputName(direction))}</span>` +
+      `<span class="jy-out__meta">${escapeHtml(meta)}</span>` +
+      '<button class="jy-copy" type="button" data-jy-copy-output data-copy="" ' +
+      `aria-label="Copy the converted ${direction === 'yaml-to-json' ? 'JSON' : 'YAML'}" ` +
+      'title="Copy">' +
+      COPY_ICON_SVG +
+      CHECK_ICON_SVG +
+      '</button>' +
+      '</div>' +
+      `<pre class="jy-out__pre"><code>${escapeHtml(output)}</code></pre>` +
+      '</div>'
+    );
+  }
+
+  function diagnosticsBlockHtml(diagnostics: Diagnostic[]): string {
+    const errors = diagnostics.filter((d) => d.severity === 'error').length;
+    const warnings = diagnostics.filter((d) => d.severity === 'warning').length;
+    const notes = diagnostics.filter((d) => d.severity === 'note').length;
+    const counts = [
+      errors ? plural(errors, 'error') : '',
+      warnings ? plural(warnings, 'warning') : '',
+      notes ? plural(notes, 'note') : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+
+    const head =
+      '<div class="jy-block__head"><span>What the conversion cost</span>' +
+      (counts ? `<span class="jy-block__meta">${escapeHtml(counts)}</span>` : '') +
+      '</div>';
+
+    if (diagnostics.length === 0) {
+      return (
+        '<div class="jy-block">' +
+        head +
+        '<p class="jy-clean">Nothing this converter can detect was lost: no comments, anchors, ' +
+        'merge keys, timestamps, multi-document stream, or numbers outside the range JavaScript ' +
+        'can represent exactly.</p></div>'
+      );
+    }
+
+    const rows = diagnostics
+      .map((d, i) => {
+        const sev: Severity =
+          d.severity === 'error' || d.severity === 'warning' ? d.severity : 'note';
+        const where = locationText(d);
+        return (
+          `<div class="jy-diag jy-diag--${sev}">` +
+          `<span class="jy-diag__sev">${escapeHtml(SEV_LABEL[sev])}</span>` +
+          '<div class="jy-diag__body">' +
+          `<p class="jy-diag__msg">${escapeHtml(d.message)}</p>` +
+          (where ? `<span class="jy-diag__loc">${escapeHtml(where)}</span>` : '') +
+          '</div>' +
+          `<button class="jy-copy" type="button" data-jy-diag-idx="${i}" data-copy="" ` +
+          `aria-label="Copy this ${escapeHtml(SEV_LABEL[sev].toLowerCase())}" title="Copy">` +
+          COPY_ICON_SVG +
+          CHECK_ICON_SVG +
+          '</button></div>'
+        );
+      })
+      .join('');
+
+    return (
+      '<div class="jy-block">' +
+      head +
+      '<p class="jy-block__sub">Each line below is something the target format cannot express. ' +
+      'Warnings changed a value; notes flattened something the output has no syntax for.</p>' +
+      rows +
+      '</div>'
+    );
+  }
+
+  function errorCardHtml(direction: Direction, message: string, isAlert: boolean): string {
+    const source = direction === 'yaml-to-json' ? 'YAML' : 'JSON';
+    return (
+      `<div class="jy-error"${isAlert ? ' role="alert"' : ''}>` +
+      ALERT_SVG +
+      `<div><p class="jy-error__title">Could not read this ${escapeHtml(source)}</p>` +
+      `<p id="jy-error-detail" class="jy-error__detail">${escapeHtml(message)}</p></div></div>`
+    );
+  }
+
+  /* ---- Instance init ----------------------------------------------------- */
+
+  async function init(root: HTMLElement): Promise<void> {
+    const editorHost = el<HTMLElement>(root, '#jy-input');
+    const paneEl = el<HTMLElement>(root, '.jy-pane');
+    const inputName = el<HTMLElement>(root, '#jy-input-name');
+    const resultsBox = el<HTMLElement>(root, '#jy-results');
+    const summaryEl = el<HTMLElement>(root, '#jy-summary');
+    const shareBtn = el<HTMLButtonElement>(root, '#jy-share');
+    const copyAllBtn = el<HTMLButtonElement>(root, '#jy-copy-all');
+    const copyStatus = el<HTMLElement>(root, '#jy-copy-status');
+    const dirY2jBtn = el<HTMLButtonElement>(root, '#jy-dir-y2j');
+    const dirJ2yBtn = el<HTMLButtonElement>(root, '#jy-dir-j2y');
+    const indent2Btn = el<HTMLButtonElement>(root, '#jy-indent-2');
+    const indent4Btn = el<HTMLButtonElement>(root, '#jy-indent-4');
+    const sortInput = el<HTMLInputElement>(root, '#jy-sort');
+    const switchBtn = el<HTMLButtonElement>(root, '#jy-switch');
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#jy-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#jy-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#jy-snap-delete');
+    const chips = Array.from(root.querySelectorAll<HTMLButtonElement>('#jy-chips .jy-chip'));
+
+    if (
+      !editorHost ||
+      !paneEl ||
+      !inputName ||
+      !resultsBox ||
+      !summaryEl ||
+      !shareBtn ||
+      !copyAllBtn ||
+      !copyStatus ||
+      !dirY2jBtn ||
+      !dirJ2yBtn ||
+      !indent2Btn ||
+      !indent4Btn ||
+      !sortInput ||
+      !switchBtn ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
+    ) {
+      return;
+    }
+
+    /* ---- Copy plumbing --------------------------------------------------- */
+
+    function setCopyStatus(message: string, failed: boolean): void {
+      copyStatus!.textContent = message;
+      copyStatus!.classList.toggle('sr-only', !failed);
+      copyStatus!.classList.toggle('jy-copy-status--fail', failed);
+    }
+
+    function setCopied(btn: HTMLButtonElement, copied: boolean): void {
+      btn.classList.toggle('jy-copy--copied', copied);
+      btn.querySelector('.jy-copy-icon')?.classList.toggle('hidden', copied);
+      btn.querySelector('.jy-check-icon')?.classList.toggle('hidden', !copied);
+      const label = btn.querySelector<HTMLElement>('.jy-copy-label');
+      if (label) {
+        label.textContent = copied ? 'Copied' : (btn.dataset.copyLabel ?? 'Copy');
+      } else if (copied) {
+        btn.dataset.prevAriaLabel = btn.getAttribute('aria-label') ?? '';
+        btn.setAttribute('aria-label', 'Copied');
+      } else if (btn.dataset.prevAriaLabel) {
+        btn.setAttribute('aria-label', btn.dataset.prevAriaLabel);
+        delete btn.dataset.prevAriaLabel;
+      }
+    }
+
+    async function handleCopy(btn: HTMLButtonElement): Promise<void> {
+      const text = btn.dataset.copy ?? '';
+      const ok = await copyTextToClipboard(text);
+      if (ok) {
+        setCopied(btn, true);
+        setCopyStatus('Copied to clipboard.', false);
+        window.clearTimeout(Number(btn.dataset.copyTimer));
+        btn.dataset.copyTimer = String(
+          window.setTimeout(() => {
+            setCopied(btn, false);
+            if (copyStatus!.textContent === 'Copied to clipboard.') setCopyStatus('', false);
+          }, RESET_MS),
+        );
+      } else {
+        setCopyStatus('Copy failed — select the value manually.', true);
+      }
+    }
+
+    root.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.jy-copy');
+      if (!btn || !root.contains(btn)) return;
+      void handleCopy(btn);
+    });
+
+    /* ---- Lazy engine + examples + CodeMirror ----------------------------- */
+
+    let engine: EngineModule;
+    let examples: Example[] = [];
+    let EditorState: typeof import('@codemirror/state').EditorState;
+    let Compartment: typeof import('@codemirror/state').Compartment;
+    let EditorViewCtor: typeof import('@codemirror/view').EditorView;
+    let keymap: typeof import('@codemirror/view').keymap;
+    let lineNumbers: typeof import('@codemirror/view').lineNumbers;
+    let highlightActiveLine: typeof import('@codemirror/view').highlightActiveLine;
+    let defaultKeymap: typeof import('@codemirror/commands').defaultKeymap;
+    // Named `cmHistory`, not `history`: a bare `history` here would shadow
+    // `window.history`, which `writeHash` needs for replaceState.
+    let cmHistory: typeof import('@codemirror/commands').history;
+    let historyKeymap: typeof import('@codemirror/commands').historyKeymap;
+    let indentWithTab: typeof import('@codemirror/commands').indentWithTab;
+    let yamlLang: typeof import('@codemirror/lang-yaml').yaml;
+    let jsonLang: typeof import('@codemirror/lang-json').json;
+    let oneDark: typeof import('@codemirror/theme-one-dark').oneDark;
+
+    try {
+      const [engineMod, examplesMod, stateMod, viewMod, commandsMod, yamlMod, jsonMod, themeMod] =
+        await Promise.all([
+          import('../lib/json-yaml-converter/engine'),
+          import('../lib/json-yaml-converter/examples'),
+          import('@codemirror/state'),
+          import('@codemirror/view'),
+          import('@codemirror/commands'),
+          import('@codemirror/lang-yaml'),
+          import('@codemirror/lang-json'),
+          import('@codemirror/theme-one-dark'),
+        ]);
+      engine = engineMod as unknown as EngineModule;
+      examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+      ({ EditorState, Compartment } = stateMod);
+      ({ EditorView: EditorViewCtor, keymap, lineNumbers, highlightActiveLine } = viewMod);
+      ({ history: cmHistory, defaultKeymap, historyKeymap, indentWithTab } = commandsMod);
+      ({ yaml: yamlLang } = yamlMod);
+      ({ json: jsonLang } = jsonMod);
+      ({ oneDark } = themeMod);
+    } catch (err) {
+      summaryEl.textContent = '';
+      resultsBox.innerHTML = errorCardHtml(
+        'yaml-to-json',
+        'The converter engine failed to load. Reload the page to try again.',
+        true,
+      );
+      console.error('[JsonYamlConverter] engine/CodeMirror import failed:', err);
+      return;
+    }
+
+    /* ---- Control state --------------------------------------------------- */
+
+    type EvalSource = 'type' | 'commit' | 'seed';
+    type UiState = 'empty' | 'valid' | 'pending' | 'invalid';
+
+    let direction: Direction = 'yaml-to-json';
+    let indent: Indent = 2;
+    let sortKeys = false;
+    let uiState: UiState = 'empty';
+    let evalTimer: number | undefined;
+    let errTimer: number | undefined;
+    let lastWrittenHash: string | null = null;
+    let liveReady = false;
+
+    const langCompartment = new Compartment();
+
+    function inputLanguage(): Extension {
+      return direction === 'json-to-yaml' ? jsonLang() : yamlLang();
+    }
+
+    function clearTimers(): void {
+      window.clearTimeout(evalTimer);
+      window.clearTimeout(errTimer);
+    }
+
+    /* ---- Editor ---------------------------------------------------------- */
+
+    function makeEditor(host: HTMLElement, doc: string): EditorView {
+      const state = EditorState.create({
+        doc,
+        extensions: [
+          lineNumbers(),
+          cmHistory(),
+          highlightActiveLine(),
+          langCompartment.of(inputLanguage()),
+          oneDark,
+          EditorViewCtor.lineWrapping,
+          // CodeMirror puts role="textbox" on the content DOM; without a name
+          // that is an unlabelled input field for a screen reader (and an axe
+          // violation). aria-describedby points at the live-eval hint line.
+          EditorViewCtor.contentAttributes.of({
+            'aria-label': 'JSON or YAML input',
+            'aria-describedby': 'jy-run-hint',
+          }),
+          keymap.of([
+            // Ours FIRST, so they win over defaultKeymap's Enter/Escape.
+            {
+              key: 'Mod-Enter',
+              run: () => {
+                clearTimers();
+                evaluate('commit');
+                view.contentDOM.blur();
+                return true;
+              },
+            },
+            {
+              // Plain Enter must still insert the newline, so this returns
+              // false and lets insertNewlineAndIndent run — the eval is
+              // flushed on the next tick, once the doc includes the newline.
+              key: 'Enter',
+              run: () => {
+                window.setTimeout(() => {
+                  clearTimers();
+                  evaluate('commit');
+                }, 0);
+                return false;
+              },
+            },
+            {
+              // The Tab-trap escape hatch: indentWithTab means Tab indents, so
+              // Escape is the documented way out of the editor.
+              key: 'Escape',
+              run: (v) => {
+                v.contentDOM.blur();
+                return true;
+              },
+            },
+            ...defaultKeymap,
+            ...historyKeymap,
+            indentWithTab,
+          ]),
+          EditorViewCtor.updateListener.of((u) => {
+            if (!u.docChanged || !liveReady) return;
+            clearChips();
+            clearTimers();
+            evalTimer = window.setTimeout(() => evaluate('type'), DEBOUNCE_MS);
+          }),
+          EditorViewCtor.theme({
+            '&': { color: '#eae7e0' },
+            '.cm-content': { caretColor: '#eae7e0' },
+            '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#eae7e0' },
+            '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
+              backgroundColor: 'rgba(79, 138, 200, 0.34)',
+            },
+            '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.04)' },
+            '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+          }),
+        ],
+      });
+      return new EditorViewCtor({ state, parent: host });
+    }
+
+    function setEditorDoc(view: EditorView, doc: string): void {
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
+      view.requestMeasure();
+    }
+
+    /* ---- Chrome ---------------------------------------------------------- */
+
+    function applyDirectionChrome(): void {
+      const toJson = direction === 'yaml-to-json';
+      dirY2jBtn!.setAttribute('aria-checked', String(toJson));
+      dirJ2yBtn!.setAttribute('aria-checked', String(!toJson));
+      // Roving tabindex: only the checked radio is in the tab order.
+      dirY2jBtn!.tabIndex = toJson ? 0 : -1;
+      dirJ2yBtn!.tabIndex = toJson ? -1 : 0;
+      inputName!.textContent = toJson ? 'input.yaml' : 'input.json';
+    }
+
+    function applyIndentChrome(): void {
+      const two = indent === 2;
+      indent2Btn!.setAttribute('aria-checked', String(two));
+      indent4Btn!.setAttribute('aria-checked', String(!two));
+      indent2Btn!.tabIndex = two ? 0 : -1;
+      indent4Btn!.tabIndex = two ? -1 : 0;
+    }
+
+    function applyLanguage(): void {
+      view.dispatch({ effects: langCompartment.reconfigure(inputLanguage()) });
+    }
+
+    function setSummary(text: string, isError: boolean): void {
+      summaryEl!.textContent = text;
+      summaryEl!.classList.toggle('text-error-deep', isError);
+      summaryEl!.classList.toggle('text-mute', !isError);
+    }
+
+    function setErrorState(on: boolean): void {
+      paneEl!.classList.toggle('jy-pane--error', on);
+      if (on) {
+        view.contentDOM.setAttribute('aria-invalid', 'true');
+        view.contentDOM.setAttribute('aria-describedby', 'jy-run-hint jy-error-detail');
+      } else {
+        view.contentDOM.removeAttribute('aria-invalid');
+        view.contentDOM.setAttribute('aria-describedby', 'jy-run-hint');
+      }
+    }
+
+    function hideActions(): void {
+      shareBtn!.hidden = true;
+      shareBtn!.dataset.copy = '';
+      copyAllBtn!.hidden = true;
+      copyAllBtn!.dataset.copy = '';
+    }
+
+    function setActiveChip(idx: number | null): void {
+      chips.forEach((chip) => {
+        chip.setAttribute(
+          'aria-pressed',
+          idx !== null && chip.dataset.exampleIdx === String(idx) ? 'true' : 'false',
+        );
+      });
+    }
+
+    function clearChips(): void {
+      setActiveChip(null);
+    }
+
+    /**
+     * The "looks like the other format" nudge. Never auto-switches — a silent
+     * reinterpretation of a paste is exactly the behaviour this tool exists to
+     * argue against.
+     */
+    function updateSwitchNudge(detected: Detected): void {
+      const mismatch =
+        (direction === 'json-to-yaml' && detected === 'yaml') ||
+        (direction === 'yaml-to-json' && detected === 'json');
+      if (!mismatch) {
+        switchBtn!.hidden = true;
+        return;
+      }
+      switchBtn!.textContent =
+        direction === 'json-to-yaml'
+          ? 'Looks like YAML — switch to YAML → JSON'
+          : 'Looks like JSON already — switch to JSON → YAML';
+      switchBtn!.hidden = false;
+    }
+
+    /* ---- Deep link / share ---------------------------------------------- */
+
+    function currentFragment(): string {
+      try {
+        return engine.encodeState({
+          direction,
+          indent,
+          sortKeys,
+          text: view.state.doc.toString(),
+        });
+      } catch {
+        return '';
+      }
+    }
+
+    function writeHash(fragment: string | null): void {
+      const target = fragment ?? '';
+      if (target === lastWrittenHash) return;
+      // Safari throttles replaceState (~100 per 30s) and throws — never let
+      // that break typing.
+      try {
+        if (fragment) {
+          window.history.replaceState(null, '', fragment);
+        } else {
+          window.history.replaceState(null, '', location.pathname + location.search);
+        }
+        lastWrittenHash = target;
+      } catch {
+        /* ignore */
+      }
+    }
+
+    /* ---- Render + evaluate ---------------------------------------------- */
+
+    function renderEmpty(): void {
+      uiState = 'empty';
+      setErrorState(false);
+      hideActions();
+      setSummary('', false);
+      switchBtn!.hidden = true;
+      resultsBox!.innerHTML =
+        '<p class="jy-empty body-sm text-mute">Paste JSON or YAML above — or tap an example — to ' +
+        'see the converted document here, plus every comment, anchor, timestamp and ' +
+        'out-of-range number the conversion costs you.</p>';
+    }
+
+    function summaryText(result: Result): string {
+      const parts = [
+        directionLabel(result.direction),
+        plural(result.stats.docs, 'doc'),
+        plural(result.stats.keys, 'key'),
+      ];
+      const warnings = result.diagnostics.filter((d) => d.severity === 'warning').length;
+      const notes = result.diagnostics.filter((d) => d.severity === 'note').length;
+      if (warnings) parts.push(plural(warnings, 'warning'));
+      if (notes) parts.push(plural(notes, 'note'));
+      if (!warnings && !notes) parts.push('no losses');
+      return parts.join(' · ');
+    }
+
+    function renderResult(result: Result): void {
+      resultsBox!.innerHTML =
+        outputBlockHtml(result.direction, result.output, result.stats) +
+        diagnosticsBlockHtml(result.diagnostics);
+      // Newlines round-trip badly through HTML attributes, so the multi-line
+      // copy payloads are set on the live elements instead.
+      const outBtn = resultsBox!.querySelector<HTMLButtonElement>('[data-jy-copy-output]');
+      if (outBtn) outBtn.dataset.copy = result.output;
+      resultsBox!.querySelectorAll<HTMLButtonElement>('[data-jy-diag-idx]').forEach((btn) => {
+        const idx = Number(btn.dataset.jyDiagIdx);
+        const d = result.diagnostics[idx];
+        if (d) btn.dataset.copy = diagnosticText(d);
+      });
+    }
+
+    function renderErrorState(message: string, extra: Diagnostic[], isAlert: boolean): void {
+      resultsBox!.innerHTML =
+        errorCardHtml(direction, message, isAlert) +
+        (extra.length > 0 ? diagnosticsBlockHtml(extra) : '');
+      resultsBox!.querySelectorAll<HTMLButtonElement>('[data-jy-diag-idx]').forEach((btn) => {
+        const idx = Number(btn.dataset.jyDiagIdx);
+        const d = extra[idx];
+        if (d) btn.dataset.copy = diagnosticText(d);
+      });
+    }
+
+    function showError(message: string, extra: Diagnostic[], source: EvalSource): void {
+      uiState = 'invalid';
+      clearTimers();
+      setErrorState(true);
+      hideActions();
+      setSummary('Could not convert', true);
+      renderErrorState(message, extra, source === 'commit');
+      if (source !== 'seed') writeHash(null);
+    }
+
+    function evaluate(source: EvalSource): void {
+      clearTimers();
+      const text = view.state.doc.toString();
+      if (text.trim().length === 0) {
+        renderEmpty();
+        if (source !== 'seed') writeHash(null);
+        return;
+      }
+
+      let result: Result | null = null;
+      try {
+        result = engine.convert(text, { direction, indent, sortKeys });
+      } catch (err) {
+        console.error('[JsonYamlConverter] convert threw:', err);
+        result = null;
+      }
+
+      updateSwitchNudge(result?.detected ?? 'ambiguous');
+
+      if (result && result.ok) {
+        uiState = 'valid';
+        setErrorState(false);
+        renderResult(result);
+        setSummary(summaryText(result), false);
+        copyAllBtn!.hidden = false;
+        copyAllBtn!.dataset.copy = result.output;
+        const fragment = currentFragment();
+        if (fragment.length > 0 && fragment.length <= MAX_HASH_LEN) {
+          shareBtn!.hidden = false;
+          shareBtn!.dataset.copy =
+            location.origin + location.pathname + location.search + fragment;
+          if (source !== 'seed') {
+            writeHash(fragment);
+            recordToolLastInput(SLUG, fragment);
+          }
+        } else {
+          // Too long to be a dependable link: keep converting, drop the share.
+          shareBtn!.hidden = true;
+          shareBtn!.dataset.copy = '';
+          if (source !== 'seed') writeHash(null);
+        }
+        return;
+      }
+
+      const diagnostics = result?.diagnostics ?? [];
+      const firstError = diagnostics.find((d) => d.severity === 'error');
+      const message =
+        firstError?.message ?? 'The converter could not read this input. Check the format above.';
+      const extra = diagnostics.filter((d) => d !== firstError);
+
+      if (source !== 'type') {
+        showError(message, extra, source);
+        return;
+      }
+
+      // Mid-typing: hold the previous card, nothing goes red yet. The error only
+      // surfaces once the typing has been idle for ERROR_HOLD_MS.
+      uiState = 'pending';
+      setErrorState(false);
+      hideActions();
+      setSummary('', false);
+      errTimer = window.setTimeout(() => showError(message, extra, 'type'), ERROR_HOLD_MS);
+    }
+
+    /* ---- Seed (before any listener fires, so nothing writes the hash) ---- */
+
+    const firstExample = examples[0];
+    let seedText = firstExample?.input ?? '';
+    let seedChip: number | null = firstExample ? 0 : null;
+    if (firstExample) direction = firstExample.direction;
+
+    function applyShareState(state: ShareState): void {
+      direction = state.direction === 'json-to-yaml' ? 'json-to-yaml' : 'yaml-to-json';
+      indent = state.indent === 4 ? 4 : 2;
+      sortKeys = state.sortKeys === true;
+      seedText = state.text;
+      seedChip = null;
+    }
+
+    let fromHash = false;
+    try {
+      const shared = engine.decodeState(window.location.hash);
+      if (shared && shared.text.length > 0) {
+        applyShareState(shared);
+        fromHash = true;
+      }
+    } catch {
+      /* malformed fragment — fall through to the restore/example tiers */
+    }
+
+    if (!fromHash) {
+      const restored = getRestoredLastInput(SLUG);
+      if (restored) {
+        try {
+          const state = engine.decodeState(restored);
+          if (state && state.text.length > 0) applyShareState(state);
+        } catch {
+          /* malformed stored value — keep the example seed */
+        }
+      }
+    }
+
+    const view = makeEditor(editorHost, seedText);
+    sortInput.checked = sortKeys;
+    applyDirectionChrome();
+    applyIndentChrome();
+    setActiveChip(seedChip);
+
+    /* ---- Events ---------------------------------------------------------- */
+
+    function setDirection(next: Direction, focus: boolean): void {
+      if (direction !== next) {
+        direction = next;
+        applyDirectionChrome();
+        applyLanguage();
+        // The active example no longer describes what is on screen.
+        clearChips();
+        clearTimers();
+        evaluate('commit');
+      }
+      if (focus) (next === 'yaml-to-json' ? dirY2jBtn! : dirJ2yBtn!).focus();
+    }
+
+    function setIndent(next: Indent, focus: boolean): void {
+      if (indent !== next) {
+        indent = next;
+        applyIndentChrome();
+        clearTimers();
+        evaluate('commit');
+      }
+      if (focus) (next === 2 ? indent2Btn! : indent4Btn!).focus();
+    }
+
+    dirY2jBtn.addEventListener('click', () => setDirection('yaml-to-json', false));
+    dirJ2yBtn.addEventListener('click', () => setDirection('json-to-yaml', false));
+    indent2Btn.addEventListener('click', () => setIndent(2, false));
+    indent4Btn.addEventListener('click', () => setIndent(4, false));
+
+    // WAI-ARIA radio group keyboard pattern: arrows move AND select; Home/End
+    // jump to the ends.
+    function radioKeydown(
+      e: KeyboardEvent,
+      isFirstChecked: () => boolean,
+      select: (first: boolean) => void,
+    ): void {
+      switch (e.key) {
+        case 'ArrowRight':
+        case 'ArrowDown':
+        case 'ArrowLeft':
+        case 'ArrowUp':
+          e.preventDefault();
+          select(!isFirstChecked());
+          break;
+        case 'Home':
+          e.preventDefault();
+          select(true);
+          break;
+        case 'End':
+          e.preventDefault();
+          select(false);
+          break;
+      }
+    }
+
+    const onDirKeydown = (e: KeyboardEvent): void =>
+      radioKeydown(
+        e,
+        () => direction === 'yaml-to-json',
+        (first) => setDirection(first ? 'yaml-to-json' : 'json-to-yaml', true),
+      );
+    dirY2jBtn.addEventListener('keydown', onDirKeydown);
+    dirJ2yBtn.addEventListener('keydown', onDirKeydown);
+
+    const onIndentKeydown = (e: KeyboardEvent): void =>
+      radioKeydown(
+        e,
+        () => indent === 2,
+        (first) => setIndent(first ? 2 : 4, true),
+      );
+    indent2Btn.addEventListener('keydown', onIndentKeydown);
+    indent4Btn.addEventListener('keydown', onIndentKeydown);
+
+    sortInput.addEventListener('change', () => {
+      sortKeys = sortInput.checked;
+      clearTimers();
+      evaluate('commit');
+    });
+
+    switchBtn.addEventListener('click', () => {
+      setDirection(direction === 'yaml-to-json' ? 'json-to-yaml' : 'yaml-to-json', false);
+    });
+
+    chips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const idx = Number(chip.dataset.exampleIdx);
+        if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+        const ex = examples[idx];
+        if (direction !== ex.direction) {
+          direction = ex.direction;
+          applyDirectionChrome();
+          applyLanguage();
+        }
+        liveReady = false;
+        setEditorDoc(view, ex.input);
+        liveReady = true;
+        setActiveChip(idx);
+        clearTimers();
+        evaluate('commit');
+      });
+    });
+
+    // Committing on blur means a half-typed document that the user tabbed away
+    // from still explains itself, instead of sitting silently in `pending`.
+    view.contentDOM.addEventListener('blur', () => {
+      if (uiState === 'pending') {
+        clearTimers();
+        evaluate('commit');
+      }
+    });
+
+    wireSnapshotUI({
+      slug: SLUG,
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      // The snapshot payload is the same `#s=` fragment the share link uses, so
+      // direction, indent and Sort-keys all come back with the text.
+      getValue: () => currentFragment(),
+      setValue: (value) => {
+        let state: ShareState | null = null;
+        try {
+          state = engine.decodeState(value);
+        } catch {
+          return;
+        }
+        if (!state) return;
+        direction = state.direction === 'json-to-yaml' ? 'json-to-yaml' : 'yaml-to-json';
+        indent = state.indent === 4 ? 4 : 2;
+        sortKeys = state.sortKeys === true;
+        sortInput!.checked = sortKeys;
+        applyDirectionChrome();
+        applyIndentChrome();
+        applyLanguage();
+        liveReady = false;
+        setEditorDoc(view, state.text);
+        liveReady = true;
+        clearChips();
+        clearTimers();
+        evaluate('commit');
+      },
+    });
+
+    /* ---- First render: never writes the hash ---------------------------- */
+
+    evaluate('seed');
+    liveReady = true;
+    requestAnimationFrame(() => view.requestMeasure());
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

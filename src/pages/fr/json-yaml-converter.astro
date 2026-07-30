@@ -1,0 +1,444 @@
+---
+/**
+ * Convertisseur JSON ↔ YAML — la page de l'outil json-yaml-converter (surface
+ * SEO). Convertit dans les deux sens avec un vrai parseur YAML 1.2 et signale
+ * chaque commentaire, ancre, clé de fusion, horodatage et entier arrondi que la
+ * conversion coûte.
+ */
+import Shell from '../../components/Shell.astro';
+import JsonYamlConverterPlayground from '../../components/JsonYamlConverterPlayground.astro';
+import Button from '../../components/Button.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import ToolHero from '../../components/ToolHero.astro';
+import ToolGapVisual from '../../components/ToolGapVisual.astro';
+import ToolPipeline from '../../components/ToolPipeline.astro';
+import FaqList from '../../components/FaqList.astro';
+import ToolCrossLinks from '../../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../../data/site';
+import { getTool } from '../../data/tools';
+import { softwareAppLd, faqPageLd } from '../../lib/jsonld';
+import type { Locale as __Locale } from '../../i18n/config';
+import { localizeKey as __l } from '../../i18n/utils';
+const __lang = (Astro.currentLocale ?? 'en') as __Locale;
+
+const tool = getTool('json-yaml-converter');
+const pagePath = '/json-yaml-converter/';
+const pageUrl = `${site.url}${pagePath}`;
+
+const faqs = [
+  {
+    q: 'Que fait le convertisseur JSON ↔ YAML ?',
+    a: 'Il convertit du JSON en YAML ou du YAML en JSON dans votre navigateur, puis vous dit ce que la conversion a coûté. Les commentaires, les ancres et les alias, les clés de fusion, les horodatages, les flux multi-documents et les entiers trop grands pour être représentés exactement par JavaScript ne survivent pas au voyage : chacun d\'eux est signalé comme un avertissement ou une note nommée à côté de la sortie, au lieu de disparaître discrètement.',
+  },
+  {
+    q: 'Quelle version de YAML est utilisée ?',
+    a: 'YAML 1.2, via js-yaml 4 et son schéma par défaut (core) — le même lecteur qu\'utilise la plupart des outils JavaScript modernes. C\'est important parce que YAML 1.2 a supprimé les orthographes booléennes de YAML 1.1 : ici no, yes, on et off sont de simples chaînes, et seuls true et false sont des booléens. PyYAML, Psych de Ruby et les anciens outils Kubernetes suivent encore YAML 1.1 : le tableau de référence de cette page fixe donc les valeurs sur lesquelles les deux versions divergent.',
+  },
+  {
+    q: 'Qu\'est-ce que le « problème norvégien » ?',
+    a: 'Un parseur YAML 1.1 lit le scalaire non quoté NO comme le booléen false : une liste de pays contenant le code ISO de la Norvège devient donc une liste contenant false. Le même piège attrape ON, OFF, YES, Y et N. Ce convertisseur suit YAML 1.2, donc ces valeurs restent des chaînes — et chaque occurrence rencontrée est signalée, pour que vous sachiez qu\'un outil YAML 1.1 plus loin dans la chaîne serait d\'un autre avis. Dans l\'autre sens, elles sont quotées en sortie (« NO » devient \'NO\'), et c\'est précisément ce qui rend le fichier sûr pour PyYAML.',
+  },
+  {
+    q: 'Mon document quitte-t-il un jour mon navigateur ?',
+    a: 'Non. L\'analyse, la conversion et le rapport s\'exécutent à 100 % côté client, dans votre onglet : pas de serveur, pas de compte, pas de journalisation. Vous pouvez coller sans risque des manifestes de production, des configurations CI et des fichiers contenant des noms d\'hôtes internes ou des secrets.',
+  },
+  {
+    q: 'Que deviennent les commentaires YAML ?',
+    a: 'Ils sont perdus, et l\'outil le dit. JSON n\'a pas de syntaxe de commentaire, et les conserver lors d\'un aller-retour exigerait un arbre syntaxique conscient des commentaires plutôt qu\'un parseur de valeurs : c\'est un non-objectif assumé ici. Si les commentaires doivent survivre, modifiez le YAML directement plutôt que de le faire passer par JSON.',
+  },
+  {
+    q: 'Comment les ancres et les alias YAML sont-ils convertis ?',
+    a: 'Ils sont développés sur place. Une ancre (&defaults) marque une valeur ; un alias (*defaults) la réutilise. JSON n\'a ni l\'un ni l\'autre, donc chaque alias devient une copie complète de la valeur ancrée : le document a le même sens, mais il est plus long et le partage a disparu. Les clés de fusion (<<:) sont développées de la même façon, les clés héritées étant écrites en entier. Un alias récursif, où un nœud se contient lui-même, ne peut pas être représenté en JSON du tout : il est signalé comme une erreur au lieu de faire planter la page.',
+  },
+  {
+    q: 'Pourquoi mon grand nombre a-t-il changé ?',
+    a: 'JavaScript stocke les nombres en doubles IEEE-754, donc les entiers au-delà de 2^53 − 1 (9007199254740991) ne peuvent pas être représentés exactement. 9007199254740993 devient 9007199254740992 dès qu\'il est analysé — par cet outil, par JSON.parse dans votre propre code et par n\'importe quel autre convertisseur de navigateur. La différence, c\'est que celui-ci vous avertit et cite les chiffres d\'origine. Si la valeur est un identifiant et non une quantité, conservez-la sous forme de chaîne quotée.',
+  },
+  {
+    q: 'Comment convertir un manifeste YAML Kubernetes en JSON pour kubectl patch ?',
+    a: 'Collez le manifeste, laissez le sens sur YAML → JSON et copiez la sortie. kubectl patch --type=merge -p attend un document JSON, et un manifeste multi-documents (plusieurs ressources séparées par ---) devient ici un tableau JSON, que kubectl n\'accepte pas comme patch : séparez-le et convertissez une ressource à la fois. Les quantités comme 256Mi et 500m restent des chaînes dans les deux formats, ce qui est exactement ce qu\'attend Kubernetes.',
+  },
+  {
+    q: 'Puis-je convertir un modèle CloudFormation ?',
+    a: 'Pas tant qu\'il utilise les balises abrégées. !Ref, !GetAtt et !Sub sont des balises YAML propres à CloudFormation, absentes du schéma standard : un parseur conforme les rejette, et cet outil indique exactement sur quelle balise il a buté et où. Réécrivez-les dans leur forme longue (Ref: BucketName au lieu de !Ref BucketName) et le modèle se convertit.',
+  },
+  {
+    q: 'L\'ordre de la sortie correspond-il à celui de mon entrée ?',
+    a: 'Oui, avec une exception incontournable. L\'ordre des clés est préservé par défaut, et « Sort keys » trie chaque niveau quand vous voulez un diff stable. L\'exception, ce sont les clés de forme entière : les objets JavaScript énumèrent toujours des clés comme « 1 » et « 2 » en premier, dans l\'ordre numérique croissant, avant toute autre clé — quel que soit l\'ordre dans lequel elles ont été écrites, et qu\'elles aient été quotées ou non. L\'outil vous avertit lorsque votre document en contient.',
+  },
+];
+
+const softwareApp = softwareAppLd({
+  name: 'Convertisseur JSON ↔ YAML',
+  description:
+    'Convertisseur JSON vers YAML (et inverse) gratuit et dans le navigateur, avec un vrai parseur YAML 1.2. Signale chaque commentaire, ancre, horodatage et entier arrondi que la conversion coûte. Sans envoi, sans inscription.',
+  url: pageUrl,
+  subCategory: 'Encoding',
+  featureList: [
+    'Convertir du JSON en YAML et du YAML en JSON',
+    'Signale les pertes de commentaires, d\'ancres, de clés de fusion et de flux multi-documents',
+    'Détecte le « problème norvégien » entre YAML 1.1 et 1.2 dans les deux sens',
+    'Avertit pour les entiers hors de la plage exacte de JavaScript',
+    'Indentation à 2 ou 4 espaces, tri profond des clés en option, lien partageable',
+    '100 % côté client, sans envoi, sans inscription',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+const faqPage = faqPageLd(faqs);
+
+const pipeline = [
+  {
+    title: 'Analyser avec un vrai parseur.',
+    body: 'js-yaml 4 sur le schéma core de YAML 1.2, ou JSON.parse — jamais une expression régulière. Si ça n\'analyse pas, vous obtenez la ligne et la colonne, pas « invalide ».',
+  },
+  {
+    title: 'Normaliser, et le consigner.',
+    body: 'Un seul parcours convertit les horodatages en chaînes ISO-8601, !!binary en base64 et ±Infinity/NaN en null, chaque conversion émettant un diagnostic avec le chemin où elle a eu lieu.',
+  },
+  {
+    title: 'Émettre de façon déterministe.',
+    body: 'Pas de repliement de lignes ni d\'ancres générées : la même entrée produit toujours les mêmes octets, et la sortie se relit exactement telle qu\'elle apparaît.',
+  },
+  {
+    title: 'Signaler chaque perte.',
+    body: 'Commentaires, ancres, clés de fusion, documents supplémentaires, clés numériques réordonnées et entiers arrondis sont listés à côté de la sortie : c\'est vous qui décidez si la conversion était acceptable.',
+  },
+];
+
+/** YAML 1.2 (js-yaml 4, cet outil) face à YAML 1.1 (PyYAML, Psych, anciens outils). */
+const versionRows = [
+  {
+    input: 'no',
+    v12: '"no" (chaîne)',
+    v11: 'false (booléen)',
+    note: 'Le problème norvégien. Idem pour yes / on / off / y / n.',
+  },
+  {
+    input: 'true',
+    v12: 'true (booléen)',
+    v11: 'true (booléen)',
+    note: 'Les deux versions ne s\'accordent que sur true et false.',
+  },
+  {
+    input: '~',
+    v12: 'null',
+    v11: 'null',
+    note: 'null, Null, NULL, ~ et une valeur vide valent null dans les deux.',
+  },
+  {
+    input: '2024-01-15',
+    v12: '2024-01-15T00:00:00.000Z',
+    v11: '2024-01-15T00:00:00.000Z',
+    note: 'Les deux résolvent une date non quotée en horodatage ; JSON n\'a pas de type date, elle est donc écrite comme chaîne ISO-8601.',
+  },
+  {
+    input: '0777',
+    v12: '777 (décimal)',
+    v11: '511 (octal)',
+    note: 'La divergence la plus dangereuse de toutes : les modes de fichier changent de sens en silence. Écrivez 0o777.',
+  },
+  {
+    input: '0o777',
+    v12: '511',
+    v11: '"0o777" (chaîne)',
+    note: 'YAML 1.1 ne comprend pas du tout la forme octale explicite de YAML 1.2.',
+  },
+  {
+    input: '1:30',
+    v12: '"1:30" (chaîne)',
+    v11: '90 (sexagésimal)',
+    note: 'YAML 1.1 lisait les nombres séparés par deux-points en base 60. YAML 1.2 l\'a supprimé.',
+  },
+  {
+    input: '.inf',
+    v12: 'Infinity',
+    v11: 'Infinity',
+    note: 'JSON n\'a pas d\'infini : la valeur devient null, avec un avertissement.',
+  },
+  {
+    input: '9007199254740993',
+    v12: '9007199254740992',
+    v11: '9007199254740993',
+    note: 'Ce n\'est pas une divergence YAML mais JavaScript : au-delà de 2^53 − 1, la valeur exacte est perdue.',
+  },
+];
+
+const beforeYaml = `# valeurs par défaut du déploiement, partagées par les deux jobs
+defaults: &defaults
+  retries: 2
+  verify: no          # une chaîne en YAML 1.2, false en YAML 1.1
+release:
+  <<: *defaults
+  date: 2024-01-15`;
+
+const afterJson = `{
+  "defaults": { "retries": 2, "verify": "no" },
+  "release": {
+    "retries": 2,
+    "verify": "no",
+    "date": "2024-01-15T00:00:00.000Z"
+  }
+}`;
+---
+
+<Shell
+  title="Convertisseur JSON ↔ YAML — avec rapport de pertes honnête"
+  description="Convertisseur JSON vers YAML (et inverse) gratuit dans le navigateur, avec un vrai parseur YAML 1.2. Signale chaque commentaire, ancre, date et nombre arrondi. Sans envoi."
+  canonical="/json-yaml-converter"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <ToolHero
+    slug="json-yaml-converter"
+    eyebrow="Convertisseur JSON ↔ YAML · Encoding"
+    badges={[
+      { label: 'Fonctionne dans votre navigateur', variant: 'live' },
+      { label: 'YAML 1.2 (js-yaml 4)', variant: 'neutral' },
+      { label: 'Sans inscription', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">Convertissez JSON ↔ YAML — et voyez exactement ce qui change.</Fragment>
+    <Fragment slot="lead">
+      Tous les convertisseurs transforment du YAML en JSON. Celui-ci vous dit en plus ce que ça a
+      coûté : les commentaires qu'il a supprimés, les ancres qu'il a développées, la date qu'il a
+      réécrite, l'entier qu'il a arrondi. Vrai parseur YAML 1.2, entièrement dans votre navigateur.
+    </Fragment>
+  </ToolHero>
+
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pt-8 pb-20 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">Playground du convertisseur JSON ↔ YAML</h2>
+      <JsonYamlConverterPlayground />
+    </div>
+  </section>
+
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">Le manque</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            Des convertisseurs muets, et des réponses qui dépendent du parseur.
+          </h2>
+          <ToolGapVisual />
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            La douzaine de convertisseurs financés par la publicité qui occupent le haut des
+            résultats de recherche font tous la même chose : ils affichent l'autre format et ne
+            disent rien. Vos commentaires ont disparu. Vos ancres ont été développées en copies.
+            Cette date non quotée est désormais une chaîne avec un fuseau horaire que vous n'avez
+            jamais écrit. L'identifiant à 19 chiffres a perdu ses deux derniers. Rien sur la page
+            n'en dit un mot : la première fois que vous l'apprenez, c'est en revue. Ou en
+            production.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Demandez plutôt à un assistant IA et vous héritez d'un second problème : la réponse
+            dépend de la version de YAML que le modèle a apprise.
+            <span class="code-mono">verify: no</span> est la chaîne
+            <span class="code-mono">"no"</span> en YAML 1.2 et le booléen
+            <span class="code-mono">false</span> en YAML 1.1, et les deux réponses sont affirmées avec
+            la même assurance. <span class="code-mono">0777</span> vaut 777 dans l'une et 511 dans
+            l'autre — ce qui, pour un mode de fichier, fait la différence entre un déploiement cassé
+            et un déploiement qui marche.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Cet outil répond avec des faits vérifiables plutôt qu'avec une supposition : un vrai
+            parseur YAML 1.2 tourne dans votre onglet, la sortie est déterministe, et chaque étape
+            avec perte est nommée avec la ligne ou le chemin concerné. Le tableau de référence
+            ci-dessous fixe les valeurs sur lesquelles les deux versions de YAML divergent, pour que
+            vous puissiez vérifier une affirmation en quelques secondes.
+          </p>
+          <p class="body-sm text-mute">
+            Vous travaillez sur un pipeline ? Le
+            <a class="link-inline" href={__l('/github-actions-validator', __lang)}
+              >validateur GitHub Actions</a
+            > et le
+            <a class="link-inline" href={__l('/gitlab-ci-validator', __lang)}
+              >validateur GitLab CI</a
+            > analysent le YAML lui-même.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="Le pipeline"
+    heading="Comment ça marche."
+    lead="Quatre étapes déterministes s'exécutent pendant que vous tapez — toutes dans votre onglet, et chaque étape avec perte se signale elle-même."
+    steps={pipeline}
+  />
+
+  <section id="examples" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Par l'exemple</p>
+        <h2 class="display-lg mt-3 text-ink">Quatre pertes en six lignes.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          Un commentaire, une ancre, une clé de fusion et une date non quotée : le YAML de tous les
+          jours qu'aucun convertisseur ne peut faire passer intact.
+        </p>
+      </div>
+      <div class="mx-auto mt-10 grid max-w-5xl gap-8 lg:grid-cols-2">
+        <div class="min-w-0">
+          <h3 class="display-sm text-ink">Entrée</h3>
+          <p class="body-sm mt-2 mb-4 text-pretty text-body">
+            Du YAML ordinaire : un commentaire, une ancre, une clé de fusion, une date nue.
+          </p>
+          <CodeBlock lang="yaml" filename="release.yaml" code={beforeYaml} />
+        </div>
+        <div class="min-w-0">
+          <h3 class="display-sm text-ink">Sortie, avec le reçu</h3>
+          <p class="body-sm mt-2 mb-4 text-pretty text-body">
+            Quatre pertes signalées : le commentaire a disparu,
+            <span class="code-mono">*defaults</span> a été copié,
+            <span class="code-mono">&lt;&lt;:</span> a été aplati, et la date est devenue une chaîne
+            ISO-8601. <span class="code-mono">no</span> est resté une chaîne — et il est signalé,
+            parce que PyYAML le lirait comme <span class="code-mono">false</span>.
+          </p>
+          <CodeBlock lang="json" filename="release.json" code={afterJson} />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="reference" class="scroll-mt-24 border-t border-hairline bg-canvas-soft">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Référence</p>
+        <h2 class="display-lg mt-3 text-ink">Là où YAML 1.2 et YAML 1.1 divergent.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          Le même scalaire non quoté, lu par cet outil (js-yaml 4, schéma core de YAML 1.2) et par un
+          parseur YAML 1.1 comme <span class="code-mono" translate="no">PyYAML</span>. Quand un outil
+          et un collègue ne s'accordent pas sur une valeur, la réponse est presque toujours dans ce
+          tableau.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 max-w-5xl">
+        <div class="card-soft overflow-x-auto">
+          <table class="jyc-table w-full text-left">
+            <thead>
+              <tr>
+                <th class="eyebrow px-4 py-3">Entrée non quotée</th>
+                <th class="eyebrow px-4 py-3">YAML 1.2 — cet outil</th>
+                <th class="eyebrow px-4 py-3">YAML 1.1 — PyYAML</th>
+              </tr>
+            </thead>
+            <tbody>
+              {
+                versionRows.map((r) => (
+                  <tr class="border-t border-hairline align-top">
+                    <td class="code-mono px-4 py-2.5 text-ink" translate="no">
+                      {r.input}
+                    </td>
+                    <td class="code-mono px-4 py-2.5 text-brand-strong" translate="no">
+                      {r.v12}
+                    </td>
+                    <td class="px-4 py-2.5">
+                      <span class="code-mono text-ink" translate="no">
+                        {r.v11}
+                      </span>
+                      <span class="caption mt-0.5 block text-mute">{r.note}</span>
+                    </td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+        <p class="caption mx-auto mt-6 max-w-3xl text-center text-pretty text-mute">
+          Quoter supprime toutes les divergences de ce tableau. Quand un scalaire doit rester une
+          chaîne dans les deux mondes, quotez-le — et quand cet outil émet du YAML, il les quote pour
+          vous.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section id="next" class="scroll-mt-24 bg-inverse text-inverse-fg">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+        <div class="min-w-0">
+          <p class="eyebrow !text-cyan">Étape suivante</p>
+          <h2 class="display-lg mt-3 text-balance text-inverse-fg">
+            Vérifiez maintenant que le YAML lui-même est valide.
+          </h2>
+          <p class="body-md mt-4 text-pretty text-white/70">
+            Convertir prouve qu'un document s'analyse ; cela ne prouve pas que le pipeline
+            l'acceptera. Passez le YAML de votre workflow dans le
+            <span translate="no">validateur GitHub Actions</span> ou le
+            <span translate="no">validateur GitLab CI</span> pour repérer les problèmes de schéma et
+            de sécurité qu'un convertisseur ne peut pas voir.
+          </p>
+          <div class="mt-7 flex flex-wrap items-center gap-3">
+            <Button href={__l('/github-actions-validator', __lang)} variant="secondary">
+              Ouvrir le validateur GitHub Actions
+            </Button>
+            <Button href={__l('/gitlab-ci-validator', __lang)} variant="secondary">
+              Validateur GitLab CI
+            </Button>
+          </div>
+        </div>
+        <CodeBlock
+          lang="text"
+          filename="report.txt"
+          code={`YAML → JSON · 2 docs · 31 keys · 1 warning · 3 notes
+note:    comments were dropped
+note:    1 alias expanded into a copy
+note:    "no" stayed a string (YAML 1.1 reads false)
+warning: 9007199254740993 → 9007199254740992`}
+        />
+      </div>
+    </div>
+  </section>
+
+  <FaqList faqs={faqs} />
+
+  <ToolCrossLinks slug="json-yaml-converter" lang={__lang}>
+    <Fragment slot="lead">
+      Le convertisseur JSON ↔ YAML est l'un des outils d'<span translate="no">{site.name}</span> —
+      une canopée grandissante de validateurs, convertisseurs et testeurs de navigateur qui ne
+      touchent jamais un serveur.
+    </Fragment>
+    <Fragment slot="links">
+      À voir aussi : le
+      <a class="link-inline" href={__l('/github-actions-validator', __lang)}
+        >validateur GitHub Actions</a
+      > et le
+      <a class="link-inline" href={__l('/gitlab-ci-validator', __lang)}>validateur GitLab CI</a> pour
+      analyser le YAML de pipeline, le convertisseur
+      <a class="link-inline" href={__l('/docker-run-to-compose', __lang)}
+        >Docker Run vers Compose</a
+      > pour transformer une commande en YAML, le
+      <a class="link-inline" href={__l('/alertmanager-route-tester', __lang)}
+        >testeur de routes Alertmanager</a
+      > pour parcourir un arbre de routage, et l'
+      <a class="link-inline" href={__l('/base64-encoder-decoder', __lang)}
+        >encodeur / décodeur Base64</a
+      > quand la charge utile est encodée plutôt que structurée — ou parcourez le
+      <a class="link-inline" href={__l(navLinks[0].href, __lang)}>répertoire des outils</a> complet.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      Fourni en l'état, par commodité ; vérifiez toujours une configuration critique auprès de
+      l'outil qui la consommera. <span translate="no">{site.name}</span> est gratuit et ouvert.
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>
+
+<style>
+  @reference "../../styles/global.css";
+
+  .jyc-table th {
+    font-weight: inherit;
+    white-space: nowrap;
+  }
+  .jyc-table td {
+    font-size: 13px;
+    line-height: 18px;
+  }
+  .jyc-table .code-mono {
+    overflow-wrap: anywhere;
+  }
+</style>

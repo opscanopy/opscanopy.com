@@ -615,6 +615,26 @@ export const tools: Tool[] = [
     ],
     accent: 'ship',
   },
+  {
+    slug: 'json-yaml-converter',
+    name: 'JSON ↔ YAML Converter',
+    tagline: 'Convert JSON to YAML and back — with honest warnings about what changes.',
+    description:
+      'Convert JSON to YAML or YAML to JSON with a real YAML 1.2 parser, and see every comment, anchor, merge key, timestamp and out-of-range integer the conversion costs you. Catches the "Norway problem" in both directions. Pure client-side, no upload.',
+    status: 'planned',
+    category: 'Encoding',
+    keywords: [
+      'json to yaml converter',
+      'yaml to json online free no upload',
+      'yaml anchors and aliases to json',
+      'yaml 1.1 vs 1.2 boolean norway problem',
+      'kubernetes yaml to json',
+      'convert yaml to json for kubectl patch',
+      'yaml multi document to json array',
+      'json yaml converter no signup',
+    ],
+    accent: 'develop',
+  },
 ];
 
 export const liveTools = tools.filter((t) => t.status === 'live');

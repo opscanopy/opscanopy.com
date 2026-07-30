@@ -66,6 +66,10 @@ const TOOL_PATHS = {
   'case-converter': { lib: 'case-converter', component: 'CaseConverterPlayground.astro' },
   'slugify': { lib: 'slugify', component: 'SlugifyPlayground.astro' },
   'chmod-calculator': { lib: 'chmod-calculator', component: 'ChmodCalculatorPlayground.astro' },
+  'json-yaml-converter': {
+    lib: 'json-yaml-converter',
+    component: 'JsonYamlConverterPlayground.astro',
+  },
 };
 
 const missing = liveTools.map((t) => t.slug).filter((slug) => !TOOL_PATHS[slug]);
