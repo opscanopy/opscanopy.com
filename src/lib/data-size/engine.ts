@@ -297,9 +297,11 @@ function rateForms(bitsPerSecond: Rational): { bitForm: string; byteForm: string
   const byteExponent = bestExponent(bytesPerSecond, 1000n);
   const bitValue = cell(divBig(bitsPerSecond, pow(1000n, bitExponent)), MAX_FRACTION_DIGITS);
   const byteValue = cell(divBig(bytesPerSecond, pow(1000n, byteExponent)), MAX_FRACTION_DIGITS);
+  // Carry the rounding flag through. Dropping it printed a rounded rate as though it were
+  // exact — in the header caption, the role=status summary and the copy payload alike.
   return {
-    bitForm: `${bitValue.value} ${makeUnit('si', bitExponent, 'bits').symbol}ps`,
-    byteForm: `${byteValue.value} ${makeUnit('si', byteExponent, 'bytes').symbol}/s`,
+    bitForm: `${bitValue.approx ? '≈ ' : ''}${bitValue.value} ${makeUnit('si', bitExponent, 'bits').symbol}ps`,
+    byteForm: `${byteValue.approx ? '≈ ' : ''}${byteValue.value} ${makeUnit('si', byteExponent, 'bytes').symbol}/s`,
   };
 }
 

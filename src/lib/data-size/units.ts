@@ -452,7 +452,10 @@ function resolveNumber(raw: string): { text: string; notes: string[] } | { error
     decimalChar = raw.lastIndexOf(',') > raw.lastIndexOf('.') ? ',' : '.';
   } else if (commas > 0) {
     const after = raw.slice(raw.lastIndexOf(',') + 1);
-    decimalChar = commas === 1 && after.length === 3 ? null : ',';
+    // Two or more commas can only be thousands grouping ("12,345,678") — mirroring the dot
+    // branch below. Only a lone comma is ambiguous, and then a 3-digit tail reads as grouping
+    // while anything else reads as a decimal comma ("1,5").
+    decimalChar = commas === 1 && after.length !== 3 ? ',' : null;
   } else if (dots > 0) {
     decimalChar = dots === 1 ? '.' : null;
   }

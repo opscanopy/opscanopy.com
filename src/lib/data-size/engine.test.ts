@@ -303,6 +303,23 @@ describe('data-size — grammar', () => {
     expect(convert('5gb').detection?.measures).toBe('bits');
   });
 
+  // Regression: two or more commas can only be thousands grouping. This used to be read as
+  // "the comma is the decimal point", which then failed as "two decimal points" — so the most
+  // common real-world paste (a spreadsheet/Explorer byte count) was rejected, while the
+  // equivalent dot-grouped form was accepted.
+  it('reads multi-group comma thousands separators, like the dot form', () => {
+    expect(convert('12,345,678 B').bytes?.value).toBe('12345678');
+    expect(convert('12.345.678 B').bytes?.value).toBe('12345678');
+    expect(convert('1,234,567 kB').bytes?.value).toBe('1234567000');
+  });
+
+  it('still tells a lone decimal comma apart from a lone grouping comma', () => {
+    expect(convert('1,5 GB').bytes?.value).toBe('1500000000'); // decimal comma
+    expect(convert('1,234 B').bytes?.value).toBe('1234'); // 3-digit tail = grouping
+    expect(convert('1,2345 GB').bytes?.value).toBe('1234500000'); // 4-digit tail = decimal
+    expect(convert('1,23,456 GB').valid).toBe(false); // 2-digit group is not grouping
+  });
+
   it('accepts underscore and space thousands separators without a note', () => {
     expect(convert('1_500_000 B').bytes?.value).toBe('1500000');
     const spaced = convert('1 500 000 B');
@@ -356,6 +373,20 @@ describe('data-size — transfer time', () => {
     expect(r.ideal?.seconds.value).toBe('21.474836');
     expect(r.ideal?.seconds.approx).toBe(true);
     expect(r.ideal?.humanized).toBe('21.5 s');
+  });
+
+  // Regression: rateForms() built its strings from cell().value and dropped cell().approx, so a
+  // rounded link speed was printed as though it were exact — in the header caption, the
+  // role=status summary and the copy payload alike. On a ground-truth tool that is the one
+  // mistake we cannot make.
+  it('marks a rounded rate as approximate instead of printing it as exact', () => {
+    const exact = transferTime('1 GB', '1 Gbps');
+    expect(exact.rate?.bitForm).toBe('1 Gbps');
+    expect(exact.rate?.byteForm).toBe('125 MB/s');
+
+    const rounded = transferTime('1 GB', '1.00000001 Gbps');
+    expect(rounded.rate?.bitForm.startsWith('≈ ')).toBe(true);
+    expect(rounded.rate?.caption.includes('≈')).toBe(true);
   });
 
   it('humanises the whole range', () => {
