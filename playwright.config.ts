@@ -19,7 +19,16 @@ import { defineConfig, devices } from '@playwright/test';
  * vitest `exclude` was needed. Kept deliberately: e2e specs must stay `.spec.ts`
  * under `tests/`, engine tests must stay `.test.ts` under `src/`.
  */
-const PREVIEW_ORIGIN = 'http://localhost:4321';
+/**
+ * Port override, because `reuseExistingServer: true` below is a footgun when more
+ * than one checkout of this repo exists on the machine: it silently attaches to
+ * whatever `astro preview` already owns 4321 and then tests THAT build. That
+ * happened for real in Wave 1 (all 14 journeys failed against the wrong dist/).
+ * Set `OC_PREVIEW_PORT` to give a worktree its own port; the default is
+ * unchanged, so a single-checkout run behaves exactly as before.
+ */
+const PREVIEW_PORT = Number(process.env.OC_PREVIEW_PORT ?? 4321);
+const PREVIEW_ORIGIN = `http://localhost:${PREVIEW_PORT}`;
 
 export default defineConfig({
   testDir: 'tests/e2e',
@@ -48,7 +57,7 @@ export default defineConfig({
   // with no engine-specific code paths.
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    command: 'npm run preview',
+    command: `npm run preview -- --port ${PREVIEW_PORT}`,
     url: PREVIEW_ORIGIN,
     reuseExistingServer: true,
     timeout: 120_000,

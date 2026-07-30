@@ -677,6 +677,27 @@ export const tools: Tool[] = [
     ],
     accent: 'develop',
   },
+  {
+    slug: 'dockerfile-linter',
+    name: 'Dockerfile Linter',
+    tagline:
+      'Paste a Dockerfile, get line-numbered best-practice and security findings with fixes — entirely in your browser.',
+    description:
+      'Seventeen high-signal rules over a real Dockerfile parse: unpinned base images, the apt-get update cache trap, secrets baked into image history, root containers, broken JSON exec forms and layer-cache order. Line-numbered findings with a fix for each, and a list of what it deliberately does not flag.',
+    status: 'planned',
+    category: 'Docker',
+    keywords: [
+      'dockerfile linter online',
+      'dockerfile best practices checker',
+      'hadolint alternative online',
+      'lint dockerfile without installing',
+      'apt-get update cache mistake',
+      'dockerfile latest tag warning',
+      'run as non-root check dockerfile',
+      'dockerfile layer cache order',
+    ],
+    accent: 'develop',
+  },
 ];
 
 export const liveTools = tools.filter((t) => t.status === 'live');

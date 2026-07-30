@@ -1,0 +1,629 @@
+---
+/**
+ * Dockerfile Linter — a página da ferramenta dockerfile-linter (superfície de
+ * SEO).
+ *
+ * A seção de referência É o catálogo de regras: uma subseção ancorada por regra
+ * (`#rule-df001` … `#rule-df017`) com um trecho antes-e-depois. As linhas de
+ * achados do playground linkam direto para essas âncoras.
+ */
+import Shell from '../../components/Shell.astro';
+import DockerfileLinterPlayground from '../../components/DockerfileLinterPlayground.astro';
+import Button from '../../components/Button.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import ToolHero from '../../components/ToolHero.astro';
+import ToolGapVisual from '../../components/ToolGapVisual.astro';
+import ToolPipeline from '../../components/ToolPipeline.astro';
+import FaqList from '../../components/FaqList.astro';
+import ToolCrossLinks from '../../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../../data/site';
+import { getTool } from '../../data/tools';
+import { softwareAppLd, faqPageLd } from '../../lib/jsonld';
+import type { Locale as __Locale } from '../../i18n/config';
+import { localizeKey as __l } from '../../i18n/utils';
+const __lang = (Astro.currentLocale ?? 'en') as __Locale;
+
+const tool = getTool('dockerfile-linter');
+const pagePath = '/dockerfile-linter/';
+const pageUrl = `${site.url}${pagePath}`;
+
+const faqs = [
+  {
+    q: 'O que o Dockerfile Linter verifica?',
+    a: 'Dezessete regras, de DF001 a DF017, cada uma um erro que ainda assim builda: uma imagem base sem tag ou em :latest, um COPY --from que nomeia um estágio que ainda não existe, ADD onde COPY seria o certo, um download remoto sem verificação, um WORKDIR relativo, um apt-get update sozinho na própria camada, um cache de pacotes deixado dentro da imagem, um segredo escrito no histórico da imagem por ENV ou ARG, um estágio final que roda como root, cd em vez de WORKDIR, curl canalizado para um shell, um segundo CMD que vence em silêncio, uma forma exec JSON que não é JSON válido, sudo em um passo de build, MAINTAINER e um COPY . que destrói o cache da instalação de dependências. Cada regra tem a própria subseção nesta página, com um trecho antes e depois.',
+  },
+  {
+    q: 'Isso é o hadolint?',
+    a: 'Não, e não tenta ser. O hadolint é um binário que você instala, e ele combina as próprias regras com tudo o que o ShellCheck reporta sobre o shell dentro das suas linhas RUN — excelente em CI e a resposta certa quando você pode impor uma toolchain. Isto cobre o caso que ele não cobre: um Dockerfile que você quer verificar agora, pelo navegador, em uma máquina onde você não pode instalar nada, sem mandar o arquivo para um servidor. Dezessete regras em vez de uma cauda longa, cada uma com a correção, e mais abaixo uma lista explícita do que ele se recusa a apontar.',
+  },
+  {
+    q: 'Meu Dockerfile sai do meu navegador em algum momento?',
+    a: 'Não. O parser e todas as dezessete regras são JavaScript rodando na sua aba — não há servidor, não há chamada de API e não há log, então 0 bytes são enviados. Aqui isso pesa mais do que na maioria das ferramentas: Dockerfiles carregam hostnames de registries internos, índices de pacotes privados, argumentos de build e, de vez em quando, uma credencial que ninguém deveria ter commitado.',
+  },
+  {
+    q: 'Por que apt-get update sozinho é um problema?',
+    a: 'Porque cada RUN é uma camada separada com a própria entrada de cache. Quando você depois edita só a linha de instalação, o Docker reaproveita a camada de update em cache — que pode ter semanas ou meses — e roda a instalação contra esse índice de pacotes desatualizado. O resultado é uma versão que você não esperava ou um 404 de um pacote que já foi substituído. Juntar os dois em um único RUN faz o índice e a instalação compartilharem a mesma entrada de cache, então eles nunca podem se contradizer.',
+  },
+  {
+    q: 'O que há de errado com a tag :latest?',
+    a: 'Nada, até quem publica dar um push. :latest é um ponteiro móvel, e um FROM sem tag significa :latest, então a imagem base que seu build usou no mês passado e a que ele usa hoje à noite podem ser versões maiores diferentes sem nenhuma mudança do seu lado — e nada no arquivo registra qual você realmente testou. Fixe uma tag que você testou. Se precisar de rebuilds idênticos byte a byte, acrescente também o digest (@sha256:…). Este linter pede uma tag e nunca exige um digest: esse trade-off é seu.',
+  },
+  {
+    q: "Por que CMD ['nginx'] é erro e não aviso?",
+    a: 'Porque o Docker não rejeita — ele silenciosamente faz outra coisa. A forma exec só é usada quando o argumento é parseado como JSON, e JSON exige aspas duplas. Com aspas simples tudo cai de volta para a forma shell, então o Docker executa /bin/sh -c "[\'nginx\']" e os colchetes e as aspas passam a fazer parte do comando. Nada avisa em tempo de build; o contêiner simplesmente não sobe, ou sobe um shell que não é o processo que você queria como PID 1.',
+  },
+  {
+    q: 'Ele consegue dizer se eu preciso de um .dockerignore?',
+    a: 'Não diretamente, e ele diz isso em vez de adivinhar. Um .dockerignore é um arquivo separado, então um linter que só lê o Dockerfile não pode saber se node_modules, .git e os artefatos de build estão entrando no contexto de build. O que ele consegue é identificar o padrão que faz um .dockerignore ausente custar caro — um COPY . antes da instalação de dependências, que é o DF017 — e colocar o conselho sobre .dockerignore no texto de correção dessa regra.',
+  },
+  {
+    q: 'Por que ele não aponta EXPOSE ou HEALTHCHECK ausentes?',
+    a: 'Os dois foram considerados e deliberadamente descartados. EXPOSE é documentação: por si só não publica nada, então a ausência não quebra nada e um a mais não custa nada. HEALTHCHECK é ignorado por completo pelo Kubernetes, que é onde essas imagens de fato rodam, então apontá-lo treinaria este público a ignorar o linter. A lista completa do que fica em silêncio, com o motivo de cada item, está no painel “O que ele deliberadamente não aponta” acima do FAQ.',
+  },
+  {
+    q: 'De que tamanho pode ser o Dockerfile?',
+    a: 'Até 200.000 caracteres — cerca de quatro mil linhas de texto denso, duas ordens de magnitude além de qualquer Dockerfile real. Acima disso ele recusa com uma mensagem em vez de congelar sua aba, porque uma entrada desse tamanho é um log de build ou um arquivo empacotado, não um Dockerfile. Os achados também têm limite, 20 por regra e 200 no total, e o painel informa o limite e o número real sempre que um deles se aplica.',
+  },
+];
+
+const softwareApp = softwareAppLd({
+  name: 'Dockerfile Linter',
+  description:
+    'Linter de Dockerfile gratuito no navegador: 17 regras de alto sinal para imagens base sem fixação, a armadilha de cache do apt-get update, segredos no histórico da imagem, contêineres root, formas exec JSON quebradas e ordem do cache de camadas. Sem instalar, sem upload.',
+  url: pageUrl,
+  subCategory: 'Docker',
+  featureList: [
+    '17 regras (DF001–DF017) com uma correção em cada achado',
+    'Achados com número de linha que saltam para a linha no editor',
+    'Lê continuações, comentários dentro delas, heredocs e builds multiestágio',
+    'Pega a armadilha de cache do apt-get update e caches de pacotes sem limpeza',
+    'Aponta segredos que ENV ou ARG deixam no histórico da imagem',
+    'Link compartilhável, snapshots salvos, relatório para copiar',
+    '100% do lado do cliente, sem upload, sem cadastro',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+const faqPage = faqPageLd(faqs);
+
+const pipeline = [
+  {
+    title: 'Parsear como o BuildKit.',
+    body: 'Continuações, linhas de comentário inteiras dentro delas, corpos de heredoc, a forma exec JSON, os estágios e a tabela de ARG antes do primeiro FROM. Uma diretiva `# escape=` realmente troca o caractere de continuação.',
+  },
+  {
+    title: 'Analisar o parse, não o texto.',
+    body: 'Dezessete regras leem instruções e estágios. As regras de shell percorrem uma varredura de cada RUN que respeita aspas, então um pipe dentro de uma string não é um pipe e o corpo de um heredoc continua sendo shell.',
+  },
+  {
+    title: 'Reportar uma linha e uma correção.',
+    body: 'Cada achado nomeia a linha FÍSICA — a linha 4 de um RUN dobrado, não a linha em que o RUN começou — e carrega a mudança a fazer, pronta para colar em um review.',
+  },
+  {
+    title: 'Dizer o que ele não verificou.',
+    body: 'As regras que ele deliberadamente não roda estão nesta página, com o motivo de cada uma. Um linter que você não consegue auditar é um linter em que você precisa confiar às cegas.',
+  },
+];
+
+/**
+ * O catálogo de regras. Uma entrada por regra, renderizada como subseção
+ * ancorada para a qual os chips DF do playground linkam direto (`#rule-df007`).
+ * `bad` e `fixed` são fragmentos completos e coláveis.
+ */
+const rules = [
+  {
+    id: 'DF001',
+    severity: 'error',
+    title: 'A primeira instrução precisa ser FROM',
+    what: 'Só ARG (e comentários) podem vir antes do FROM. Qualquer outra coisa não tem imagem sobre a qual agir, e o Docker recusa o build. Um arquivo sem nenhum FROM cai na mesma regra.',
+    bad: `RUN apt-get update
+FROM debian:bookworm-slim`,
+    fixed: `FROM debian:bookworm-slim
+RUN apt-get update`,
+  },
+  {
+    id: 'DF002',
+    severity: 'warning',
+    title: 'Fixe a imagem base em uma tag',
+    what: 'Uma referência sem tag significa :latest, e :latest se move. Fixações por digest, scratch, referências a um estágio anterior e tags que vêm de um argumento de build não resolvível ficam de fora.',
+    bad: `FROM node
+FROM node:latest`,
+    fixed: `FROM node:22-bookworm-slim`,
+  },
+  {
+    id: 'DF003',
+    severity: 'error',
+    title: 'COPY --from precisa nomear um estágio anterior',
+    what: 'Um estágio só pode copiar de outro definido acima dele. Um índice numérico igual ou posterior ao estágio atual, e um nome solto que não corresponde a nenhum estágio, quebram o build com “invalid from flag value”. Tudo que carrega registry, tag ou digest é tratado como imagem externa e fica de fora.',
+    bad: `FROM alpine:3.20
+COPY --from=builder /out /srv`,
+    fixed: `FROM golang:1.23-alpine AS builder
+FROM alpine:3.20
+COPY --from=builder /out /srv`,
+  },
+  {
+    id: 'DF004',
+    severity: 'warning',
+    title: 'Use COPY para arquivos locais, não ADD',
+    what: 'O ADD extrai arquivos tar locais automaticamente e pode baixar URLs, o que faz uma cópia simples se comportar de formas que a linha não diz. Extrair um arquivo é o único trabalho pelo qual vale manter o ADD, então um ADD cujas origens são todas tarballs fica em silêncio.',
+    bad: `ADD entrypoint.sh /entrypoint.sh`,
+    fixed: `COPY entrypoint.sh /entrypoint.sh`,
+  },
+  {
+    id: 'DF005',
+    severity: 'warning',
+    title: 'Verifique um ADD remoto',
+    what: 'Um ADD remoto grava numa camada o que o servidor devolver, e nada no build percebe quando isso muda. O --checksum= do BuildKit satisfaz a regra; baixar e verificar em um mesmo RUN também.',
+    bad: `ADD https://example.com/tool.tgz /tmp/tool.tgz`,
+    fixed: `RUN curl -fsSL https://example.com/tool.tgz -o /tmp/tool.tgz \\
+ && echo "<sha256sum>  /tmp/tool.tgz" | sha256sum -c -`,
+  },
+  {
+    id: 'DF006',
+    severity: 'warning',
+    title: 'WORKDIR deveria ser absoluto',
+    what: 'Um WORKDIR relativo é resolvido contra o WORKDIR anterior, então o diretório que ele seleciona depende das linhas acima — e muda no momento em que elas são reordenadas. Caminhos que começam com uma variável ficam de fora.',
+    bad: `WORKDIR app`,
+    fixed: `WORKDIR /app`,
+  },
+  {
+    id: 'DF007',
+    severity: 'warning',
+    title: 'Update e instalação no mesmo RUN',
+    what: 'Cada RUN é a própria camada. Uma camada de update em cache mais uma camada de instalação reconstruída significa instalar de um índice de pacotes que pode ter meses. Cobre apt-get, apt e apk.',
+    bad: `RUN apt-get update
+RUN apt-get install -y curl`,
+    fixed: `RUN apt-get update \\
+ && apt-get install -y --no-install-recommends curl \\
+ && rm -rf /var/lib/apt/lists/*`,
+  },
+  {
+    id: 'DF008',
+    severity: 'warning',
+    title: 'Limpe o cache de pacotes na mesma camada',
+    what: 'O índice de pacotes é commitado junto com a camada, então apagá-lo em um RUN posterior não recupera nada. Satisfeito por rm -rf /var/lib/apt/lists/* no apt, --no-cache no apk e dnf/yum clean all — e totalmente suprimido quando o RUN carrega um --mount=type=cache, porque aí o cache nunca entra na imagem.',
+    bad: `RUN apt-get update && apt-get install -y curl`,
+    fixed: `RUN apt-get update \\
+ && apt-get install -y --no-install-recommends curl \\
+ && rm -rf /var/lib/apt/lists/*`,
+  },
+  {
+    id: 'DF009',
+    severity: 'warning',
+    title: 'Não grave segredos em ENV nem em ARG',
+    what: 'Todo valor de ENV e ARG fica guardado no histórico da imagem e é legível com docker history por qualquer um que possa dar pull. Sobrescrevê-lo em uma camada posterior não o remove. Só são apontados nomes que parecem uma credencial E carregam um valor não vazio.',
+    bad: `ARG NPM_TOKEN=npm_liveTokenValue
+ENV DB_PASSWORD=hunter2`,
+    fixed: `RUN --mount=type=secret,id=npm_token \\
+    NPM_TOKEN="$(cat /run/secrets/npm_token)" npm ci`,
+  },
+  {
+    id: 'DF010',
+    severity: 'warning',
+    title: 'Não rode o estágio final como root',
+    what: 'Sem USER o processo roda como uid 0. Só o estágio FINAL é verificado — estágios de build legitimamente precisam de root — e dentro dele só o ÚLTIMO USER conta, porque é esse que o contêiner assume.',
+    bad: `FROM node:22-bookworm-slim
+COPY . /app
+CMD ["node", "/app/server.js"]`,
+    fixed: `FROM node:22-bookworm-slim
+COPY --chown=node:node . /app
+USER node
+CMD ["node", "/app/server.js"]`,
+  },
+  {
+    id: 'DF011',
+    severity: 'warning',
+    title: 'Use WORKDIR em vez de cd',
+    what: 'Um cd só dura o RUN em que está escrito. A instrução seguinte volta a começar no WORKDIR do estágio, e essa é uma causa comum de “no such file or directory” no COPY ou no CMD que vem depois.',
+    bad: `RUN cd /src && make`,
+    fixed: `WORKDIR /src
+RUN make`,
+  },
+  {
+    id: 'DF012',
+    severity: 'warning',
+    title: 'Não canalize um download para um shell',
+    what: 'curl … | sh executa o que o servidor devolver, sem assinatura e sem checksum. Detectado tanto dentro de linhas RUN dobradas quanto em corpos de heredoc, e reportado na linha em que o download está escrito.',
+    bad: `RUN curl -fsSL https://get.example.com/install.sh | sh`,
+    fixed: `RUN curl -fsSL https://get.example.com/install.sh -o /tmp/install.sh \\
+ && echo "<sha256sum>  /tmp/install.sh" | sha256sum -c - \\
+ && sh /tmp/install.sh`,
+  },
+  {
+    id: 'DF013',
+    severity: 'warning',
+    title: 'Um CMD e um ENTRYPOINT por estágio',
+    what: 'O Docker mantém o último de cada estágio e descarta o resto em silêncio. A contagem é por estágio, então um estágio de build com o próprio CMD está tudo bem, e instruções envolvidas em ONBUILD não contam.',
+    bad: `CMD ["node", "server.js"]
+CMD ["node", "worker.js"]`,
+    fixed: `CMD ["node", "server.js"]
+# o worker roda como o próprio contêiner, não como um segundo CMD`,
+  },
+  {
+    id: 'DF014',
+    severity: 'error',
+    title: 'A forma exec precisa ser JSON válido',
+    what: 'O Docker só lê o argumento como array em forma exec quando ele é parseado como JSON — aspas duplas, sem vírgula final. Caso contrário ele executa tudo em silêncio como forma shell via /bin/sh -c, colchetes inclusive.',
+    bad: `CMD ['nginx', '-g', 'daemon off;']`,
+    fixed: `CMD ["nginx", "-g", "daemon off;"]`,
+  },
+  {
+    id: 'DF015',
+    severity: 'warning',
+    title: 'Tire o sudo dos passos de build',
+    what: 'Um passo de build já roda como o USER do estágio — root, a menos que você tenha mudado — sem TTY, e a maioria das imagens base não traz sudo. Troque de usuário explicitamente em vez disso.',
+    bad: `RUN sudo apt-get install -y curl`,
+    fixed: `USER root
+RUN apt-get update \\
+ && apt-get install -y --no-install-recommends curl \\
+ && rm -rf /var/lib/apt/lists/*
+USER app`,
+  },
+  {
+    id: 'DF016',
+    severity: 'info',
+    title: 'MAINTAINER está obsoleto',
+    what: 'Obsoleto desde o Docker 1.13, em 2017. Ainda builda, mas nada o lê — o label OCI é o que registries e scanners exibem.',
+    bad: `MAINTAINER ops@example.com`,
+    fixed: `LABEL org.opencontainers.image.authors="ops@example.com"`,
+  },
+  {
+    id: 'DF017',
+    severity: 'info',
+    title: 'Copie o manifesto antes de instalar dependências',
+    what: 'Um COPY . mais acima no estágio do que a instalação de dependências significa que qualquer mudança só de código-fonte invalida a camada de instalação e reinstala tudo. Reconhece npm, yarn, pnpm, pip -r, bundler, composer, go mod download e cargo. Combine a reordenação com um .dockerignore para que node_modules e .git nem entrem no contexto.',
+    bad: `COPY . /app
+RUN npm ci`,
+    fixed: `COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .`,
+  },
+];
+
+/** Espelha o bloco DELIBERATELY SILENT no topo do rules.ts do motor. */
+const silent = [
+  {
+    what: 'Fixar versões além da tag',
+    why: 'apt-get install curl sem versão e pip install django sem == são ambos legítimos. O DF002 pede uma tag; nunca exige um digest nem um conjunto de pacotes fixado.',
+  },
+  {
+    what: 'EXPOSE',
+    why: 'Por si só não publica nada. A ausência não quebra nada e um a mais não custa nada — pura opinião.',
+  },
+  {
+    what: 'HEALTHCHECK',
+    why: 'Ignorado por completo pelo Kubernetes, que é onde este público roda suas imagens.',
+  },
+  {
+    what: 'Caches de download do pip e do npm',
+    why: 'Reais, mas pequenos, e as flags mudam entre versões das ferramentas. O DF008 cobre os gerenciadores de pacotes do sistema, onde estão os megabytes.',
+  },
+  {
+    what: 'update; install unidos por ponto e vírgula',
+    why: 'Isso esconde um update que falhou, mas os dois comandos ESTÃO na mesma camada, então o DF007 não tem nada a dizer. Uma regra separada sobre operadores de shell seria ruído.',
+  },
+  {
+    what: 'Tags que vêm de uma variável não resolvível',
+    why: 'FROM node:$TAG é decidido em tempo de build pelo --build-arg. Adivinhar para o que resolve seria uma resposta confiante e errada.',
+  },
+  {
+    what: 'COPY --from apontando para uma imagem de registry',
+    why: 'Qualquer coisa com barra, dois-pontos ou @digest é uma referência externa legal, então o DF003 fica calado.',
+  },
+  {
+    what: 'Semântica profunda de shell',
+    why: 'Aqui não existe AST de shell: nenhum raciocínio sobre set -e, nenhuma análise de código de saída, nenhum rastreio de variáveis. O scanner respeita aspas e para aí. Ele também não lê o argv de um RUN em forma exec como texto de shell.',
+  },
+  {
+    what: 'Heredocs não terminados, aspas desbalanceadas e dialetos # syntax=',
+    why: 'O Docker reporta isso por conta própria, e um parse parcial não deve inventar uma regra em cima.',
+  },
+  {
+    what: 'Tudo que está fora do arquivo',
+    why: 'Nenhuma imagem é baixada, nenhum registry é consultado e nenhum .dockerignore é lido, porque nada disso está no texto que você colou.',
+  },
+];
+
+const severityLabel: Record<string, string> = {
+  error: 'erro',
+  warning: 'aviso',
+  info: 'nota',
+};
+---
+
+<Shell
+  title="Dockerfile Linter — 17 regras com correções, sem instalar"
+  description="Analise um Dockerfile no navegador: 17 regras de alto sinal para imagens sem fixação, a armadilha do cache do apt, segredos embutidos, contêineres root e ordem de camadas."
+  canonical="/dockerfile-linter"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <ToolHero
+    slug="dockerfile-linter"
+    eyebrow="Dockerfile Linter · Docker"
+    badges={[
+      { label: 'Roda no seu navegador', variant: 'live' },
+      { label: '17 regras, DF001–DF017', variant: 'neutral' },
+      { label: 'Sem cadastro', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">Analise um Dockerfile antes que ele chegue ao review.</Fragment>
+    <Fragment slot="lead">
+      Dezessete regras sobre um parse real do arquivo: o <span class="code-mono">apt-get update</span>
+      que vai servir um índice desatualizado, o segredo escrito no histórico da sua imagem, a forma
+      exec que o Docker rodou caladamente como string de shell. Cada achado nomeia uma linha e carrega
+      a correção — e nada do que você colar sai da aba.
+    </Fragment>
+  </ToolHero>
+
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pt-8 pb-20 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">Playground do Dockerfile Linter</h2>
+      <DockerfileLinterPlayground />
+    </div>
+  </section>
+
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">A Lacuna</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            Um Dockerfile que builda não é um Dockerfile correto.
+          </h2>
+          <ToolGapVisual />
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            Todo erro do catálogo abaixo builda sem reclamar. <span class="code-mono">FROM node</span>
+            builda. <span class="code-mono">apt-get update</span> na própria camada builda — e então
+            instala de um índice que está em cache desde o trimestre passado.
+            <span class="code-mono">CMD ['nginx']</span> builda, e o Docker roda caladamente
+            <span class="code-mono">/bin/sh -c "['nginx']"</span> em vez do processo que você queria como
+            PID 1. Um build verde não é evidência; é a ausência de evidência.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Peça o Dockerfile a um assistente e você herda a mesma classe de bug com mais confiança em
+            cima. Dockerfiles gerados são fluentes e plausíveis: passam no review porque se parecem com
+            todos os outros, e carregam defeitos no formato de <span class="code-mono">DF007</span> e
+            <span class="code-mono">DF014</span>, para os quais nenhuma falha de build vai apontar.
+            Checar a afirmação leva segundos; o difícil é saber o que checar.
+          </p>
+          <p class="body-md text-pretty text-body">
+            O <span translate="no">hadolint</span> é a resposta certa em CI, e isto não o substitui.
+            Isto cobre o caso que ele não cobre: um arquivo que você quer verificar agora, pelo
+            navegador, em uma máquina onde você não pode instalar um binário, sem mandar um Dockerfile
+            cheio de hosts de registries internos e argumentos de build para o servidor de outra
+            pessoa. Dezessete regras, uma correção em cada achado e uma lista explícita do que fica em
+            silêncio — porque um linter que você não consegue auditar é um linter em que você precisa
+            confiar às cegas.
+          </p>
+          <p class="body-sm text-mute">
+            Já tem um contêiner rodando? O <a
+              class="link-inline"
+              href={__l('/docker-run-to-compose', __lang)}>Docker Run para Compose</a
+            > transforma o comando em um arquivo de serviço, e o
+            <a class="link-inline" href={__l('/env-example-checker', __lang)}
+              >Env Example Checker</a
+            > acha as variáveis que sua imagem espera e o seu ambiente nunca define.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="O Pipeline"
+    heading="Como funciona."
+    lead="Quatro passos, todos dentro da sua aba, refeitos enquanto você digita."
+    steps={pipeline}
+  />
+
+  <section id="reference" class="scroll-mt-24 border-t border-hairline bg-canvas-soft">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Referência</p>
+        <h2 class="display-lg mt-3 text-ink">O catálogo de regras.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          Todas as dezessete regras: três erros, doze avisos e duas notas. Um
+          <strong class="font-medium text-ink">erro</strong> significa que o Docker rejeita o arquivo ou
+          roda caladamente outra coisa; um <strong class="font-medium text-ink">aviso</strong> significa
+          que builda e está errado; uma <strong class="font-medium text-ink">nota</strong> é algo que
+          vale saber. Cada achado no playground linka para a sua regra aqui.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 max-w-5xl">
+        <div class="card-soft mb-10 overflow-x-auto">
+          <table class="dfl-table w-full text-left">
+            <thead>
+              <tr>
+                <th class="eyebrow px-4 py-3">Regra</th>
+                <th class="eyebrow px-4 py-3">Severidade</th>
+                <th class="eyebrow px-4 py-3">O que ela pega</th>
+              </tr>
+            </thead>
+            <tbody>
+              {
+                rules.map((rule) => (
+                  <tr class="border-t border-hairline align-top">
+                    <td class="code-mono px-4 py-2.5 whitespace-nowrap text-ink">
+                      <a class="link-inline" href={`#rule-${rule.id.toLowerCase()}`}>
+                        {rule.id}
+                      </a>
+                    </td>
+                    <td class="code-mono px-4 py-2.5 whitespace-nowrap text-mute">
+                      {severityLabel[rule.severity]}
+                    </td>
+                    <td class="px-4 py-2.5 text-ink">{rule.title}</td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="space-y-12">
+          {
+            rules.map((rule) => (
+              <div id={`rule-${rule.id.toLowerCase()}`} class="dfl-rule scroll-mt-24">
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span class="code-mono text-sm text-accent-ink">{rule.id}</span>
+                  <span class={`dfl-sev dfl-sev--${rule.severity} code-mono`}>
+                    {severityLabel[rule.severity]}
+                  </span>
+                </div>
+                <h3 class="display-sm mt-1.5 text-ink">{rule.title}</h3>
+                <p class="body-sm mt-2 max-w-3xl text-pretty text-body">{rule.what}</p>
+                <div class="mt-4 grid gap-4 lg:grid-cols-2">
+                  <div class="min-w-0">
+                    <p class="caption mb-2 text-mute">Em vez de</p>
+                    <CodeBlock lang="dockerfile" code={rule.bad} />
+                  </div>
+                  <div class="min-w-0">
+                    <p class="caption mb-2 text-mute">Escreva</p>
+                    <CodeBlock lang="dockerfile" code={rule.fixed} />
+                  </div>
+                </div>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="not-checked" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">O Limite</p>
+        <h2 class="display-lg mt-3 text-balance text-ink">O que ele deliberadamente não aponta.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          Cada um desses itens foi considerado e descartado, e a mesma lista está em um comentário no
+          topo do motor. Um silêncio que você pode ler vale mais do que uma regra que você aprende a
+          ignorar.
+        </p>
+      </div>
+      <div class="mx-auto mt-10 grid max-w-5xl gap-4 sm:grid-cols-2">
+        {
+          silent.map((item) => (
+            <div class="card p-5">
+              <h3 class="body-md font-medium text-ink">{item.what}</h3>
+              <p class="body-sm mt-2 text-pretty text-body">{item.why}</p>
+            </div>
+          ))
+        }
+      </div>
+      <p class="caption mx-auto mt-8 max-w-3xl text-center text-pretty text-mute">
+        Limites, ditos em vez de escondidos: o linter analisa até 200.000 caracteres, guarda no máximo
+        20 achados por regra e 200 no total, e informa o número real sempre que um limite se aplica.
+      </p>
+    </div>
+  </section>
+
+  <section id="next" class="scroll-mt-24 bg-inverse text-inverse-fg">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+        <div class="min-w-0">
+          <p class="eyebrow !text-cyan">Próximo passo</p>
+          <h2 class="display-lg mt-3 text-balance text-inverse-fg">
+            Cole o relatório no review.
+          </h2>
+          <p class="body-md mt-4 text-pretty text-white/70">
+            O “Copy report” entrega a execução inteira como texto puro — uma linha por achado, com o
+            número da linha, o id da regra e a correção. E depois siga: transforme o comando
+            <span translate="no">docker run</span> em um serviço do Compose, ou confira se as variáveis
+            que a imagem espera realmente existem.
+          </p>
+          <div class="mt-7 flex flex-wrap items-center gap-3">
+            <Button href={__l('/docker-run-to-compose', __lang)} variant="secondary"
+              >Docker Run para Compose</Button
+            >
+            <Button href={__l('/env-example-checker', __lang)} variant="secondary"
+              >Env Example Checker</Button
+            >
+          </div>
+        </div>
+        <CodeBlock
+          lang="text"
+          filename="report.txt"
+          code={`Dockerfile Linter — 1 error, 12 warnings, 2 info across 15 lines
+
+ERRORS (1)
+  L14 DF014: CMD looks like a JSON array but is not valid JSON.
+
+WARNINGS (12)
+  L1 DF002: Base image "ubuntu" has no tag, so Docker resolves it to :latest.
+  L6 DF007: apt-get update runs without an install in the same RUN.
+  L8 DF012: Piping a download straight into a shell.`}
+        />
+      </div>
+    </div>
+  </section>
+
+  <FaqList faqs={faqs} />
+
+  <ToolCrossLinks slug="dockerfile-linter">
+    <Fragment slot="lead">
+      O Dockerfile Linter é uma das ferramentas do <span translate="no">{site.name}</span> — uma copa
+      crescente de validadores, conversores e testadores que rodam no navegador e nunca tocam um
+      servidor.
+    </Fragment>
+    <Fragment slot="links">
+      Relacionados: <a class="link-inline" href={__l('/docker-run-to-compose', __lang)}
+        >Docker Run para Compose</a
+      > para transformar um comando de contêiner em arquivo de serviço,
+      <a class="link-inline" href={__l('/env-example-checker', __lang)}>Env Example Checker</a> para as
+      variáveis que uma imagem espera, o
+      <a class="link-inline" href={__l('/github-actions-validator', __lang)}
+        >GitHub Actions Validator</a
+      > e o <a class="link-inline" href={__l('/gitlab-ci-validator', __lang)}
+        >GitLab CI Validator</a
+      > para o pipeline que constrói a imagem, e o
+      <a class="link-inline" href={__l('/json-yaml-converter', __lang)}>Conversor JSON ↔ YAML</a>
+      quando a configuração em volta precisa ser remodelada — ou navegue pelo
+      <a class="link-inline" href={__l(navLinks[0].href, __lang)}>diretório de ferramentas</a>
+      completo.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      Fornecido como está, por conveniência; sempre confirme configuração crítica contra a ferramenta
+      que vai consumi-la. O <span translate="no">{site.name}</span> é gratuito e aberto.
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>
+
+<style>
+  @reference "../../styles/global.css";
+
+  .dfl-table th {
+    font-weight: inherit;
+    white-space: nowrap;
+  }
+  .dfl-table td {
+    font-size: 13px;
+    line-height: 18px;
+  }
+  .dfl-sev {
+    padding: 1px 8px;
+    border-radius: var(--radius-pill);
+    font-size: 10.5px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .dfl-sev--error {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
+  .dfl-sev--warning {
+    background: var(--color-warning-soft);
+    color: var(--color-warning-deep);
+  }
+  .dfl-sev--info {
+    background: var(--color-canvas-soft-2);
+    color: var(--color-body);
+  }
+  .dfl-rule + .dfl-rule {
+    border-top: 1px solid var(--color-hairline);
+    padding-top: 2.5rem;
+  }
+</style>

@@ -1,0 +1,1509 @@
+---
+/**
+ * DockerfileLinterPlayground — the interactive Dockerfile Linter island.
+ *
+ * ONE CodeMirror editor (line numbers on — it is a linter, and every finding
+ * names a line) plus a grouped findings panel. Each finding row carries three
+ * affordances: a line badge that selects and centres that line in the editor, a
+ * rule chip that links to the rule's own subsection in the page catalog
+ * (`#rule-df007`), and a copy button that yields one plain-text line fit for
+ * pasting into a code review.
+ *
+ * UX contract (CLAUDE.md), ported from CidrCheckerPlayground /
+ * JsonYamlConverterPlayground: example chips at `var(--radius-pill)`, ONE ~160ms
+ * debounce with the exact hint line, a ~600ms calm-error hold before anything
+ * goes red, per-row copy + `data-copy-all` + `data-copy-link`, a single visible
+ * `role="status"` summary plus an sr-only copy-status span, a results container
+ * that is NOT `aria-live`, glossary captions instead of tooltips, and
+ * `escapeHtml()` on every injected value — including values that land inside an
+ * HTML attribute.
+ *
+ * Runtime contract (lazy-imported inside the boot closure so the engine, the
+ * CodeMirror runtime and the Dockerfile stream mode all code-split away from the
+ * page shell):
+ *   ../lib/dockerfile-linter/engine   → lint, summaryLine
+ *   ../lib/dockerfile-linter/examples → examples: DockerfileExample[]
+ *
+ * Only the example LABELS are read at build time (so the chips are
+ * server-rendered and exist before hydration); the Dockerfiles themselves come
+ * from the lazy import by index, which keeps multi-line text out of HTML
+ * attributes entirely.
+ */
+import { examples } from '../lib/dockerfile-linter/examples';
+---
+
+<section class="df-pg" aria-label="Dockerfile Linter playground">
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Example chips ────────────────────────────────────────────────── */}
+    <div class="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:px-5">
+      <span class="eyebrow shrink-0">Examples</span>
+      <div id="df-chips" class="df-chips" role="group" aria-label="Examples">
+        {
+          examples.map((ex, i) => (
+            <button type="button" class="df-chip" data-example-idx={String(i)} aria-pressed="false">
+              {ex.label}
+            </button>
+          ))
+        }
+      </div>
+      <p class="df-gloss caption text-mute">
+        A <strong class="font-medium text-body">build stage</strong> is one
+        <span class="code-mono">FROM</span> and every instruction under it; a multi-stage file has
+        several, and only the last one ships. The
+        <strong class="font-medium text-body">layer cache</strong> reuses an instruction's result
+        until that instruction — or anything it copied — changes.
+      </p>
+    </div>
+
+    {/* ── Input editor (dark instrument slab) ──────────────────────────── */}
+    <div class="df-pane bg-inverse">
+      <div class="df-pane__bar">
+        <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+          <span class="df-pane__dot"></span>
+          <span class="df-pane__dot"></span>
+          <span class="df-pane__dot"></span>
+        </span>
+        <span class="df-pane__name code-mono">Dockerfile</span>
+        <span class="df-pane__tag code-mono">input</span>
+      </div>
+      <div id="df-input" class="df-editor"></div>
+    </div>
+
+    {/* ── Hints + snapshots ────────────────────────────────────────────── */}
+    <div class="border-b border-hairline px-4 pt-3 pb-4 sm:px-5">
+      <p id="df-run-hint" class="df-hint caption text-mute">
+        Results update as you type — press Enter to run now.
+      </p>
+      <p class="df-hint caption text-mute">
+        Press <kbd class="df-kbd">Esc</kbd> to release keyboard focus from the editor;
+        <kbd class="df-kbd">⌘</kbd>/<kbd class="df-kbd">Ctrl</kbd> + <kbd class="df-kbd">Enter</kbd>
+        lints and leaves the editor. Tap a <span class="code-mono">Line</span> badge to jump to that
+        line. Nothing you paste is uploaded.
+      </p>
+      <div class="df-snap-row mt-3 flex flex-wrap items-center gap-2">
+        <button id="df-snap-save" type="button" class="df-snap-btn">Save snapshot</button>
+        <select id="df-snap-select" class="df-snap-select" aria-label="Load a saved snapshot" disabled>
+          <option value="">No snapshots yet</option>
+        </select>
+        <button
+          id="df-snap-delete"
+          type="button"
+          class="df-snap-delete"
+          aria-label="Delete this snapshot"
+          hidden>&times;</button
+        >
+      </div>
+    </div>
+
+    {/* ── Findings ─────────────────────────────────────────────────────── */}
+    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <span class="flex flex-wrap items-center gap-2">
+          <span class="eyebrow">Findings</span>
+          <button
+            id="df-share"
+            type="button"
+            class="df-copy df-copy--labeled"
+            data-copy-link
+            data-copy=""
+            data-copy-label="Copy link"
+            hidden
+          >
+            <svg
+              class="df-copy-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6.75 9.25l2.5-2.5"></path>
+              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
+              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
+            </svg>
+            <svg
+              class="df-check-icon hidden"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="df-copy-label">Copy link</span>
+          </button>
+          <button
+            id="df-copy-all"
+            type="button"
+            class="df-copy df-copy--labeled"
+            data-copy-all
+            data-copy=""
+            data-copy-label="Copy report"
+            hidden
+          >
+            <svg
+              class="df-copy-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="5" y="5" width="9" height="9" rx="1.5"></rect>
+              <path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"></path>
+            </svg>
+            <svg
+              class="df-check-icon hidden"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="df-copy-label">Copy report</span>
+          </button>
+        </span>
+        <span id="df-summary" class="df-summary code-mono text-mute" role="status" aria-live="polite"
+        ></span>
+      </div>
+      <div id="df-results" class="df-results">
+        <p class="df-empty body-sm text-mute">
+          Paste a Dockerfile above — or tap an example — to see line-numbered findings here, each
+          with the reason it matters and the fix.
+        </p>
+      </div>
+      <span id="df-copy-status" class="sr-only" role="status" aria-live="polite"></span>
+    </div>
+  </div>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  /* ── Example chips ───────────────────────────────────────────────────── */
+  .df-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .df-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-brand-strong);
+    cursor: pointer;
+    touch-action: manipulation;
+    transition:
+      background 0.12s ease,
+      box-shadow 0.12s ease;
+  }
+  .df-chip:hover,
+  .df-chip[aria-pressed='true'] {
+    background: var(--color-brand-soft);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+  }
+  .df-chip:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  .df-gloss {
+    margin: 0;
+    font-size: 12px;
+    line-height: 17px;
+    text-wrap: pretty;
+  }
+
+  /* ── Input pane (dark instrument slab) ───────────────────────────────── */
+  .df-pane {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+  }
+  .df-pane__bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .df-pane__dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.18);
+  }
+  .df-pane__name {
+    /* 0.72 alpha over --color-inverse clears 4.5:1 in both themes. */
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 12px;
+  }
+  .df-pane__tag {
+    margin-left: auto;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  /* CodeMirror host. Background stays transparent so the slab shows through:
+     One Dark's own #282c34 is LIGHTER than --color-inverse, and its dimmest
+     token only clears 4.5:1 against the darker slab. */
+  .df-editor {
+    overflow: hidden;
+    padding-inline: 4px;
+  }
+  .df-editor :global(.cm-editor) {
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .df-editor :global(.cm-editor.cm-focused) {
+    outline: 2px solid var(--color-link);
+    outline-offset: -2px;
+  }
+  .df-editor :global(.cm-scroller) {
+    overflow: auto;
+    min-height: 260px;
+    max-height: 460px;
+    font-family: var(--font-mono);
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+  }
+  .df-editor :global(.cm-scroller)::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .df-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: var(--radius-pill);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  .df-editor :global(.cm-gutters) {
+    background: transparent;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  /* One Dark's gutter foreground is below 4.5:1 on this slab — lift it. */
+  .df-editor :global(.cm-lineNumbers .cm-gutterElement) {
+    color: #a9a39a;
+  }
+  .df-editor :global(.cm-content) {
+    padding: 14px 0 16px;
+  }
+  .df-editor :global(.cm-line) {
+    padding-inline: 4px;
+  }
+  /* Invalid input: a hairline red rule down the editor, never a flash. */
+  .df-pane.df-pane--error .df-editor :global(.cm-editor) {
+    box-shadow: inset 2px 0 0 0 var(--color-error);
+  }
+
+  .df-hint {
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  .df-hint + .df-hint {
+    margin-top: 4px;
+  }
+  .df-hint .code-mono {
+    font-size: 12px;
+  }
+  .df-kbd {
+    border: 1px solid currentColor;
+    border-radius: var(--radius-xs);
+    padding: 0 3px;
+    font-size: 0.85em;
+  }
+
+  /* ── Snapshot row ────────────────────────────────────────────────────── */
+  .df-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition:
+      background 0.12s ease,
+      box-shadow 0.12s ease;
+  }
+  .df-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .df-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .df-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .df-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition:
+      background 0.12s ease,
+      color 0.12s ease;
+  }
+  .df-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
+
+  /* ── Findings panel ──────────────────────────────────────────────────── */
+  .df-summary {
+    min-width: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+  .df-results {
+    min-height: 120px;
+  }
+  .df-copy-status--fail {
+    display: block;
+    margin-top: 10px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-error-deep);
+  }
+
+  /* ── Runtime-injected markup (Astro scoped styles never reach it) ────── */
+  :global(.df-group) {
+    margin-top: 12px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+    animation: df-rise 0.18s ease both;
+  }
+  :global(.df-group:first-child) {
+    margin-top: 0;
+  }
+  :global(.df-group__head) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+  :global(.df-group__count) {
+    margin-left: auto;
+    text-transform: none;
+    letter-spacing: 0;
+    white-space: nowrap;
+  }
+  :global(.df-row) {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 10px 12px 14px;
+  }
+  :global(.df-row + .df-row) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.df-row__body) {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  :global(.df-row__head) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  :global(.df-pill) {
+    flex: 0 0 auto;
+    padding: 1px 7px;
+    border-radius: var(--radius-pill);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  :global(.df-pill--error) {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
+  :global(.df-pill--warning) {
+    background: var(--color-warning-soft);
+    color: var(--color-warning-deep);
+  }
+  :global(.df-pill--info) {
+    background: var(--color-canvas-soft-2);
+    color: var(--color-body);
+  }
+  :global(.df-rule) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 7px;
+    border-radius: var(--radius-pill);
+    background: var(--color-canvas-soft);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-brand-strong);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-decoration: none;
+  }
+  :global(.df-rule:hover) {
+    background: var(--color-brand-soft);
+    text-decoration: underline;
+  }
+  :global(.df-jump) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 7px;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: var(--color-canvas-soft-2);
+    color: var(--color-body);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    line-height: 16px;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  :global(.df-jump:hover) {
+    background: var(--color-canvas-soft-3);
+    color: var(--color-ink);
+  }
+  :global(.df-jump:focus-visible),
+  :global(.df-rule:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  :global(.df-row__title) {
+    flex: 1 1 100%;
+    margin: 4px 0 0;
+    font-size: 13.5px;
+    line-height: 19px;
+    color: var(--color-ink);
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+  }
+  :global(.df-row__detail) {
+    margin: 4px 0 0;
+    font-size: 12.5px;
+    line-height: 18px;
+    color: var(--color-body);
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+  }
+  :global(.df-fix) {
+    display: flex;
+    gap: 7px;
+    margin-top: 7px;
+    padding: 7px 9px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas-soft);
+    color: var(--color-body);
+  }
+  :global(.df-fix__label) {
+    flex: 0 0 auto;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 17px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-accent-ink);
+  }
+  :global(.df-fix__text) {
+    margin: 0;
+    min-width: 0;
+    font-size: 12.5px;
+    line-height: 17px;
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+  }
+  :global(.df-fix__text code) {
+    font-family: var(--font-mono);
+    font-size: 0.94em;
+  }
+  :global(.df-note) {
+    margin: 0;
+    padding: 9px 14px;
+    border-top: 1px solid var(--color-hairline);
+    font-size: 12px;
+    line-height: 17px;
+    color: var(--color-mute);
+    text-wrap: pretty;
+  }
+  :global(.df-clean) {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-brand-soft);
+    box-shadow: var(--shadow-hairline);
+  }
+  :global(.df-clean__icon) {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    color: var(--color-brand-strong);
+  }
+  :global(.df-clean__title) {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+    color: var(--color-ink);
+  }
+  :global(.df-clean__sub) {
+    margin: 2px 0 0;
+    font-size: 12.5px;
+    line-height: 18px;
+    color: var(--color-body);
+    text-wrap: pretty;
+  }
+  :global(.df-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+  }
+  :global(.df-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.df-error__title) {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.df-error__detail) {
+    margin-top: 2px;
+    font-size: 13px;
+    line-height: 19px;
+    text-wrap: pretty;
+    overflow-wrap: anywhere;
+  }
+  :global(.df-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 96px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+
+  /* ── Copy buttons: icon-only per row, labeled in the header ──────────── */
+  :global(.df-copy) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    touch-action: manipulation;
+    transition:
+      color 0.12s ease,
+      background 0.12s ease;
+  }
+  :global(.df-copy:hover) {
+    color: var(--color-brand-strong);
+    background: var(--color-hairline);
+  }
+  :global(.df-copy:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  :global(.df-copy--labeled) {
+    width: auto;
+    height: 26px;
+    gap: 6px;
+    padding: 0 10px;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  :global(.df-copy--copied) {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+
+  /* Coarse-pointer tap targets, in the two tiers the contract defines: chips
+     and icon-only per-row copy buttons at 44px, labeled header copy controls at
+     36px (wide text targets, not the primary in-result action). The row's own
+     line/rule badges sit at the labeled tier too. */
+  @media (pointer: coarse) {
+    .df-chip {
+      min-height: 44px;
+    }
+    :global(.df-copy) {
+      width: 44px;
+      height: 44px;
+    }
+    :global(.df-copy--labeled) {
+      width: auto;
+      height: auto;
+      min-height: 36px;
+    }
+    :global(.df-jump),
+    :global(.df-rule) {
+      min-height: 36px;
+      padding-inline: 10px;
+    }
+  }
+
+  @keyframes df-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.df-group),
+    :global(.df-clean) {
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  import { escapeHtml } from '../lib/escape-html';
+  import { copyTextToClipboard } from '../lib/clipboard';
+  import { base64UrlDecode, base64UrlEncode } from '../lib/codec';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  import type { EditorView } from '@codemirror/view';
+
+  /* ---- Engine contract, mirrored structurally (never statically imported) -- */
+  type Severity = 'error' | 'warning' | 'info';
+  type Finding = {
+    id: string;
+    severity: Severity | string;
+    title: string;
+    detail: string;
+    line?: number;
+    remediation?: string;
+  };
+  type LintResult = {
+    ok: boolean;
+    error?: string;
+    findings: Finding[];
+    summary: { errors: number; warnings: number; infos: number };
+    stats: { lines: number; instructions: number; stages: number };
+    truncatedRules: { ruleId: string; shown: number; total: number }[];
+    truncated: boolean;
+  };
+  type EngineModule = {
+    lint: (text: string) => LintResult;
+    summaryLine: (result: LintResult) => string;
+  };
+  type Example = { id: string; label: string; dockerfile: string };
+
+  const ROOT_SEL = '.df-pg';
+  const SLUG = 'dockerfile-linter';
+  /** The deep-link fragment key, matching `GhaValidatorPlayground`'s pattern. */
+  const SHARE_KEY = 'df';
+  /* One debounce, inside the contract's 130–220ms band. */
+  const DEBOUNCE_MS = 160;
+  /* Nothing goes red until the typing has been idle this long. */
+  const ERROR_HOLD_MS = 600;
+  const RESET_MS = 1800;
+  /* Past ~2000 chars a fragment stops being a dependable URL (browser, proxy and
+     chat-client limits), so we neither write it nor offer the share link — the
+     linter itself keeps working on files of any size. */
+  const MAX_HASH_LEN = 2000;
+  /* DOM cap: a 4,000-line Dockerfile can legitimately produce a hundred findings
+     per severity, and rendering all of them is what freezes the tab — not the
+     engine, which is linear. Each group says what it is hiding. */
+  const MAX_ROWS_PER_GROUP = 50;
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.dfWired === 'true') return;
+      root.dataset.dfWired = 'true';
+      void init(root);
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  function normaliseExamples(raw: unknown): Example[] {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((item, i) => {
+        const o = (item ?? {}) as Record<string, unknown>;
+        return {
+          id: typeof o.id === 'string' && o.id ? o.id : `example-${i + 1}`,
+          label: typeof o.label === 'string' && o.label ? o.label : `Example ${i + 1}`,
+          dockerfile: typeof o.dockerfile === 'string' ? o.dockerfile : '',
+        } satisfies Example;
+      })
+      .filter((e) => e.dockerfile.length > 0);
+  }
+
+  /* ---- Icons (decorative) ------------------------------------------------- */
+
+  const ALERT_SVG =
+    '<svg class="df-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const CHECK_SVG =
+    '<svg class="df-clean__icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"></circle><path d="M7.5 12.5l3 3 6-6.5"></path></svg>';
+  const COPY_ICON_SVG =
+    '<svg class="df-copy-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"/></svg>';
+  const CHECK_ICON_SVG =
+    '<svg class="df-check-icon hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
+
+  /* ---- Pure render helpers ------------------------------------------------ */
+
+  const SEV_ORDER: Severity[] = ['error', 'warning', 'info'];
+  const SEV_GROUP: Record<Severity, string> = {
+    error: 'Errors',
+    warning: 'Warnings',
+    info: 'Notes',
+  };
+  const SEV_WORD: Record<Severity, string> = {
+    error: 'error',
+    warning: 'warning',
+    info: 'note',
+  };
+
+  function normSeverity(value: string): Severity {
+    return value === 'error' || value === 'warning' || value === 'info' ? value : 'info';
+  }
+
+  function plural(n: number, word: string): string {
+    return `${n} ${word}${n === 1 ? '' : 's'}`;
+  }
+
+  /** Rule id → the page catalog anchor, e.g. `DF007` → `#rule-df007`. */
+  function ruleAnchor(id: string): string {
+    return `#rule-${id.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+  }
+
+  /** Escape, then render `backticks` as inline code — remediation text only. */
+  function remediationHtml(text: string): string {
+    return escapeHtml(text).replace(/`([^`]+)`/g, (_m, code: string) => `<code>${code}</code>`);
+  }
+
+  /** One plain-text line per finding: `L12 DF007: message — fix: hint`. */
+  function rowText(finding: Finding): string {
+    const where = typeof finding.line === 'number' ? `L${finding.line} ` : '';
+    const fix = finding.remediation ? ` — fix: ${finding.remediation}` : '';
+    return `${where}${finding.id}: ${finding.title}${fix}`;
+  }
+
+  function rowHtml(finding: Finding, index: number): string {
+    const sev = normSeverity(String(finding.severity));
+    const hasLine = typeof finding.line === 'number' && Number.isFinite(finding.line);
+    const jump = hasLine
+      ? `<button type="button" class="df-jump" data-df-jump="${escapeHtml(String(finding.line))}" ` +
+        `aria-label="Jump to line ${escapeHtml(String(finding.line))} in the editor">Line ${escapeHtml(
+          String(finding.line),
+        )}</button>`
+      : '';
+    const rule =
+      `<a class="df-rule" href="${escapeHtml(ruleAnchor(finding.id))}" ` +
+      `aria-label="${escapeHtml(finding.id)} reference">${escapeHtml(finding.id)}</a>`;
+    const fix = finding.remediation
+      ? '<div class="df-fix"><span class="df-fix__label">Fix</span>' +
+        `<p class="df-fix__text">${remediationHtml(finding.remediation)}</p></div>`
+      : '';
+    return (
+      `<div class="df-row df-row--${sev}">` +
+      '<div class="df-row__body">' +
+      '<div class="df-row__head">' +
+      `<span class="df-pill df-pill--${sev}">${escapeHtml(SEV_WORD[sev])}</span>` +
+      rule +
+      jump +
+      `<p class="df-row__title">${escapeHtml(finding.title)}</p>` +
+      '</div>' +
+      `<p class="df-row__detail">${escapeHtml(finding.detail)}</p>` +
+      fix +
+      '</div>' +
+      `<button class="df-copy" type="button" data-df-row="${escapeHtml(String(index))}" data-copy="" ` +
+      `aria-label="Copy this ${escapeHtml(SEV_WORD[sev])}" title="Copy">` +
+      COPY_ICON_SVG +
+      CHECK_ICON_SVG +
+      '</button></div>'
+    );
+  }
+
+  function groupHtml(sev: Severity, findings: { finding: Finding; index: number }[]): string {
+    const shown = findings.slice(0, MAX_ROWS_PER_GROUP);
+    const rows = shown.map(({ finding, index }) => rowHtml(finding, index)).join('');
+    const cap =
+      findings.length > shown.length
+        ? `<p class="df-note">Showing the first ${shown.length} of ${findings.length} ` +
+          `${SEV_WORD[sev]}s. Fix these and re-run to see the rest.</p>`
+        : '';
+    return (
+      '<div class="df-group">' +
+      `<p class="df-group__head"><span>${escapeHtml(SEV_GROUP[sev])}</span>` +
+      `<span class="df-group__count">${escapeHtml(String(findings.length))}</span></p>` +
+      rows +
+      cap +
+      '</div>'
+    );
+  }
+
+  /** Engine-level caps, stated rather than hidden. */
+  function truncationHtml(result: LintResult): string {
+    const notes: string[] = [];
+    for (const rule of result.truncatedRules.slice(0, 6)) {
+      notes.push(
+        `${escapeHtml(rule.ruleId)} matched ${escapeHtml(String(rule.total))} places; the first ` +
+          `${escapeHtml(String(rule.shown))} are listed.`,
+      );
+    }
+    if (result.truncatedRules.length > 6) {
+      notes.push(`…and ${escapeHtml(String(result.truncatedRules.length - 6))} more capped rules.`);
+    }
+    if (result.truncated) {
+      notes.push(
+        'This Dockerfile produced more findings than one report can usefully hold, so the list stops here.',
+      );
+    }
+    if (notes.length === 0) return '';
+    return `<div class="df-group"><p class="df-group__head"><span>Limits</span></p>${notes
+      .map((n) => `<p class="df-note">${n}</p>`)
+      .join('')}</div>`;
+  }
+
+  function cleanHtml(result: LintResult): string {
+    return (
+      '<div class="df-clean">' +
+      CHECK_SVG +
+      '<div><p class="df-clean__title">No findings — nice Dockerfile.</p>' +
+      `<p class="df-clean__sub">All 17 rules ran over ${escapeHtml(
+        plural(result.stats.instructions, 'instruction'),
+      )} in ${escapeHtml(plural(result.stats.stages, 'stage'))} and none of them matched. ` +
+      'The rule catalog below lists exactly what was checked — and what this linter deliberately ' +
+      'does not check.</p></div></div>'
+    );
+  }
+
+  function errorCardHtml(message: string, isAlert: boolean): string {
+    return (
+      `<div class="df-error"${isAlert ? ' role="alert"' : ''}>` +
+      ALERT_SVG +
+      '<div><p class="df-error__title">This is not a Dockerfile this linter can read</p>' +
+      `<p id="df-error-detail" class="df-error__detail">${escapeHtml(message)}</p></div></div>`
+    );
+  }
+
+  /** The plain-text report behind "Copy report" — built for a PR comment. */
+  function reportText(result: LintResult, summary: string): string {
+    const lines = [`Dockerfile Linter — ${summary}`, ''];
+    for (const sev of SEV_ORDER) {
+      const group = result.findings.filter((f) => normSeverity(String(f.severity)) === sev);
+      if (group.length === 0) continue;
+      lines.push(`${SEV_GROUP[sev].toUpperCase()} (${group.length})`);
+      for (const finding of group) lines.push(`  ${rowText(finding)}`);
+      lines.push('');
+    }
+    if (result.findings.length === 0) lines.push('No findings.', '');
+    for (const rule of result.truncatedRules) {
+      lines.push(`Note: ${rule.ruleId} matched ${rule.total} places; ${rule.shown} listed.`);
+    }
+    if (result.truncated) lines.push('Note: the finding list was capped.');
+    lines.push('Checked client-side at opscanopy.com/dockerfile-linter/ — 0 bytes uploaded.');
+    return lines.join('\n');
+  }
+
+  /* ---- Share fragment ----------------------------------------------------- */
+
+  function encodeShare(text: string): string {
+    return `#${SHARE_KEY}=${base64UrlEncode(text)}`;
+  }
+
+  /**
+   * Decode a `#df=` fragment. Two accepted forms, in order: the base64url
+   * payload `encodeShare` writes, and RAW TEXT (`#df=FROM%20ubuntu`). Accepting
+   * the second is deliberate — a fragment is typo- and attacker-controlled
+   * input, and the honest degradation for "this is not my payload" is to lint it
+   * as pasted text and show a real diagnostic, not to silently drop it and
+   * display an example the visitor never asked for.
+   */
+  function decodeShare(hash: string): string | null {
+    const match = /[#&]df=([^&]*)/.exec(hash);
+    if (!match || match[1] === '') return null;
+    const encoded = match[1];
+    try {
+      const decoded = base64UrlDecode(encoded);
+      // A Dockerfile always contains an instruction keyword; base64 of unrelated
+      // text can decode into mojibake, so require something plausible before
+      // trusting form 1.
+      if (decoded.trim() !== '' && /[\x20-\x7e\r\n\t]{3,}/.test(decoded)) return decoded;
+    } catch {
+      /* not our payload — fall through to the raw-text form */
+    }
+    try {
+      const raw = decodeURIComponent(encoded);
+      return raw.trim() === '' ? null : raw;
+    } catch {
+      return encoded;
+    }
+  }
+
+  /* ---- Instance init ----------------------------------------------------- */
+
+  async function init(root: HTMLElement): Promise<void> {
+    const editorHost = el<HTMLElement>(root, '#df-input');
+    const paneEl = el<HTMLElement>(root, '.df-pane');
+    const resultsBox = el<HTMLElement>(root, '#df-results');
+    const summaryEl = el<HTMLElement>(root, '#df-summary');
+    const shareBtn = el<HTMLButtonElement>(root, '#df-share');
+    const copyAllBtn = el<HTMLButtonElement>(root, '#df-copy-all');
+    const copyStatus = el<HTMLElement>(root, '#df-copy-status');
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#df-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#df-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#df-snap-delete');
+    const chips = Array.from(root.querySelectorAll<HTMLButtonElement>('#df-chips .df-chip'));
+
+    if (
+      !editorHost ||
+      !paneEl ||
+      !resultsBox ||
+      !summaryEl ||
+      !shareBtn ||
+      !copyAllBtn ||
+      !copyStatus ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
+    ) {
+      return;
+    }
+
+    /* ---- Copy plumbing --------------------------------------------------- */
+
+    function setCopyStatus(message: string, failed: boolean): void {
+      copyStatus!.textContent = message;
+      copyStatus!.classList.toggle('sr-only', !failed);
+      copyStatus!.classList.toggle('df-copy-status--fail', failed);
+    }
+
+    function setCopied(btn: HTMLButtonElement, copied: boolean): void {
+      btn.classList.toggle('df-copy--copied', copied);
+      btn.querySelector('.df-copy-icon')?.classList.toggle('hidden', copied);
+      btn.querySelector('.df-check-icon')?.classList.toggle('hidden', !copied);
+      const label = btn.querySelector<HTMLElement>('.df-copy-label');
+      if (label) {
+        label.textContent = copied ? 'Copied' : (btn.dataset.copyLabel ?? 'Copy');
+      } else if (copied) {
+        btn.dataset.prevAriaLabel = btn.getAttribute('aria-label') ?? '';
+        btn.setAttribute('aria-label', 'Copied');
+      } else if (btn.dataset.prevAriaLabel) {
+        btn.setAttribute('aria-label', btn.dataset.prevAriaLabel);
+        delete btn.dataset.prevAriaLabel;
+      }
+    }
+
+    async function handleCopy(btn: HTMLButtonElement): Promise<void> {
+      const ok = await copyTextToClipboard(btn.dataset.copy ?? '');
+      if (ok) {
+        setCopied(btn, true);
+        setCopyStatus('Copied to clipboard.', false);
+        window.clearTimeout(Number(btn.dataset.copyTimer));
+        btn.dataset.copyTimer = String(
+          window.setTimeout(() => {
+            setCopied(btn, false);
+            if (copyStatus!.textContent === 'Copied to clipboard.') setCopyStatus('', false);
+          }, RESET_MS),
+        );
+      } else {
+        setCopyStatus('Copy failed — select the value manually.', true);
+      }
+    }
+
+    root.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      const copyBtn = target.closest<HTMLButtonElement>('.df-copy');
+      if (copyBtn && root.contains(copyBtn)) {
+        void handleCopy(copyBtn);
+        return;
+      }
+      const jumpBtn = target.closest<HTMLButtonElement>('[data-df-jump]');
+      if (jumpBtn && root.contains(jumpBtn)) {
+        jumpToLine(Number(jumpBtn.dataset.dfJump));
+      }
+    });
+
+    /* ---- Lazy engine + examples + CodeMirror ----------------------------- */
+
+    let engine: EngineModule;
+    let examples: Example[] = [];
+    let EditorState: typeof import('@codemirror/state').EditorState;
+    let EditorViewCtor: typeof import('@codemirror/view').EditorView;
+    let keymap: typeof import('@codemirror/view').keymap;
+    let lineNumbers: typeof import('@codemirror/view').lineNumbers;
+    let highlightActiveLine: typeof import('@codemirror/view').highlightActiveLine;
+    let defaultKeymap: typeof import('@codemirror/commands').defaultKeymap;
+    // Named `cmHistory`, not `history`: a bare `history` would shadow
+    // `window.history`, which `writeHash` needs for replaceState.
+    let cmHistory: typeof import('@codemirror/commands').history;
+    let historyKeymap: typeof import('@codemirror/commands').historyKeymap;
+    let indentWithTab: typeof import('@codemirror/commands').indentWithTab;
+    let StreamLanguage: typeof import('@codemirror/language').StreamLanguage;
+    let dockerFileMode: typeof import('@codemirror/legacy-modes/mode/dockerfile').dockerFile;
+    let oneDark: typeof import('@codemirror/theme-one-dark').oneDark;
+
+    try {
+      const [engineMod, examplesMod, stateMod, viewMod, commandsMod, langMod, modeMod, themeMod] =
+        await Promise.all([
+          import('../lib/dockerfile-linter/engine'),
+          import('../lib/dockerfile-linter/examples'),
+          import('@codemirror/state'),
+          import('@codemirror/view'),
+          import('@codemirror/commands'),
+          import('@codemirror/language'),
+          import('@codemirror/legacy-modes/mode/dockerfile'),
+          import('@codemirror/theme-one-dark'),
+        ]);
+      engine = engineMod as unknown as EngineModule;
+      examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+      ({ EditorState } = stateMod);
+      ({ EditorView: EditorViewCtor, keymap, lineNumbers, highlightActiveLine } = viewMod);
+      ({ history: cmHistory, defaultKeymap, historyKeymap, indentWithTab } = commandsMod);
+      ({ StreamLanguage } = langMod);
+      ({ dockerFile: dockerFileMode } = modeMod);
+      ({ oneDark } = themeMod);
+    } catch (err) {
+      summaryEl.textContent = '';
+      resultsBox.innerHTML = errorCardHtml(
+        'The linter engine failed to load. Reload the page to try again.',
+        true,
+      );
+      console.error('[DockerfileLinter] engine/CodeMirror import failed:', err);
+      return;
+    }
+
+    /* ---- State ----------------------------------------------------------- */
+
+    type EvalSource = 'type' | 'commit' | 'seed';
+    type UiState = 'empty' | 'valid' | 'pending' | 'invalid';
+
+    let uiState: UiState = 'empty';
+    let evalTimer: number | undefined;
+    let errTimer: number | undefined;
+    let lastWrittenHash: string | null = null;
+    let liveReady = false;
+
+    function clearTimers(): void {
+      window.clearTimeout(evalTimer);
+      window.clearTimeout(errTimer);
+    }
+
+    /* ---- Editor ---------------------------------------------------------- */
+
+    function makeEditor(host: HTMLElement, doc: string): EditorView {
+      const state = EditorState.create({
+        doc,
+        extensions: [
+          lineNumbers(),
+          cmHistory(),
+          highlightActiveLine(),
+          StreamLanguage.define(dockerFileMode),
+          oneDark,
+          EditorViewCtor.lineWrapping,
+          // CodeMirror puts role="textbox" on the content DOM; without a name
+          // that is an unlabelled input field for a screen reader (and an axe
+          // violation). aria-describedby points at the live-eval hint line.
+          EditorViewCtor.contentAttributes.of({
+            'aria-label': 'Dockerfile input',
+            'aria-describedby': 'df-run-hint',
+          }),
+          keymap.of([
+            // Ours FIRST, so they win over defaultKeymap's Enter/Escape.
+            {
+              key: 'Mod-Enter',
+              run: () => {
+                clearTimers();
+                evaluate('commit');
+                view.contentDOM.blur();
+                return true;
+              },
+            },
+            {
+              // Plain Enter must still insert the newline, so this returns false
+              // and lets insertNewlineAndIndent run — the eval is flushed on the
+              // next tick, once the document includes the newline.
+              key: 'Enter',
+              run: () => {
+                window.setTimeout(() => {
+                  clearTimers();
+                  evaluate('commit');
+                }, 0);
+                return false;
+              },
+            },
+            {
+              // The Tab-trap escape hatch: indentWithTab means Tab indents, so
+              // Escape is the documented way out of the editor.
+              key: 'Escape',
+              run: (v) => {
+                v.contentDOM.blur();
+                return true;
+              },
+            },
+            ...defaultKeymap,
+            ...historyKeymap,
+            indentWithTab,
+          ]),
+          EditorViewCtor.updateListener.of((u) => {
+            if (!u.docChanged || !liveReady) return;
+            clearChips();
+            clearTimers();
+            evalTimer = window.setTimeout(() => evaluate('type'), DEBOUNCE_MS);
+          }),
+          EditorViewCtor.theme({
+            '&': { color: '#eae7e0' },
+            '.cm-content': { caretColor: '#eae7e0' },
+            '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#eae7e0' },
+            '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
+              backgroundColor: 'rgba(79, 138, 200, 0.34)',
+            },
+            '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.04)' },
+            '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+          }),
+        ],
+      });
+      return new EditorViewCtor({ state, parent: host });
+    }
+
+    function setEditorDoc(doc: string): void {
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
+      view.requestMeasure();
+    }
+
+    /** Select and centre a physical line — the line badge's whole purpose. */
+    function jumpToLine(lineNumber: number): void {
+      if (!Number.isFinite(lineNumber)) return;
+      const clamped = Math.min(Math.max(1, Math.trunc(lineNumber)), view.state.doc.lines);
+      const line = view.state.doc.line(clamped);
+      view.dispatch({
+        selection: { anchor: line.from, head: line.to },
+        effects: EditorViewCtor.scrollIntoView(line.from, { y: 'center' }),
+      });
+      view.focus();
+    }
+
+    /* ---- Chrome ---------------------------------------------------------- */
+
+    function setSummary(text: string, isError: boolean): void {
+      summaryEl!.textContent = text;
+      summaryEl!.classList.toggle('text-error-deep', isError);
+      summaryEl!.classList.toggle('text-mute', !isError);
+    }
+
+    function setErrorState(on: boolean): void {
+      paneEl!.classList.toggle('df-pane--error', on);
+      if (on) {
+        view.contentDOM.setAttribute('aria-invalid', 'true');
+        view.contentDOM.setAttribute('aria-describedby', 'df-run-hint df-error-detail');
+      } else {
+        view.contentDOM.removeAttribute('aria-invalid');
+        view.contentDOM.setAttribute('aria-describedby', 'df-run-hint');
+      }
+    }
+
+    function hideActions(): void {
+      shareBtn!.hidden = true;
+      shareBtn!.dataset.copy = '';
+      copyAllBtn!.hidden = true;
+      copyAllBtn!.dataset.copy = '';
+    }
+
+    function setActiveChip(idx: number | null): void {
+      chips.forEach((chip) => {
+        chip.setAttribute(
+          'aria-pressed',
+          idx !== null && chip.dataset.exampleIdx === String(idx) ? 'true' : 'false',
+        );
+      });
+    }
+
+    function clearChips(): void {
+      setActiveChip(null);
+    }
+
+    /* ---- Deep link ------------------------------------------------------- */
+
+    function writeHash(fragment: string | null): void {
+      const target = fragment ?? '';
+      if (target === lastWrittenHash) return;
+      // Safari throttles replaceState (~100 per 30s) and throws — never let that
+      // break typing.
+      try {
+        if (fragment) {
+          window.history.replaceState(null, '', fragment);
+        } else {
+          window.history.replaceState(null, '', location.pathname + location.search);
+        }
+        lastWrittenHash = target;
+      } catch {
+        /* ignore */
+      }
+    }
+
+    /* ---- Render ---------------------------------------------------------- */
+
+    function renderEmpty(): void {
+      uiState = 'empty';
+      setErrorState(false);
+      hideActions();
+      setSummary('', false);
+      resultsBox!.innerHTML =
+        '<p class="df-empty body-sm text-mute">Paste a Dockerfile above — or tap an example — to ' +
+        'see line-numbered findings here, each with the reason it matters and the fix.</p>';
+    }
+
+    function renderResult(result: LintResult, summary: string): void {
+      const indexed = result.findings.map((finding, index) => ({ finding, index }));
+      const groups = SEV_ORDER.map((sev) =>
+        indexed.filter(({ finding }) => normSeverity(String(finding.severity)) === sev),
+      );
+      const html =
+        result.findings.length === 0
+          ? cleanHtml(result)
+          : groups
+              .map((group, i) => (group.length > 0 ? groupHtml(SEV_ORDER[i], group) : ''))
+              .join('') + truncationHtml(result);
+      resultsBox!.innerHTML = html;
+
+      // Multi-line and quote-bearing payloads round-trip badly through HTML
+      // attributes, so per-row copy text is assigned on the live elements.
+      resultsBox!.querySelectorAll<HTMLButtonElement>('[data-df-row]').forEach((btn) => {
+        const finding = result.findings[Number(btn.dataset.dfRow)];
+        if (finding) btn.dataset.copy = rowText(finding);
+      });
+
+      copyAllBtn!.hidden = false;
+      copyAllBtn!.dataset.copy = reportText(result, summary);
+    }
+
+    function showError(message: string, source: EvalSource): void {
+      uiState = 'invalid';
+      clearTimers();
+      setErrorState(true);
+      hideActions();
+      setSummary('Could not lint', true);
+      resultsBox!.innerHTML = errorCardHtml(message, source === 'commit');
+      if (source !== 'seed') writeHash(null);
+    }
+
+    function evaluate(source: EvalSource): void {
+      clearTimers();
+      const text = view.state.doc.toString();
+      if (text.trim() === '') {
+        renderEmpty();
+        if (source !== 'seed') writeHash(null);
+        return;
+      }
+
+      let result: LintResult | null = null;
+      try {
+        result = engine.lint(text);
+      } catch (err) {
+        console.error('[DockerfileLinter] lint threw:', err);
+        result = null;
+      }
+
+      if (result && result.ok) {
+        uiState = 'valid';
+        setErrorState(false);
+        let summary = '';
+        try {
+          summary = engine.summaryLine(result);
+        } catch {
+          summary = plural(result.findings.length, 'finding');
+        }
+        renderResult(result, summary);
+        setSummary(summary, result.summary.errors > 0);
+
+        const fragment = encodeShare(text);
+        if (fragment.length <= MAX_HASH_LEN) {
+          shareBtn!.hidden = false;
+          shareBtn!.dataset.copy =
+            location.origin + location.pathname + location.search + fragment;
+          // Gated on BOTH a fully valid lint AND a user-initiated eval: a boot
+          // seed must never write the URL or the restore store.
+          if (source !== 'seed') {
+            writeHash(fragment);
+            recordToolLastInput(SLUG, text);
+          }
+        } else {
+          // Too long to be a dependable link: keep linting, drop the share.
+          shareBtn!.hidden = true;
+          shareBtn!.dataset.copy = '';
+          if (source !== 'seed') writeHash(null);
+        }
+        return;
+      }
+
+      const message =
+        result?.error ?? 'The linter could not read this file. Check it against the rules below.';
+
+      if (source !== 'type') {
+        showError(message, source);
+        return;
+      }
+
+      // Mid-typing: hold the previous panel, nothing goes red yet. The error only
+      // surfaces once the typing has been idle for ERROR_HOLD_MS.
+      uiState = 'pending';
+      setErrorState(false);
+      hideActions();
+      setSummary('', false);
+      errTimer = window.setTimeout(() => showError(message, 'type'), ERROR_HOLD_MS);
+    }
+
+    /* ---- Seed (before any listener fires, so nothing writes the hash) ---- */
+
+    const firstExample = examples[0];
+    let seedText = firstExample?.dockerfile ?? '';
+    let seedChip: number | null = firstExample ? 0 : null;
+
+    const shared = decodeShare(window.location.hash);
+    if (shared !== null) {
+      seedText = shared;
+      seedChip = null;
+    } else {
+      const restored = getRestoredLastInput(SLUG);
+      if (restored && restored.trim() !== '') {
+        seedText = restored;
+        seedChip = null;
+      }
+    }
+
+    const view = makeEditor(editorHost, seedText);
+    setActiveChip(seedChip);
+
+    /* ---- Events ---------------------------------------------------------- */
+
+    chips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const idx = Number(chip.dataset.exampleIdx);
+        if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+        liveReady = false;
+        setEditorDoc(examples[idx].dockerfile);
+        liveReady = true;
+        setActiveChip(idx);
+        clearTimers();
+        evaluate('commit');
+      });
+    });
+
+    // Committing on blur means a half-typed file that the user tabbed away from
+    // still explains itself, instead of sitting silently in `pending`.
+    view.contentDOM.addEventListener('blur', () => {
+      if (uiState === 'pending') {
+        clearTimers();
+        evaluate('commit');
+      }
+    });
+
+    wireSnapshotUI({
+      slug: SLUG,
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: () => view.state.doc.toString(),
+      setValue: (value) => {
+        liveReady = false;
+        setEditorDoc(value);
+        liveReady = true;
+        clearChips();
+        clearTimers();
+        evaluate('commit');
+      },
+    });
+
+    /* ---- First render: never writes the hash ---------------------------- */
+
+    evaluate('seed');
+    liveReady = true;
+    requestAnimationFrame(() => view.requestMeasure());
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>
