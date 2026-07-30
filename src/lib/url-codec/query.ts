@@ -45,6 +45,17 @@ const EMPTY_SEGMENT_MSG =
   'Skipped an empty segment at index %AT% — a doubled "&" (or a leading/trailing one) produces ' +
   'no parameter. URLSearchParams drops it too.';
 
+/**
+ * One note per empty segment is fine for a normal URL and ruinous for a pathological one:
+ * `?` followed by 20 000 bare `&` produced 20 000 notes and ~11 MB of message text, which is
+ * what actually froze the tab (the parse itself is linear). Beyond this many, count silently
+ * and emit a single summary note.
+ */
+const MAX_EMPTY_SEGMENT_NOTES = 200;
+
+const EMPTY_SEGMENTS_TRUNCATED_MSG =
+  'Skipped %COUNT% empty segments in total — only the first %SHOWN% are listed above.';
+
 const EMPTY_NAME_MSG =
   'A parameter has an empty name ("=value"). That is legal in the URL grammar and ' +
   'URLSearchParams keeps it, but most server frameworks discard it.';
@@ -102,6 +113,7 @@ export function parseQuery(rawQuery: string, opts: ParseQueryOptions = {}): Quer
   let index = 0;
   let sawBareKey = false;
   let arrayKeyNoted = false;
+  let emptySegments = 0;
 
   while (cursor <= rawQuery.length) {
     const amp = rawQuery.indexOf('&', cursor);
@@ -111,13 +123,19 @@ export function parseQuery(rawQuery: string, opts: ParseQueryOptions = {}): Quer
     cursor = end + 1;
 
     if (segment.length === 0) {
-      if (rawQuery.length > 0) {
+      // Cap the per-segment notes. `?` + 20 000 bare `&` used to emit one note each, and the
+      // resulting array — not the O(n) parse — was what froze the tab for seconds. Same
+      // precedent as cidr-checker's MAX_OVERLAP_PAIRS truncation notice.
+      if (rawQuery.length > 0 && emptySegments < MAX_EMPTY_SEGMENT_NOTES) {
+        emptySegments += 1;
         diagnostics.push({
           level: 'info',
           code: 'empty-segment',
           at: offset + segmentStart,
           message: EMPTY_SEGMENT_MSG.replace('%AT%', String(offset + segmentStart)),
         });
+      } else if (rawQuery.length > 0) {
+        emptySegments += 1;
       }
       if (amp === -1) break;
       continue;
@@ -198,6 +216,16 @@ export function parseQuery(rawQuery: string, opts: ParseQueryOptions = {}): Quer
         message: duplicateKeyMsg(quoteForMessage(key, 40), count),
       });
     }
+  }
+  if (emptySegments > MAX_EMPTY_SEGMENT_NOTES) {
+    diagnostics.push({
+      level: 'info',
+      code: 'empty-segments-truncated',
+      message: EMPTY_SEGMENTS_TRUNCATED_MSG.replace('%COUNT%', String(emptySegments)).replace(
+        '%SHOWN%',
+        String(MAX_EMPTY_SEGMENT_NOTES),
+      ),
+    });
   }
 
   return { params, ok, diagnostics, plusAsSpace };

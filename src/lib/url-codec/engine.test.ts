@@ -218,6 +218,29 @@ describe('decode — double encoding (pinned edge case 3)', () => {
     expect(result.output).toBe('100% of the time');
     expect(result.doubleEncoded).toBe(false);
   });
+
+  // Regression: the second pass was accepted whenever it produced no ERROR-level diagnostic,
+  // so a pass yielding U+FFFD or a C0 control byte still counted as "decoded twice". `%2502d`
+  // is the single encoding of the literal `%02d`, yet it was reported as double-encoded and
+  // the offered "Decode again" replaced the value with `%02d`, whose next decode is `d` —
+  // silent data corruption presented as the fix.
+  it('does not call a value double-encoded when the second pass is not clean', () => {
+    for (const raw of ['fmt=%2502d', '100%25dead', '100%25AB']) {
+      const result = decode(raw, { plusAsSpace: false });
+      expect(result.doubleEncoded, raw).toBe(false);
+      expect(result.decodedTwice, raw).toBeUndefined();
+    }
+  });
+
+  it('still detects genuine double encoding after that guard', () => {
+    const spaces = decode('alert%2520rules', { plusAsSpace: false });
+    expect(spaces.doubleEncoded).toBe(true);
+    expect(spaces.decodedTwice).toBe('alert rules');
+
+    const slash = decode('a%252Fb', { plusAsSpace: false });
+    expect(slash.doubleEncoded).toBe(true);
+    expect(slash.decodedTwice).toBe('a/b');
+  });
 });
 
 describe('decode — malformed escapes (pinned edge cases 4 and 5)', () => {
@@ -422,6 +445,35 @@ describe('parseUrl — components', () => {
     const result = parseUrl('http://x.test/');
     expect(result.assumedScheme).toBe(false);
     expect(codes(result.diagnostics)).not.toContain('assumed-scheme');
+  });
+
+  // Regression: RFC 3986 scheme names allow `.` and `-`, so `localhost:8080/x` and
+  // `example.com:8443/x` matched the scheme pattern and the scheme-less fallback never ran.
+  // The port was then rendered as the host, with zero diagnostics — the tool was confidently
+  // wrong on the single most common shape an SRE pastes.
+  it('treats host:port without a scheme as scheme-less, not as an opaque scheme', () => {
+    for (const [raw, href] of [
+      ['localhost:8080/metrics?job=api', 'https://localhost:8080/metrics?job=api'],
+      ['example.com:8443/health?x=1', 'https://example.com:8443/health?x=1'],
+      ['myhost:3000/api?q=1', 'https://myhost:3000/api?q=1'],
+      ['redis:6379', 'https://redis:6379/'],
+    ] as const) {
+      const result = parseUrl(raw);
+      expect(result.assumedScheme, raw).toBe(true);
+      expect(result.href, raw).toBe(href);
+      expect(levelOf(result.diagnostics, 'assumed-scheme'), raw).toBe('info');
+    }
+  });
+
+  it('still honours opaque schemes whose payload starts with a digit', () => {
+    for (const raw of [
+      'mailto:ops@example.com?subject=hi',
+      'tel:5551234',
+      'data:text/plain,hello',
+      'urn:isbn:0451450523',
+    ]) {
+      expect(parseUrl(raw).assumedScheme, raw).toBe(false);
+    }
   });
 
   it('warns about credentials in the userinfo part (pinned edge case 17)', () => {

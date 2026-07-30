@@ -442,7 +442,17 @@ export function decodePercent(raw: string, opts: PercentDecodeOptions = {}): Per
     // Second pass keeps `+` literal on purpose: a `%2B` that just became `+`
     // is a real plus sign, not a space that was encoded twice.
     const again = decodePercent(text, { plusAsSpace: false, detectDouble: false });
-    if (again.ok && again.text !== text) {
+    // `again.ok` alone is not enough: it is only false for error-level diagnostics, so a second
+    // pass that produced U+FFFD or C0 control bytes still counted as a successful "second
+    // decode". `%2502d` is the single encoding of the literal `%02d`, but it was reported as
+    // double-encoded and the "Decode again" button then replaced the value with `%02d`, whose
+    // next decode is `d` — silent corruption offered as the fix. A second pass only
+    // counts when it is clean.
+    const againIsClean =
+      again.diagnostics.every((d) => d.code !== 'invalid-utf8') &&
+      // eslint-disable-next-line no-control-regex
+      !/[ --�]/.test(again.text);
+    if (again.ok && againIsClean && again.text !== text) {
       doubleEncoded = true;
       decodedTwice = again.text;
       diagnostics.push({

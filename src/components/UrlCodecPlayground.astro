@@ -897,6 +897,8 @@ import { examples } from '../lib/url-codec/examples';
   const SLUG = 'url-encoder-decoder';
   const DEBOUNCE_MS = 180;
   const ERROR_HOLD_MS = 600;
+  /** Rendered query rows. Past this the DOM, not the parse, is what stalls the tab. */
+  const MAX_RENDERED_PARAMS = 500;
   const RESET_MS = 1800;
 
   function boot(): void {
@@ -1182,7 +1184,15 @@ import { examples } from '../lib/url-codec/examples';
           : 'No query string — nothing after a “?”.';
         return `<div class="uc-block">${head}<p class="uc-none">${escapeHtml(message)}</p></div>`;
       }
-      const rows = params
+      // Cap rendered rows. 4 000 params built ~3.8 MB of innerHTML and 4 006 copy buttons,
+      // blocking the main thread for ~2 s — the engine was linear; the DOM was the problem.
+      // Same affordance as SubnetSplitterPlayground's "Showing first N of M".
+      const shown = params.slice(0, MAX_RENDERED_PARAMS);
+      const truncated =
+        params.length > MAX_RENDERED_PARAMS
+          ? `<p class="uc-none">Showing the first ${MAX_RENDERED_PARAMS} of ${params.length} parameters. Copy all still copies every row.</p>`
+          : '';
+      const rows = shown
         .map((p) => {
           const raw =
             p.rawValue === null
@@ -1205,7 +1215,7 @@ import { examples } from '../lib/url-codec/examples';
           );
         })
         .join('');
-      return `<div class="uc-block">${head}${rows}</div>`;
+      return `<div class="uc-block">${head}${rows}${truncated}</div>`;
     }
 
     function outputCardHtml(result: Result): string {
@@ -1367,14 +1377,18 @@ import { examples } from '../lib/url-codec/examples';
       });
     }
 
-    function toEmpty(): void {
+    // `userInitiated` gates the history write. Seeding must leave the address bar alone: a
+    // shared `#in=` whose payload is invalid still has to survive in the bar so the recipient
+    // can see, edit and re-share it. (CidrCheckerPlayground guards every writeHash(null) the
+    // same way; SubnetCalculatorPlayground does not — this ported the wrong one.)
+    function toEmpty(userInitiated: boolean): void {
       state = 'empty';
       clearTimers();
       setErrorState(false);
       hideActions();
       renderEmpty();
       chips.forEach((chip) => chip.classList.remove('is-active'));
-      writeHash(null);
+      if (userInitiated) writeHash(null);
     }
 
     function renderInvalid(result: Result, isAlert: boolean): void {
@@ -1391,7 +1405,7 @@ import { examples } from '../lib/url-codec/examples';
       bindPayloads();
     }
 
-    function showError(result: Result, isAlert: boolean): void {
+    function showError(result: Result, isAlert: boolean, userInitiated: boolean): void {
       state = 'invalid';
       clearTimers();
       setErrorState(true);
@@ -1399,7 +1413,7 @@ import { examples } from '../lib/url-codec/examples';
       setSummary(result.summary, true);
       renderInvalid(result, isAlert);
       chips.forEach((chip) => chip.classList.remove('is-active'));
-      writeHash(null);
+      if (userInitiated) writeHash(null);
     }
 
     function renderValid(result: Result): void {
@@ -1424,7 +1438,7 @@ import { examples } from '../lib/url-codec/examples';
       const value = input!.value;
       prevValue = value;
       if (value.trim().length === 0) {
-        toEmpty();
+        toEmpty(source !== 'seed');
         return;
       }
 
@@ -1459,7 +1473,7 @@ import { examples } from '../lib/url-codec/examples';
       }
 
       if (source !== 'type') {
-        showError(result, source === 'commit');
+        showError(result, source === 'commit', source !== 'seed');
         return;
       }
 
@@ -1467,12 +1481,22 @@ import { examples } from '../lib/url-codec/examples';
       // start the hold while the value still looks unfinished — a half-typed
       // escape (`%2`) or a trailing separator is not a mistake, it is a person
       // still typing.
+      // Hold the previous VALID card, but never a previous error card: leaving one up while the
+      // border, aria-invalid and status line are all cleared produced an incoherent state — a
+      // visible error message with nothing flagged and an empty status.
+      const wasInvalid = state === 'invalid';
       state = 'pending';
       setErrorState(false);
       hideActions();
       setSummary('', false);
+      if (wasInvalid) {
+        payloads = [];
+        resultsBox!.innerHTML =
+          '<p class="uc-empty body-sm text-mute">Still typing — results appear once the value ' +
+          'parses.</p>';
+      }
       if (!/[%:/&=?]$|%[0-9A-Fa-f]$/.test(value)) {
-        errTimer = window.setTimeout(() => showError(result, false), ERROR_HOLD_MS);
+        errTimer = window.setTimeout(() => showError(result, false, true), ERROR_HOLD_MS);
       }
     }
 
@@ -1495,22 +1519,26 @@ import { examples } from '../lib/url-codec/examples';
       if (copy) void handleCopy(copy);
     });
 
-    input.addEventListener('input', () => {
+    input.addEventListener('input', (e) => {
       clearTimers();
       const value = input.value;
-      const jumped = Math.abs(value.length - prevValue.length) > 1;
+      // Only a value that GREW by more than one character is a paste/autofill. The original
+      // check used Math.abs(), so deleting a selection or backspacing a chunk took the
+      // immediate path too — and a backspace over a selection is composition, not a paste.
+      // That flashed a red border and an error card mid-edit, which the contract forbids.
+      // Deletions and IME composition debounce like typing.
+      const grew = value.length - prevValue.length > 1;
+      const composing = (e as InputEvent).isComposing === true;
       prevValue = value;
       if (value.trim().length === 0) {
-        toEmpty();
+        toEmpty(true);
         return;
       }
-      // A single `input` event that moved the value by more than one character
-      // is not composition — it is a paste, an autofill, a cut, or a selection
-      // replaced wholesale. Nobody types 40 characters in one keystroke, so
-      // there is nothing for the debounce or the calm-error hold to protect:
-      // answer immediately. Real typing (delta of exactly one) still debounces,
-      // which is what keeps the mid-composition hold intact.
-      if (jumped) {
+      // A single `input` event that added more than one character is not composition — it is a
+      // paste, an autofill, or a wholesale replacement. Nobody types 40 characters in one
+      // keystroke, so there is nothing for the debounce or the calm-error hold to protect:
+      // answer immediately.
+      if (grew && !composing) {
         evaluate('bulk');
         return;
       }

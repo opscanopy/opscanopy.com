@@ -128,6 +128,41 @@ function findRawBreak(text: string): { at: number; kind: string } | null {
 
 const SCHEME_RE = /^[A-Za-z][A-Za-z0-9+.-]*:/;
 
+/**
+ * Schemes whose payload legitimately follows the colon with no `//` — so a digit there is
+ * data, not a port. `tel:5551234` must stay a tel: URL.
+ */
+const OPAQUE_SCHEMES = new Set([
+  'mailto',
+  'data',
+  'tel',
+  'urn',
+  'blob',
+  'about',
+  'javascript',
+  'sms',
+  'geo',
+  'magnet',
+  'news',
+  'sip',
+  'file',
+]);
+
+/**
+ * RFC 3986 scheme names may contain `.` and `-`, so `localhost:8080/metrics` and
+ * `example.com:8443/health` both match SCHEME_RE — and the scheme-less fallback never ran,
+ * so the port was rendered as the host and the tool was confidently wrong with no diagnostic.
+ * A colon with no `//`, a non-opaque scheme name, and a plausible port after it means this is
+ * really `host:port` pasted without a scheme.
+ */
+function looksLikeHostPort(trimmed: string, schemeToken: string): boolean {
+  const name = schemeToken.slice(0, -1).toLowerCase();
+  if (OPAQUE_SCHEMES.has(name)) return false;
+  const rest = trimmed.slice(schemeToken.length);
+  if (rest.startsWith('//')) return false;
+  return /^\d{1,5}(?:[/?#]|$)/.test(rest);
+}
+
 function componentsOf(url: URL, rawAuthority: string): UrlComponent[] {
   const rows: UrlComponent[] = [];
   rows.push({
@@ -259,8 +294,9 @@ export function parseUrl(input: string, opts: ParseOptions = {}): ParseResult {
   const hashIdx = trimmed.indexOf('#');
   const beforeHash = hashIdx === -1 ? trimmed : trimmed.slice(0, hashIdx);
   const fragment = hashIdx === -1 ? null : trimmed.slice(hashIdx + 1);
-  const scheme = SCHEME_RE.exec(trimmed);
-  const hasScheme = scheme !== null;
+  const schemeMatch = SCHEME_RE.exec(trimmed);
+  const hasScheme = schemeMatch !== null && !looksLikeHostPort(trimmed, schemeMatch[0]);
+  const scheme = hasScheme ? schemeMatch : null;
   // Strip `scheme://` before looking for the authority, or `https://x.test/a`
   // would split on the `//` and report the authority as `https:`.
   const afterScheme = scheme
