@@ -621,7 +621,7 @@ export const tools: Tool[] = [
     tagline: 'Convert JSON to YAML and back — with honest warnings about what changes.',
     description:
       'Convert JSON to YAML or YAML to JSON with a real YAML 1.2 parser, and see every comment, anchor, merge key, timestamp and out-of-range integer the conversion costs you. Catches the "Norway problem" in both directions. Pure client-side, no upload.',
-    status: 'planned',
+    status: 'live',
     category: 'Encoding',
     keywords: [
       'json to yaml converter',
@@ -641,7 +641,7 @@ export const tools: Tool[] = [
     tagline: 'Percent-encode, decode, and parse query strings — with per-component RFC 3986 rules.',
     description:
       'Percent-encode a value for the position it actually lands in, decode one that came back mangled, or split a whole URL into its components and a decoded query-parameter table. Double-encoding, + vs %20, punycode hosts and repeated keys are named, not guessed. Pure client-side.',
-    status: 'planned',
+    status: 'live',
     category: 'Encoding',
     keywords: [
       'url encoder decoder',
@@ -663,7 +663,7 @@ export const tools: Tool[] = [
     tagline: 'GiB vs GB, bits vs bytes — and how long that transfer really takes.',
     description:
       'Convert data sizes between SI (kB, MB, GB) and IEC (KiB, MiB, GiB) units with exact BigInt maths, tell bits from bytes without guessing, and get the transfer time for any link speed. Pure client-side.',
-    status: 'planned',
+    status: 'live',
     category: 'Utilities',
     keywords: [
       'data size converter',
