@@ -1,0 +1,1615 @@
+---
+/**
+ * UrlCodecPlayground — the interactive URL Encoder / Decoder + Query-String
+ * Parser island.
+ *
+ * A single textarea (no CodeMirror — the input is one line of URL, not a
+ * document) under a three-way mode control:
+ *
+ *   Parse  (default) → WHATWG components card + a READ-ONLY parameter table,
+ *                      each row showing the decoded value over its raw text.
+ *   Decode           → percent-decoded text, with double-encoding detection and
+ *                      a one-tap "Decode again".
+ *   Encode           → percent-encoded text, per RFC 3986 component / full-URL
+ *                      rules or `application/x-www-form-urlencoded`.
+ *
+ * Ported from `CidrCheckerPlayground.astro` / `SubnetCalculatorPlayground.astro`
+ * (the two contract-compliant references): server-rendered example chips, a
+ * 180ms debounce with a 600ms calm-error hold, per-row copy + Copy all + Copy
+ * link, one visible `role="status"` summary plus an sr-only copy status, no
+ * `aria-live` on the results container, `escapeHtml()` on every injected value,
+ * and 44px coarse-pointer targets for chips and per-row copy buttons (36px for
+ * the labeled header controls, matching the reference exactly).
+ *
+ * DELIBERATE DEVIATION from the textarea half of the contract's Enter rule:
+ * plain Enter here calls `preventDefault()` and commits instead of inserting a
+ * newline. This tool's grammar is single-line, and a raw newline inside a URL is
+ * a DIAGNOSED ERROR (the URL standard strips tab/CR/LF silently, so a browser
+ * would parse a broken URL as if the break were not there). Letting Enter
+ * manufacture that error would make the "run now" key produce a failure. Pasted
+ * multi-line input still reaches the engine and still gets the diagnostic.
+ *
+ * Runtime contract (lazy-imported inside the boot closure so the engine
+ * code-splits away from the page shell):
+ *   ../lib/url-codec/engine → run(input, mode, opts) | paramLines(params)
+ *   ../lib/url-codec/hash   → buildUrlCodecHash | readUrlCodecHash | MAX_HASH_LEN
+ */
+import { examples } from '../lib/url-codec/examples';
+---
+
+<section class="uc-pg" aria-label="URL encoder, decoder and query-string parser playground">
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Toolbar: example chips ───────────────────────────────────────── */}
+    <div class="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:px-5">
+      <span class="eyebrow">Examples</span>
+      <div id="uc-chips" class="uc-chips" role="group" aria-label="Examples">
+        {
+          examples.map((ex) => (
+            <button
+              type="button"
+              class="uc-chip"
+              data-input={ex.input}
+              data-mode={ex.mode}
+              aria-label={`${ex.label} — ${ex.mode} mode`}
+            >
+              {ex.label}
+            </button>
+          ))
+        }
+      </div>
+    </div>
+
+    {/* ── Mode + per-mode options ──────────────────────────────────────── */}
+    <div
+      class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5"
+    >
+      <div class="flex min-w-0 flex-col gap-1">
+        <span class="eyebrow">Mode</span>
+        <div id="uc-mode" class="uc-seg" role="group" aria-label="Mode">
+          <button type="button" class="uc-seg__btn is-active" aria-pressed="true" data-mode="parse">
+            Parse
+          </button>
+          <button type="button" class="uc-seg__btn" aria-pressed="false" data-mode="decode">
+            Decode
+          </button>
+          <button type="button" class="uc-seg__btn" aria-pressed="false" data-mode="encode">
+            Encode
+          </button>
+        </div>
+      </div>
+
+      <div class="flex min-w-0 flex-col gap-1">
+        <span class="eyebrow">Options</span>
+        <div class="uc-opts">
+          <label id="uc-plus-wrap" class="uc-check" for="uc-plus">
+            <input id="uc-plus" type="checkbox" class="uc-check__box" autocomplete="off" />
+            <span class="uc-check__text">
+              <span class="uc-check__label">+ is a space</span>
+              <span class="uc-check__gloss"
+                >form-urlencoded — how HTML forms send data: a space travels as <code
+                  class="code-mono">+</code
+                >, not <code class="code-mono">%20</code>.</span
+              >
+            </span>
+          </label>
+          <label id="uc-form-wrap" class="uc-check" for="uc-form" hidden>
+            <input id="uc-form" type="checkbox" class="uc-check__box" autocomplete="off" />
+            <span class="uc-check__text">
+              <span class="uc-check__label">Form body</span>
+              <span class="uc-check__gloss">Space becomes <code class="code-mono">+</code>, matching URLSearchParams.</span>
+            </span>
+          </label>
+          <label id="uc-scope-wrap" class="uc-check" for="uc-scope" hidden>
+            <input id="uc-scope" type="checkbox" class="uc-check__box" autocomplete="off" />
+            <span class="uc-check__text">
+              <span class="uc-check__label">Whole URL</span>
+              <span class="uc-check__gloss"
+                >Keep <code class="code-mono">: / ? # &amp; =</code> unescaped, like <code
+                  class="code-mono">encodeURI()</code
+                >.</span
+              >
+            </span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    {/* ── Input ───────────────────────────────────────────────────────── */}
+    <div class="border-b border-hairline px-4 py-4 sm:px-5">
+      <label id="uc-input-label" class="eyebrow mb-2 block" for="uc-input">
+        URL or query string
+      </label>
+      <textarea
+        id="uc-input"
+        class="uc-input code-mono"
+        spellcheck="false"
+        autocapitalize="off"
+        autocorrect="off"
+        autocomplete="off"
+        enterkeyhint="done"
+        rows="3"
+        placeholder="https://example.com/path?a=1&amp;b=two%20words"
+        aria-describedby="uc-input-hint uc-run-hint"></textarea>
+      <p id="uc-input-hint" class="uc-hint caption text-mute">
+        Paste a full URL, a bare query string starting with <span class="code-mono">?</span>, or a
+        form body like <span class="code-mono">a=1&amp;b=2</span>. Nothing is uploaded — the whole
+        thing runs in this tab, so query strings carrying tokens stay yours.
+      </p>
+      <p id="uc-run-hint" class="uc-hint caption text-mute">Results update as you type — press Enter to run now.</p>
+      <div class="uc-snap-row mt-3 flex flex-wrap items-center gap-2">
+        <button id="uc-snap-save" type="button" class="uc-snap-btn">Save snapshot</button>
+        <select id="uc-snap-select" class="uc-snap-select" aria-label="Load a saved snapshot" disabled>
+          <option value="">No snapshots yet</option>
+        </select>
+        <button id="uc-snap-delete" type="button" class="uc-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
+      </div>
+    </div>
+
+    {/* ── Results ─────────────────────────────────────────────────────── */}
+    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <span class="flex flex-wrap items-center gap-2">
+          <span id="uc-result-eyebrow" class="eyebrow">Result</span>
+          <button
+            id="uc-share"
+            type="button"
+            class="uc-copy uc-copy--labeled"
+            data-copy-link
+            data-copy=""
+            data-copy-label="Copy link"
+            hidden
+          >
+            <svg
+              class="uc-copy-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6.75 9.25l2.5-2.5"></path>
+              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
+              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
+            </svg>
+            <svg
+              class="uc-check-icon hidden"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="uc-copy-label">Copy link</span>
+          </button>
+          <button
+            id="uc-copy-all"
+            type="button"
+            class="uc-copy uc-copy--labeled"
+            data-copy-all
+            data-copy=""
+            data-copy-label="Copy all"
+            hidden
+          >
+            <svg
+              class="uc-copy-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="5" y="5" width="9" height="9" rx="1.5"></rect>
+              <path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"></path>
+            </svg>
+            <svg
+              class="uc-check-icon hidden"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="uc-copy-label">Copy all</span>
+          </button>
+        </span>
+        <span id="uc-summary" class="uc-summary code-mono text-mute" role="status" aria-live="polite"></span>
+      </div>
+      <div id="uc-results" class="uc-results">
+        <p class="uc-empty body-sm text-mute">
+          Paste a URL to see its components and every query parameter decoded — or switch to Decode
+          or Encode to work on one value at a time.
+        </p>
+      </div>
+      <span id="uc-copy-status" class="sr-only" role="status" aria-live="polite"></span>
+    </div>
+  </div>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  /* ── Example chips ───────────────────────────────────────────────────── */
+  .uc-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  :global(.uc-chip) {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-brand-strong);
+    cursor: pointer;
+    text-decoration: none;
+    transition:
+      background 0.12s ease,
+      box-shadow 0.12s ease;
+  }
+  :global(.uc-chip:hover),
+  :global(.uc-chip.is-active) {
+    background: var(--color-brand-soft);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+  }
+  :global(.uc-chip:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+
+  /* ── Mode segmented control ──────────────────────────────────────────── */
+  .uc-seg {
+    display: inline-flex;
+    padding: 2px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+  .uc-seg__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 68px;
+    height: 28px;
+    padding: 0 12px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--color-mute);
+    cursor: pointer;
+    touch-action: manipulation;
+    transition:
+      color 0.15s ease,
+      background-color 0.15s ease;
+  }
+  .uc-seg__btn:hover:not(.is-active) {
+    color: var(--color-body);
+  }
+  .uc-seg__btn.is-active {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+  .uc-seg__btn:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 2px;
+  }
+
+  /* ── Option checkboxes (glossary caption under each label) ───────────── */
+  .uc-opts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+  }
+  .uc-check {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 8px;
+    max-width: 320px;
+    cursor: pointer;
+  }
+  .uc-check__box {
+    width: 16px;
+    height: 16px;
+    margin-top: 2px;
+    flex: 0 0 auto;
+    accent-color: var(--color-brand);
+    cursor: pointer;
+  }
+  .uc-check__box:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 2px;
+  }
+  .uc-check__text {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+  }
+  .uc-check__label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 18px;
+    letter-spacing: 0.02em;
+    color: var(--color-body);
+  }
+  .uc-check__gloss {
+    font-size: 11.5px;
+    line-height: 16px;
+    color: var(--color-mute);
+    text-wrap: pretty;
+  }
+  .uc-check__gloss .code-mono {
+    font-size: 11px;
+  }
+
+  /* ── Input ───────────────────────────────────────────────────────────── */
+  .uc-input {
+    width: 100%;
+    min-height: 92px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 14px;
+    line-height: 22px;
+    resize: vertical;
+    word-break: break-all;
+    overflow-wrap: anywhere;
+    transition: box-shadow 0.15s ease;
+  }
+  .uc-input::placeholder {
+    color: var(--color-mute);
+  }
+  .uc-input:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .uc-input:focus {
+    outline: none;
+  }
+  .uc-input:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-link);
+    outline: none;
+  }
+  .uc-input.uc-input--error {
+    box-shadow: inset 0 0 0 1px var(--color-error);
+  }
+  .uc-input.uc-input--error:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-error);
+  }
+  .uc-hint {
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  .uc-hint + .uc-hint {
+    margin-top: 2px;
+  }
+  .uc-hint .code-mono {
+    font-size: 12px;
+  }
+
+  /* ── Snapshot row ───────────────────────────────────────────────────── */
+  .uc-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition:
+      background 0.12s ease,
+      box-shadow 0.12s ease;
+  }
+  .uc-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .uc-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .uc-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .uc-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition:
+      background 0.12s ease,
+      color 0.12s ease;
+  }
+  .uc-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
+
+  .uc-summary {
+    min-width: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+  .uc-results {
+    min-height: 220px;
+  }
+  /* Copy failure message flips from sr-only to a visible caption. */
+  .uc-copy-status--fail {
+    display: block;
+    margin-top: 10px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-error-deep);
+  }
+
+  /* ── Runtime-injected blocks ─────────────────────────────────────────── */
+  :global(.uc-block) {
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+    animation: uc-rise 0.18s ease both;
+  }
+  :global(.uc-block + .uc-block) {
+    margin-top: 12px;
+  }
+  :global(.uc-block__head) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+  :global(.uc-block__actions) {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+  :global(.uc-block__sub) {
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    line-height: 18px;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--color-mute);
+    text-wrap: pretty;
+  }
+  :global(.uc-meta) {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--color-mute);
+    white-space: nowrap;
+  }
+
+  /* ── Key / value rows (components + parameters) ──────────────────────── */
+  :global(.uc-row) {
+    display: grid;
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+    gap: 12px;
+    padding: 9px 14px;
+    align-items: start;
+  }
+  @media (max-width: 559px) {
+    :global(.uc-row) {
+      grid-template-columns: 1fr;
+      gap: 2px;
+    }
+  }
+  :global(.uc-row + .uc-row) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.uc-row__k) {
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-ink);
+    overflow-wrap: anywhere;
+  }
+  :global(.uc-row__gloss),
+  :global(.uc-row__raw) {
+    display: block;
+    font-family: var(--font-sans);
+    font-size: 11.5px;
+    line-height: 16px;
+    letter-spacing: normal;
+    text-transform: none;
+    color: var(--color-mute);
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+  }
+  :global(.uc-row__raw) {
+    font-family: var(--font-mono);
+  }
+  :global(.uc-row__v-wrap) {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    min-width: 0;
+    margin: 0;
+  }
+  :global(.uc-row__v) {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--color-ink);
+    word-break: break-all;
+    overflow-wrap: anywhere;
+  }
+  :global(.uc-row__v.is-quiet) {
+    color: var(--color-mute);
+    font-style: italic;
+  }
+
+  /* ── Badges ──────────────────────────────────────────────────────────── */
+  :global(.uc-badges) {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+  :global(.uc-badge) {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 6px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    background: var(--color-hairline);
+    color: var(--color-body);
+    white-space: nowrap;
+  }
+  :global(.uc-badge--warn) {
+    background: var(--color-warning-soft);
+    color: var(--color-warning-deep);
+  }
+  :global(.uc-badge--ok) {
+    background: var(--color-brand-soft);
+    color: var(--color-brand-strong);
+  }
+
+  /* ── Single-value output card (Decode / Encode) ──────────────────────── */
+  :global(.uc-out) {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+  }
+  :global(.uc-out__value) {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 22px;
+    color: var(--color-ink);
+    white-space: pre-wrap;
+    word-break: break-all;
+    overflow-wrap: anywhere;
+  }
+  :global(.uc-out__value.is-quiet) {
+    color: var(--color-mute);
+    font-style: italic;
+  }
+  :global(.uc-again) {
+    display: inline-flex;
+    align-items: center;
+    margin: 0 14px 12px;
+    padding: 4px 12px;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: var(--color-brand-soft);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+    color: var(--color-brand-strong);
+    font-size: 12px;
+    line-height: 18px;
+    cursor: pointer;
+  }
+  :global(.uc-again:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+
+  /* ── Notes (errors, warnings, infos) ────────────────────────────────── */
+  :global(.uc-note) {
+    display: flex;
+    gap: 10px;
+    padding: 10px 14px;
+    font-size: 13px;
+    line-height: 19px;
+    text-wrap: pretty;
+  }
+  :global(.uc-note + .uc-note) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.uc-note__icon) {
+    flex: 0 0 auto;
+    width: 15px;
+    height: 15px;
+    margin-top: 2px;
+  }
+  :global(.uc-note--warning) {
+    color: var(--color-warning-deep);
+    background: var(--color-warning-soft);
+  }
+  :global(.uc-note--info) {
+    color: var(--color-body);
+  }
+  :global(.uc-note__where) {
+    display: block;
+    margin-top: 1px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    color: var(--color-mute);
+  }
+
+  :global(.uc-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+  }
+  :global(.uc-error + .uc-block) {
+    margin-top: 12px;
+  }
+  :global(.uc-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.uc-error__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.uc-error__detail) {
+    margin-top: 2px;
+    font-size: 13px;
+    line-height: 19px;
+    text-wrap: pretty;
+    overflow-wrap: anywhere;
+  }
+  :global(.uc-error__more) {
+    margin-top: 4px;
+    font-size: 12.5px;
+    line-height: 18px;
+    opacity: 0.9;
+  }
+  :global(.uc-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+  :global(.uc-none) {
+    padding: 10px 14px;
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--color-mute);
+  }
+
+  /* ── Copy buttons: icon per row, labeled in the header ───────────────── */
+  :global(.uc-copy) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition:
+      color 0.12s ease,
+      background 0.12s ease;
+  }
+  :global(.uc-copy:hover) {
+    color: var(--color-brand-strong);
+    background: var(--color-hairline);
+  }
+  :global(.uc-copy:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  :global(.uc-copy--labeled) {
+    width: auto;
+    height: 26px;
+    gap: 6px;
+    padding: 0 10px;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  :global(.uc-copy--copied) {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+
+  /* Two tap-target tiers, exactly as SubnetCalculatorPlayground sets them:
+     chips + icon-only per-row copy at 44px, labeled header controls at 36px. */
+  @media (pointer: coarse) {
+    :global(.uc-chip) {
+      min-height: 44px;
+    }
+    :global(.uc-copy) {
+      width: 44px;
+      height: 44px;
+    }
+    :global(.uc-copy--labeled) {
+      width: auto;
+      height: auto;
+      min-height: 36px;
+    }
+    :global(.uc-again) {
+      min-height: 44px;
+    }
+    .uc-seg__btn {
+      min-height: 44px;
+    }
+  }
+
+  @keyframes uc-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.uc-block) {
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  import { escapeHtml } from '../lib/escape-html';
+  import { copyTextToClipboard } from '../lib/clipboard';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+
+  type Mode = 'parse' | 'decode' | 'encode';
+  type Level = 'error' | 'warning' | 'info';
+  type Diagnostic = { level: Level; code: string; message: string; at?: number; where?: string };
+  type Component = { label: string; value: string; raw?: string; gloss?: string };
+  type Param = {
+    index: number;
+    rawKey: string;
+    key: string;
+    rawValue: string | null;
+    value: string;
+    hasValue: boolean;
+    isDuplicate: boolean;
+    doubleEncoded: boolean;
+  };
+  type Result = {
+    mode: Mode;
+    ok: boolean;
+    input: string;
+    summary: string;
+    diagnostics: Diagnostic[];
+    output?: string;
+    jsEquivalent?: string | null;
+    doubleEncoded?: boolean;
+    decodedTwice?: string;
+    plusAsSpace?: boolean;
+    components?: Component[];
+    params?: Param[];
+    rawQuery?: string;
+    queryOnly?: boolean;
+    href?: string | null;
+  };
+  type EngineModule = {
+    run: (input: string, mode: Mode, opts: Record<string, unknown>) => Result;
+    paramLines: (params: Param[]) => string;
+  };
+  type HashModule = {
+    buildUrlCodecHash: (input: string, mode: Mode) => string;
+    readUrlCodecHash: () => { input: string; mode: Mode } | null;
+    MAX_HASH_LEN: number;
+  };
+
+  const ROOT_SEL = '.uc-pg';
+  const SLUG = 'url-encoder-decoder';
+  const DEBOUNCE_MS = 180;
+  const ERROR_HOLD_MS = 600;
+  const RESET_MS = 1800;
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.ucWired === 'true') return;
+      root.dataset.ucWired = 'true';
+      void init(root);
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  const ALERT_SVG =
+    '<svg class="uc-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const WARN_SVG =
+    '<svg class="uc-note__icon" width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const INFO_SVG =
+    '<svg class="uc-note__icon" width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7.5"></circle><path d="M10 9v4.5"></path><path d="M10 6.4v.01"></path></svg>';
+  const COPY_ICON_SVG =
+    '<svg class="uc-copy-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"/></svg>';
+  const CHECK_ICON_SVG =
+    '<svg class="uc-check-icon hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
+
+  const MODE_COPY: Record<Mode, { label: string; placeholder: string; eyebrow: string }> = {
+    parse: {
+      label: 'URL or query string',
+      placeholder: 'https://example.com/path?a=1&b=two%20words',
+      eyebrow: 'Components & parameters',
+    },
+    decode: {
+      label: 'Percent-encoded text',
+      placeholder: 'name=Ada+Lovelace&note=100%25',
+      eyebrow: 'Decoded',
+    },
+    encode: {
+      label: 'Text to encode',
+      placeholder: 'https://app.example.com/callback?next=/settings',
+      eyebrow: 'Encoded',
+    },
+  };
+
+  async function init(root: HTMLElement): Promise<void> {
+    const input = el<HTMLTextAreaElement>(root, '#uc-input');
+    const inputLabel = el<HTMLElement>(root, '#uc-input-label');
+    const resultsBox = el<HTMLElement>(root, '#uc-results');
+    const summaryEl = el<HTMLElement>(root, '#uc-summary');
+    const eyebrowEl = el<HTMLElement>(root, '#uc-result-eyebrow');
+    const shareBtn = el<HTMLButtonElement>(root, '#uc-share');
+    const copyAllBtn = el<HTMLButtonElement>(root, '#uc-copy-all');
+    const copyStatus = el<HTMLElement>(root, '#uc-copy-status');
+    const modeGroup = el<HTMLElement>(root, '#uc-mode');
+    const plusBox = el<HTMLInputElement>(root, '#uc-plus');
+    const plusWrap = el<HTMLElement>(root, '#uc-plus-wrap');
+    const formBox = el<HTMLInputElement>(root, '#uc-form');
+    const formWrap = el<HTMLElement>(root, '#uc-form-wrap');
+    const scopeBox = el<HTMLInputElement>(root, '#uc-scope');
+    const scopeWrap = el<HTMLElement>(root, '#uc-scope-wrap');
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#uc-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#uc-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#uc-snap-delete');
+    const chips = Array.from(root.querySelectorAll<HTMLButtonElement>('#uc-chips .uc-chip'));
+    if (
+      !input ||
+      !inputLabel ||
+      !resultsBox ||
+      !summaryEl ||
+      !eyebrowEl ||
+      !shareBtn ||
+      !copyAllBtn ||
+      !copyStatus ||
+      !modeGroup ||
+      !plusBox ||
+      !plusWrap ||
+      !formBox ||
+      !formWrap ||
+      !scopeBox ||
+      !scopeWrap ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
+    )
+      return;
+
+    const modeBtns = Array.from(modeGroup.querySelectorAll<HTMLButtonElement>('.uc-seg__btn'));
+
+    /* ------------------------------------------------------------------ */
+    /* Copy plumbing                                                       */
+    /* ------------------------------------------------------------------ */
+
+    // Payloads live here, not in a data- attribute: decoded values can contain
+    // newlines and quotes, which do not round-trip through HTML attributes.
+    let payloads: string[] = [];
+
+    function setCopyStatus(message: string, failed: boolean): void {
+      copyStatus!.textContent = message;
+      copyStatus!.classList.toggle('sr-only', !failed);
+      copyStatus!.classList.toggle('uc-copy-status--fail', failed);
+    }
+
+    function setCopied(btn: HTMLButtonElement, copied: boolean): void {
+      btn.classList.toggle('uc-copy--copied', copied);
+      btn.querySelector('.uc-copy-icon')?.classList.toggle('hidden', copied);
+      btn.querySelector('.uc-check-icon')?.classList.toggle('hidden', !copied);
+      const label = btn.querySelector<HTMLElement>('.uc-copy-label');
+      if (label) {
+        label.textContent = copied ? 'Copied' : (btn.dataset.copyLabel ?? 'Copy');
+      } else if (copied) {
+        btn.dataset.prevAriaLabel = btn.getAttribute('aria-label') ?? '';
+        btn.setAttribute('aria-label', 'Copied');
+      } else if (btn.dataset.prevAriaLabel) {
+        btn.setAttribute('aria-label', btn.dataset.prevAriaLabel);
+        delete btn.dataset.prevAriaLabel;
+      }
+    }
+
+    async function handleCopy(btn: HTMLButtonElement): Promise<void> {
+      const ok = await copyTextToClipboard(btn.dataset.copy ?? '');
+      if (ok) {
+        setCopied(btn, true);
+        setCopyStatus('Copied to clipboard.', false);
+        window.clearTimeout(Number(btn.dataset.copyTimer));
+        btn.dataset.copyTimer = String(
+          window.setTimeout(() => {
+            setCopied(btn, false);
+            if (copyStatus!.textContent === 'Copied to clipboard.') setCopyStatus('', false);
+          }, RESET_MS),
+        );
+      } else {
+        setCopyStatus('Copy failed — select the value manually.', true);
+      }
+    }
+
+    function copyBtnHtml(label: string, payload: string): string {
+      const ref = payloads.push(payload) - 1;
+      return (
+        `<button class="uc-copy" type="button" data-copy="" data-copy-ref="${ref}" ` +
+        `aria-label="Copy ${escapeHtml(label)}" title="Copy">` +
+        COPY_ICON_SVG +
+        CHECK_ICON_SVG +
+        '</button>'
+      );
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Rendering                                                           */
+    /* ------------------------------------------------------------------ */
+
+    function setSummary(text: string, isError: boolean): void {
+      summaryEl!.textContent = text;
+      summaryEl!.classList.toggle('text-error-deep', isError);
+      summaryEl!.classList.toggle('text-mute', !isError);
+    }
+
+    function renderEmpty(): void {
+      setSummary('', false);
+      payloads = [];
+      resultsBox!.innerHTML =
+        '<p class="uc-empty body-sm text-mute">Paste a URL to see its components and every query ' +
+        'parameter decoded — or switch to Decode or Encode to work on one value at a time.</p>';
+    }
+
+    function noteHtml(d: Diagnostic): string {
+      const icon = d.level === 'warning' ? WARN_SVG : INFO_SVG;
+      const where =
+        d.where || typeof d.at === 'number'
+          ? `<span class="uc-note__where">${escapeHtml(
+              [d.where, typeof d.at === 'number' ? `index ${d.at}` : ''].filter(Boolean).join(' · '),
+            )}</span>`
+          : '';
+      return (
+        `<div class="uc-note uc-note--${d.level}">` +
+        icon +
+        `<span>${escapeHtml(d.message)}${where}</span></div>`
+      );
+    }
+
+    function notesBlockHtml(diagnostics: Diagnostic[]): string {
+      const notes = diagnostics.filter((d) => d.level !== 'error');
+      if (notes.length === 0) return '';
+      const warnings = notes.filter((d) => d.level === 'warning').length;
+      const label = warnings > 0 ? `Notes — ${warnings} warning${warnings === 1 ? '' : 's'}` : 'Notes';
+      return (
+        '<div class="uc-block">' +
+        `<div class="uc-block__head"><span>${escapeHtml(label)}</span>` +
+        `<span class="uc-block__actions"><span class="uc-meta">${notes.length} item${notes.length === 1 ? '' : 's'}</span></span></div>` +
+        notes.map(noteHtml).join('') +
+        '</div>'
+      );
+    }
+
+    function errorCardHtml(diagnostics: Diagnostic[], isAlert: boolean): string {
+      const errors = diagnostics.filter((d) => d.level === 'error');
+      if (errors.length === 0) return '';
+      const extra =
+        errors.length > 1
+          ? `<p class="uc-error__more">${escapeHtml(
+              `${errors.length - 1} more problem${errors.length === 2 ? '' : 's'}: ` +
+                errors
+                  .slice(1)
+                  .map((d) => d.message)
+                  .join(' '),
+            )}</p>`
+          : '';
+      return (
+        `<div class="uc-error"${isAlert ? ' role="alert"' : ''}>` +
+        ALERT_SVG +
+        '<div><p class="uc-error__title">This input is not valid yet</p>' +
+        `<p id="uc-error-detail" class="uc-error__detail">${escapeHtml(errors[0].message)}</p>` +
+        extra +
+        '</div></div>'
+      );
+    }
+
+    /**
+     * One key/value row. `display` is what the user reads (may be a placeholder
+     * like "(empty value)"); `copyValue` is what the copy button puts on the
+     * clipboard (the real value, which for a placeholder row is `''`).
+     */
+    function rowHtml(
+      key: string,
+      keyExtra: string,
+      display: string,
+      copyValue: string,
+      copyLabel: string,
+      quiet: boolean,
+    ): string {
+      return (
+        '<div class="uc-row">' +
+        `<div class="uc-row__k">${escapeHtml(key)}${keyExtra}</div>` +
+        `<div class="uc-row__v-wrap"><span class="uc-row__v${quiet ? ' is-quiet' : ''}">${escapeHtml(display)}</span>` +
+        copyBtnHtml(copyLabel, copyValue) +
+        '</div></div>'
+      );
+    }
+
+    function componentsHtml(components: Component[]): string {
+      const rows = components
+        .map((c) => {
+          const gloss = c.gloss ? `<span class="uc-row__gloss">${escapeHtml(c.gloss)}</span>` : '';
+          const raw =
+            c.raw && c.raw !== c.value
+              ? `<span class="uc-row__raw">raw: ${escapeHtml(c.raw)}</span>`
+              : '';
+          return rowHtml(c.label, gloss + raw, c.value, c.value, c.label, false);
+        })
+        .join('');
+      return (
+        '<div class="uc-block">' +
+        '<div class="uc-block__head"><span>URL components</span>' +
+        '<span class="uc-block__actions"><span class="uc-meta">as browsers see it</span></span></div>' +
+        '<p class="uc-block__sub">The WHATWG-normalized value of each part, with the raw text you ' +
+        'pasted underneath wherever normalization changed it — punycode hosts, dropped default ' +
+        'ports, resolved paths.</p>' +
+        rows +
+        '</div>'
+      );
+    }
+
+    function badgesHtml(p: Param): string {
+      const badges: string[] = [];
+      if (p.isDuplicate) badges.push('<span class="uc-badge uc-badge--warn">duplicate</span>');
+      if (!p.hasValue) badges.push('<span class="uc-badge">bare key</span>');
+      else if (p.value === '') badges.push('<span class="uc-badge">empty</span>');
+      if (p.key.endsWith('[]')) badges.push('<span class="uc-badge">array-style</span>');
+      if (p.doubleEncoded) badges.push('<span class="uc-badge uc-badge--warn">double-encoded</span>');
+      if (p.rawValue !== null && p.rawValue !== p.value)
+        badges.push('<span class="uc-badge uc-badge--ok">decoded</span>');
+      return badges.length ? `<span class="uc-badges">${badges.join('')}</span>` : '';
+    }
+
+    function paramsHtml(params: Param[], rawQuery: string): string {
+      const head =
+        '<div class="uc-block__head"><span>Query parameters</span>' +
+        `<span class="uc-block__actions"><span class="uc-meta">${params.length} row${params.length === 1 ? '' : 's'} · read-only</span></span></div>` +
+        '<p class="uc-block__sub">Split on <span class="code-mono">&amp;</span> exactly the way ' +
+        '<span class="code-mono">URLSearchParams</span> does, then percent-decoded. Repeated keys ' +
+        'stay as separate rows — nothing here picks a winner for you.</p>';
+      if (params.length === 0) {
+        const message = rawQuery.length
+          ? 'The query string is present but produced no parameters.'
+          : 'No query string — nothing after a “?”.';
+        return `<div class="uc-block">${head}<p class="uc-none">${escapeHtml(message)}</p></div>`;
+      }
+      const rows = params
+        .map((p) => {
+          const raw =
+            p.rawValue === null
+              ? `<span class="uc-row__raw">raw: ${escapeHtml(p.rawKey)}</span>`
+              : `<span class="uc-row__raw">raw: ${escapeHtml(p.rawKey)}=${escapeHtml(p.rawValue)}</span>`;
+          const quiet = !p.hasValue || p.value === '';
+          const display = p.hasValue
+            ? p.value === ''
+              ? '(empty value)'
+              : p.value
+            : '(no value — bare key)';
+          const keyLabel = p.key === '' ? '(empty name)' : p.key;
+          return rowHtml(
+            keyLabel,
+            badgesHtml(p) + raw,
+            display,
+            p.value,
+            `the value of ${keyLabel}`,
+            quiet,
+          );
+        })
+        .join('');
+      return `<div class="uc-block">${head}${rows}</div>`;
+    }
+
+    function outputCardHtml(result: Result): string {
+      const value = result.output ?? '';
+      const isDecode = result.mode === 'decode';
+      const meta: string[] = [];
+      if (isDecode) {
+        meta.push(result.plusAsSpace ? '+ read as space' : '+ kept literal');
+      } else if (result.jsEquivalent) {
+        meta.push(`matches ${result.jsEquivalent}()`);
+      } else {
+        meta.push('stricter than encodeURIComponent()');
+      }
+      const again =
+        isDecode && result.doubleEncoded
+          ? '<button class="uc-again" type="button" data-again>Decode again →</button>'
+          : '';
+      const quiet = value.length === 0;
+      const sub = isDecode
+        ? 'Percent-decoding — every <span class="code-mono">%XX</span> escape turned back into the ' +
+          'byte it stands for, then read as UTF-8.'
+        : 'Percent-encoding — replacing a byte with <span class="code-mono">%</span> plus its two ' +
+          'hex digits, so it survives inside a URL.';
+      return (
+        '<div class="uc-block">' +
+        `<div class="uc-block__head"><span>${escapeHtml(MODE_COPY[result.mode].eyebrow)}</span>` +
+        `<span class="uc-block__actions"><span class="uc-meta">${escapeHtml(meta.join(' · '))}</span>` +
+        copyBtnHtml('the result', value) +
+        '</span></div>' +
+        `<p class="uc-block__sub">${sub}</p>` +
+        '<div class="uc-out">' +
+        `<p class="uc-out__value${quiet ? ' is-quiet' : ''}">${quiet ? 'Empty result.' : escapeHtml(value)}</p>` +
+        '</div>' +
+        again +
+        '</div>'
+      );
+    }
+
+    function bindPayloads(): void {
+      resultsBox!.querySelectorAll<HTMLButtonElement>('[data-copy-ref]').forEach((btn) => {
+        btn.dataset.copy = payloads[Number(btn.dataset.copyRef)] ?? '';
+      });
+    }
+
+    function copyAllPayload(result: Result, engine: EngineModule): string {
+      if (result.mode !== 'parse') return result.output ?? '';
+      const params = result.params ?? [];
+      if (params.length > 0) return engine.paramLines(params);
+      return (result.components ?? []).map((c) => `${c.label}: ${c.value}`).join('\n');
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Engine                                                              */
+    /* ------------------------------------------------------------------ */
+
+    let engine: EngineModule;
+    let hashLib: HashModule;
+    try {
+      const [engineMod, hashMod] = await Promise.all([
+        import('../lib/url-codec/engine'),
+        import('../lib/url-codec/hash'),
+      ]);
+      engine = engineMod as unknown as EngineModule;
+      hashLib = hashMod as unknown as HashModule;
+    } catch (err) {
+      setSummary('', true);
+      resultsBox.innerHTML =
+        '<div class="uc-error" role="alert">' +
+        ALERT_SVG +
+        '<div><p class="uc-error__title">Tool unavailable</p>' +
+        '<p class="uc-error__detail">The URL engine failed to load. Reload the page to try ' +
+        'again — nothing you typed was sent anywhere.</p></div></div>';
+      console.error('[UrlCodec] engine import failed:', err);
+      return;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* State machine: EMPTY | VALID | PENDING | INVALID                    */
+    /* ------------------------------------------------------------------ */
+
+    type State = 'empty' | 'valid' | 'pending' | 'invalid';
+    let state: State = 'empty';
+    let mode: Mode = 'parse';
+    /** The last decoded output, so "Decode again" has something to feed back. */
+    let lastOutput = '';
+    let plusTouched = false;
+    /** Previous input value, so one `input` event's delta can be measured. */
+    let prevValue = input.value;
+    let evalTimer: number | undefined;
+    let errTimer: number | undefined;
+    let lastWrittenHash: string | null = null;
+
+    function clearTimers(): void {
+      window.clearTimeout(evalTimer);
+      window.clearTimeout(errTimer);
+    }
+
+    function options(): Record<string, unknown> {
+      if (mode === 'encode') {
+        return { form: formBox!.checked, scope: scopeBox!.checked ? 'full-url' : 'component' };
+      }
+      return { plusAsSpace: plusTouched ? plusBox!.checked : 'auto' };
+    }
+
+    function syncModeUi(): void {
+      modeBtns.forEach((btn) => {
+        const active = btn.dataset.mode === mode;
+        btn.classList.toggle('is-active', active);
+        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+      inputLabel!.textContent = MODE_COPY[mode].label;
+      input!.placeholder = MODE_COPY[mode].placeholder;
+      plusWrap!.hidden = mode === 'encode';
+      formWrap!.hidden = mode !== 'encode';
+      scopeWrap!.hidden = mode !== 'encode';
+      // "Whole URL" is meaningless once the form serializer is in charge.
+      scopeBox!.disabled = mode === 'encode' && formBox!.checked;
+    }
+
+    function setErrorState(on: boolean): void {
+      input!.classList.toggle('uc-input--error', on);
+      if (on) {
+        input!.setAttribute('aria-invalid', 'true');
+        input!.setAttribute('aria-describedby', 'uc-input-hint uc-run-hint uc-error-detail');
+      } else {
+        input!.removeAttribute('aria-invalid');
+        input!.setAttribute('aria-describedby', 'uc-input-hint uc-run-hint');
+      }
+    }
+
+    function hideActions(): void {
+      shareBtn!.hidden = true;
+      shareBtn!.dataset.copy = '';
+      copyAllBtn!.hidden = true;
+      copyAllBtn!.dataset.copy = '';
+    }
+
+    function writeHash(value: string | null): void {
+      const target = value ? hashLib.buildUrlCodecHash(value, mode) : '';
+      if (target === lastWrittenHash) return;
+      // Safari throttles replaceState (~100/30s) and throws — never let that
+      // break typing.
+      try {
+        if (value) history.replaceState(null, '', target);
+        else history.replaceState(null, '', location.pathname + location.search);
+        lastWrittenHash = target;
+      } catch {
+        /* ignore */
+      }
+    }
+
+    function syncChips(): void {
+      const value = input!.value;
+      chips.forEach((chip) => {
+        chip.classList.toggle(
+          'is-active',
+          (chip.dataset.input ?? '') === value && (chip.dataset.mode ?? '') === mode,
+        );
+      });
+    }
+
+    function toEmpty(): void {
+      state = 'empty';
+      clearTimers();
+      setErrorState(false);
+      hideActions();
+      renderEmpty();
+      chips.forEach((chip) => chip.classList.remove('is-active'));
+      writeHash(null);
+    }
+
+    function renderInvalid(result: Result, isAlert: boolean): void {
+      payloads = [];
+      const body =
+        result.mode === 'parse'
+          ? errorCardHtml(result.diagnostics, isAlert) +
+            notesBlockHtml(result.diagnostics) +
+            ((result.params ?? []).length > 0
+              ? paramsHtml(result.params ?? [], result.rawQuery ?? '')
+              : '')
+          : errorCardHtml(result.diagnostics, isAlert) + notesBlockHtml(result.diagnostics);
+      resultsBox!.innerHTML = body;
+      bindPayloads();
+    }
+
+    function showError(result: Result, isAlert: boolean): void {
+      state = 'invalid';
+      clearTimers();
+      setErrorState(true);
+      hideActions();
+      setSummary(result.summary, true);
+      renderInvalid(result, isAlert);
+      chips.forEach((chip) => chip.classList.remove('is-active'));
+      writeHash(null);
+    }
+
+    function renderValid(result: Result): void {
+      payloads = [];
+      lastOutput = result.output ?? '';
+      let body = '';
+      if (result.mode === 'parse') {
+        if (!result.queryOnly && (result.components ?? []).length > 0) {
+          body += componentsHtml(result.components ?? []);
+        }
+        body += paramsHtml(result.params ?? [], result.rawQuery ?? '');
+      } else {
+        body += outputCardHtml(result);
+      }
+      body += notesBlockHtml(result.diagnostics);
+      resultsBox!.innerHTML = body;
+      bindPayloads();
+    }
+
+    function evaluate(source: 'type' | 'bulk' | 'commit' | 'seed'): void {
+      clearTimers();
+      const value = input!.value;
+      prevValue = value;
+      if (value.trim().length === 0) {
+        toEmpty();
+        return;
+      }
+
+      const result = engine.run(value, mode, options());
+
+      // Keep the untouched "+ is a space" checkbox honest about what auto chose.
+      if (!plusTouched && mode !== 'encode') {
+        plusBox!.checked = result.plusAsSpace === true;
+      }
+
+      if (result.ok) {
+        state = 'valid';
+        setErrorState(false);
+        setSummary(result.summary, false);
+        renderValid(result);
+        const all = copyAllPayload(result, engine);
+        copyAllBtn!.hidden = all.length === 0;
+        copyAllBtn!.dataset.copy = all;
+        const hash = hashLib.buildUrlCodecHash(value, mode);
+        if (hash.length > hashLib.MAX_HASH_LEN) {
+          shareBtn!.hidden = true;
+          shareBtn!.dataset.copy = '';
+        } else {
+          shareBtn!.hidden = false;
+          shareBtn!.dataset.copy =
+            location.origin + location.pathname + location.search + hash;
+          if (source !== 'seed') writeHash(value);
+        }
+        if (source !== 'seed') recordToolLastInput(SLUG, value);
+        syncChips();
+        return;
+      }
+
+      if (source !== 'type') {
+        showError(result, source === 'commit');
+        return;
+      }
+
+      // Mid-typing: hold the previous card, no red border yet. And do not even
+      // start the hold while the value still looks unfinished — a half-typed
+      // escape (`%2`) or a trailing separator is not a mistake, it is a person
+      // still typing.
+      state = 'pending';
+      setErrorState(false);
+      hideActions();
+      setSummary('', false);
+      if (!/[%:/&=?]$|%[0-9A-Fa-f]$/.test(value)) {
+        errTimer = window.setTimeout(() => showError(result, false), ERROR_HOLD_MS);
+      }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Events                                                              */
+    /* ------------------------------------------------------------------ */
+
+    root.addEventListener('click', (evt) => {
+      const target = evt.target as HTMLElement;
+      const again = target.closest<HTMLButtonElement>('[data-again]');
+      if (again && resultsBox!.contains(again)) {
+        // Feed the once-decoded text back in — the fix for a %2520-style value
+        // that was percent-encoded twice on the way here.
+        if (lastOutput.length === 0) return;
+        input!.value = lastOutput;
+        evaluate('commit');
+        return;
+      }
+      const copy = target.closest<HTMLButtonElement>('.uc-copy');
+      if (copy) void handleCopy(copy);
+    });
+
+    input.addEventListener('input', () => {
+      clearTimers();
+      const value = input.value;
+      const jumped = Math.abs(value.length - prevValue.length) > 1;
+      prevValue = value;
+      if (value.trim().length === 0) {
+        toEmpty();
+        return;
+      }
+      // A single `input` event that moved the value by more than one character
+      // is not composition — it is a paste, an autofill, a cut, or a selection
+      // replaced wholesale. Nobody types 40 characters in one keystroke, so
+      // there is nothing for the debounce or the calm-error hold to protect:
+      // answer immediately. Real typing (delta of exactly one) still debounces,
+      // which is what keeps the mid-composition hold intact.
+      if (jumped) {
+        evaluate('bulk');
+        return;
+      }
+      evalTimer = window.setTimeout(() => evaluate('type'), DEBOUNCE_MS);
+    });
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      // See the DEVIATION note in this file's header: a URL is single-line, and
+      // a raw newline is a diagnosed error — Enter must not manufacture one.
+      e.preventDefault();
+      evaluate('commit');
+      if (e.ctrlKey || e.metaKey || window.matchMedia?.('(pointer: coarse)').matches) input.blur();
+    });
+
+    input.addEventListener('blur', () => {
+      if (state === 'pending') evaluate('commit');
+    });
+
+    modeBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const next = btn.dataset.mode;
+        if (next !== 'parse' && next !== 'decode' && next !== 'encode') return;
+        if (next === mode) return;
+        mode = next;
+        // A new mode means a new deep link even for the same text.
+        lastWrittenHash = null;
+        syncModeUi();
+        evaluate('commit');
+      });
+    });
+
+    plusBox.addEventListener('change', () => {
+      plusTouched = true;
+      evaluate('commit');
+    });
+    formBox.addEventListener('change', () => {
+      syncModeUi();
+      evaluate('commit');
+    });
+    scopeBox.addEventListener('change', () => evaluate('commit'));
+
+    chips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const next = chip.dataset.mode;
+        input!.value = chip.dataset.input ?? '';
+        if (next === 'parse' || next === 'decode' || next === 'encode') mode = next;
+        // Chips always mean "the default options for this mode".
+        plusTouched = false;
+        formBox!.checked = false;
+        scopeBox!.checked = false;
+        lastWrittenHash = null;
+        syncModeUi();
+        evaluate('commit');
+      });
+    });
+
+    wireSnapshotUI({
+      slug: SLUG,
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: () => input!.value,
+      setValue: (value) => {
+        input!.value = value;
+        evaluate('commit');
+      },
+    });
+
+    /* ------------------------------------------------------------------ */
+    /* First load: typed value → #in= deep link → restored last input →    */
+    /* first example. Seeding never writes the hash — only user actions do. */
+    /* ------------------------------------------------------------------ */
+
+    syncModeUi();
+    const shared = hashLib.readUrlCodecHash();
+    const restored = getRestoredLastInput(SLUG);
+
+    if (input.value.trim()) {
+      evaluate('seed');
+    } else if (shared) {
+      input.value = shared.input;
+      mode = shared.mode;
+      syncModeUi();
+      evaluate('seed');
+    } else if (restored) {
+      input.value = restored;
+      evaluate('seed');
+    } else if (chips[0]) {
+      input.value = chips[0].dataset.input ?? '';
+      const seedMode = chips[0].dataset.mode;
+      if (seedMode === 'parse' || seedMode === 'decode' || seedMode === 'encode') mode = seedMode;
+      syncModeUi();
+      evaluate('seed');
+    } else {
+      renderEmpty();
+    }
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

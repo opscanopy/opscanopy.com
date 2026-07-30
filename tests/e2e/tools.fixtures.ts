@@ -100,7 +100,24 @@ export interface ToolFixture {
 }
 
 /** Append one entry per tool, at the end. Empty = every journey is a no-op. */
-export const TOOL_FIXTURES: ToolFixture[] = [];
+export const TOOL_FIXTURES: ToolFixture[] = [
+  {
+    // Tool 2 — URL Encoder / Decoder + Query-String Parser.
+    // `calmErrorString` is pinned by `src/lib/url-codec/engine.test.ts`
+    // ("bad-escape names the sequence and the index"); index 18 is where `%ZZ`
+    // starts in `invalidInput`, counted against the whole input.
+    slug: 'url-encoder-decoder',
+    family: 'textarea',
+    hashKey: '#in=',
+    seededResultString: '#alerts',
+    invalidInput: 'https://x.test/?a=%ZZ',
+    calmErrorString:
+      'Invalid percent-escape "%ZZ" at index 18 — "%" must be followed by two hex digits (0-9, A-F).',
+    xssPayload: 'https://x.test/?q=<img src=x onerror=alert(1)>',
+    inputSelector: '#uc-input',
+    resultsSelector: '#uc-results',
+  },
+];
 
 /** Fixtures for one family — used by the family-gated journey steps. */
 export function byFamily(family: ToolFamily): ToolFixture[] {
