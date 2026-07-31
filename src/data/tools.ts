@@ -740,6 +740,26 @@ export const tools: Tool[] = [
     ],
     accent: 'ship',
   },
+  {
+    slug: 'kubernetes-label-selector-tester',
+    name: 'Kubernetes Label Selector Tester',
+    tagline: 'See which pods a label selector matches — and why each one does or doesn’t.',
+    description:
+      'Paste your pods and a selector — a kubectl -l string or a matchLabels/matchExpressions block — and get a per-resource MATCH or NO MATCH with the exact clause that decided, including the case everyone answers backwards: NotIn and != match a resource that has no such label at all. Pure client-side, no cluster.',
+    status: 'planned',
+    category: 'Kubernetes',
+    keywords: [
+      'kubernetes label selector tester',
+      'kubectl label selector online',
+      'matchlabels vs matchexpressions',
+      'service selects no pods',
+      'networkpolicy podselector tester',
+      'test label selector without cluster',
+      'kubernetes selector notin absent key',
+      'label selector validator online',
+    ],
+    accent: 'develop',
+  },
 ];
 
 export const liveTools = tools.filter((t) => t.status === 'live');

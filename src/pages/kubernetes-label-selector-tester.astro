@@ -1,0 +1,490 @@
+---
+/**
+ * Kubernetes Label Selector Tester — the tool page (SEO surface).
+ *
+ * The reference section is ONE table, and it is the checkable one: written form
+ * → apimachinery operator → structured equivalent → what happens when the key is
+ * ABSENT. That last column is the whole reason this page exists, and it is the
+ * column an AI answer is most likely to get backwards.
+ */
+import Shell from '../components/Shell.astro';
+import K8sLabelSelectorTesterPlayground from '../components/K8sLabelSelectorTesterPlayground.astro';
+import Button from '../components/Button.astro';
+import CodeBlock from '../components/CodeBlock.astro';
+import ToolHero from '../components/ToolHero.astro';
+import ToolGapVisual from '../components/ToolGapVisual.astro';
+import ToolPipeline from '../components/ToolPipeline.astro';
+import FaqList from '../components/FaqList.astro';
+import ToolCrossLinks from '../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../data/site';
+import { getTool } from '../data/tools';
+import { softwareAppLd, faqPageLd } from '../lib/jsonld';
+
+const tool = getTool('kubernetes-label-selector-tester');
+const pagePath = '/kubernetes-label-selector-tester/';
+const pageUrl = `${site.url}${pagePath}`;
+
+const faqs = [
+  {
+    q: 'Why does env!=prod match a pod that has no env label at all?',
+    a: 'Because that is what the rule says, and it is the single most surprising line in the whole label-selector API. In k8s.io/apimachinery, Requirement.Matches handles NotIn and != with one branch: if the label set does not have the key, return true. In and == take the opposite branch: if the label set does not have the key, return false. So env!=prod means "no env label saying prod", which a pod with no env label satisfies perfectly. If you meant "has an env label, and it is not prod", you need two clauses: env,env!=prod — Exists AND NotIn. This tester annotates every clause that holds because the key is absent, so you never have to remember which way round it goes.',
+  },
+  {
+    q: 'What is the difference between matchLabels and matchExpressions?',
+    a: 'matchLabels is a plain map, and every pair in it becomes one equality requirement: {app: web, tier: frontend} is exactly app=web,tier=frontend. matchExpressions is a list of {key, operator, values} entries and is the only way to write the set-based operators In, NotIn, Exists and DoesNotExist. When a selector has both, apimachinery ANDs everything together — LabelSelectorAsSelector adds each matchLabels pair and each expression to the same requirement list. There is no OR anywhere in a label selector, at any level.',
+  },
+  {
+    q: 'Can a Service selector use matchExpressions?',
+    a: 'No, and this is the mistake generated manifests make most often. A Service\'s spec.selector is typed map[string]string, not a LabelSelector: it takes a plain label map and supports equality only. Write matchLabels or matchExpressions there and the API server rejects the field outright. Deployments, StatefulSets, DaemonSets, Jobs and NetworkPolicy podSelector all take a real LabelSelector and accept both forms. Paste a Service manifest with matchExpressions into this tester and it warns you, then shows what a Deployment WOULD have matched — so you can see both the error and the intent.',
+  },
+  {
+    q: 'Does an empty selector match everything or nothing?',
+    a: 'It depends on whether the field is empty or absent, and the two are not the same. An empty LabelSelector — {}, or matchLabels: {} — is labels.Everything(): it matches every object, which is exactly why a NetworkPolicy with podSelector: {} applies to every pod in the namespace. A selector that is nil, on the other hand, matches nothing: LabelSelectorAsSelector(nil) returns labels.Nothing(). And a Service is a third case again: its selector field is omitted when empty, so a Service with selector: {} is a Service with no selector, and the endpoints controller does not manage its endpoints at all.',
+  },
+  {
+    q: 'Does anything I paste leave my browser?',
+    a: 'No. Both parsers, the validator and the matcher are JavaScript running in your tab — there is no server, no API call and no logging, so 0 bytes are uploaded. That matters here because a pod dump is not neutral text: it carries internal image references, node names, annotations, sometimes a token mounted as an env var. This is the tool you can use on production output without a conversation about data handling.',
+  },
+  {
+    q: 'My Service has zero endpoints. What do I check first?',
+    a: 'The pod labels, not the Service. Paste the Service manifest as the selector and the actual pods as the resources: the tester reads spec.selector for you and shows a per-clause trace on each pod, so a one-character label typo shows up as label tier="frontnd" ≠ "frontend" instead of as an empty endpoint list. Two structural traps to rule out as well. First, a Service selects POD labels, not the Deployment\'s own metadata.labels — this tester lists a workload\'s spec.template.metadata.labels as its own "Pod template" row for exactly that reason. Second, a selector that matches nothing is never an error anywhere in Kubernetes: kubectl accepts it, the API accepts it, and the only symptom is an empty endpoints object.',
+  },
+  {
+    q: 'Does it support field selectors like --field-selector status.phase=Running?',
+    a: 'No, and that is a deliberate fence rather than a missing feature. Field selectors are a different mechanism: they filter on an object\'s own fields, they are evaluated by the API server against a small allow-list that varies per resource type, and almost none of them support set-based operators. Simulating them offline would mean encoding which fields each Kubernetes version indexes for each kind, and getting it subtly wrong. This tool covers label selectors, which are uniform across every resource type and fully defined by the object you already have in your clipboard.',
+  },
+  {
+    q: 'What about the Gt and Lt operators I have seen in node affinity?',
+    a: 'They exist, but not on a label selector. Node affinity uses NodeSelectorRequirement, a separate type whose operator set is In, NotIn, Exists, DoesNotExist, Gt and Lt. A LabelSelectorRequirement — the one inside matchExpressions, spec.selector and podSelector — has only the first four. So Gt and Lt are valid in nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution and invalid everywhere this tester looks. Type replicas>2 into the selector field and it says so rather than inventing a comparison a label selector does not have.',
+  },
+  {
+    q: 'How much can it handle, and what are the limits?',
+    a: 'It evaluates the first 500 resource documents from a paste of up to 500,000 characters, and a selector of at most 100 clauses — every cap says so on screen with the real count, so a truncated run never looks like a complete one. Keys and values are validated against the real limits: a label key name is at most 63 characters, an optional DNS-subdomain prefix before the / at most 253, and a label value at most 63 (an empty value is legal). An invalid key or value in the SELECTOR is a hard error, because the API server would reject it; an invalid label on a RESOURCE is only a note, because the question you asked was whether the selector matches it.',
+  },
+];
+
+const softwareApp = softwareAppLd({
+  name: 'Kubernetes Label Selector Tester',
+  description:
+    'Free in-browser Kubernetes label selector tester: paste pods and a kubectl -l string or matchLabels/matchExpressions block, get a per-resource verdict with the exact clause that decided. Pins apimachinery semantics, including NotIn matching an absent key.',
+  url: pageUrl,
+  subCategory: 'Kubernetes',
+  featureList: [
+    'Both grammars: the kubectl -l string and structured matchLabels / matchExpressions',
+    'Per-resource MATCH / NO MATCH with a clause-by-clause reason',
+    'Flags the clauses that hold because the key is absent (NotIn, !=)',
+    'Reads spec.selector and spec.podSelector straight out of a manifest',
+    'Multi-document pastes, kind: List, and pod templates as their own rows',
+    'apimachinery key and value validation with the real 63 / 253 limits',
+    'Shareable link, saved snapshots, copy-as-report',
+    '100% client-side, no cluster access, no upload, no signup',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+const faqPage = faqPageLd(faqs);
+
+const pipeline = [
+  {
+    title: 'Parse the selector the way apimachinery does.',
+    body: 'The `-l` grammar goes through a port of its own lexer and parser — context-sensitive, so `op in (in,notin)` is legal, and whitespace-tolerant, so `env in ( prod , dev )` is the same selector. Structured selectors go through `LabelSelectorAsSelector`\'s rules instead.',
+  },
+  {
+    title: 'Read whatever is in the clipboard.',
+    body: 'One manifest, a `---` stream, a `kind: List`, or a YAML list. A workload\'s `spec.template.metadata.labels` becomes its own row, because a Service selects pod labels and not the Deployment\'s own.',
+  },
+  {
+    title: 'Evaluate clause by clause.',
+    body: '`Requirement.Matches`, once per resource per clause: `In` needs the key present, `NotIn` is satisfied by an absent key, `Exists` accepts an empty value, `DoesNotExist` does not.',
+  },
+  {
+    title: 'Show the reason, not just the verdict.',
+    body: 'Every clause carries the sentence that decided it, naming the actual label value. The absent-key matches get an amber annotation, because those are the ones people and language models answer backwards.',
+  },
+];
+
+/**
+ * The reference table. The last column is the point: it is the fact that is
+ * checkable, frequently misremembered, and never printed next to the syntax.
+ */
+const operators = [
+  {
+    written: 'key=value',
+    op: 'In',
+    structured: 'matchLabels: {key: value}',
+    absent: 'no match',
+    absentKind: 'miss',
+    note: 'One value. `=` and `==` are the same operator.',
+  },
+  {
+    written: 'key==value',
+    op: 'In',
+    structured: 'matchLabels: {key: value}',
+    absent: 'no match',
+    absentKind: 'miss',
+    note: 'Identical to `=`; only the spelling is preserved.',
+  },
+  {
+    written: 'key!=value',
+    op: 'NotIn',
+    structured: 'operator: NotIn, values: [value]',
+    absent: 'MATCHES',
+    absentKind: 'match',
+    note: 'The one people get backwards. An absent key satisfies it.',
+  },
+  {
+    written: 'key in (a,b)',
+    op: 'In',
+    structured: 'operator: In, values: [a, b]',
+    absent: 'no match',
+    absentKind: 'miss',
+    note: 'At least one value is required; the set is de-duplicated and sorted.',
+  },
+  {
+    written: 'key notin (a,b)',
+    op: 'NotIn',
+    structured: 'operator: NotIn, values: [a, b]',
+    absent: 'MATCHES',
+    absentKind: 'match',
+    note: 'Same absent-key rule as `!=`, because it is the same operator.',
+  },
+  {
+    written: 'key',
+    op: 'Exists',
+    structured: 'operator: Exists',
+    absent: 'no match',
+    absentKind: 'miss',
+    note: 'Any value, including the empty string. Values are forbidden.',
+  },
+  {
+    written: '!key',
+    op: 'DoesNotExist',
+    structured: 'operator: DoesNotExist',
+    absent: 'MATCHES',
+    absentKind: 'match',
+    note: 'Fails if the key is present with an empty value — it is still present.',
+  },
+];
+
+/** What the tool deliberately refuses to do, with the reason for each. */
+const fence = [
+  {
+    what: 'Field selectors',
+    why: 'A different mechanism with a per-kind, per-version allow-list of indexed fields, mostly without set-based operators. Simulating it offline would mean guessing which fields your cluster indexes.',
+  },
+  {
+    what: 'Node affinity Gt and Lt',
+    why: 'They belong to NodeSelectorRequirement, not LabelSelectorRequirement. Typing replicas>2 gets a message that says so instead of a comparison a label selector cannot express.',
+  },
+  {
+    what: 'namespaceSelector semantics',
+    why: 'A NetworkPolicy peer combines a namespaceSelector with a podSelector across namespaces. Without the namespace objects, the honest answer is the podSelector on its own.',
+  },
+  {
+    what: 'Anything that needs the cluster',
+    why: 'No API server is contacted, so no live pod list, no admission result and no endpoints object. Everything here is derived from the text you pasted.',
+  },
+];
+---
+
+<Shell
+  title="Kubernetes Label Selector Tester — Which Pods Match, and Why"
+  description="Test a Kubernetes label selector in your browser: paste pods plus a kubectl -l string or matchLabels/matchExpressions and get a per-resource verdict with the clause that decided."
+  canonical="/kubernetes-label-selector-tester"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <ToolHero
+    slug="kubernetes-label-selector-tester"
+    eyebrow="Label Selector Tester · Kubernetes"
+    badges={[
+      { label: 'Runs in your browser', variant: 'live' },
+      { label: 'No cluster needed', variant: 'neutral' },
+      { label: 'No signup', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">See which pods your selector matches — and why.</Fragment>
+    <Fragment slot="lead">
+      Paste the pods and the selector — a <span class="code-mono">kubectl -l</span> string or a
+      <span class="code-mono">matchLabels</span> / <span class="code-mono">matchExpressions</span>
+      block — and get a per-resource verdict with the exact clause that decided it. Including the
+      rule almost everyone answers backwards: <span class="code-mono">NotIn</span> and
+      <span class="code-mono">!=</span> match a resource that has no such label at all.
+    </Fragment>
+  </ToolHero>
+
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pt-8 pb-20 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">Kubernetes Label Selector Tester playground</h2>
+      <K8sLabelSelectorTesterPlayground />
+    </div>
+  </section>
+
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">The Gap</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            A selector that matches nothing is not an error anywhere in Kubernetes.
+          </h2>
+          <ToolGapVisual />
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            <span class="code-mono">kubectl apply</span> accepts it. The API server accepts it. No
+            controller logs a warning, no event is emitted, no field is marked invalid. The only
+            symptom of a Service whose selector misses its pods by one character is an
+            <span class="code-mono">Endpoints</span> object with no addresses — and by the time you
+            are looking at that, you are already debugging in the wrong place. The same silence
+            covers a <span class="code-mono">NetworkPolicy</span> whose
+            <span class="code-mono">podSelector</span> selects nothing, which fails open in exactly
+            the way a security control should not.
+          </p>
+          <p class="body-md text-pretty text-body">
+            The rules themselves are the second half of the problem, because two of them read
+            backwards. <span class="code-mono">env!=prod</span> matches a pod that has no
+            <span class="code-mono">env</span> label at all — <span class="code-mono">NotIn</span> is
+            satisfied by an absent key, by design, in one branch of
+            <span class="code-mono">Requirement.Matches</span>. And an empty selector matches
+            <em>everything</em>, while a nil selector matches <em>nothing</em>. Both facts are one
+            line of Go each, and both are routinely remembered the other way round.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Which is why this is a tool and not a blog post. Ask an assistant "does
+            <span class="code-mono">env!=prod</span> match a pod with no
+            <span class="code-mono">env</span> label" and you will get a fluent answer with a
+            fifty-fifty chance of being wrong — and generated manifests routinely put
+            <span class="code-mono">matchExpressions</span> inside a Service's
+            <span class="code-mono">spec.selector</span>, a field that only accepts a plain label
+            map. Paste the claim in here and the answer comes from the same semantics
+            <span translate="no">apimachinery</span> implements, with the reason attached, in a tab
+            that sends nothing anywhere.
+          </p>
+          <p class="body-sm text-mute">
+            Sizing the workload rather than selecting it? <a
+              class="link-inline"
+              href="/kubernetes-resource-calculator/">Kubernetes Resource Calculator</a
+            > totals requests and limits across replicas, and
+            <a class="link-inline" href="/env-example-checker/">Env Example Checker</a> catches the
+            variables a container expects but never gets.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="The Pipeline"
+    heading="How it works."
+    lead="Four steps, all inside your browser tab, re-run as you type."
+    steps={pipeline}
+  />
+
+  <section id="reference" class="scroll-mt-24 border-t border-hairline bg-canvas-soft">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Reference</p>
+        <h2 class="display-lg mt-3 text-ink">Every operator, and what an absent key does.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          Seven ways to write a clause, four operators behind them, and the column that is almost
+          never printed next to the syntax: what happens when the resource does not carry the key at
+          all. Three of the seven <strong class="font-medium text-ink">match</strong> in that case.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 max-w-5xl">
+        <div class="card-soft overflow-x-auto">
+          <table class="kls-table w-full text-left">
+            <thead>
+              <tr>
+                <th class="eyebrow px-4 py-3">Written as</th>
+                <th class="eyebrow px-4 py-3">Operator</th>
+                <th class="eyebrow px-4 py-3">Structured form</th>
+                <th class="eyebrow px-4 py-3">Key absent</th>
+              </tr>
+            </thead>
+            <tbody>
+              {
+                operators.map((row) => (
+                  <tr class="border-t border-hairline align-top">
+                    <td class="code-mono px-4 py-2.5 whitespace-nowrap text-ink">{row.written}</td>
+                    <td class="code-mono px-4 py-2.5 whitespace-nowrap text-mute">{row.op}</td>
+                    <td class="px-4 py-2.5">
+                      <span class="code-mono text-ink">{row.structured}</span>
+                      <span class="kls-note block text-mute">{row.note}</span>
+                    </td>
+                    <td class="px-4 py-2.5 whitespace-nowrap">
+                      <span class={`kls-abs kls-abs--${row.absentKind} code-mono`}>{row.absent}</span>
+                    </td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="mt-10 grid gap-6 lg:grid-cols-2">
+          <div class="min-w-0">
+            <h3 class="display-sm text-ink">"Has the label, and it is not prod"</h3>
+            <p class="body-sm mt-2 text-pretty text-body">
+              One clause cannot say that. <span class="code-mono">env!=prod</span> also picks up
+              every resource with no <span class="code-mono">env</span> label. Add
+              <span class="code-mono">Exists</span> next to it — commas mean AND.
+            </p>
+            <div class="mt-4">
+              <CodeBlock lang="bash" code={`# matches unlabelled pods too
+kubectl get pods -l 'env!=prod'
+
+# has an env label, and it is not prod
+kubectl get pods -l 'env,env!=prod'`} />
+            </div>
+          </div>
+          <div class="min-w-0">
+            <h3 class="display-sm text-ink">The empty selector, three ways</h3>
+            <p class="body-sm mt-2 text-pretty text-body">
+              Empty means <em>everything</em>; nil means <em>nothing</em>; and a Service omits the
+              field when it is empty, which leaves it with no managed endpoints at all.
+            </p>
+            <div class="mt-4">
+              <CodeBlock lang="yaml" code={`# every pod in the namespace
+podSelector: {}
+
+# every resource, again
+selector:
+  matchLabels: {}
+
+# a Service with NO selector: endpoints
+# are yours to manage by hand
+spec:
+  ports: [{ port: 80 }]`} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="not-checked" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">The Fence</p>
+        <h2 class="display-lg mt-3 text-balance text-ink">What it deliberately does not do.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          Each of these was considered and refused, because the alternative was a plausible answer
+          that could be wrong. A tester you cannot audit is a tester you have to trust.
+        </p>
+      </div>
+      <div class="mx-auto mt-10 grid max-w-5xl gap-4 sm:grid-cols-2">
+        {
+          fence.map((item) => (
+            <div class="card p-5">
+              <h3 class="body-md font-medium text-ink">{item.what}</h3>
+              <p class="body-sm mt-2 text-pretty text-body">{item.why}</p>
+            </div>
+          ))
+        }
+      </div>
+      <p class="caption mx-auto mt-8 max-w-3xl text-center text-pretty text-mute">
+        Limits, stated rather than hidden: up to 500 resource documents from a paste of at most
+        500,000 characters, and at most 100 clauses in one selector. A label key name is validated at
+        63 characters, its optional DNS-subdomain prefix at 253, and a label value at 63 — the same
+        limits the API server enforces.
+      </p>
+    </div>
+  </section>
+
+  <section id="next" class="scroll-mt-24 bg-inverse text-inverse-fg">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+        <div class="min-w-0">
+          <p class="eyebrow !text-cyan">Next Step</p>
+          <h2 class="display-lg mt-3 text-balance text-inverse-fg">
+            Paste the trace into the incident channel.
+          </h2>
+          <p class="body-md mt-4 text-pretty text-white/70">
+            "Copy report" gives you the whole run as plain text: the canonical selector, then one
+            block per resource with its verdict and every clause that decided it. Then keep going —
+            total what the workload actually reserves, or check the variables its containers expect.
+          </p>
+          <div class="mt-7 flex flex-wrap items-center gap-3">
+            <Button href="/kubernetes-resource-calculator/" variant="secondary"
+              >Resource Calculator</Button
+            >
+            <Button href="/env-example-checker/" variant="secondary">Env Example Checker</Button>
+          </div>
+        </div>
+        <CodeBlock
+          lang="text"
+          filename="selector-report.txt"
+          code={`Kubernetes Label Selector Tester — 3 of 5 resources match
+selector: app=web,tier=frontend
+
+NO MATCH — Pod/web-d
+  metadata.labels: app=web, tier=frontnd
+  [ok] app=web — label app="web" = "web"
+  [no] tier=frontend — label tier="frontnd" ≠ "frontend"`}
+        />
+      </div>
+    </div>
+  </section>
+
+  <FaqList faqs={faqs} />
+
+  <ToolCrossLinks slug="kubernetes-label-selector-tester">
+    <Fragment slot="lead">
+      The Label Selector Tester is one tool in <span translate="no">{site.name}</span> — a growing
+      canopy of browser-based validators, converters and testers that never touch a server.
+    </Fragment>
+    <Fragment slot="links">
+      Related: <a class="link-inline" href="/kubernetes-resource-calculator/"
+        >Kubernetes Resource Calculator</a
+      > for what a workload reserves,
+      <a class="link-inline" href="/env-example-checker/">Env Example Checker</a> for the variables a
+      container expects, the
+      <a class="link-inline" href="/alertmanager-route-tester/">Alertmanager Route Tester</a> for the
+      other label-matching tree that silently drops things, and the
+      <a class="link-inline" href="/json-yaml-converter/">JSON ↔ YAML Converter</a> when a manifest
+      needs reshaping for <span class="code-mono">kubectl patch</span> — or browse the full
+      <a class="link-inline" href={`${navLinks[0].href}/`}>tools directory</a>.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      Provided as-is for convenience; always confirm critical configuration against the cluster that
+      will consume it. <span translate="no">{site.name}</span> is free and open.
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>
+
+<style>
+  @reference "../styles/global.css";
+
+  .kls-table th {
+    font-weight: inherit;
+    white-space: nowrap;
+  }
+  .kls-table td {
+    font-size: 13px;
+    line-height: 19px;
+  }
+  .kls-note {
+    margin-top: 3px;
+    font-size: 12px;
+    line-height: 17px;
+    text-wrap: pretty;
+  }
+  .kls-abs {
+    padding: 1px 8px;
+    border-radius: var(--radius-pill);
+    font-size: 10.5px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .kls-abs--match {
+    background: var(--color-brand-soft);
+    color: var(--color-brand-strong);
+  }
+  .kls-abs--miss {
+    background: var(--color-canvas-soft-2);
+    color: var(--color-body);
+  }
+</style>

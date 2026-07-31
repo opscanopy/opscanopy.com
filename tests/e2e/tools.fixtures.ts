@@ -262,6 +262,44 @@ export const TOOL_FIXTURES: ToolFixture[] = [
     inputSelector: '#cd-input',
     resultsSelector: '#cd-results',
   },
+  {
+    // Tool 8 — Kubernetes Label Selector Tester.
+    //
+    // The island has TWO inputs and `inputSelector` points at the RESOURCES
+    // CodeMirror, not at the selector field — so both payloads below are
+    // RESOURCE YAML, evaluated against the boot-seeded selector
+    // (`app=web,tier=frontend`).
+    //
+    // `seededResultString` is a clause REASON from the first example, not a
+    // count: the visible `role="status"` summary ("3 of 5 resources match") lives
+    // outside the results container, and a per-clause reason is the thing this
+    // tool actually exists to render.
+    //
+    // `invalidInput` is what happens when someone pastes the SELECTOR into the
+    // resources box — a plain YAML scalar, which is a document but not an object.
+    // Deliberately chosen so every prefix of it (`a`, `ap`, `app`, `app=`) is
+    // ALSO a plain scalar with the same diagnostic, which is what makes J2's calm
+    // window meaningful rather than accidental. `calmErrorString` is pinned
+    // byte-for-byte by `engine.test.ts` ("refuses a plain scalar document") and
+    // is the engine's own wording, never a js-yaml message.
+    //
+    // `xssPayload` is a single-line YAML FLOW mapping on purpose: J7 types it
+    // into CodeMirror with `fill()`, and a block mapping fights auto-indent. The
+    // markup sits in a label VALUE, which is invalid per apimachinery's charset —
+    // and that is the point. Resource labels are advisory here, so the payload
+    // reaches BOTH the rendered label chip and the advisory diagnostic that
+    // quotes it back, which is exactly where escaping has to hold.
+    slug: 'kubernetes-label-selector-tester',
+    family: 'cm',
+    hashKey: '#s=',
+    seededResultString: 'label tier="frontnd" ≠ "frontend"',
+    invalidInput: 'app=web',
+    calmErrorString:
+      'Resources: document 1 is a plain string, not a Kubernetes object — paste manifests, a kind: List, or a YAML list of objects.',
+    xssPayload: '{kind: Pod, metadata: {name: probe, labels: {app: <img src=x onerror=alert(1)>}}}',
+    inputSelector: '#klt-input .cm-content',
+    resultsSelector: '#klt-results',
+  },
 ];
 
 /** Fixtures for one family — used by the family-gated journey steps. */
