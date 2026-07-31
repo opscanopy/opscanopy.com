@@ -121,10 +121,20 @@ export function coerceLabelScalar(value: unknown): { text: string; kind: ScalarK
   return null;
 }
 
-/** The sentence that explains a non-string label value. `subject` names the field. */
-export function nonStringLabelNote(subject: string, raw: string, kind: ScalarKind): string {
+/**
+ * The sentence that explains a non-string label value. `subject` names the field.
+ *
+ * `coerced` is what YAML PRODUCED, not what the user typed — the two differ for
+ * every interesting case (`1.0`→`1`, `010`→`10`, `0755`→`755`, `0x1f`→`31`,
+ * `1e3`→`1000`), because js-yaml hands back a `number` and the source token is
+ * gone. So the sentence must never say "you wrote X", and the remediation must
+ * never say `quote it as "X"`: following that advice would silently change the
+ * value. It states what YAML made of the value and tells the user to quote what
+ * they actually wrote.
+ */
+export function nonStringLabelNote(subject: string, coerced: string, kind: ScalarKind): string {
   if (kind === 'null') {
     return `${subject} was written with no value, so YAML read it as null. Kubernetes label values are strings — write "" if you mean an empty value.`;
   }
-  return `${subject} was written as ${raw}, so YAML read it as a ${kind}. Kubernetes label values are strings — quote it as "${raw}".`;
+  return `${subject} is not quoted, so YAML read it as the ${kind} ${coerced}. Kubernetes label values are strings — quote the value exactly as you wrote it.`;
 }

@@ -674,6 +674,10 @@ import { examples } from '../lib/kubernetes-label-selector-tester/examples';
     color: var(--color-mute);
     font-family: var(--font-sans);
   }
+  /* A key the document carries whose value YAML did not read as a string. */
+  :global(.klt-label--unreadable) {
+    color: var(--color-accent-ink);
+  }
   :global(.klt-path) {
     margin-left: auto;
     align-self: center;
@@ -961,6 +965,7 @@ import { examples } from '../lib/kubernetes-label-selector-tester/examples';
     reason: string;
     keyAbsent: boolean;
     absentKeyMatch: boolean;
+    undecided: boolean;
   };
   type LabelIssue = { key: string; message: string };
   type ResourceVerdict = {
@@ -972,6 +977,7 @@ import { examples } from '../lib/kubernetes-label-selector-tester/examples';
     matches: boolean;
     clauses: ClauseTrace[];
     labelIssues: LabelIssue[];
+    unreadableLabels: Record<string, string>;
   };
   type Diagnostic = {
     severity: 'error' | 'warning' | 'note';
@@ -1070,10 +1076,32 @@ import { examples } from '../lib/kubernetes-label-selector-tester/examples';
   }
 
   /** `app=web, tier=frontend` — the label set as plain text. */
-  function labelsText(labels: Record<string, string>): string {
-    const entries = Object.entries(labels);
+  /**
+   * The label set as it should be SHOWN: the readable string labels, plus every
+   * key whose YAML value was not a string. The second group is flagged, never
+   * dropped — dropping it made the card claim the key was absent.
+   */
+  function labelEntries(
+    verdict: ResourceVerdict,
+  ): { key: string; text: string; unreadable: boolean }[] {
+    return [
+      ...Object.entries(verdict.labels).map(([key, value]) => ({
+        key,
+        text: value === '' ? '""' : value,
+        unreadable: false,
+      })),
+      ...Object.entries(verdict.unreadableLabels ?? {}).map(([key, kind]) => ({
+        key,
+        text: `(${kind}, not a string)`,
+        unreadable: true,
+      })),
+    ];
+  }
+
+  function labelsText(verdict: ResourceVerdict): string {
+    const entries = labelEntries(verdict);
     if (entries.length === 0) return '(no labels)';
-    return entries.map(([key, value]) => `${key}=${value}`).join(', ');
+    return entries.map((entry) => `${entry.key}=${entry.text}`).join(', ');
   }
 
   /** One resource's whole verdict as plain text, fit for a PR comment. */
@@ -1082,7 +1110,7 @@ import { examples } from '../lib/kubernetes-label-selector-tester/examples';
       `${verdict.matches ? 'MATCH' : 'NO MATCH'} — ${verdict.kind}/${verdict.name}${
         verdict.namespace ? ` (namespace ${verdict.namespace})` : ''
       }`,
-      `  ${verdict.labelsPath}: ${labelsText(verdict.labels)}`,
+      `  ${verdict.labelsPath}: ${labelsText(verdict)}`,
     ];
     for (const clause of verdict.clauses) {
       lines.push(`  [${clause.holds ? 'ok' : 'no'}] ${clause.requirement.display} — ${clause.reason}`);
@@ -1095,12 +1123,17 @@ import { examples } from '../lib/kubernetes-label-selector-tester/examples';
   }
 
   function labelsHtml(verdict: ResourceVerdict): string {
-    const entries = Object.entries(verdict.labels);
+    // Unreadable keys are listed too: they ARE in the document, and a card that
+    // showed "no labels at all" for a pod with `released: 2024-06-01` would be
+    // making the same false claim the clause reasons no longer make.
+    const entries = labelEntries(verdict);
     const shown = entries.slice(0, MAX_LABEL_CHIPS);
     const chips = shown
       .map(
-        ([key, value]) =>
-          `<span class="klt-label">${escapeHtml(key)}=${escapeHtml(value === '' ? '""' : value)}</span>`,
+        (entry) =>
+          `<span class="klt-label${entry.unreadable ? ' klt-label--unreadable' : ''}">${escapeHtml(
+            entry.key,
+          )}=${escapeHtml(entry.text)}</span>`,
       )
       .join('');
     const more =
@@ -1129,12 +1162,18 @@ import { examples } from '../lib/kubernetes-label-selector-tester/examples';
       ? '<span class="klt-annot">Matches <em>because</em> the key is absent. ' +
         'NotIn and != are satisfied by a resource that carries no such label at all — the one ' +
         'label-selector rule that is most often answered backwards.</span>'
-      : '';
+      : clause.undecided
+        ? '<span class="klt-annot">Not decided — the key <em>is</em> in the document, but YAML ' +
+          'did not read its value as a string, so there is nothing to compare. This is not an ' +
+          'absent key: kubectl apply would reject the manifest outright.</span>'
+        : '';
     return (
       `<li class="klt-clause klt-clause--${state}">` +
       `<span class="klt-clause__mark" aria-hidden="true">${clause.holds ? '✓' : '✗'}</span>` +
       '<span class="klt-clause__body">' +
-      `<span class="sr-only">${clause.holds ? 'Holds: ' : 'Fails: '}</span>` +
+      `<span class="sr-only">${
+        clause.undecided ? 'Not decided: ' : clause.holds ? 'Holds: ' : 'Fails: '
+      }</span>` +
       `<span class="klt-req">${escapeHtml(clause.requirement.display)}</span>` +
       `<span class="klt-reason">${escapeHtml(clause.reason)}</span>` +
       annotation +
@@ -1250,12 +1289,10 @@ import { examples } from '../lib/kubernetes-label-selector-tester/examples';
     for (const verdict of result.verdicts) {
       lines.push(verdictText(verdict), '');
     }
-    if (result.truncated) {
-      lines.push(
-        `Note: only the first ${result.resourceCount} resources were evaluated; ${result.totalResources} were found.`,
-        '',
-      );
-    }
+    // No truncation line here: `resourceCount` counts VERDICT ROWS (a Deployment
+    // yields two) while `totalResources` counts DOCUMENTS, so mixing them read
+    // "only the first 1000 resources were evaluated; 600 were found". The
+    // engine's own warning — in documents, and correct — is printed below.
     for (const diagnostic of result.diagnostics) {
       lines.push(`${DIAG_WORD[diagnostic.severity]}: ${diagnostic.message}`);
     }
@@ -1353,7 +1390,14 @@ import { examples } from '../lib/kubernetes-label-selector-tester/examples';
     }
 
     async function handleCopy(btn: HTMLButtonElement): Promise<void> {
-      const ok = await copyTextToClipboard(payloadFor(btn));
+      const payload = payloadFor(btn);
+      // Never report success for an empty payload — a ✓ and "Copied to
+      // clipboard." over an untouched clipboard is a lie the user acts on.
+      if (payload.length === 0) {
+        setCopyStatus('Nothing to copy yet.', true);
+        return;
+      }
+      const ok = await copyTextToClipboard(payload);
       if (ok) {
         setCopied(btn, true);
         setCopyStatus('Copied to clipboard.', false);
@@ -1482,11 +1526,18 @@ import { examples } from '../lib/kubernetes-label-selector-tester/examples';
               // Plain Enter must still insert the newline, so this returns false
               // and lets insertNewlineAndIndent run — the eval is flushed on the
               // next tick, once the document includes the newline.
+              //
+              // It flushes as 'type', NOT 'commit': in a multi-line YAML editor
+              // Enter means "newline", so every line break in a half-typed
+              // manifest used to fire an assertive role="alert" card and the red
+              // rail mid-composition. 'type' keeps the immediate re-render and
+              // keeps the 600 ms calm-error hold. Mod-Enter above is the
+              // deliberate commit, as the hint line says.
               key: 'Enter',
               run: () => {
                 window.setTimeout(() => {
                   clearTimers();
-                  evaluate('commit');
+                  evaluate('type');
                 }, 0);
                 return false;
               },
@@ -1568,7 +1619,10 @@ import { examples } from '../lib/kubernetes-label-selector-tester/examples';
       shareBtn!.dataset.copy = '';
       copyAllBtn!.hidden = true;
       reportPayload = '';
-      rowPayloads = [];
+      // `rowPayloads` is deliberately NOT cleared: this runs from the `pending`
+      // branch with the previous verdict cards — and their per-row copy buttons
+      // — still on screen. Emptying it made those buttons announce "Copied to
+      // clipboard." and copy nothing.
     }
 
     function setActiveChip(idx: number | null): void {

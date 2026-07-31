@@ -812,7 +812,11 @@ export function parseYamlSelector(input: string): SelectorParse {
       diagnostics.push(note(`Read ${label} from the ${kind ?? 'pasted'} manifest.`));
     }
     if (kind === 'Service' && structured) diagnostics.push(warn(SERVICE_SET_BASED_WARNING));
-    matchLabelsField = `${label}.matchLabels`;
+    // Only name `.matchLabels` when the target actually HAS it. A Service's plain
+    // `spec.selector` cannot carry that field — the API server rejects it — so
+    // "spec.selector.matchLabels.app is a map" pointed at a path that cannot
+    // exist. The plain map's own path is `spec.selector.app`.
+    matchLabelsField = structured ? `${label}.matchLabels` : label;
   }
 
   let requirements: Requirement[] | null;

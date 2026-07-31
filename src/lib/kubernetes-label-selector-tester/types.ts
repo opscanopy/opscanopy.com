@@ -73,6 +73,13 @@ export interface ClauseTrace {
   /** The resource carries no label with this key at all. */
   keyAbsent: boolean;
   /**
+   * The resource CARRIES this key, but YAML did not read its value as a string
+   * (a map, a list, or an unquoted date), so `In`/`NotIn` cannot be decided.
+   * `holds` is false in that case — never a match on an unknown value, and
+   * never `keyAbsent`, because the key is right there in the document.
+   */
+  undecided: boolean;
+  /**
    * The clause HOLDS *because* the key is absent, under an operator where that
    * surprises people (`NotIn`, and therefore `!=`). The UI gives these an amber
    * annotation; nothing else in this engine treats them specially.
@@ -98,6 +105,12 @@ export interface ResourceVerdict {
   matches: boolean;
   clauses: ClauseTrace[];
   labelIssues: LabelIssue[];
+  /**
+   * Keys present in the document whose value YAML did not read as a scalar
+   * (a map, a list, or an unquoted date), mapped to what YAML made of them.
+   * These are NOT absent keys — see `undecided` on `ClauseTrace`.
+   */
+  unreadableLabels: Record<string, string>;
 }
 
 export type DiagnosticSeverity = 'error' | 'warning' | 'note';

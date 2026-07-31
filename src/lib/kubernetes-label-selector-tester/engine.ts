@@ -90,8 +90,44 @@ function quoted(value: string): string {
 export function evaluateClause(
   requirement: Requirement,
   labels: Record<string, string>,
+  /**
+   * Keys the document carries but whose value YAML did not read as a scalar,
+   * mapped to what YAML made of them (`'date'`, `'map'`, `'list'`). Such a key
+   * is PRESENT — reporting it as absent, and firing the amber absent-key
+   * annotation on it, was a confidently-wrong answer about a manifest that
+   * plainly has the label.
+   */
+  unreadable: Record<string, string> = {},
 ): ClauseTrace {
   const { key, op, values } = requirement;
+  const unreadableKind = Object.prototype.hasOwnProperty.call(unreadable, key)
+    ? unreadable[key]
+    : null;
+  if (unreadableKind !== null) {
+    // Exists / DoesNotExist only ask whether the key is there, so they ARE
+    // decidable. In / NotIn need the value, and there is no string to compare.
+    if (op === 'Exists' || op === 'DoesNotExist') {
+      const holdsExistence = op === 'Exists';
+      return {
+        requirement,
+        holds: holdsExistence,
+        reason: holdsExistence
+          ? `label ${key} is set — YAML read its value as a ${unreadableKind}, which Exists does not look at`
+          : `label ${key} is set (YAML read its value as a ${unreadableKind}), so DoesNotExist fails`,
+        keyAbsent: false,
+        absentKeyMatch: false,
+        undecided: false,
+      };
+    }
+    return {
+      requirement,
+      holds: false,
+      reason: `label ${key} is set, but YAML read its value as a ${unreadableKind}, not a string — quote it in the manifest and this clause can be decided`,
+      keyAbsent: false,
+      absentKeyMatch: false,
+      undecided: true,
+    };
+  }
   const present = Object.prototype.hasOwnProperty.call(labels, key);
   const actual = present ? labels[key] : '';
   const list = values.join(',');
@@ -166,6 +202,7 @@ export function evaluateClause(
     // Only NotIn surprises people here. DoesNotExist matching an absent key is
     // what it says on the tin, so it is not annotated.
     absentKeyMatch: !present && holds && op === 'NotIn',
+    undecided: false,
   };
 }
 
@@ -325,7 +362,7 @@ export function testSelector(
 
   const verdicts: ResourceVerdict[] = resources.resources.map((resource) => {
     const clauses = selector.requirements.map((requirement) =>
-      evaluateClause(requirement, resource.labels),
+      evaluateClause(requirement, resource.labels, resource.unreadableLabels),
     );
     return {
       kind: resource.kind,
@@ -336,6 +373,7 @@ export function testSelector(
       matches: clauses.every((clause) => clause.holds),
       clauses,
       labelIssues: resource.labelIssues,
+      unreadableLabels: resource.unreadableLabels,
     };
   });
 
@@ -352,7 +390,13 @@ export function testSelector(
     });
   }
 
-  const unlabelled = verdicts.filter((verdict) => Object.keys(verdict.labels).length === 0).length;
+  // A resource whose only label was unreadable (`released: 2024-06-01`) is NOT
+  // unlabelled — the note would be a false statement about the manifest.
+  const unlabelled = verdicts.filter(
+    (verdict) =>
+      Object.keys(verdict.labels).length === 0 &&
+      Object.keys(verdict.unreadableLabels).length === 0,
+  ).length;
   if (unlabelled > 0) {
     diagnostics.push({
       severity: 'note',
