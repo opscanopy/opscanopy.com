@@ -1,0 +1,416 @@
+---
+/**
+ * Certificate Decoder & Chain Checker — the certificate-decoder tool page (PT-BR).
+ * Decode PEM certificates, check chain order and completeness, verify each chain
+ * edge's signature with Web Crypto, and match a hostname per RFC 6125.
+ */
+import Shell from '../../components/Shell.astro';
+import CertificateDecoderPlayground from '../../components/CertificateDecoderPlayground.astro';
+import Button from '../../components/Button.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import ToolHero from '../../components/ToolHero.astro';
+import ToolGapVisual from '../../components/ToolGapVisual.astro';
+import ToolPipeline from '../../components/ToolPipeline.astro';
+import FaqList from '../../components/FaqList.astro';
+import ToolCrossLinks from '../../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../../data/site';
+import { getTool } from '../../data/tools';
+import { softwareAppLd, faqPageLd } from '../../lib/jsonld';
+
+const tool = getTool('certificate-decoder');
+const pagePath = '/certificate-decoder/';
+const pageUrl = `${site.url}${pagePath}`;
+
+const faqs = [
+  {
+    q: 'O que significa “unable to get local issuer certificate”?',
+    a: 'Significa que a cadeia enviada pelo seu servidor termina antes de chegar a algo em que o cliente confia — quase sempre porque falta um certificado intermediário. O cliente sobe a partir da folha: folha → intermediário → raiz. No repositório dele só existem raízes, então, se o intermediário que liga as duas pontas está ausente, o caminho morre ali e o OpenSSL devolve o erro 20 com exatamente essa mensagem. Cole sua cadeia aqui e o intermediário ausente aparece nomeado pelo distinguished name completo, que é justamente o texto de que você precisa para achar o arquivo certo e anexá-lo.',
+  },
+  {
+    q: 'Por que meu certificado funciona no navegador e falha no curl ou na CI?',
+    a: 'Porque navegadores consertam cadeias incompletas e clientes de linha de comando não. Quando falta um intermediário, Chrome, Edge e Safari podem baixá-lo pela URL da extensão authorityInfoAccess do próprio certificado, ou reaproveitar um que ficou em cache em outro site: o cadeado aparece e o defeito permanece invisível. curl, openssl s_client, crypto/tls do Go, requests do Python e quase todos os runtimes não fazem nada disso: usam exatamente os certificados que você enviou e falham. Essa assimetria é a razão pela qual “no meu navegador funciona” não é prova, e é a causa mais comum de um deploy que passa na conferência manual e quebra um webhook.',
+  },
+  {
+    q: 'O fullchain.pem deve incluir o certificado raiz?',
+    a: 'Não — e também não faz mal. Um cliente confia numa raiz porque essa raiz já está no repositório dele; uma cópia enviada pela rede não prova nada, porque um atacante poderia enviar qualquer raiz. Portanto isso só acrescenta cerca de 1–2 KB a cada handshake. O que precisa estar lá é a folha primeiro e depois cada intermediário acima dela. Esta ferramenta rotula cada certificado com o seu papel e diz em qual das duas situações você está: uma raiz meramente redundante, ou um intermediário que de fato falta.',
+  },
+  {
+    q: 'Qual é a diferença entre folha, intermediário e raiz?',
+    a: 'A folha é o certificado do seu nome de host: carrega a lista subjectAltName, tem CA:FALSE nos basicConstraints e é o que o servidor apresenta. Um intermediário é um certificado de AC que assina folhas em nome de uma raiz; tem CA:TRUE, normalmente com pathlen:0 para não poder delegar mais adiante. Uma raiz é um certificado de AC que assinou a si mesmo — subject e issuer são idênticos — e só se confia nela porque ela vem embutida em sistemas operacionais e navegadores. As ACs mantêm raízes offline e assinam por meio de intermediários justamente para que uma chave de assinatura comprometida possa ser trocada sem reemitir a raiz.',
+  },
+  {
+    q: 'Esta ferramenta diz se um certificado é confiável?',
+    a: 'Deliberadamente não — e essa é a resposta honesta, não uma limitação a contornar. “Confiável” é propriedade do cliente, não do certificado: Chrome, Firefox, macOS, Windows e o seu runtime Java carregam listas de raízes diferentes, e raízes deixam de ser confiadas entre versões. Embutir uma cópia de um repositório de confiança nesta página permitiria imprimir um “confiável” categórico para uma raiz que o Chrome removeu no mês passado — exatamente a classe de resposta confiante e errada que esta ferramenta existe para pegar. O que ela faz, em vez disso, é aritmética verificável: a cadeia é coerente consigo mesma, cada assinatura foi verificada contra a chave de cima, e as impressões digitais estão ali para você comparar com o que a AC publica.',
+  },
+  {
+    q: 'Como um certificado wildcard realmente casa com um nome de host?',
+    a: 'Um curinga substitui exatamente um rótulo, e apenas o mais à esquerda (RFC 6125 §6.4.3). Assim, *.example.com casa com api.example.com e www.example.com; não casa com a.b.example.com, porque isso exigiria dois rótulos, e não casa com example.com puro, porque não há rótulo para substituir — por isso os certificados normalmente listam o apex como um segundo SAN. Um curinga também nunca é aceito nos dois rótulos de cima (*.com não significa nada) nem dentro de um rótulo (w*.example.com não é um padrão válido). O campo de nome de host desta página aplica cada uma dessas regras e diz qual delas decidiu o veredito.',
+  },
+  {
+    q: 'É seguro colar aqui um certificado — ou uma chave privada?',
+    a: 'Um certificado é público por definição: é enviado em texto claro no início de todo handshake TLS e, para qualquer certificado publicamente confiável, já está publicado em logs de Certificate Transparency. Não há o que proteger. Uma chave privada é o oposto, e esta página ainda assim a trata com segurança: a ferramenta inteira é uma página estática sem servidor por trás, então, se você colar um bloco PRIVATE KEY, ele é reconhecido pelo rótulo, nunca é interpretado e nunca é enviado a lugar algum — a página diz isso explicitamente. A maioria dos decodificadores de certificado não pode afirmar o mesmo, porque envia sua entrada para um backend. Se você colou uma chave em um deles, faça a rotação.',
+  },
+  {
+    q: 'Por que uma assinatura às vezes aparece como “não verificada” em vez de “falhou”?',
+    a: 'Porque são duas respostas completamente diferentes, e misturá-las seria mentira. “Falhou” significa que a chave pública do emissor foi aplicada à assinatura e não bateu: o certificado foi alterado, ou aquele não é o emissor. “Não verificada” significa que a checagem não pôde ser feita, e o motivo é sempre nomeado: RSASSA-PSS carrega hash, tamanho de sal e função de máscara dentro dos seus parâmetros e esta ferramenta se recusa a adivinhá-los; SHA-224, MD5 e DSA não são implementados pelo Web Crypto; Ed25519 exige Chrome 137 ou Safari 17. Um booleano imprimiria “não verificada” para tudo isso e deixaria você ler como “falsificada”. Cada elo da cadeia aqui tem três estados, nunca dois.',
+  },
+  {
+    q: 'Meu certificado tem o commonName certo. Por que os navegadores ainda o recusam?',
+    a: 'Porque os navegadores pararam de ler o commonName em 2017. Chrome 58 e Firefox 48 removeram esse recurso de reserva, e todo cliente atual exige que o nome de host apareça na extensão subjectAltName: um certificado com um CN perfeito e sem SAN não casa com nada e produz NET::ERR_CERT_COMMON_NAME_INVALID. Continua válido colocar o nome também no CN, e a maioria das ACs faz isso, mas é decoração. Esta ferramenta mostra a lista de SAN separada do subject exatamente por esse motivo, e avisa quando um certificado não tem SAN nenhum.',
+  },
+];
+
+const softwareApp = softwareAppLd({
+  name: 'Certificate Decoder & Chain Checker',
+  description:
+    'Decodificador de certificados online e grátis: leia cada campo X.509 de um certificado PEM, confira ordem e integridade da cadeia, verifique cada assinatura com Web Crypto e case o nome de host conforme a RFC 6125 — 100% no navegador.',
+  url: pageUrl,
+  subCategory: 'Security',
+  featureList: [
+    'Decodifica cada campo X.509 de um certificado ou de uma cadeia inteira',
+    'Ordem da cadeia, intermediários ausentes e pares com assinatura cruzada nomeados explicitamente',
+    'Verificação de assinatura por elo: verificada, falhou ou não verificada com o algoritmo nomeado',
+    'Correspondência de nome de host e curinga conforme a RFC 6125, além de impressões SHA-256 e SHA-1',
+    '100% no cliente, sem upload, sem cadastro',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+const faqPage = faqPageLd(faqs);
+
+const pipeline = [
+  {
+    title: 'Achar os blocos e ignorar todo o resto.',
+    body: 'Só o texto entre os marcadores BEGIN e END é lido, então uma transcrição do openssl s_client pode ser colada como está. Um bloco PRIVATE KEY é reconhecido pelo rótulo e pulado sem ser interpretado; a um CSR ou a um pacote PKCS#7 se diz o que ele é e qual comando o converte.',
+  },
+  {
+    title: 'De base64 para DER, de DER para estrutura.',
+    body: 'Um leitor escrito à mão percorre o DER — nenhuma biblioteca de parsing, portanto nada lança exceção diante de uma colagem estragada. DER é uma codificação canônica, e é isso que permite a um leitor mínimo ser exato em vez de apenas tolerante: construções que só existem em BER, como comprimentos indefinidos, são recusadas em vez de adivinhadas.',
+  },
+  {
+    title: 'Ler X.509 do jeito que a RFC 5280 define.',
+    body: 'Número de série como decimal exato em BigInt, um RDN multivalorado unido em vez de achatado, o pivô de UTCTime em 2049 respeitado e SANs IPv4 e IPv6 formatados corretamente. Os valores aparecem literalmente: um decodificador que “limpasse” o que está no certificado estaria escondendo exatamente o que você veio ver.',
+  },
+  {
+    title: 'Ligar a cadeia por identificador de chave, não por nome.',
+    body: 'O authorityKeyIdentifier de cada certificado é comparado ao subjectKeyIdentifier do emissor, de modo que uma AC renovada com o mesmo nome da anterior se resolve corretamente e um par com assinatura cruzada é relatado como par com assinatura cruzada, não como duplicata.',
+  },
+  {
+    title: 'Verificar cada assinatura com Web Crypto.',
+    body: 'Os bytes assinados são a fatia tbsCertificate, conferida contra a chave pública do emissor: RSA PKCS#1 v1.5 com SHA-1/256/384/512, ECDSA em P-256/384/521 e Ed25519 onde o navegador tiver. Cada elo é verificado, falhou ou não verificado com o algoritmo nomeado — nunca um booleano cru.',
+  },
+];
+
+const errors = [
+  {
+    message: 'unable to get local issuer certificate',
+    where: 'curl, openssl, Python, Node',
+    meaning:
+      'A cadeia termina abaixo de uma raiz em que o cliente confia: falta um intermediário. Anexe-o ao arquivo que o servidor envia.',
+  },
+  {
+    message: 'x509: certificate signed by unknown authority',
+    where: 'Go',
+    meaning:
+      'A mesma falha nas palavras do Go: ou um intermediário ausente, ou uma raiz de AC privada em que esta máquina não confia.',
+  },
+  {
+    message: 'self-signed certificate in certificate chain',
+    where: 'curl, openssl',
+    meaning:
+      'A cadeia inclui um certificado autoassinado em que o cliente não confia. Em geral uma raiz de AC privada; às vezes uma raiz enviada sem necessidade.',
+  },
+  {
+    message: 'self-signed certificate',
+    where: 'curl, openssl',
+    meaning:
+      'A folha emitiu a si mesma. Nada externo garante o nome: aceitável numa máquina de teste, nunca num endpoint público.',
+  },
+  {
+    message: 'NET::ERR_CERT_AUTHORITY_INVALID',
+    where: 'Chrome, Edge',
+    meaning:
+      'O navegador não conseguiu montar um caminho até uma raiz confiável: um intermediário ausente que ele não pôde baixar, ou uma AC não confiável.',
+  },
+  {
+    message: 'NET::ERR_CERT_COMMON_NAME_INVALID',
+    where: 'Chrome, Edge',
+    meaning:
+      'Nenhum subjectAltName casa com o nome de host. Um commonName correto não ajuda — os navegadores pararam de lê-lo em 2017.',
+  },
+  {
+    message: 'NET::ERR_CERT_DATE_INVALID · certificate has expired',
+    where: 'em todo lugar',
+    meaning:
+      'notAfter está no passado, ou notBefore no futuro, ou o relógio da máquina que reclama está errado.',
+  },
+  {
+    message: 'certificate is not yet valid',
+    where: 'curl, openssl, Java',
+    meaning:
+      'notBefore ainda não chegou. Ou o certificado foi emitido antes de uma rotação, ou há desvio de relógio: confira as duas pontas.',
+  },
+  {
+    message: 'unsupported certificate purpose',
+    where: 'openssl verify',
+    meaning:
+      'O extendedKeyUsage não inclui serverAuth, então o certificado não serve para autenticação de servidor TLS.',
+  },
+];
+
+const chainOrder = `fullchain.pem — leaf first, root optional and last
+
+  1  CN = shop.example.com                 ← leaf   (CA:FALSE, carries the SANs)
+  2  CN = Example Labs Intermediate R3     ← signs the leaf   (CA:TRUE, pathlen:0)
+  3  CN = Example Labs Root X1             ← self-signed; the client already has it
+
+  each certificate's authorityKeyIdentifier
+  points at the subjectKeyIdentifier of the one below it`;
+
+const fingerprintCheck = `# The chain your server actually sends, ready to paste above
+openssl s_client -connect example.com:443 -servername example.com -showcerts </dev/null
+
+# The claim this page makes is checkable against openssl on your own machine
+openssl x509 -in isrgrootx1.pem -noout -fingerprint -sha256
+  SHA256 Fingerprint=96:BC:EC:06:26:49:76:F3:74:60:77:9A:CF:28:C5:A7:
+                     CF:E8:A3:C0:AA:E1:1A:8F:FC:EE:05:C0:BD:DF:08:C6
+
+# ...and against the value ISRG publishes for Root X1. Three sources, one answer.`;
+import type { Locale as __Locale } from '../../i18n/config';
+import { localizeKey as __l } from '../../i18n/utils';
+const __lang = (Astro.currentLocale ?? 'en') as __Locale;
+---
+
+<Shell
+  title="Decodificador de certificado e cadeia SSL — grátis"
+  description="Decodifique certificados PEM e confira a cadeia no navegador. Cada campo X.509, ordem da cadeia, verificação real de assinaturas e correspondência de SAN. Sem upload."
+  canonical="/certificate-decoder"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <ToolHero
+    eyebrow="Certificate Decoder · Security"
+    badges={[
+      { label: 'Roda no seu navegador', variant: 'live' },
+      { label: 'Assinaturas de fato verificadas', variant: 'neutral' },
+      { label: 'Sem upload, sem cadastro', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">Decodificador de certificado &amp; verificador de cadeia</Fragment>
+    <Fragment slot="lead">
+      Cole um certificado, um <span class="code-mono text-ink" translate="no">fullchain.pem</span> ou a
+      saída completa do
+      <span class="code-mono text-ink" translate="no">openssl s_client -showcerts</span>. Cada campo
+      X.509 é decodificado, a ordem da cadeia é conferida e corrigida com o motivo do erro, e cada elo
+      recebe um veredito real de assinatura — verificada, falhou, ou não verificada com o algoritmo
+      nomeado. Uma chave privada na colagem é pulada, nunca interpretada e nunca enviada a lugar algum:
+      não existe aqui servidor para onde enviá-la.
+    </Fragment>
+  </ToolHero>
+
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pt-8 pb-20 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">Playground do decodificador de certificado e verificador de cadeia</h2>
+      <CertificateDecoderPlayground />
+    </div>
+  </section>
+
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">A lacuna</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            No seu navegador funciona. Isso não é prova.
+          </h2>
+          <ToolGapVisual />
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            Um navegador conserta para você uma cadeia de certificados quebrada. Se falta um
+            intermediário, Chrome e Safari podem baixá-lo pela URL
+            <span class="code-mono text-ink" translate="no">authorityInfoAccess</span> do próprio
+            certificado, ou reaproveitar um que ficou em cache num site sem relação: o cadeado aparece e
+            a falha continua invisível.
+            <span class="code-mono text-ink" translate="no">curl</span>, Go, Python e qualquer runner de
+            CI não fazem nada disso. Usam exatamente os certificados enviados e falham com
+            <span class="code-mono text-ink" translate="no">unable to get local issuer
+            certificate</span>. Essa assimetria é a forma mais comum de um deploy de certificado passar
+            na conferência manual e quebrar um webhook às duas da manhã.
+          </p>
+          <p class="body-md text-pretty text-body">
+            A outra metade do problema é que a saída de um certificado é ilegível de propósito.
+            <span class="code-mono text-ink" translate="no">openssl x509 -text</span> são 60 linhas de
+            hexadecimal por certificado, cadeias não têm ordem visível, e a pergunta que você realmente
+            tem — <em>falta algo, algo expirou, isso cobre o meu nome de host</em> — não está em lugar
+            nenhum daquele despejo. Esta página responde a essas três perguntas primeiro e mantém a
+            lista completa de campos abaixo.
+          </p>
+          <p class="body-md text-pretty text-body">
+            É também a pergunta errada para fazer a um chatbot. Um modelo de linguagem que lê um despejo
+            de certificado está casando padrões de texto: lê
+            <span class="code-mono text-ink" translate="no">notAfter</span> do certificado errado, erra a
+            aritmética de datas nos dois sentidos, afirma tranquilamente que um curinga cobre dois
+            rótulos e não consegue verificar assinatura nenhuma, porque verificar uma exige realmente
+            fazer a conta. Esta página interpreta o DER byte a byte e passa a assinatura pelo Web Crypto
+            — assim você confere a resposta que recebeu contra um resultado que consegue reproduzir com
+            <span class="code-mono text-ink" translate="no">openssl</span> na sua própria máquina.
+          </p>
+          <p class="body-sm text-mute">
+            Está lidando com um token em vez de um certificado? O
+            <a class="link-inline" href={__l('/jwt-decoder', __lang)}>JWT Decoder</a> lê e verifica um
+            JWS, e o
+            <a class="link-inline" href={__l('/hash-generator', __lang)}>gerador de hash</a> calcula o
+            mesmo SHA-256 com que você compararia uma impressão digital.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="O pipeline"
+    heading="Como funciona."
+    lead="Cinco passos determinísticos, todos dentro da aba do seu navegador — um leitor DER escrito à mão que devolve null em vez de lançar exceção, e Web Crypto para a única parte que é criptografia de verdade."
+    steps={pipeline}
+  />
+
+  <section id="reference" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Referência</p>
+        <h2 class="display-lg mt-3 text-ink">O erro que você recebeu e o que ele quer dizer.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          Nove mensagens cobrem quase toda falha de certificado em produção. A maioria delas é a mesma
+          dupla de causas — um intermediário ausente, ou um nome que não está na lista de SAN — vestida
+          com as palavras de fornecedores diferentes.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 grid max-w-5xl items-start gap-8 lg:grid-cols-[1.15fr_0.85fr]">
+        <div class="card-soft overflow-x-auto">
+          <table class="cd-table w-full text-left">
+            <thead>
+              <tr>
+                <th class="eyebrow px-4 py-3">Mensagem</th>
+                <th class="eyebrow px-4 py-3">O que significa de fato</th>
+              </tr>
+            </thead>
+            <tbody>
+              {
+                errors.map((row) => (
+                  <tr class="border-t border-hairline align-top">
+                    <td class="px-4 py-2.5">
+                      <span class="code-mono text-ink" translate="no">{row.message}</span>
+                      <span class="caption mt-0.5 block text-mute">{row.where}</span>
+                    </td>
+                    <td class="px-4 py-2.5 text-body">{row.meaning}</td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="min-w-0 space-y-8">
+          <div>
+            <h3 class="display-sm text-ink">Como é a ordem correta da cadeia</h3>
+            <p class="body-sm mt-2 mb-4 text-pretty text-body">
+              A folha primeiro, depois cada intermediário. A raiz é opcional — e, quando está presente,
+              são apenas bytes, porque a confiança vem do repositório do próprio cliente.
+            </p>
+            <CodeBlock lang="text" filename="fullchain.pem" code={chainOrder} />
+          </div>
+          <div>
+            <h3 class="display-sm text-ink">Pegue a cadeia e depois confira a afirmação</h3>
+            <p class="body-sm mt-2 mb-4 text-pretty text-body">
+              Uma ferramenta de verdade de referência deveria ser conferível contra outra coisa. Cada
+              impressão digital desta página é o SHA-256 do DER completo — os mesmos bytes que o
+              <span class="code-mono" translate="no">openssl x509 -fingerprint</span> resume.
+            </p>
+            <CodeBlock lang="bash" filename="verify.sh" code={fingerprintCheck} />
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="next" class="scroll-mt-24 bg-inverse text-inverse-fg">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+        <div class="min-w-0">
+          <p class="eyebrow !text-cyan">Próximo passo</p>
+          <h2 class="display-lg mt-3 text-balance text-inverse-fg">
+            A cadeia está certa. Agora confira o que ela protege.
+          </h2>
+          <p class="body-md mt-4 text-pretty text-white/70">
+            Um certificado é um elo numa cadeia de coisas que precisam concordar: o
+            <span translate="no">JWT Decoder</span> lê e verifica os tokens que o endpoint distribui, o
+            <span translate="no">gerador de hash</span> calcula o resumo com que você compara uma
+            impressão digital, e o <span translate="no">Reverse DNS / PTR Helper</span> confere se o nome
+            do certificado é o nome que resolve. Todos, como esta página, rodam inteiramente no seu
+            navegador.
+          </p>
+          <div class="mt-7 flex flex-wrap items-center gap-3">
+            <Button href={__l('/jwt-decoder', __lang)} variant="secondary">Abrir o JWT Decoder</Button>
+            <Button href={__l('/hash-generator', __lang)} variant="secondary">Abrir o gerador de hash</Button>
+          </div>
+        </div>
+        <CodeBlock
+          lang="text"
+          filename="chain-check.txt"
+          code={`3 certificates — chain order OK
+  leaf          shop.example.com          notAfter 2031-06-01
+  intermediate  Example Labs Intermediate R3
+  root          Example Labs Root X1      self-signed
+
+signature verified   leaf  ←  intermediate   RSA PKCS#1 v1.5 with SHA-256
+signature verified   int   ←  root           RSA PKCS#1 v1.5 with SHA-256
+hostname www.shop.example.com   covered by *.shop.example.com`}
+        />
+      </div>
+    </div>
+  </section>
+
+  <FaqList faqs={faqs} />
+
+  <ToolCrossLinks lang={__lang}>
+    <Fragment slot="lead">
+      O Certificate Decoder é uma das ferramentas do
+      <span translate="no">{site.name}</span> — uma copa crescente de validadores, conversores e
+      testadores que rodam no navegador e nunca tocam um servidor.
+    </Fragment>
+    <Fragment slot="links">
+      Ferramentas de segurança relacionadas: o
+      <a class="link-inline" href={__l('/jwt-decoder', __lang)}>JWT Decoder</a>, o
+      <a class="link-inline" href={__l('/hash-generator', __lang)}>gerador de hash</a> para os resumos
+      por trás de uma impressão digital e o
+      <a class="link-inline" href={__l('/reverse-dns-ptr', __lang)}>Reverse DNS / PTR Helper</a> para
+      conferir se o nome do certificado é o nome que resolve — ou navegue pelo
+      <a class="link-inline" href={__l(navLinks[0].href, __lang)}>diretório completo de ferramentas</a>.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      Fornecido como está, para sua conveniência. Esta página relata o que há dentro de um certificado e
+      se cada assinatura fecha; ela não afirma — e nunca vai afirmar — que um certificado é
+      <em>confiável</em>: confiança mora no repositório de raízes do cliente, e aqui também não há
+      checagem de revogação nem de Certificate Transparency (ambas precisam de rede).
+      <span translate="no">{site.name}</span> é grátis e aberto.
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>
+
+<style>
+  @reference "../../styles/global.css";
+
+  .cd-table th {
+    font-weight: inherit;
+    white-space: nowrap;
+  }
+  .cd-table td {
+    font-size: 13px;
+    line-height: 18px;
+  }
+  .cd-table .code-mono {
+    font-size: 12.5px;
+    overflow-wrap: anywhere;
+  }
+</style>

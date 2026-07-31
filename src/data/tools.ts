@@ -718,6 +718,28 @@ export const tools: Tool[] = [
     ],
     accent: 'develop',
   },
+  {
+    slug: 'certificate-decoder',
+    name: 'Certificate Decoder & Chain Checker',
+    tagline: 'Decode PEM certificates, check chain order, and verify signatures — in your browser.',
+    description:
+      'Paste a certificate or a whole chain and read every X.509 field, see the chain order corrected with the reason it was wrong, and get a real signature verdict on each link — verified, failed, or not-checked with the algorithm named. Hand-rolled DER parser, Web Crypto verification, zero uploads.',
+    status: 'planned',
+    category: 'Security',
+    keywords: [
+      'certificate decoder',
+      'ssl certificate decoder',
+      'decode pem certificate online',
+      'x509 decoder',
+      'check certificate chain',
+      'missing intermediate certificate',
+      'unable to get local issuer certificate',
+      'openssl s_client showcerts decoder',
+      'san checker',
+      'certificate expiry checker',
+    ],
+    accent: 'ship',
+  },
 ];
 
 export const liveTools = tools.filter((t) => t.status === 'live');

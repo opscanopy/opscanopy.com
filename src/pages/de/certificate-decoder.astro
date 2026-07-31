@@ -1,0 +1,418 @@
+---
+/**
+ * Certificate Decoder & Chain Checker — the certificate-decoder tool page (DE).
+ * Decode PEM certificates, check chain order and completeness, verify each chain
+ * edge's signature with Web Crypto, and match a hostname per RFC 6125.
+ */
+import Shell from '../../components/Shell.astro';
+import CertificateDecoderPlayground from '../../components/CertificateDecoderPlayground.astro';
+import Button from '../../components/Button.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import ToolHero from '../../components/ToolHero.astro';
+import ToolGapVisual from '../../components/ToolGapVisual.astro';
+import ToolPipeline from '../../components/ToolPipeline.astro';
+import FaqList from '../../components/FaqList.astro';
+import ToolCrossLinks from '../../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../../data/site';
+import { getTool } from '../../data/tools';
+import { softwareAppLd, faqPageLd } from '../../lib/jsonld';
+
+const tool = getTool('certificate-decoder');
+const pagePath = '/certificate-decoder/';
+const pageUrl = `${site.url}${pagePath}`;
+
+const faqs = [
+  {
+    q: 'Was bedeutet „unable to get local issuer certificate“?',
+    a: 'Es bedeutet, dass die Kette, die Ihr Server sendet, endet, bevor sie etwas erreicht, dem der Client vertraut — fast immer, weil ein Zwischenzertifikat fehlt. Ein Client geht vom Leaf nach oben: Leaf → Intermediate → Root. In seinem Trust-Store liegen nur Roots; fehlt also das Zwischenzertifikat, das beide verbindet, läuft der Weg ins Leere und OpenSSL meldet Fehler 20 mit genau dieser Meldung. Fügen Sie Ihre Kette hier ein, und das fehlende Zwischenzertifikat wird mit seinem exakten Distinguished Name benannt — genau der String, den Sie brauchen, um die richtige Datei zu finden und anzuhängen.',
+  },
+  {
+    q: 'Warum funktioniert mein Zertifikat im Browser, aber nicht in curl oder CI?',
+    a: 'Weil Browser unvollständige Ketten reparieren und Kommandozeilen-Clients nicht. Fehlt ein Zwischenzertifikat, können Chrome, Edge und Safari es über die URL in der Erweiterung authorityInfoAccess nachladen oder eines wiederverwenden, das sie von einer anderen Website gecacht haben — das Schloss erscheint und das Problem bleibt unsichtbar. curl, openssl s_client, Gos crypto/tls, Pythons requests und die meisten Sprach-Runtimes tun nichts davon: sie verwenden genau die Zertifikate, die Sie geschickt haben, und scheitern. Diese Asymmetrie ist der Grund, warum „bei mir im Browser geht es“ kein Beweis ist, und die häufigste Ursache dafür, dass ein Deploy die manuelle Prüfung besteht und einen Webhook zerbricht.',
+  },
+  {
+    q: 'Sollte fullchain.pem das Root-Zertifikat enthalten?',
+    a: 'Nein — und es schadet auch nicht. Ein Client vertraut einem Root, weil dieser Root bereits in seinem eigenen Trust-Store liegt; eine über die Leitung gesendete Kopie beweist nichts, denn ein Angreifer könnte jeden beliebigen Root schicken. Es kostet also nur rund 1–2 KB bei jedem einzelnen Handshake. Enthalten sein muss dagegen zuerst das Leaf und danach jedes Zwischenzertifikat darüber. Dieses Werkzeug beschriftet jedes Zertifikat mit seiner Rolle und sagt Ihnen, in welchem der beiden Fälle Sie stecken: ein Root, der bloß überflüssig ist, oder ein Zwischenzertifikat, das wirklich fehlt.',
+  },
+  {
+    q: 'Was ist der Unterschied zwischen Leaf, Intermediate und Root?',
+    a: 'Das Leaf ist das Zertifikat für Ihren Hostnamen: es trägt die subjectAltName-Liste, hat CA:FALSE in seinen basicConstraints und ist das, was der Server präsentiert. Ein Intermediate ist ein CA-Zertifikat, das im Auftrag eines Roots Leafs signiert; es hat CA:TRUE, meist mit pathlen:0, damit es nicht weiter delegieren kann. Ein Root ist ein CA-Zertifikat, das sich selbst signiert hat — Subject und Issuer sind identisch — und ihm wird nur vertraut, weil er in Betriebssystemen und Browsern mitgeliefert wird. CAs halten Roots offline und signieren über Intermediates, gerade damit ein kompromittierter Signaturschlüssel ersetzt werden kann, ohne den Root neu auszustellen.',
+  },
+  {
+    q: 'Sagt dieses Werkzeug, ob ein Zertifikat vertrauenswürdig ist?',
+    a: 'Bewusst nicht — und das ist die ehrliche Antwort, nicht eine Einschränkung, die man umgehen sollte. „Vertrauenswürdig“ ist eine Eigenschaft des Clients, nicht des Zertifikats: Chrome, Firefox, macOS, Windows und Ihre Java-Runtime führen unterschiedliche Root-Listen, und Roots werden zwischen Releases entfernt. Eine Kopie eines Trust-Stores in diese Seite zu packen würde bedeuten, dass sie selbstsicher „vertrauenswürdig“ für einen Root anzeigt, den Chrome letzten Monat entfernt hat — genau die Klasse selbstsicher falscher Antworten, die dieses Werkzeug aufdecken soll. Stattdessen liefert es überprüfbare Rechnung: die Kette ist in sich konsistent, jede Signatur wurde gegen den Schlüssel darüber geprüft, und die Fingerprints stehen da, damit Sie sie mit dem vergleichen, was eine CA veröffentlicht.',
+  },
+  {
+    q: 'Wie passt ein Wildcard-Zertifikat wirklich auf einen Hostnamen?',
+    a: 'Eine Wildcard ersetzt genau ein Label, und nur das linkeste (RFC 6125 §6.4.3). *.example.com passt also auf api.example.com und www.example.com; es passt nicht auf a.b.example.com, denn das bräuchte zwei Labels, und nicht auf das nackte example.com, denn dort gibt es kein Label zu ersetzen — weshalb Zertifikate die Apex-Domain normalerweise als zweiten SAN führen. Eine Wildcard wird außerdem nie in den obersten zwei Labels akzeptiert (*.com ist bedeutungslos) und nie innerhalb eines Labels (w*.example.com ist kein gültiges Muster). Das Hostnamen-Feld auf dieser Seite wendet jede dieser Regeln an und sagt Ihnen, welche das Urteil entschieden hat.',
+  },
+  {
+    q: 'Ist es sicher, hier ein Zertifikat einzufügen — oder einen privaten Schlüssel?',
+    a: 'Ein Zertifikat ist von Natur aus öffentlich: es wird am Anfang jedes TLS-Handshakes im Klartext gesendet, und für jedes öffentlich vertrauenswürdige Zertifikat steht es ohnehin schon in Certificate-Transparency-Logs. Es gibt also nichts zu schützen. Ein privater Schlüssel ist das Gegenteil, und auch damit geht diese Seite sicher um: das gesamte Werkzeug ist eine statische Seite ohne Server dahinter, ein eingefügter PRIVATE KEY-Block wird an seinem Label erkannt, nie geparst und nie irgendwohin gesendet — die Seite sagt Ihnen das ausdrücklich. Das können die meisten Zertifikats-Decoder nicht behaupten, weil sie Ihre Eingabe an ein Backend schicken. Falls Sie einen Schlüssel dort eingefügt haben: rotieren Sie ihn.',
+  },
+  {
+    q: 'Warum steht bei einer Signatur manchmal „nicht geprüft“ statt „fehlgeschlagen“?',
+    a: 'Weil das zwei völlig verschiedene Antworten sind und sie zu vermischen eine Lüge wäre. „Fehlgeschlagen“ heißt: der öffentliche Schlüssel des Ausstellers wurde auf die Signatur angewandt und passte nicht — das Zertifikat wurde verändert, oder das ist nicht der Aussteller. „Nicht geprüft“ heißt: die Prüfung war überhaupt nicht möglich, und der Grund wird immer genannt: RSASSA-PSS trägt Hash, Salt-Länge und Maskenfunktion in seinen Parametern, und dieses Werkzeug rät sie nicht; SHA-224, MD5 und DSA sind in Web Crypto nicht implementiert; Ed25519 braucht Chrome 137 oder Safari 17. Ein Boolean würde für all das „nicht verifiziert“ anzeigen und Sie es als „gefälscht“ lesen lassen. Jede Kettenverbindung hier hat drei Zustände, nie zwei.',
+  },
+  {
+    q: 'Mein Zertifikat hat den richtigen commonName. Warum lehnen Browser es trotzdem ab?',
+    a: 'Weil Browser 2017 aufgehört haben, den commonName zu lesen. Chrome 58 und Firefox 48 haben den Fallback entfernt, und jeder aktuelle Client verlangt, dass der Hostname stattdessen in der Erweiterung subjectAltName steht — ein Zertifikat mit perfektem CN und ohne SAN passt auf überhaupt nichts und erzeugt NET::ERR_CERT_COMMON_NAME_INVALID. Es ist weiterhin erlaubt, den Namen zusätzlich in den CN zu schreiben, und die meisten CAs tun es, aber es ist Dekoration. Dieses Werkzeug zeigt die SAN-Liste genau deshalb getrennt vom Subject und warnt, wenn ein Zertifikat gar keinen SAN hat.',
+  },
+];
+
+const softwareApp = softwareAppLd({
+  name: 'Certificate Decoder & Chain Checker',
+  description:
+    'Kostenloser Online-Zertifikats-Decoder: jedes X.509-Feld aus einem PEM-Zertifikat lesen, Kettenreihenfolge und Vollständigkeit prüfen, jede Signatur mit Web Crypto verifizieren und Hostnamen nach RFC 6125 abgleichen — 100 % im Browser.',
+  url: pageUrl,
+  subCategory: 'Security',
+  featureList: [
+    'Jedes X.509-Feld aus einem Zertifikat oder einer ganzen Kette dekodieren',
+    'Kettenreihenfolge, fehlende Zwischenzertifikate und Cross-Signaturen ausdrücklich benannt',
+    'Signaturprüfung pro Verbindung: verifiziert, fehlgeschlagen oder nicht geprüft mit genanntem Algorithmus',
+    'Hostnamen- und Wildcard-Abgleich nach RFC 6125, plus SHA-256- und SHA-1-Fingerprints',
+    '100 % clientseitig, kein Upload, keine Anmeldung',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+const faqPage = faqPageLd(faqs);
+
+const pipeline = [
+  {
+    title: 'Blöcke finden, alles andere ignorieren.',
+    body: 'Gelesen wird nur Text zwischen BEGIN- und END-Markern, deshalb lässt sich ein openssl-s_client-Protokoll unverändert einfügen. Ein PRIVATE KEY-Block wird an seinem Label erkannt und übersprungen, ohne geparst zu werden; einem CSR oder einem PKCS#7-Bundle wird gesagt, was es ist und welcher Befehl es umwandelt.',
+  },
+  {
+    title: 'Base64 zu DER, DER zu Struktur.',
+    body: 'Ein selbst geschriebener Reader läuft durch das DER — keine Parser-Bibliothek, also wirft nichts bei verstümmelter Eingabe. DER ist eine kanonische Kodierung, und genau das macht einen minimalen Reader exakt statt bloß nachsichtig: BER-Konstrukte wie unbestimmte Längen werden abgelehnt statt geraten.',
+  },
+  {
+    title: 'X.509 so lesen, wie RFC 5280 es definiert.',
+    body: 'Seriennummer als exakte BigInt-Dezimalzahl, ein mehrwertiger RDN verbunden statt plattgemacht, der UTCTime-Wendepunkt bei 2049 beachtet und IPv4- wie IPv6-SANs korrekt formatiert. Werte werden wortgetreu angezeigt — ein Decoder, der bereinigt, was im Zertifikat steht, würde genau das verbergen, weswegen Sie gekommen sind.',
+  },
+  {
+    title: 'Die Kette über Key Identifier verbinden, nicht über Namen.',
+    body: 'Der authorityKeyIdentifier jedes Zertifikats wird gegen den subjectKeyIdentifier seines Ausstellers geprüft. So löst sich eine erneuerte CA mit demselben Namen wie ihre Vorgängerin korrekt auf, und ein cross-signiertes Paar wird als cross-signiertes Paar gemeldet statt als Duplikat.',
+  },
+  {
+    title: 'Jede Signatur mit Web Crypto verifizieren.',
+    body: 'Die signierten Bytes sind der tbsCertificate-Abschnitt, geprüft gegen den öffentlichen Schlüssel des Ausstellers: RSA PKCS#1 v1.5 mit SHA-1/256/384/512, ECDSA auf P-256/384/521, Ed25519 wo der Browser es hat. Jede Verbindung ist verifiziert, fehlgeschlagen oder nicht geprüft mit genanntem Algorithmus — nie ein nackter Boolean.',
+  },
+];
+
+const errors = [
+  {
+    message: 'unable to get local issuer certificate',
+    where: 'curl, openssl, Python, Node',
+    meaning:
+      'Die Kette endet unterhalb eines Roots, dem der Client vertraut — ein Zwischenzertifikat fehlt. Hängen Sie es an die Datei an, die der Server sendet.',
+  },
+  {
+    message: 'x509: certificate signed by unknown authority',
+    where: 'Go',
+    meaning:
+      'Derselbe Fehler in Gos Formulierung: entweder ein fehlendes Zwischenzertifikat oder ein privater CA-Root, dem diese Maschine nicht vertraut.',
+  },
+  {
+    message: 'self-signed certificate in certificate chain',
+    where: 'curl, openssl',
+    meaning:
+      'Die Kette enthält ein selbstsigniertes Zertifikat, dem der Client nicht vertraut. Meist ein privater CA-Root, manchmal ein unnötig mitgesendeter Root.',
+  },
+  {
+    message: 'self-signed certificate',
+    where: 'curl, openssl',
+    meaning:
+      'Das Leaf hat sich selbst ausgestellt. Nichts außerhalb bürgt für den Namen — in Ordnung für eine Testkiste, nie für einen öffentlichen Endpunkt.',
+  },
+  {
+    message: 'NET::ERR_CERT_AUTHORITY_INVALID',
+    where: 'Chrome, Edge',
+    meaning:
+      'Der Browser konnte keinen Pfad zu einem vertrauten Root bauen: ein fehlendes Zwischenzertifikat, das er nicht nachladen konnte, oder eine nicht vertraute CA.',
+  },
+  {
+    message: 'NET::ERR_CERT_COMMON_NAME_INVALID',
+    where: 'Chrome, Edge',
+    meaning:
+      'Kein subjectAltName passt auf den Hostnamen. Ein passender commonName hilft nicht — Browser lesen ihn seit 2017 nicht mehr.',
+  },
+  {
+    message: 'NET::ERR_CERT_DATE_INVALID · certificate has expired',
+    where: 'überall',
+    meaning:
+      'notAfter liegt in der Vergangenheit, oder notBefore in der Zukunft, oder die Uhr der klagenden Maschine ist falsch.',
+  },
+  {
+    message: 'certificate is not yet valid',
+    where: 'curl, openssl, Java',
+    meaning:
+      'notBefore ist noch nicht erreicht. Entweder wurde das Zertifikat vor einer Rotation ausgestellt, oder es liegt Uhren-Drift vor — prüfen Sie beide Seiten.',
+  },
+  {
+    message: 'unsupported certificate purpose',
+    where: 'openssl verify',
+    meaning:
+      'Der extendedKeyUsage enthält kein serverAuth, das Zertifikat ist damit nicht für TLS-Server-Authentifizierung nutzbar.',
+  },
+];
+
+const chainOrder = `fullchain.pem — leaf first, root optional and last
+
+  1  CN = shop.example.com                 ← leaf   (CA:FALSE, carries the SANs)
+  2  CN = Example Labs Intermediate R3     ← signs the leaf   (CA:TRUE, pathlen:0)
+  3  CN = Example Labs Root X1             ← self-signed; the client already has it
+
+  each certificate's authorityKeyIdentifier
+  points at the subjectKeyIdentifier of the one below it`;
+
+const fingerprintCheck = `# The chain your server actually sends, ready to paste above
+openssl s_client -connect example.com:443 -servername example.com -showcerts </dev/null
+
+# The claim this page makes is checkable against openssl on your own machine
+openssl x509 -in isrgrootx1.pem -noout -fingerprint -sha256
+  SHA256 Fingerprint=96:BC:EC:06:26:49:76:F3:74:60:77:9A:CF:28:C5:A7:
+                     CF:E8:A3:C0:AA:E1:1A:8F:FC:EE:05:C0:BD:DF:08:C6
+
+# ...and against the value ISRG publishes for Root X1. Three sources, one answer.`;
+import type { Locale as __Locale } from '../../i18n/config';
+import { localizeKey as __l } from '../../i18n/utils';
+const __lang = (Astro.currentLocale ?? 'en') as __Locale;
+---
+
+<Shell
+  title="Zertifikats-Decoder & SSL-Kettenprüfer — kostenlos"
+  description="PEM-Zertifikate dekodieren und die Kette im Browser prüfen. Jedes X.509-Feld, Kettenreihenfolge, echte Signaturprüfung und SAN-Abgleich. Nichts wird hochgeladen."
+  canonical="/certificate-decoder"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <ToolHero
+    eyebrow="Certificate Decoder · Security"
+    badges={[
+      { label: 'Läuft in Ihrem Browser', variant: 'live' },
+      { label: 'Signaturen wirklich geprüft', variant: 'neutral' },
+      { label: 'Kein Upload, keine Anmeldung', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">Zertifikats-Decoder &amp; Kettenprüfer</Fragment>
+    <Fragment slot="lead">
+      Fügen Sie ein Zertifikat, eine <span class="code-mono text-ink" translate="no">fullchain.pem</span>
+      oder die komplette Ausgabe von
+      <span class="code-mono text-ink" translate="no">openssl s_client -showcerts</span> ein. Jedes
+      X.509-Feld wird dekodiert, die Kettenreihenfolge geprüft und mit Begründung korrigiert, und jede
+      Verbindung erhält ein echtes Signatur-Urteil — verifiziert, fehlgeschlagen oder nicht geprüft mit
+      genanntem Algorithmus. Ein privater Schlüssel in der Eingabe wird übersprungen, nie geparst und
+      nie irgendwohin gesendet: es gibt hier keinen Server, an den man ihn senden könnte.
+    </Fragment>
+  </ToolHero>
+
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pt-8 pb-20 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">Playground für Zertifikats-Decoder und Kettenprüfer</h2>
+      <CertificateDecoderPlayground />
+    </div>
+  </section>
+
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">Die Lücke</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            Im Browser geht es. Das ist kein Beweis.
+          </h2>
+          <ToolGapVisual />
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            Ein Browser repariert eine kaputte Zertifikatskette für Sie. Fehlt ein Zwischenzertifikat,
+            können Chrome und Safari es über die
+            <span class="code-mono text-ink" translate="no">authorityInfoAccess</span>-URL des
+            Zertifikats nachladen oder eines wiederverwenden, das sie von einer fremden Website gecacht
+            haben — das Schloss erscheint und der Fehler bleibt unsichtbar.
+            <span class="code-mono text-ink" translate="no">curl</span>, Go, Python und jeder
+            CI-Runner tun nichts davon. Sie verwenden genau die gesendeten Zertifikate und scheitern
+            mit <span class="code-mono text-ink" translate="no">unable to get local issuer
+            certificate</span>. Diese Asymmetrie ist die häufigste Art, wie ein Zertifikats-Deploy die
+            manuelle Prüfung besteht und um 2 Uhr morgens einen Webhook zerbricht.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Die andere Hälfte des Problems ist, dass Zertifikatsausgaben absichtlich unlesbar sind.
+            <span class="code-mono text-ink" translate="no">openssl x509 -text</span> sind 60 Zeilen
+            Hex pro Zertifikat, Ketten haben keine sichtbare Reihenfolge, und die Frage, die Sie
+            wirklich haben — <em>fehlt etwas, ist etwas abgelaufen, deckt das meinen Hostnamen ab</em> —
+            steht nirgends in diesem Dump. Diese Seite beantwortet diese drei Fragen zuerst und behält
+            die vollständige Feldliste darunter.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Es ist auch die falsche Frage an einen Chatbot. Ein Sprachmodell, das einen
+            Zertifikats-Dump liest, gleicht Textmuster ab: es liest
+            <span class="code-mono text-ink" translate="no">notAfter</span> vom falschen Zertifikat ab,
+            rechnet Daten in beide Richtungen falsch, behauptet bereitwillig, eine Wildcard deckte zwei
+            Labels ab, und kann eine Signatur überhaupt nicht prüfen, weil dafür wirklich gerechnet
+            werden muss. Diese Seite parst das DER Byte für Byte und schickt die Signatur durch Web
+            Crypto — damit Sie die erhaltene Antwort gegen ein Ergebnis prüfen können, das Sie mit
+            <span class="code-mono text-ink" translate="no">openssl</span> auf Ihrer eigenen Maschine
+            reproduzieren.
+          </p>
+          <p class="body-sm text-mute">
+            Arbeiten Sie an einem Token statt an einem Zertifikat? Der
+            <a class="link-inline" href={__l('/jwt-decoder', __lang)}>JWT Decoder</a> liest und prüft
+            ein JWS, und der
+            <a class="link-inline" href={__l('/hash-generator', __lang)}>Hash-Generator</a> berechnet
+            dasselbe SHA-256, gegen das Sie einen Fingerprint vergleichen.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="Die Pipeline"
+    heading="So funktioniert es."
+    lead="Fünf deterministische Schritte, alle in Ihrem Browser-Tab — ein selbst geschriebener DER-Reader, der null zurückgibt statt zu werfen, und Web Crypto für den einen Teil, der echte Kryptografie ist."
+    steps={pipeline}
+  />
+
+  <section id="reference" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Referenz</p>
+        <h2 class="display-lg mt-3 text-ink">Die Meldung, die Sie bekamen — und was sie heißt.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          Neun Meldungen decken fast jeden Zertifikatsfehler in Produktion ab. Die meisten davon sind
+          dieselben zwei Ursachen — ein fehlendes Zwischenzertifikat oder ein Name, der nicht in der
+          SAN-Liste steht — in den Formulierungen verschiedener Hersteller.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 grid max-w-5xl items-start gap-8 lg:grid-cols-[1.15fr_0.85fr]">
+        <div class="card-soft overflow-x-auto">
+          <table class="cd-table w-full text-left">
+            <thead>
+              <tr>
+                <th class="eyebrow px-4 py-3">Meldung</th>
+                <th class="eyebrow px-4 py-3">Was sie wirklich bedeutet</th>
+              </tr>
+            </thead>
+            <tbody>
+              {
+                errors.map((row) => (
+                  <tr class="border-t border-hairline align-top">
+                    <td class="px-4 py-2.5">
+                      <span class="code-mono text-ink" translate="no">{row.message}</span>
+                      <span class="caption mt-0.5 block text-mute">{row.where}</span>
+                    </td>
+                    <td class="px-4 py-2.5 text-body">{row.meaning}</td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="min-w-0 space-y-8">
+          <div>
+            <h3 class="display-sm text-ink">So sieht die richtige Kettenreihenfolge aus</h3>
+            <p class="body-sm mt-2 mb-4 text-pretty text-body">
+              Leaf zuerst, dann jedes Zwischenzertifikat. Der Root ist optional — und wenn er dabei
+              ist, sind es nur Bytes, denn Vertrauen kommt aus dem Store des Clients.
+            </p>
+            <CodeBlock lang="text" filename="fullchain.pem" code={chainOrder} />
+          </div>
+          <div>
+            <h3 class="display-sm text-ink">Kette holen, dann die Behauptung prüfen</h3>
+            <p class="body-sm mt-2 mb-4 text-pretty text-body">
+              Ein Ground-Truth-Werkzeug sollte gegen etwas anderes überprüfbar sein. Jeder Fingerprint
+              auf dieser Seite ist das SHA-256 des vollständigen DER — dieselben Bytes, die
+              <span class="code-mono" translate="no">openssl x509 -fingerprint</span> hasht.
+            </p>
+            <CodeBlock lang="bash" filename="verify.sh" code={fingerprintCheck} />
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="next" class="scroll-mt-24 bg-inverse text-inverse-fg">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+        <div class="min-w-0">
+          <p class="eyebrow !text-cyan">Nächster Schritt</p>
+          <h2 class="display-lg mt-3 text-balance text-inverse-fg">
+            Die Kette stimmt. Prüfen Sie jetzt, was sie schützt.
+          </h2>
+          <p class="body-md mt-4 text-pretty text-white/70">
+            Ein Zertifikat ist ein Glied in einer Kette von Dingen, die übereinstimmen müssen: der
+            <span translate="no">JWT Decoder</span> liest und prüft die Tokens, die der Endpunkt
+            ausgibt, der <span translate="no">Hash-Generator</span> berechnet den Digest, gegen den Sie
+            einen Fingerprint vergleichen, und der
+            <span translate="no">Reverse DNS / PTR Helper</span> prüft, ob der Name im Zertifikat der
+            Name ist, der auflöst. Alle laufen, wie diese Seite, vollständig in Ihrem Browser.
+          </p>
+          <div class="mt-7 flex flex-wrap items-center gap-3">
+            <Button href={__l('/jwt-decoder', __lang)} variant="secondary">JWT Decoder öffnen</Button>
+            <Button href={__l('/hash-generator', __lang)} variant="secondary">Hash-Generator öffnen</Button>
+          </div>
+        </div>
+        <CodeBlock
+          lang="text"
+          filename="chain-check.txt"
+          code={`3 certificates — chain order OK
+  leaf          shop.example.com          notAfter 2031-06-01
+  intermediate  Example Labs Intermediate R3
+  root          Example Labs Root X1      self-signed
+
+signature verified   leaf  ←  intermediate   RSA PKCS#1 v1.5 with SHA-256
+signature verified   int   ←  root           RSA PKCS#1 v1.5 with SHA-256
+hostname www.shop.example.com   covered by *.shop.example.com`}
+        />
+      </div>
+    </div>
+  </section>
+
+  <FaqList faqs={faqs} />
+
+  <ToolCrossLinks lang={__lang}>
+    <Fragment slot="lead">
+      Der Certificate Decoder ist eines der Werkzeuge in
+      <span translate="no">{site.name}</span> — einem wachsenden Schirm browserbasierter Validatoren,
+      Konverter und Tester, die niemals einen Server berühren.
+    </Fragment>
+    <Fragment slot="links">
+      Verwandte Sicherheits-Werkzeuge: der
+      <a class="link-inline" href={__l('/jwt-decoder', __lang)}>JWT Decoder</a>, der
+      <a class="link-inline" href={__l('/hash-generator', __lang)}>Hash-Generator</a> für die Digests
+      hinter einem Fingerprint und der
+      <a class="link-inline" href={__l('/reverse-dns-ptr', __lang)}>Reverse DNS / PTR Helper</a>, um zu
+      prüfen, ob der Name im Zertifikat der Name ist, der auflöst — oder durchstöbern Sie das
+      vollständige
+      <a class="link-inline" href={__l(navLinks[0].href, __lang)}>Werkzeugverzeichnis</a>.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      Bereitgestellt wie besehen zur bequemen Nutzung. Diese Seite berichtet, was in einem Zertifikat
+      steht und ob jede Signatur aufgeht; sie behauptet nicht und wird nie behaupten, ein Zertifikat
+      sei <em>vertrauenswürdig</em> — Vertrauen liegt im Root-Store des Clients, und es gibt hier auch
+      keine Sperrlisten- oder Certificate-Transparency-Prüfung (beides braucht das Netz).
+      <span translate="no">{site.name}</span> ist kostenlos und offen.
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>
+
+<style>
+  @reference "../../styles/global.css";
+
+  .cd-table th {
+    font-weight: inherit;
+    white-space: nowrap;
+  }
+  .cd-table td {
+    font-size: 13px;
+    line-height: 18px;
+  }
+  .cd-table .code-mono {
+    font-size: 12.5px;
+    overflow-wrap: anywhere;
+  }
+</style>
