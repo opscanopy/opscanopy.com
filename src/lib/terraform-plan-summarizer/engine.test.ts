@@ -1134,3 +1134,253 @@ describe('never throws — hostile input', () => {
     expect(messages(s)).toContain('Showing the first 11 findings; more were suppressed.');
   });
 });
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Regressions — bugs found in adversarial review before the first deploy      */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+describe('regression: replace_triggered_by', () => {
+  /**
+   * Terraform 1.2+ prints `will be replaced due to changes in
+   * replace_triggered_by` for a replacement driven by a `lifecycle`
+   * `replace_triggered_by` list. The verb was missing from the VERBS table, so
+   * the whole resource block was dropped: a plan that destroys and recreates a
+   * production database rendered add 0 / change 0 / destroy 0 / replace 0, no
+   * blast-radius band at all, and a note telling the reader their COMPLETE paste
+   * was truncated. A false "all clear" on a database replacement.
+   */
+  const PLAN = `Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+-/+ destroy and then create replacement
+
+Terraform will perform the following actions:
+
+  # aws_db_instance.primary will be replaced due to changes in replace_triggered_by
+-/+ resource "aws_db_instance" "primary" {
+      ~ address        = "primary.abc.rds.amazonaws.com" -> (known after apply)
+        instance_class = "db.r6g.xlarge"
+    }
+
+Plan: 1 to add, 0 to change, 1 to destroy.
+`;
+
+  it('reads the resource, counts it as a replacement and reconciles', () => {
+    const s = summarizePlan(PLAN);
+    expect(s.ok).toBe(true);
+    expect(s.changes.map((c) => c.address)).toEqual(['aws_db_instance.primary']);
+    expect(s.changes[0].action).toBe('replace');
+    expect(s.changes[0].replaceOrder).toBe('destroy-create');
+    expect(s.counts.replace).toBe(1);
+    expect(s.totals).toEqual({ add: 1, change: 0, destroy: 1, import: 0, forget: 0 });
+    // Before the fix this was a mismatch and the tool blamed a truncated paste
+    // that was in fact complete.
+    expect(s.reconciliation.status).toBe('match');
+    expect(messages(s)).not.toContainEqual(
+      expect.stringContaining('the rest of the plan is missing'),
+    );
+  });
+
+  it('flags the database in the high-blast-radius band', () => {
+    const s = summarizePlan(PLAN);
+    expect(s.highRisk.map((c) => c.address)).toEqual(['aws_db_instance.primary']);
+    expect(s.highRisk[0].risk?.klass).toBe('data-store');
+  });
+
+  it('recognises a paste made only of replace_triggered_by blocks as plan text', () => {
+    const header =
+      '  # terraform_data.example2 will be replaced due to changes in replace_triggered_by\n';
+    expect(detectInput(header).kind).toBe('plan-text');
+  });
+
+  it('does not disturb the other replacement verbs', () => {
+    const cases: [string, boolean][] = [
+      ['# aws_instance.a is tainted, so must be replaced', true],
+      ['# aws_instance.b will be replaced, as requested', false],
+      ['# aws_instance.c must be replaced', false],
+    ];
+    for (const [header, tainted] of cases) {
+      const s = summarizePlan(`Terraform will perform the following actions:\n\n  ${header}\n`);
+      expect(s.changes, header).toHaveLength(1);
+      expect(s.changes[0].action, header).toBe('replace');
+      expect(s.changes[0].tainted, header).toBe(tainted);
+    }
+  });
+
+  it('renders the matching JSON action_reason as a sentence, not a bare enum', () => {
+    const s = summarizePlan(
+      JSON.stringify({
+        format_version: '1.2',
+        resource_changes: [
+          {
+            address: 'terraform_data.example2',
+            mode: 'managed',
+            type: 'terraform_data',
+            name: 'example2',
+            change: { actions: ['delete', 'create'] },
+            action_reason: 'replace_by_triggers',
+          },
+        ],
+      }),
+    );
+    expect(s.changes[0].actionReason).toBe(
+      'something in its lifecycle replace_triggered_by list changed, so Terraform must replace it',
+    );
+  });
+});
+
+describe('regression: `show -json` lists unchanged resources too', () => {
+  /**
+   * `resource_changes` is "an array of all resources declared by the root and
+   * child modules", so an untouched resource is present with
+   * `actions: ["no-op"]` — and `output_changes` carries every root output the
+   * same way. Counting those as actions made a plan with 2 real updates announce
+   * "482 actions" in the live region, render 480 rows of unchanged resources
+   * under "Reads, imports, moves and forgets", and list 8 unchanged outputs as
+   * output changes. A plan that does nothing at all never got the "Terraform
+   * found nothing to do" verdict.
+   */
+  function doc(
+    quietResources: number,
+    updates: number,
+    quietOutputs: number,
+    changedOutputs: number,
+  ): string {
+    const resourceChanges = [
+      ...Array.from({ length: quietResources }, (_, i) => ({
+        address: `aws_iam_role.r${i}`,
+        mode: 'managed',
+        type: 'aws_iam_role',
+        name: `r${i}`,
+        change: { actions: ['no-op'] },
+      })),
+      ...Array.from({ length: updates }, (_, i) => ({
+        address: `aws_ecs_service.s${i}`,
+        mode: 'managed',
+        type: 'aws_ecs_service',
+        name: `s${i}`,
+        change: { actions: ['update'] },
+      })),
+    ];
+    const outputChanges: Record<string, unknown> = {};
+    for (let i = 0; i < quietOutputs; i += 1) outputChanges[`quiet${i}`] = { actions: ['no-op'] };
+    for (let i = 0; i < changedOutputs; i += 1) outputChanges[`loud${i}`] = { actions: ['update'] };
+    return JSON.stringify({
+      format_version: '1.2',
+      resource_changes: resourceChanges,
+      output_changes: outputChanges,
+    });
+  }
+
+  it('counts only the real actions and names the unchanged entries', () => {
+    const s = summarizePlan(doc(480, 2, 8, 1));
+    expect(s.stats.changes).toBe(2);
+    expect(s.changes.map((c) => c.address)).toEqual(['aws_ecs_service.s0', 'aws_ecs_service.s1']);
+    expect(s.counts.update).toBe(2);
+    expect(s.counts.noop).toBe(0);
+    expect(s.outputChanges).toEqual([{ name: 'loud0', action: 'update', sensitive: false }]);
+    expect(s.stats.unchanged).toBe(488);
+    expect(messages(s)).toContain(
+      '"terraform show -json" lists everything the configuration declares, not only what changes: ' +
+        '480 resources and 8 outputs in this document are unchanged ("no-op"). Unchanged entries ' +
+        'are not actions, so they are not counted or listed here.',
+    );
+    expect(s.noChanges).toBe(false);
+  });
+
+  it('gives a plan of nothing but no-ops the "No changes" verdict', () => {
+    const s = summarizePlan(doc(40, 0, 0, 0));
+    expect(s.ok).toBe(true);
+    expect(s.noChanges).toBe(true);
+    expect(s.changes).toHaveLength(0);
+    expect(s.stats.changes).toBe(0);
+    expect(s.stats.unchanged).toBe(40);
+    expect(s.totals).toEqual({ add: 0, change: 0, destroy: 0, import: 0, forget: 0 });
+    expect(toMarkdown(s)).toContain('No changes. Terraform found nothing to do.');
+  });
+
+  it('uses the singular form for one unchanged resource', () => {
+    const s = summarizePlan(doc(1, 1, 0, 0));
+    expect(messages(s)).toContain(
+      '"terraform show -json" lists everything the configuration declares, not only what changes: ' +
+        '1 resource in this document is unchanged ("no-op"). Unchanged entries are not actions, so ' +
+        'they are not counted or listed here.',
+    );
+  });
+
+  it('says nothing about unchanged entries when there are none', () => {
+    const s = summarizePlan(doc(0, 3, 0, 1));
+    expect(s.stats.unchanged).toBe(0);
+    expect(messages(s)).not.toContainEqual(expect.stringContaining('are unchanged ("no-op")'));
+  });
+
+  /**
+   * The narrowing must not silence the case the design relies on: an actions
+   * array this tool cannot model is ALSO mapped down to `no-op`, and dropping it
+   * would report "nothing to do" for a plan that does something unknown.
+   */
+  it('keeps an unmodelled actions array visible instead of calling it unchanged', () => {
+    const s = summarizePlan(
+      JSON.stringify({
+        format_version: '1.2',
+        resource_changes: [
+          {
+            address: 'aws_instance.web',
+            mode: 'managed',
+            type: 'aws_instance',
+            name: 'web',
+            change: { actions: ['bounce'] },
+          },
+        ],
+      }),
+    );
+    expect(s.noChanges).toBe(false);
+    expect(s.stats.unchanged).toBe(0);
+    expect(s.changes).toHaveLength(1);
+    expect(s.changes[0].action).toBe('no-op');
+    expect(s.counts.noop).toBe(1);
+    expect(messages(s)).toContain(
+      'Resource "aws_instance.web" has an actions array this tool does not model: ["bounce"]. It is counted as no-op.',
+    );
+  });
+
+  /** A `["no-op"]` carrying `importing` or `previous_address` IS an action. */
+  it('keeps no-op imports and moves, which Terraform encodes the same way', () => {
+    const s = summarizePlan(
+      JSON.stringify({
+        format_version: '1.2',
+        resource_changes: [
+          {
+            address: 'aws_s3_bucket.legacy',
+            mode: 'managed',
+            type: 'aws_s3_bucket',
+            name: 'legacy',
+            change: { actions: ['no-op'], importing: { id: 'acme-legacy-assets' } },
+          },
+          {
+            address: 'aws_instance.new',
+            previous_address: 'aws_instance.old',
+            mode: 'managed',
+            type: 'aws_instance',
+            name: 'new',
+            change: { actions: ['no-op'] },
+          },
+          {
+            address: 'aws_iam_role.quiet',
+            mode: 'managed',
+            type: 'aws_iam_role',
+            name: 'quiet',
+            change: { actions: ['no-op'] },
+          },
+        ],
+      }),
+    );
+    expect(s.changes.map((c) => c.action)).toEqual(['import', 'move']);
+    expect(s.stats.unchanged).toBe(1);
+    expect(s.noChanges).toBe(false);
+  });
+
+  /** Text transcripts print no block for an unchanged resource — always 0. */
+  it('never reports unchanged entries for text input', () => {
+    expect(summarizePlan(TEXT_MIXED).stats.unchanged).toBe(0);
+  });
+});

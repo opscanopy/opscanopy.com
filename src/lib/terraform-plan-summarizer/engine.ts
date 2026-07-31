@@ -318,7 +318,12 @@ function failure(
       inputChars,
       readChars: inputChars,
     },
-    stats: { errors: severity === 'error' ? 1 : 0, warnings: severity === 'warning' ? 1 : 0, changes: 0 },
+    stats: {
+      errors: severity === 'error' ? 1 : 0,
+      warnings: severity === 'warning' ? 1 : 0,
+      changes: 0,
+      unchanged: 0,
+    },
   };
 }
 
@@ -374,6 +379,14 @@ export function summarizePlan(input: string, options: SummarizeOptions = {}): Pl
     let versions: PlanSummary['versions'];
     const parserDiagnostics: Diagnostic[] = [];
     let usable = true;
+    /**
+     * Entries `terraform show -json` carries for resources/outputs that do NOT
+     * change (`actions: ["no-op"]`). They are not actions and are not listed —
+     * only reported as a figure. Always 0 for text input: the human transcript
+     * prints no block for an unchanged resource.
+     */
+    let unchangedResources = 0;
+    let unchangedOutputs = 0;
 
     if (format === 'json') {
       const doc = (detection.json ?? {}) as Record<string, unknown>;
@@ -389,10 +402,14 @@ export function summarizePlan(input: string, options: SummarizeOptions = {}): Pl
       };
       parserDiagnostics.push(...result.diagnostics);
       usable = result.usable;
-      // A `show -json` document with empty arrays IS Terraform's no-op plan —
-      // there is no "No changes." string in the JSON format to look for. Keyed on
+      unchangedResources = result.unchangedResources;
+      unchangedOutputs = result.unchangedOutputs;
+      // A `show -json` document with nothing left after the genuinely unchanged
+      // (`["no-op"]`) entries are set aside IS Terraform's no-op plan — there is
+      // no "No changes." string in the JSON format to look for. Keyed on
       // emptiness rather than on zero totals so a resource whose action this tool
-      // could not model never gets reported as "nothing to do".
+      // could not model never gets reported as "nothing to do" (an unmodelled
+      // actions array stays in `changes`, so this stays false for it).
       noChanges =
         usable &&
         result.changes.length === 0 &&
@@ -462,6 +479,30 @@ export function summarizePlan(input: string, options: SummarizeOptions = {}): Pl
       });
     }
 
+    const unchangedTotal = unchangedResources + unchangedOutputs;
+    if (unchangedTotal > 0) {
+      const parts: string[] = [];
+      if (unchangedResources > 0) {
+        parts.push(
+          `${unchangedResources.toLocaleString('en-US')} ` +
+            `resource${unchangedResources === 1 ? '' : 's'}`,
+        );
+      }
+      if (unchangedOutputs > 0) {
+        parts.push(
+          `${unchangedOutputs.toLocaleString('en-US')} output${unchangedOutputs === 1 ? '' : 's'}`,
+        );
+      }
+      diagnostics.push({
+        severity: 'info',
+        message:
+          `"terraform show -json" lists everything the configuration declares, not only what ` +
+          `changes: ${parts.join(' and ')} in this document ` +
+          `${unchangedTotal === 1 ? 'is' : 'are'} unchanged ("no-op"). ` +
+          'Unchanged entries are not actions, so they are not counted or listed here.',
+      });
+    }
+
     for (const pair of reported?.unmodeled ?? []) {
       diagnostics.push({
         severity: 'info',
@@ -511,6 +552,7 @@ export function summarizePlan(input: string, options: SummarizeOptions = {}): Pl
         errors: finalized.list.filter((d) => d.severity === 'error').length,
         warnings: finalized.list.filter((d) => d.severity === 'warning').length,
         changes: changes.length,
+        unchanged: unchangedTotal,
       },
     };
   } catch {

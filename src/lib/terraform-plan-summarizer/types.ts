@@ -201,7 +201,18 @@ export interface PlanSummary {
   diagnostics: Diagnostic[];
   versions: PlanVersions;
   limits: PlanLimits;
-  stats: { errors: number; warnings: number; changes: number };
+  stats: {
+    errors: number;
+    warnings: number;
+    changes: number;
+    /**
+     * Resources and outputs `terraform show -json` carried with
+     * `actions: ["no-op"]` — declared but not changing. Excluded from `changes`,
+     * `counts` and `outputChanges` because they are not actions. Always 0 for
+     * text input, which prints no block for an unchanged resource.
+     */
+    unchanged: number;
+  };
 }
 
 /** Overridable caps. Defaults are the shipped ones; tests narrow them. */
