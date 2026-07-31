@@ -747,7 +747,7 @@ export const tools: Tool[] = [
       'Lint Grafana dashboard JSON for broken variables, legacy panels and import traps — in your browser.',
     description:
       'Paste a dashboard JSON and read every import trap with the JSON path it lives at: template variables nothing declares, ${DS_…} placeholders Grafana cannot resolve, Angular panels that render nothing on Grafana 12, duplicate panel ids, invisible panels and a schemaVersion older than the file looks. 22 rules pinned to a stated Grafana version, entirely client-side.',
-    status: 'planned',
+    status: 'live',
     category: 'Observability',
     keywords: [
       'grafana dashboard json validator',
@@ -769,7 +769,7 @@ export const tools: Tool[] = [
     tagline: 'See which pods a label selector matches — and why each one does or doesn’t.',
     description:
       'Paste your pods and a selector — a kubectl -l string or a matchLabels/matchExpressions block — and get a per-resource MATCH or NO MATCH with the exact clause that decided, including the case everyone answers backwards: NotIn and != match a resource that has no such label at all. Pure client-side, no cluster.',
-    status: 'planned',
+    status: 'live',
     category: 'Kubernetes',
     keywords: [
       'kubernetes label selector tester',
@@ -789,7 +789,7 @@ export const tools: Tool[] = [
     tagline: 'Lint .service, .timer and .socket files for typos and misconfigurations — in your browser, no root.',
     description:
       'Paste a unit file and get line-numbered findings: a directive in the wrong section, a typo systemd silently ignores, an OnCalendar= that never fires, Restart= that stops the unit loading at all. Every finding says what systemd itself does about it, and carries the fix. No systemd, no root, no upload.',
-    status: 'planned',
+    status: 'live',
     category: 'Scheduling',
     keywords: [
       'systemd unit file validator',
@@ -810,7 +810,7 @@ export const tools: Tool[] = [
       'Paste terraform plan output, get a summary of adds, changes, destroys and replacements.',
     description:
       'Read a 5,000-line plan in five seconds: adds, changes, destroys and replacements counted separately, the attributes that force a replacement named, and every destructive action on a database, NAT gateway or cluster control plane pulled to the top. Both plan formats, and the totals cross-checked against Terraform\'s own summary line — nothing leaves your browser.',
-    status: 'planned',
+    status: 'live',
     category: 'IaC',
     keywords: [
       'terraform plan summarizer',
