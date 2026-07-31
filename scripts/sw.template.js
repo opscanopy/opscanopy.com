@@ -16,9 +16,25 @@ const BUILD_ID = '__BUILD_ID__';
 const PRECACHE_URLS = __PRECACHE_URLS__;
 const SW_DISABLED = false;
 
+// EVERY cache is scoped to the build. The precache always was; the other two
+// were pinned to a literal 'v1' and never purged, which is how a returning
+// visitor could be served the previous release: the pages cache still held the
+// OLD HTML, and because /_astro/* is cache-first the old hashed assets it
+// referenced were still there to render it. Any navigation that fell back to
+// cache — a slow network past NAV_TIMEOUT_MS, or offline — therefore rebuilt a
+// coherent copy of the site as it was before the deploy, with no signal to the
+// user that they were looking at stale content.
+//
+// Build-scoping means the first navigation after a deploy re-fetches. That is
+// the point: /_astro/* URLs are content-hashed and CDN-cached, so unchanged
+// files come back immediately, while HTML and the non-hashed /pagefind/* search
+// index (which changes every build and is only stale-while-revalidate) can no
+// longer survive across releases.
 const PRECACHE = `oc-precache-${BUILD_ID}`;
-const PAGES_CACHE = 'oc-pages-v1';
-const ASSETS_CACHE = 'oc-assets-v1';
+const PAGES_CACHE = `oc-pages-${BUILD_ID}`;
+const ASSETS_CACHE = `oc-assets-${BUILD_ID}`;
+/** Cache names this build owns; `activate` deletes every other `oc-` cache. */
+const CURRENT_CACHES = [PRECACHE, PAGES_CACHE, ASSETS_CACHE];
 const PAGES_LIMIT = 60;
 const ASSETS_LIMIT = 150;
 const NAV_TIMEOUT_MS = 3500;
@@ -52,7 +68,7 @@ self.addEventListener('activate', (event) => {
       const names = await caches.keys();
       await Promise.all(
         names
-          .filter((name) => name.startsWith('oc-precache-') && name !== PRECACHE)
+          .filter((name) => name.startsWith('oc-') && !CURRENT_CACHES.includes(name))
           .map((name) => caches.delete(name)),
       );
       return self.clients.claim();
