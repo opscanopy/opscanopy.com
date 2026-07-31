@@ -684,7 +684,7 @@ export const tools: Tool[] = [
       'Paste a Dockerfile, get line-numbered best-practice and security findings with fixes — entirely in your browser.',
     description:
       'Seventeen high-signal rules over a real Dockerfile parse: unpinned base images, the apt-get update cache trap, secrets baked into image history, root containers, broken JSON exec forms and layer-cache order. Line-numbered findings with a fix for each, and a list of what it deliberately does not flag.',
-    status: 'planned',
+    status: 'live',
     category: 'Docker',
     keywords: [
       'dockerfile linter online',
@@ -704,7 +704,7 @@ export const tools: Tool[] = [
     tagline: 'Test jq expressions against your JSON — real jq 1.8.2 running in your browser.',
     description:
       'Run the real jq 1.8.2 binary, compiled to WebAssembly, against your own JSON — no server round-trip, no upload, and no re-implementation that "mostly" matches. One card per output, honest compile/runtime/parse-error classification, and -r/-s/-n/-c as one-tap toggles.',
-    status: 'planned',
+    status: 'live',
     category: 'Logs',
     keywords: [
       'jq playground online',
@@ -724,7 +724,7 @@ export const tools: Tool[] = [
     tagline: 'Decode PEM certificates, check chain order, and verify signatures — in your browser.',
     description:
       'Paste a certificate or a whole chain and read every X.509 field, see the chain order corrected with the reason it was wrong, and get a real signature verdict on each link — verified, failed, or not-checked with the algorithm named. Hand-rolled DER parser, Web Crypto verification, zero uploads.',
-    status: 'planned',
+    status: 'live',
     category: 'Security',
     keywords: [
       'certificate decoder',
