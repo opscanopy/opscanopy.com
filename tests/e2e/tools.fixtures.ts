@@ -159,6 +159,28 @@ export const TOOL_FIXTURES: ToolFixture[] = [
     inputSelector: '#dsz-size',
     resultsSelector: '#dsz-results',
   },
+  {
+    // Tool 6 — Dockerfile Linter. The boot seed is the "Kitchen sink" chip
+    // (fifteen findings), NOT the clean multi-stage example: a Dockerfile with
+    // nothing wrong renders no per-row copy button, and J1 copies one.
+    //
+    // `invalidInput` exercises the linter's one FATAL path. A finding is not an
+    // error state here — `FORM` is: Docker refuses to parse a file with an
+    // unknown instruction, so the engine reports that instead of pretending to
+    // lint it. Single-line on purpose, because J2 types it into CodeMirror.
+    slug: 'dockerfile-linter',
+    family: 'cm',
+    hashKey: '#df=',
+    seededResultString: 'apt-get update runs without an install in the same RUN.',
+    invalidInput: 'FORM ubuntu:22.04',
+    calmErrorString: 'Unknown instruction “FORM” on line 1 — did you mean FROM?',
+    // Valid Dockerfile grammar: WORKDIR takes the rest of the line as its path,
+    // and DF006 quotes that path back into its finding title — which is exactly
+    // where this tool renders untrusted input.
+    xssPayload: 'WORKDIR <img src=x onerror=alert(1)>',
+    inputSelector: '#df-input .cm-content',
+    resultsSelector: '#df-results',
+  },
 ];
 
 /** Fixtures for one family — used by the family-gated journey steps. */

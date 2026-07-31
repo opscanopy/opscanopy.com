@@ -58,8 +58,6 @@ test.describe('J3 chips → hash → reload', () => {
       const results = resultsOf(page, fixture);
       await expect(results).not.toBeEmpty();
       expect(isCalm(await errorSignals(page, fixture)), 'chip 2 must evaluate cleanly').toBe(true);
-      const resultsBefore = (await results.innerText()).trim();
-      expect(resultsBefore.length).toBeGreaterThan(0);
 
       if (fixture.hashKey === null) {
         await page.waitForTimeout(SETTLE_MS);
@@ -73,6 +71,14 @@ test.describe('J3 chips → hash → reload', () => {
       await expect
         .poll(() => readHash(page), { message: 'user-initiated eval must write the hash' })
         .toContain(fixture.hashKey);
+
+      // Snapshot the results only AFTER the hash appears. Every playground debounces and holds
+      // the previous render while the next value is pending, so reading straight after the click
+      // can capture the SEEDED output instead of chip 2's — and then the post-reload comparison
+      // fails against a value that was never chip 2's. The hash write is the definitive signal
+      // that a valid user-initiated eval finished rendering. (Flaked ~1-in-4 under 4 workers.)
+      const resultsBefore = (await results.innerText()).trim();
+      expect(resultsBefore.length).toBeGreaterThan(0);
 
       // Reload: the fragment alone must rebuild input + results.
       await page.reload();
