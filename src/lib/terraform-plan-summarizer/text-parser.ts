@@ -129,8 +129,19 @@ interface VerbRule {
   drift?: boolean;
 }
 
-const VERBS: VerbRule[] = [
+/**
+ * Annotated separately from the sorted view below so the literal is CONTEXTUALLY
+ * typed against `VerbRule` — `[...].sort()` widened `action` to `string`, which
+ * meant a typo in an action name compiled silently.
+ */
+const VERB_TABLE: VerbRule[] = [
   { verb: 'will no longer be managed by Terraform, but will not be destroyed', action: 'forget' },
+  // Terraform 1.2+ `replace_triggered_by` lifecycle rule. Missing this verb did
+  // not merely lose a label: the whole resource block was dropped, so a plan
+  // that destroys and recreates a production database rendered as
+  // `add 0 / change 0 / destroy 0 / replace 0` with no blast-radius band, and
+  // the tool then told the user their complete paste was truncated.
+  { verb: 'will be replaced due to changes in replace_triggered_by', action: 'replace' },
   { verb: 'is tainted, so must be replaced', action: 'replace', tainted: true },
   { verb: 'will be replaced, as requested', action: 'replace' },
   { verb: 'will be updated in-place', action: 'update' },
@@ -141,7 +152,9 @@ const VERBS: VerbRule[] = [
   { verb: 'must be replaced', action: 'replace' },
   { verb: 'has been deleted', action: 'delete', drift: true },
   { verb: 'has changed', action: 'update', drift: true },
-].sort((a, b) => b.verb.length - a.verb.length);
+];
+
+const VERBS: VerbRule[] = [...VERB_TABLE].sort((a, b) => b.verb.length - a.verb.length);
 
 const MOVED_TO = ' has moved to ';
 

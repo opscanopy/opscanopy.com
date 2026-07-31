@@ -51,6 +51,10 @@ const TEXT_MARKERS = [
   'will be destroyed',
   'will be updated in-place',
   'must be replaced',
+  // Covers both `will be replaced, as requested` (-replace=) and
+  // `will be replaced due to changes in replace_triggered_by`, so a paste made
+  // up only of those blocks is still recognised as plan text.
+  'will be replaced',
   'will be read during apply',
   'will be imported',
   'has moved to',
