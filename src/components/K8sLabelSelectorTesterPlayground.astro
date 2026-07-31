@@ -1,0 +1,1959 @@
+---
+/**
+ * K8sLabelSelectorTesterPlayground — the Kubernetes Label Selector Tester island.
+ *
+ * TWO inputs, deliberately asymmetric:
+ *   · the RESOURCES pane is a CodeMirror YAML editor — it takes a whole
+ *     `kubectl get pods -o yaml` paste;
+ *   · the SELECTOR row is one line. A segmented toggle swaps between the
+ *     `kubectl -l` string (single-line `<input>`) and structured selector YAML
+ *     (a six-row `<textarea>` — NOT a second CodeMirror: a six-line document
+ *     does not earn another editor runtime).
+ *
+ * The results are the product: one card per resource with a MATCH / NO MATCH
+ * chip and then the clause-by-clause trace, each clause carrying the reason the
+ * engine produced. Clauses that hold BECAUSE the key is absent get an amber
+ * annotation, because `NotIn`/`!=` matching a resource that has no such label is
+ * the one piece of apimachinery semantics people answer backwards.
+ *
+ * UX contract (CLAUDE.md), ported from `CidrCheckerPlayground` /
+ * `DockerfileLinterPlayground`: example chips at `var(--radius-pill)`, ONE ~170ms
+ * debounce with the exact hint line, a ~600ms calm-error hold before anything
+ * goes red, per-row copy + `data-copy-all` + `data-copy-link`, a single visible
+ * `role="status"` summary plus an sr-only copy-status span, a results container
+ * that is NOT `aria-live`, glossary captions instead of tooltips, and
+ * `escapeHtml()` on every injected value — attribute contexts included.
+ *
+ * Deep link + snapshots both carry the SAME `#s=` payload (resources + selector
+ * + mode), so a restored snapshot brings the grammar toggle back with it. The
+ * hash is written ONLY on a user-initiated eval that came back fully valid — a
+ * boot seed never writes it, and neither does a run with an error diagnostic.
+ *
+ * Runtime contract (lazy-imported inside the boot closure so the engine and the
+ * CodeMirror runtime code-split away from the page shell):
+ *   ../lib/kubernetes-label-selector-tester/engine   → testSelector, encodeState, decodeState
+ *   ../lib/kubernetes-label-selector-tester/examples → examples: SelectorExample[]
+ *
+ * Only the example LABELS are read at build time (so the chips are
+ * server-rendered and exist before hydration); the manifests themselves come
+ * from the lazy import by index, which keeps multi-line YAML out of HTML
+ * attributes entirely.
+ */
+import { examples } from '../lib/kubernetes-label-selector-tester/examples';
+---
+
+<section class="klt-pg" aria-label="Kubernetes Label Selector Tester playground">
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Example chips ────────────────────────────────────────────────── */}
+    <div class="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:px-5">
+      <span class="eyebrow shrink-0">Examples</span>
+      <div id="klt-chips" class="klt-chips" role="group" aria-label="Examples">
+        {
+          examples.map((ex, i) => (
+            <button type="button" class="klt-chip" data-example-idx={String(i)} aria-pressed="false">
+              {ex.label}
+            </button>
+          ))
+        }
+      </div>
+    </div>
+
+    {/* ── Selector row ─────────────────────────────────────────────────── */}
+    <div class="klt-controls border-b border-hairline px-4 py-4 sm:px-5">
+      <div class="klt-control">
+        <span class="eyebrow" id="klt-mode-label">Selector grammar</span>
+        <div class="klt-seg" role="radiogroup" aria-labelledby="klt-mode-label">
+          <button
+            id="klt-mode-expr"
+            type="button"
+            role="radio"
+            aria-checked="true"
+            tabindex="0"
+            class="klt-seg__btn code-mono">kubectl -l</button
+          >
+          <button
+            id="klt-mode-yaml"
+            type="button"
+            role="radio"
+            aria-checked="false"
+            tabindex="-1"
+            class="klt-seg__btn code-mono">selector YAML</button
+          >
+        </div>
+        <p class="klt-gloss caption text-mute">
+          <strong class="font-medium text-body">Equality-based</strong> clauses (<span
+            class="code-mono">=</span
+          >, <span class="code-mono">!=</span>) and
+          <strong class="font-medium text-body">set-based</strong> ones (<span class="code-mono"
+            >in</span
+          >, <span class="code-mono">notin</span>, a bare key, <span class="code-mono">!key</span>)
+          can be mixed freely in one <span class="code-mono">-l</span> string — commas mean AND. A
+          Deployment's <span class="code-mono">spec.selector</span> accepts both forms but is
+          immutable after creation; a Service's <span class="code-mono">spec.selector</span> is a
+          plain label map and supports equality only.
+        </p>
+      </div>
+
+      <div class="klt-control klt-control--grow">
+        <label class="eyebrow" id="klt-selector-label" for="klt-selector">Selector</label>
+        <input
+          id="klt-selector"
+          class="klt-line code-mono"
+          type="text"
+          spellcheck="false"
+          autocapitalize="off"
+          autocorrect="off"
+          autocomplete="off"
+          placeholder="app=web,tier=frontend"
+          aria-describedby="klt-run-hint"
+        />
+        <label class="eyebrow sr-only" id="klt-selector-yaml-label" for="klt-selector-yaml"
+          >Selector YAML</label
+        >
+        <textarea
+          id="klt-selector-yaml"
+          class="klt-area code-mono"
+          spellcheck="false"
+          autocapitalize="off"
+          autocorrect="off"
+          autocomplete="off"
+          rows="6"
+          placeholder="matchLabels:&#10;  app: web&#10;matchExpressions:&#10;  - key: env&#10;    operator: NotIn&#10;    values: [dev]"
+          aria-describedby="klt-run-hint"
+          hidden></textarea>
+        <p id="klt-canonical" class="klt-canonical caption text-mute"></p>
+      </div>
+    </div>
+
+    {/* ── Resources editor (dark instrument slab) ──────────────────────── */}
+    <div class="klt-pane bg-inverse">
+      <div class="klt-pane__bar">
+        <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+          <span class="klt-pane__dot"></span>
+          <span class="klt-pane__dot"></span>
+          <span class="klt-pane__dot"></span>
+        </span>
+        <span class="klt-pane__name code-mono">resources.yaml</span>
+        <span class="klt-pane__tag code-mono">input</span>
+      </div>
+      <div id="klt-input" class="klt-editor"></div>
+    </div>
+
+    {/* ── Hints + snapshots ────────────────────────────────────────────── */}
+    <div class="border-b border-hairline px-4 pt-3 pb-4 sm:px-5">
+      <p id="klt-run-hint" class="klt-hint caption text-mute">
+        Results update as you type — press Enter to run now.
+      </p>
+      <p class="klt-hint caption text-mute">
+        Paste one manifest, a <span class="code-mono">---</span> stream, a
+        <span class="code-mono">kind: List</span> or a YAML list. Press
+        <kbd class="klt-kbd">Esc</kbd> to release keyboard focus from the editor;
+        <kbd class="klt-kbd">⌘</kbd>/<kbd class="klt-kbd">Ctrl</kbd> +
+        <kbd class="klt-kbd">Enter</kbd> runs and leaves it. Nothing you paste is uploaded.
+      </p>
+      <div class="klt-snap-row mt-3 flex flex-wrap items-center gap-2">
+        <button id="klt-snap-save" type="button" class="klt-snap-btn">Save snapshot</button>
+        <select
+          id="klt-snap-select"
+          class="klt-snap-select"
+          aria-label="Load a saved snapshot"
+          disabled
+        >
+          <option value="">No snapshots yet</option>
+        </select>
+        <button
+          id="klt-snap-delete"
+          type="button"
+          class="klt-snap-delete"
+          aria-label="Delete this snapshot"
+          hidden>&times;</button
+        >
+      </div>
+    </div>
+
+    {/* ── Verdicts ─────────────────────────────────────────────────────── */}
+    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <span class="flex flex-wrap items-center gap-2">
+          <span class="eyebrow">Verdicts</span>
+          <button
+            id="klt-share"
+            type="button"
+            class="klt-copy klt-copy--labeled"
+            data-copy-link
+            data-copy=""
+            data-copy-label="Copy link"
+            hidden
+          >
+            <svg
+              class="klt-copy-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6.75 9.25l2.5-2.5"></path>
+              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
+              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
+            </svg>
+            <svg
+              class="klt-check-icon hidden"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="klt-copy-label">Copy link</span>
+          </button>
+          <button
+            id="klt-copy-all"
+            type="button"
+            class="klt-copy klt-copy--labeled"
+            data-copy-all
+            data-copy=""
+            data-copy-label="Copy report"
+            hidden
+          >
+            <svg
+              class="klt-copy-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="5" y="5" width="9" height="9" rx="1.5"></rect>
+              <path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"></path>
+            </svg>
+            <svg
+              class="klt-check-icon hidden"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="klt-copy-label">Copy report</span>
+          </button>
+        </span>
+        <span id="klt-summary" class="klt-summary code-mono text-mute" role="status" aria-live="polite"
+        ></span>
+      </div>
+      <div id="klt-results" class="klt-results">
+        <p class="klt-empty body-sm text-mute">
+          Paste the resources above — or tap an example — to see, per resource, whether the selector
+          matches it and which clause decided.
+        </p>
+      </div>
+      <span id="klt-copy-status" class="sr-only" role="status" aria-live="polite"></span>
+    </div>
+  </div>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  /* ── Example chips ───────────────────────────────────────────────────── */
+  .klt-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .klt-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-brand-strong);
+    cursor: pointer;
+    touch-action: manipulation;
+    transition:
+      background 0.12s ease,
+      box-shadow 0.12s ease;
+  }
+  .klt-chip:hover,
+  .klt-chip[aria-pressed='true'] {
+    background: var(--color-brand-soft);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+  }
+  .klt-chip:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+
+  /* ── Selector row ────────────────────────────────────────────────────── */
+  .klt-controls {
+    display: grid;
+    gap: 16px;
+  }
+  @media (min-width: 900px) {
+    .klt-controls {
+      grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+      align-items: start;
+    }
+  }
+  .klt-control {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .klt-seg {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-self: flex-start;
+    max-width: 100%;
+    padding: 2px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas-soft-2);
+    box-shadow: var(--shadow-hairline);
+  }
+  .klt-seg__btn {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--color-mute);
+    font-size: 12px;
+    line-height: 16px;
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    white-space: nowrap;
+    touch-action: manipulation;
+    transition:
+      background 0.15s ease,
+      color 0.15s ease;
+  }
+  .klt-seg__btn:hover {
+    color: var(--color-body);
+  }
+  .klt-seg__btn[aria-checked='true'] {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+  }
+  .klt-seg__btn:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  .klt-gloss {
+    margin: 0;
+    font-size: 12px;
+    line-height: 17px;
+    text-wrap: pretty;
+  }
+  .klt-line,
+  .klt-area {
+    width: 100%;
+    padding: 9px 12px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 13px;
+    line-height: 20px;
+    transition: box-shadow 0.15s ease;
+  }
+  .klt-area {
+    min-height: 118px;
+    resize: vertical;
+  }
+  .klt-line::placeholder,
+  .klt-area::placeholder {
+    color: var(--color-mute);
+  }
+  .klt-line:hover,
+  .klt-area:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .klt-line:focus,
+  .klt-area:focus {
+    outline: none;
+  }
+  .klt-line:focus-visible,
+  .klt-area:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-link);
+    outline: none;
+  }
+  .klt-line[aria-invalid='true'],
+  .klt-area[aria-invalid='true'] {
+    box-shadow: inset 0 0 0 2px var(--color-error);
+  }
+  .klt-canonical {
+    margin: 0;
+    min-height: 17px;
+    font-size: 12px;
+    line-height: 17px;
+    overflow-wrap: anywhere;
+  }
+  .klt-canonical .code-mono {
+    font-size: 12px;
+    color: var(--color-body);
+  }
+
+  /* ── Resources pane (dark instrument slab) ───────────────────────────── */
+  .klt-pane {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+  }
+  .klt-pane__bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .klt-pane__dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.18);
+  }
+  .klt-pane__name {
+    /* 0.72 alpha over --color-inverse clears 4.5:1 in both themes. */
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 12px;
+  }
+  .klt-pane__tag {
+    margin-left: auto;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  /* CodeMirror host. Background stays transparent so the slab shows through:
+     One Dark's own #282c34 is LIGHTER than --color-inverse, and its dimmest
+     token only clears 4.5:1 against the darker slab. */
+  .klt-editor {
+    overflow: hidden;
+    padding-inline: 4px;
+  }
+  .klt-editor :global(.cm-editor) {
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .klt-editor :global(.cm-editor.cm-focused) {
+    outline: 2px solid var(--color-link);
+    outline-offset: -2px;
+  }
+  .klt-editor :global(.cm-scroller) {
+    overflow: auto;
+    min-height: 230px;
+    max-height: 420px;
+    font-family: var(--font-mono);
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+  }
+  .klt-editor :global(.cm-scroller)::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .klt-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: var(--radius-pill);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  .klt-editor :global(.cm-gutters) {
+    background: transparent;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  /* One Dark's gutter foreground is below 4.5:1 on this slab — lift it. */
+  .klt-editor :global(.cm-lineNumbers .cm-gutterElement) {
+    color: #a9a39a;
+  }
+  .klt-editor :global(.cm-content) {
+    padding: 14px 0 16px;
+  }
+  .klt-editor :global(.cm-line) {
+    padding-inline: 4px;
+  }
+  /* Invalid input: a hairline red rule down the editor, never a flash. */
+  .klt-pane.klt-pane--error .klt-editor :global(.cm-editor) {
+    box-shadow: inset 2px 0 0 0 var(--color-error);
+  }
+
+  .klt-hint {
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  .klt-hint + .klt-hint {
+    margin-top: 4px;
+  }
+  .klt-hint .code-mono {
+    font-size: 12px;
+  }
+  .klt-kbd {
+    border: 1px solid currentColor;
+    border-radius: var(--radius-xs);
+    padding: 0 3px;
+    font-size: 0.85em;
+  }
+
+  /* ── Snapshot row ────────────────────────────────────────────────────── */
+  .klt-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition:
+      background 0.12s ease,
+      box-shadow 0.12s ease;
+  }
+  .klt-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .klt-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .klt-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .klt-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition:
+      background 0.12s ease,
+      color 0.12s ease;
+  }
+  .klt-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
+
+  /* ── Verdict panel ───────────────────────────────────────────────────── */
+  .klt-summary {
+    min-width: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+  .klt-results {
+    min-height: 120px;
+  }
+  .klt-copy-status--fail {
+    display: block;
+    margin-top: 10px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-error-deep);
+  }
+
+  /* ── Runtime-injected markup (Astro scoped styles never reach it) ────── */
+  :global(.klt-card) {
+    margin-top: 12px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+    animation: klt-rise 0.18s ease both;
+  }
+  :global(.klt-card:first-child) {
+    margin-top: 0;
+  }
+  :global(.klt-card__head) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 9px 10px 9px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+  }
+  :global(.klt-verdict) {
+    flex: 0 0 auto;
+    padding: 1px 8px;
+    border-radius: var(--radius-pill);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 16px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  :global(.klt-verdict--match) {
+    background: var(--color-brand-soft);
+    color: var(--color-brand-strong);
+  }
+  :global(.klt-verdict--miss) {
+    background: var(--color-canvas-soft-2);
+    color: var(--color-body);
+  }
+  :global(.klt-name) {
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 19px;
+    color: var(--color-ink);
+    overflow-wrap: anywhere;
+  }
+  :global(.klt-ns) {
+    color: var(--color-mute);
+  }
+  :global(.klt-card__actions) {
+    display: inline-flex;
+    align-items: center;
+    margin-left: auto;
+  }
+  :global(.klt-labels) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+  }
+  :global(.klt-label) {
+    padding: 1px 7px;
+    border-radius: var(--radius-pill);
+    background: var(--color-canvas-soft);
+    box-shadow: var(--shadow-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 17px;
+    color: var(--color-body);
+    overflow-wrap: anywhere;
+  }
+  :global(.klt-label--none) {
+    background: transparent;
+    box-shadow: none;
+    color: var(--color-mute);
+    font-family: var(--font-sans);
+  }
+  :global(.klt-path) {
+    margin-left: auto;
+    align-self: center;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    line-height: 16px;
+    color: var(--color-mute);
+    /* `spec.jobTemplate.spec.template.metadata.labels` is 44 mono characters —
+       nowrap would push the row past a 390px viewport. */
+    overflow-wrap: anywhere;
+  }
+  :global(.klt-clauses) {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  :global(.klt-clause) {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 8px 14px;
+  }
+  :global(.klt-clause + .klt-clause) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.klt-clause__mark) {
+    flex: 0 0 auto;
+    width: 15px;
+    margin-top: 1px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 19px;
+    text-align: center;
+  }
+  :global(.klt-clause--hold .klt-clause__mark) {
+    color: var(--color-success);
+  }
+  :global(.klt-clause--fail .klt-clause__mark) {
+    color: var(--color-error-deep);
+  }
+  :global(.klt-clause__body) {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  :global(.klt-req) {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 19px;
+    color: var(--color-ink);
+    overflow-wrap: anywhere;
+  }
+  :global(.klt-reason) {
+    display: block;
+    margin-top: 2px;
+    font-size: 12.5px;
+    line-height: 18px;
+    color: var(--color-body);
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+  }
+  :global(.klt-annot) {
+    display: block;
+    margin-top: 6px;
+    padding: 5px 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas-soft);
+    color: var(--color-accent-ink);
+    font-size: 12px;
+    line-height: 17px;
+    text-wrap: pretty;
+  }
+  :global(.klt-issue) {
+    margin: 0;
+    padding: 8px 14px;
+    border-top: 1px solid var(--color-hairline);
+    font-size: 12px;
+    line-height: 17px;
+    color: var(--color-mute);
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+  }
+  :global(.klt-note) {
+    margin: 0;
+    padding: 9px 14px;
+    border-top: 1px solid var(--color-hairline);
+    font-size: 12px;
+    line-height: 17px;
+    color: var(--color-mute);
+    text-wrap: pretty;
+  }
+  :global(.klt-diag) {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 9px 14px;
+  }
+  :global(.klt-diag + .klt-diag) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.klt-diag__pill) {
+    flex: 0 0 auto;
+    padding: 1px 7px;
+    border-radius: var(--radius-pill);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  :global(.klt-diag__pill--error) {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
+  :global(.klt-diag__pill--warning) {
+    background: var(--color-warning-soft);
+    color: var(--color-warning-deep);
+  }
+  :global(.klt-diag__pill--note) {
+    background: var(--color-canvas-soft-2);
+    color: var(--color-body);
+  }
+  :global(.klt-diag__text) {
+    margin: 0;
+    min-width: 0;
+    font-size: 12.5px;
+    line-height: 18px;
+    color: var(--color-body);
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+  }
+  :global(.klt-group__head) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+  :global(.klt-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+  }
+  :global(.klt-error + .klt-card) {
+    margin-top: 12px;
+  }
+  :global(.klt-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.klt-error__title) {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.klt-error__detail) {
+    margin-top: 2px;
+    font-size: 13px;
+    line-height: 19px;
+    text-wrap: pretty;
+    overflow-wrap: anywhere;
+  }
+  :global(.klt-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 96px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+
+  /* ── Copy buttons: icon-only per row, labeled in the header ──────────── */
+  :global(.klt-copy) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    touch-action: manipulation;
+    transition:
+      color 0.12s ease,
+      background 0.12s ease;
+  }
+  :global(.klt-copy:hover) {
+    color: var(--color-brand-strong);
+    background: var(--color-hairline);
+  }
+  :global(.klt-copy:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  :global(.klt-copy--labeled) {
+    width: auto;
+    height: 26px;
+    gap: 6px;
+    padding: 0 10px;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  :global(.klt-copy--copied) {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+
+  /* Coarse-pointer tap targets, in the two tiers the contract defines: chips
+     and icon-only per-row copy buttons at 44px, labeled header copy controls and
+     the grammar toggle at 36px (wide text targets, not the primary in-result
+     action). */
+  @media (pointer: coarse) {
+    .klt-chip {
+      min-height: 44px;
+    }
+    .klt-seg__btn {
+      min-height: 36px;
+    }
+    :global(.klt-copy) {
+      width: 44px;
+      height: 44px;
+    }
+    :global(.klt-copy--labeled) {
+      width: auto;
+      height: auto;
+      min-height: 36px;
+    }
+  }
+
+  @keyframes klt-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.klt-card) {
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  import { escapeHtml } from '../lib/escape-html';
+  import { copyTextToClipboard } from '../lib/clipboard';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  import type { EditorView } from '@codemirror/view';
+
+  /* ---- Engine contract, mirrored structurally (never statically imported) -- */
+  type SelectorMode = 'expr' | 'yaml';
+  type Requirement = { key: string; op: string; values: string[]; written: string; display: string };
+  type ClauseTrace = {
+    requirement: Requirement;
+    holds: boolean;
+    reason: string;
+    keyAbsent: boolean;
+    absentKeyMatch: boolean;
+  };
+  type LabelIssue = { key: string; message: string };
+  type ResourceVerdict = {
+    kind: string;
+    name: string;
+    namespace?: string;
+    labels: Record<string, string>;
+    labelsPath: string;
+    matches: boolean;
+    clauses: ClauseTrace[];
+    labelIssues: LabelIssue[];
+  };
+  type Diagnostic = {
+    severity: 'error' | 'warning' | 'note';
+    message: string;
+    where: 'selector' | 'resources' | 'result';
+    line?: number;
+  };
+  type Result = {
+    ok: boolean;
+    mode: SelectorMode;
+    requirements: Requirement[];
+    canonical: string;
+    empty: boolean;
+    verdicts: ResourceVerdict[];
+    matchCount: number;
+    resourceCount: number;
+    totalResources: number;
+    truncated: boolean;
+    diagnostics: Diagnostic[];
+    summary: string;
+  };
+  type ShareState = { resources: string; selector: string; mode: SelectorMode };
+  type EngineModule = {
+    testSelector: (resources: string, selector: string, mode: SelectorMode) => Result;
+    encodeState: (state: ShareState) => string;
+    decodeState: (hash?: string) => ShareState | null;
+  };
+  type Example = {
+    id: string;
+    label: string;
+    resources: string;
+    selector: string;
+    mode: SelectorMode;
+  };
+
+  const ROOT_SEL = '.klt-pg';
+  const SLUG = 'kubernetes-label-selector-tester';
+  /* One debounce, inside the contract's 130–220ms band. */
+  const DEBOUNCE_MS = 170;
+  /* Nothing goes red until the typing has been idle this long. */
+  const ERROR_HOLD_MS = 600;
+  const RESET_MS = 1800;
+  /* Past ~2000 chars a fragment stops being a dependable URL (browser, proxy and
+     chat-client limits), so we neither write it nor offer the share link — the
+     tester itself keeps working on pastes of any size. */
+  const MAX_HASH_LEN = 2000;
+  /* DOM caps. The engine is linear and already caps at 500 resources; rendering
+     500 cards × 100 clauses is what freezes the tab. Every cap states itself. */
+  const MAX_CARDS = 60;
+  const MAX_CLAUSES_PER_CARD = 24;
+  const MAX_LABEL_CHIPS = 14;
+  const MAX_ISSUES_PER_CARD = 4;
+  const MAX_DIAG_ROWS = 20;
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.kltWired === 'true') return;
+      root.dataset.kltWired = 'true';
+      void init(root);
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  function normaliseExamples(raw: unknown): Example[] {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((item, i) => {
+        const o = (item ?? {}) as Record<string, unknown>;
+        return {
+          id: typeof o.id === 'string' && o.id ? o.id : `example-${i + 1}`,
+          label: typeof o.label === 'string' && o.label ? o.label : `Example ${i + 1}`,
+          resources: typeof o.resources === 'string' ? o.resources : '',
+          selector: typeof o.selector === 'string' ? o.selector : '',
+          mode: o.mode === 'yaml' ? 'yaml' : 'expr',
+        } satisfies Example;
+      })
+      .filter((e) => e.resources.length > 0);
+  }
+
+  /* ---- Icons (decorative) ------------------------------------------------- */
+
+  const ALERT_SVG =
+    '<svg class="klt-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const COPY_ICON_SVG =
+    '<svg class="klt-copy-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"/></svg>';
+  const CHECK_ICON_SVG =
+    '<svg class="klt-check-icon hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
+
+  /* ---- Pure render helpers ------------------------------------------------ */
+
+  function plural(n: number, word: string): string {
+    return `${n} ${word}${n === 1 ? '' : 's'}`;
+  }
+
+  /** `app=web, tier=frontend` — the label set as plain text. */
+  function labelsText(labels: Record<string, string>): string {
+    const entries = Object.entries(labels);
+    if (entries.length === 0) return '(no labels)';
+    return entries.map(([key, value]) => `${key}=${value}`).join(', ');
+  }
+
+  /** One resource's whole verdict as plain text, fit for a PR comment. */
+  function verdictText(verdict: ResourceVerdict): string {
+    const lines = [
+      `${verdict.matches ? 'MATCH' : 'NO MATCH'} — ${verdict.kind}/${verdict.name}${
+        verdict.namespace ? ` (namespace ${verdict.namespace})` : ''
+      }`,
+      `  ${verdict.labelsPath}: ${labelsText(verdict.labels)}`,
+    ];
+    for (const clause of verdict.clauses) {
+      lines.push(`  [${clause.holds ? 'ok' : 'no'}] ${clause.requirement.display} — ${clause.reason}`);
+    }
+    for (const issue of verdict.labelIssues) lines.push(`  ! ${issue.message}`);
+    if (verdict.clauses.length === 0) {
+      lines.push('  (empty selector — every resource matches)');
+    }
+    return lines.join('\n');
+  }
+
+  function labelsHtml(verdict: ResourceVerdict): string {
+    const entries = Object.entries(verdict.labels);
+    const shown = entries.slice(0, MAX_LABEL_CHIPS);
+    const chips = shown
+      .map(
+        ([key, value]) =>
+          `<span class="klt-label">${escapeHtml(key)}=${escapeHtml(value === '' ? '""' : value)}</span>`,
+      )
+      .join('');
+    const more =
+      entries.length > shown.length
+        ? `<span class="klt-label klt-label--none">+${escapeHtml(
+            String(entries.length - shown.length),
+          )} more</span>`
+        : '';
+    const none =
+      entries.length === 0
+        ? '<span class="klt-label klt-label--none">no labels at all</span>'
+        : '';
+    return (
+      '<div class="klt-labels">' +
+      chips +
+      more +
+      none +
+      `<span class="klt-path">${escapeHtml(verdict.labelsPath)}</span>` +
+      '</div>'
+    );
+  }
+
+  function clauseHtml(clause: ClauseTrace): string {
+    const state = clause.holds ? 'hold' : 'fail';
+    const annotation = clause.absentKeyMatch
+      ? '<span class="klt-annot">Matches <em>because</em> the key is absent. ' +
+        'NotIn and != are satisfied by a resource that carries no such label at all — the one ' +
+        'label-selector rule that is most often answered backwards.</span>'
+      : '';
+    return (
+      `<li class="klt-clause klt-clause--${state}">` +
+      `<span class="klt-clause__mark" aria-hidden="true">${clause.holds ? '✓' : '✗'}</span>` +
+      '<span class="klt-clause__body">' +
+      `<span class="sr-only">${clause.holds ? 'Holds: ' : 'Fails: '}</span>` +
+      `<span class="klt-req">${escapeHtml(clause.requirement.display)}</span>` +
+      `<span class="klt-reason">${escapeHtml(clause.reason)}</span>` +
+      annotation +
+      '</span></li>'
+    );
+  }
+
+  function cardHtml(verdict: ResourceVerdict, index: number): string {
+    const shown = verdict.clauses.slice(0, MAX_CLAUSES_PER_CARD);
+    const clauses = shown.map(clauseHtml).join('');
+    const clauseCap =
+      verdict.clauses.length > shown.length
+        ? `<p class="klt-note">Showing the first ${escapeHtml(
+            String(shown.length),
+          )} of ${escapeHtml(String(verdict.clauses.length))} clauses on this resource.</p>`
+        : '';
+    const empty =
+      verdict.clauses.length === 0
+        ? '<p class="klt-note">The selector has no clauses, so it matches this resource — and every other one.</p>'
+        : '';
+    const issuesShown = verdict.labelIssues.slice(0, MAX_ISSUES_PER_CARD);
+    const issues =
+      issuesShown.map((issue) => `<p class="klt-issue">${escapeHtml(issue.message)}</p>`).join('') +
+      (verdict.labelIssues.length > issuesShown.length
+        ? `<p class="klt-issue">…and ${escapeHtml(
+            String(verdict.labelIssues.length - issuesShown.length),
+          )} more label problems on this resource.</p>`
+        : '');
+    const name =
+      escapeHtml(`${verdict.kind}/${verdict.name}`) +
+      (verdict.namespace
+        ? ` <span class="klt-ns">· ${escapeHtml(verdict.namespace)}</span>`
+        : '');
+    return (
+      '<div class="klt-card">' +
+      '<div class="klt-card__head">' +
+      `<span class="klt-verdict klt-verdict--${verdict.matches ? 'match' : 'miss'}">${
+        verdict.matches ? 'match' : 'no match'
+      }</span>` +
+      `<span class="klt-name">${name}</span>` +
+      '<span class="klt-card__actions">' +
+      // The accessible name is a STATIC sr-only span, not an aria-label built
+      // from the resource name. Nothing user-supplied may enter an attribute
+      // inside this container: `innerHTML` serialization does NOT re-escape `<`
+      // in attribute values, so a payload that is correctly escaped into an
+      // attribute still reappears as literal markup in the serialized string.
+      // Text nodes are safe; attributes are not.
+      `<button class="klt-copy" type="button" data-klt-row="${index}" data-copy="" ` +
+      'data-copy-label="Copy this verdict" title="Copy">' +
+      COPY_ICON_SVG +
+      CHECK_ICON_SVG +
+      '<span class="sr-only klt-copy-label">Copy this verdict</span>' +
+      '</button></span>' +
+      '</div>' +
+      labelsHtml(verdict) +
+      (clauses ? `<ul class="klt-clauses">${clauses}</ul>` : '') +
+      clauseCap +
+      empty +
+      issues +
+      '</div>'
+    );
+  }
+
+  const DIAG_WORD: Record<Diagnostic['severity'], string> = {
+    error: 'error',
+    warning: 'warning',
+    note: 'note',
+  };
+
+  function diagnosticsHtml(diagnostics: Diagnostic[]): string {
+    if (diagnostics.length === 0) return '';
+    const shown = diagnostics.slice(0, MAX_DIAG_ROWS);
+    const rows = shown
+      .map(
+        (diagnostic) =>
+          '<div class="klt-diag">' +
+          `<span class="klt-diag__pill klt-diag__pill--${diagnostic.severity}">${escapeHtml(
+            DIAG_WORD[diagnostic.severity],
+          )}</span>` +
+          `<p class="klt-diag__text">${escapeHtml(diagnostic.message)}</p></div>`,
+      )
+      .join('');
+    const cap =
+      diagnostics.length > shown.length
+        ? `<p class="klt-note">…and ${escapeHtml(
+            String(diagnostics.length - shown.length),
+          )} more diagnostics.</p>`
+        : '';
+    return `<div class="klt-card"><p class="klt-group__head"><span>What the tester noticed</span></p>${rows}${cap}</div>`;
+  }
+
+  function errorCardHtml(diagnostic: Diagnostic, isAlert: boolean): string {
+    const title =
+      diagnostic.where === 'selector'
+        ? 'This selector could not be read'
+        : 'These resources could not be read';
+    return (
+      `<div class="klt-error"${isAlert ? ' role="alert"' : ''}>` +
+      ALERT_SVG +
+      `<div><p class="klt-error__title">${escapeHtml(title)}</p>` +
+      `<p id="klt-error-detail" class="klt-error__detail">${escapeHtml(diagnostic.message)}</p></div></div>`
+    );
+  }
+
+  /** The plain-text report behind "Copy report". */
+  function reportText(result: Result, selectorText: string): string {
+    const lines = [
+      `Kubernetes Label Selector Tester — ${result.summary}`,
+      `selector: ${result.empty ? '(empty — matches everything)' : result.canonical}`,
+      `as written: ${selectorText.trim().length === 0 ? '(empty)' : selectorText.trim()}`,
+      '',
+    ];
+    for (const verdict of result.verdicts) {
+      lines.push(verdictText(verdict), '');
+    }
+    if (result.truncated) {
+      lines.push(
+        `Note: only the first ${result.resourceCount} resources were evaluated; ${result.totalResources} were found.`,
+        '',
+      );
+    }
+    for (const diagnostic of result.diagnostics) {
+      lines.push(`${DIAG_WORD[diagnostic.severity]}: ${diagnostic.message}`);
+    }
+    lines.push(
+      '',
+      'Checked client-side at opscanopy.com/kubernetes-label-selector-tester/ — 0 bytes uploaded.',
+    );
+    return lines.join('\n');
+  }
+
+  /* ---- Instance init ----------------------------------------------------- */
+
+  async function init(root: HTMLElement): Promise<void> {
+    const editorHost = el<HTMLElement>(root, '#klt-input');
+    const paneEl = el<HTMLElement>(root, '.klt-pane');
+    const modeExprBtn = el<HTMLButtonElement>(root, '#klt-mode-expr');
+    const modeYamlBtn = el<HTMLButtonElement>(root, '#klt-mode-yaml');
+    const exprInput = el<HTMLInputElement>(root, '#klt-selector');
+    const yamlInput = el<HTMLTextAreaElement>(root, '#klt-selector-yaml');
+    const exprLabel = el<HTMLElement>(root, '#klt-selector-label');
+    const yamlLabel = el<HTMLElement>(root, '#klt-selector-yaml-label');
+    const canonicalEl = el<HTMLElement>(root, '#klt-canonical');
+    const resultsBox = el<HTMLElement>(root, '#klt-results');
+    const summaryEl = el<HTMLElement>(root, '#klt-summary');
+    const shareBtn = el<HTMLButtonElement>(root, '#klt-share');
+    const copyAllBtn = el<HTMLButtonElement>(root, '#klt-copy-all');
+    const copyStatus = el<HTMLElement>(root, '#klt-copy-status');
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#klt-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#klt-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#klt-snap-delete');
+    const chips = Array.from(root.querySelectorAll<HTMLButtonElement>('#klt-chips .klt-chip'));
+
+    if (
+      !editorHost ||
+      !paneEl ||
+      !modeExprBtn ||
+      !modeYamlBtn ||
+      !exprInput ||
+      !yamlInput ||
+      !exprLabel ||
+      !yamlLabel ||
+      !canonicalEl ||
+      !resultsBox ||
+      !summaryEl ||
+      !shareBtn ||
+      !copyAllBtn ||
+      !copyStatus ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
+    ) {
+      return;
+    }
+
+    /* ---- Copy plumbing --------------------------------------------------- */
+
+    /**
+     * Copy payloads live in JS, not in `data-copy` attributes, for two reasons:
+     * multi-line text round-trips badly through an attribute, and — the one that
+     * matters for security review — `innerHTML` serialization does not re-escape
+     * `<` inside an attribute value, so a correctly-escaped payload in an
+     * attribute still shows up as literal markup in the serialized HTML. The
+     * buttons still carry an EMPTY `data-copy` so the shared selectors and
+     * Layout.astro's `result_copied` listener find them.
+     */
+    let rowPayloads: string[] = [];
+    let reportPayload = '';
+
+    function payloadFor(btn: HTMLButtonElement): string {
+      if (btn.dataset.kltRow !== undefined) return rowPayloads[Number(btn.dataset.kltRow)] ?? '';
+      if (btn.hasAttribute('data-copy-all')) return reportPayload;
+      return btn.dataset.copy ?? '';
+    }
+
+    function setCopyStatus(message: string, failed: boolean): void {
+      copyStatus!.textContent = message;
+      copyStatus!.classList.toggle('sr-only', !failed);
+      copyStatus!.classList.toggle('klt-copy-status--fail', failed);
+    }
+
+    function setCopied(btn: HTMLButtonElement, copied: boolean): void {
+      btn.classList.toggle('klt-copy--copied', copied);
+      btn.querySelector('.klt-copy-icon')?.classList.toggle('hidden', copied);
+      btn.querySelector('.klt-check-icon')?.classList.toggle('hidden', !copied);
+      const label = btn.querySelector<HTMLElement>('.klt-copy-label');
+      if (label) {
+        label.textContent = copied ? 'Copied' : (btn.dataset.copyLabel ?? 'Copy');
+      } else if (copied) {
+        btn.dataset.prevAriaLabel = btn.getAttribute('aria-label') ?? '';
+        btn.setAttribute('aria-label', 'Copied');
+      } else if (btn.dataset.prevAriaLabel) {
+        btn.setAttribute('aria-label', btn.dataset.prevAriaLabel);
+        delete btn.dataset.prevAriaLabel;
+      }
+    }
+
+    async function handleCopy(btn: HTMLButtonElement): Promise<void> {
+      const ok = await copyTextToClipboard(payloadFor(btn));
+      if (ok) {
+        setCopied(btn, true);
+        setCopyStatus('Copied to clipboard.', false);
+        window.clearTimeout(Number(btn.dataset.copyTimer));
+        btn.dataset.copyTimer = String(
+          window.setTimeout(() => {
+            setCopied(btn, false);
+            if (copyStatus!.textContent === 'Copied to clipboard.') setCopyStatus('', false);
+          }, RESET_MS),
+        );
+      } else {
+        setCopyStatus('Copy failed — select the value manually.', true);
+      }
+    }
+
+    root.addEventListener('click', (e) => {
+      const copyBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('.klt-copy');
+      if (copyBtn && root.contains(copyBtn)) void handleCopy(copyBtn);
+    });
+
+    /* ---- Lazy engine + examples + CodeMirror ----------------------------- */
+
+    let engine: EngineModule;
+    let examples: Example[] = [];
+    let EditorState: typeof import('@codemirror/state').EditorState;
+    let EditorViewCtor: typeof import('@codemirror/view').EditorView;
+    let keymap: typeof import('@codemirror/view').keymap;
+    let lineNumbers: typeof import('@codemirror/view').lineNumbers;
+    let highlightActiveLine: typeof import('@codemirror/view').highlightActiveLine;
+    let defaultKeymap: typeof import('@codemirror/commands').defaultKeymap;
+    // Named `cmHistory`, not `history`: a bare `history` would shadow
+    // `window.history`, which `writeHash` needs for replaceState.
+    let cmHistory: typeof import('@codemirror/commands').history;
+    let historyKeymap: typeof import('@codemirror/commands').historyKeymap;
+    let indentWithTab: typeof import('@codemirror/commands').indentWithTab;
+    let yamlLang: typeof import('@codemirror/lang-yaml').yaml;
+    let oneDark: typeof import('@codemirror/theme-one-dark').oneDark;
+
+    try {
+      const [engineMod, examplesMod, stateMod, viewMod, commandsMod, yamlMod, themeMod] =
+        await Promise.all([
+          import('../lib/kubernetes-label-selector-tester/engine'),
+          import('../lib/kubernetes-label-selector-tester/examples'),
+          import('@codemirror/state'),
+          import('@codemirror/view'),
+          import('@codemirror/commands'),
+          import('@codemirror/lang-yaml'),
+          import('@codemirror/theme-one-dark'),
+        ]);
+      engine = engineMod as unknown as EngineModule;
+      examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+      ({ EditorState } = stateMod);
+      ({ EditorView: EditorViewCtor, keymap, lineNumbers, highlightActiveLine } = viewMod);
+      ({ history: cmHistory, defaultKeymap, historyKeymap, indentWithTab } = commandsMod);
+      ({ yaml: yamlLang } = yamlMod);
+      ({ oneDark } = themeMod);
+    } catch (err) {
+      summaryEl.textContent = '';
+      resultsBox.innerHTML = errorCardHtml(
+        {
+          severity: 'error',
+          where: 'resources',
+          message: 'The selector engine failed to load. Reload the page to try again.',
+        },
+        true,
+      );
+      console.error('[K8sLabelSelectorTester] engine/CodeMirror import failed:', err);
+      return;
+    }
+
+    /* ---- State ----------------------------------------------------------- */
+
+    type EvalSource = 'type' | 'commit' | 'seed';
+    type UiState = 'empty' | 'valid' | 'pending' | 'invalid';
+
+    let uiState: UiState = 'empty';
+    let mode: SelectorMode = 'expr';
+    let evalTimer: number | undefined;
+    let errTimer: number | undefined;
+    let lastWrittenHash: string | null = null;
+    let liveReady = false;
+
+    function clearTimers(): void {
+      window.clearTimeout(evalTimer);
+      window.clearTimeout(errTimer);
+    }
+
+    function selectorField(): HTMLInputElement | HTMLTextAreaElement {
+      return mode === 'yaml' ? yamlInput! : exprInput!;
+    }
+    function selectorText(): string {
+      return selectorField().value;
+    }
+
+    /* ---- Editor ---------------------------------------------------------- */
+
+    function makeEditor(host: HTMLElement, doc: string): EditorView {
+      const state = EditorState.create({
+        doc,
+        extensions: [
+          lineNumbers(),
+          cmHistory(),
+          highlightActiveLine(),
+          yamlLang(),
+          oneDark,
+          EditorViewCtor.lineWrapping,
+          // CodeMirror puts role="textbox" on the content DOM; without a name
+          // that is an unlabelled input field for a screen reader (and an axe
+          // violation). aria-describedby points at the live-eval hint line.
+          EditorViewCtor.contentAttributes.of({
+            'aria-label': 'Kubernetes resources, as YAML',
+            'aria-describedby': 'klt-run-hint',
+          }),
+          keymap.of([
+            // Ours FIRST, so they win over defaultKeymap's Enter/Escape.
+            {
+              key: 'Mod-Enter',
+              run: () => {
+                clearTimers();
+                evaluate('commit');
+                view.contentDOM.blur();
+                return true;
+              },
+            },
+            {
+              // Plain Enter must still insert the newline, so this returns false
+              // and lets insertNewlineAndIndent run — the eval is flushed on the
+              // next tick, once the document includes the newline.
+              key: 'Enter',
+              run: () => {
+                window.setTimeout(() => {
+                  clearTimers();
+                  evaluate('commit');
+                }, 0);
+                return false;
+              },
+            },
+            {
+              // The Tab-trap escape hatch: indentWithTab means Tab indents, so
+              // Escape is the documented way out of the editor.
+              key: 'Escape',
+              run: (v) => {
+                v.contentDOM.blur();
+                return true;
+              },
+            },
+            ...defaultKeymap,
+            ...historyKeymap,
+            indentWithTab,
+          ]),
+          EditorViewCtor.updateListener.of((u) => {
+            if (!u.docChanged || !liveReady) return;
+            setActiveChip(null);
+            clearTimers();
+            evalTimer = window.setTimeout(() => evaluate('type'), DEBOUNCE_MS);
+          }),
+          EditorViewCtor.theme({
+            '&': { color: '#eae7e0' },
+            '.cm-content': { caretColor: '#eae7e0' },
+            '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#eae7e0' },
+            '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
+              backgroundColor: 'rgba(79, 138, 200, 0.34)',
+            },
+            '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.04)' },
+            '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+          }),
+        ],
+      });
+      return new EditorViewCtor({ state, parent: host });
+    }
+
+    function setEditorDoc(doc: string): void {
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
+      view.requestMeasure();
+    }
+
+    /* ---- Chrome ---------------------------------------------------------- */
+
+    function setSummary(text: string, isError: boolean): void {
+      summaryEl!.textContent = text;
+      summaryEl!.classList.toggle('text-error-deep', isError);
+      summaryEl!.classList.toggle('text-mute', !isError);
+    }
+
+    /** Red only on the field that is actually wrong — never on both. */
+    function setErrorState(where: 'selector' | 'resources' | null): void {
+      const onResources = where === 'resources';
+      paneEl!.classList.toggle('klt-pane--error', onResources);
+      if (onResources) {
+        view.contentDOM.setAttribute('aria-invalid', 'true');
+        view.contentDOM.setAttribute('aria-describedby', 'klt-run-hint klt-error-detail');
+      } else {
+        view.contentDOM.removeAttribute('aria-invalid');
+        view.contentDOM.setAttribute('aria-describedby', 'klt-run-hint');
+      }
+      // BOTH selector fields are cleared every time: switching grammar while an
+      // error is showing would otherwise leave the hidden field flagged, and it
+      // would still be flagged the next time it became visible.
+      for (const field of [exprInput!, yamlInput!]) {
+        field.removeAttribute('aria-invalid');
+        field.setAttribute('aria-describedby', 'klt-run-hint');
+      }
+      if (where === 'selector') {
+        const field = selectorField();
+        field.setAttribute('aria-invalid', 'true');
+        field.setAttribute('aria-describedby', 'klt-run-hint klt-error-detail');
+      }
+    }
+
+    function hideActions(): void {
+      shareBtn!.hidden = true;
+      shareBtn!.dataset.copy = '';
+      copyAllBtn!.hidden = true;
+      reportPayload = '';
+      rowPayloads = [];
+    }
+
+    function setActiveChip(idx: number | null): void {
+      chips.forEach((chip) => {
+        chip.setAttribute(
+          'aria-pressed',
+          idx !== null && chip.dataset.exampleIdx === String(idx) ? 'true' : 'false',
+        );
+      });
+    }
+
+    function setCanonical(result: Result | null): void {
+      if (result === null || !result.ok) {
+        canonicalEl!.textContent = '';
+        return;
+      }
+      if (result.empty) {
+        canonicalEl!.textContent = 'Empty selector — it matches every resource.';
+        return;
+      }
+      canonicalEl!.innerHTML =
+        `Reads as <span class="code-mono">${escapeHtml(result.canonical)}</span> · ` +
+        escapeHtml(plural(result.requirements.length, 'clause')) +
+        ', ANDed.';
+    }
+
+    function applyModeChrome(): void {
+      modeExprBtn!.setAttribute('aria-checked', mode === 'expr' ? 'true' : 'false');
+      modeYamlBtn!.setAttribute('aria-checked', mode === 'yaml' ? 'true' : 'false');
+      modeExprBtn!.tabIndex = mode === 'expr' ? 0 : -1;
+      modeYamlBtn!.tabIndex = mode === 'yaml' ? 0 : -1;
+      exprInput!.hidden = mode !== 'expr';
+      yamlInput!.hidden = mode !== 'yaml';
+      // Only the visible field's label is visible; the hidden one stays sr-only
+      // so the field it names is still announced when it becomes visible.
+      exprLabel!.classList.toggle('sr-only', mode !== 'expr');
+      yamlLabel!.classList.toggle('sr-only', mode !== 'yaml');
+    }
+
+    /* ---- Deep link ------------------------------------------------------- */
+
+    function currentFragment(): string {
+      try {
+        return engine.encodeState({
+          resources: view.state.doc.toString(),
+          selector: selectorText(),
+          mode,
+        });
+      } catch {
+        return '';
+      }
+    }
+
+    function writeHash(fragment: string | null): void {
+      const target = fragment ?? '';
+      if (target === lastWrittenHash) return;
+      // Safari throttles replaceState (~100 per 30s) and throws — never let that
+      // break typing.
+      try {
+        if (fragment) {
+          window.history.replaceState(null, '', fragment);
+        } else {
+          window.history.replaceState(null, '', location.pathname + location.search);
+        }
+        lastWrittenHash = target;
+      } catch {
+        /* ignore */
+      }
+    }
+
+    /* ---- Render ---------------------------------------------------------- */
+
+    function renderEmpty(): void {
+      uiState = 'empty';
+      setErrorState(null);
+      hideActions();
+      setSummary('', false);
+      setCanonical(null);
+      resultsBox!.innerHTML =
+        '<p class="klt-empty body-sm text-mute">Paste the resources above — or tap an example — to ' +
+        'see, per resource, whether the selector matches it and which clause decided.</p>';
+    }
+
+    function renderResult(result: Result): void {
+      const shown = result.verdicts.slice(0, MAX_CARDS);
+      const cards = shown.map((verdict, index) => cardHtml(verdict, index)).join('');
+      const cardCap =
+        result.verdicts.length > shown.length
+          ? `<div class="klt-card"><p class="klt-note">Showing the first ${escapeHtml(
+              String(shown.length),
+            )} of ${escapeHtml(String(result.verdicts.length))} resources. ${escapeHtml(
+              String(result.matchCount),
+            )} of them match in total — trim the paste to read the rest.</p></div>`
+          : '';
+      resultsBox!.innerHTML = diagnosticsHtml(result.diagnostics) + cards + cardCap;
+      rowPayloads = shown.map(verdictText);
+      reportPayload = reportText(result, selectorText());
+      copyAllBtn!.hidden = false;
+    }
+
+    function showError(result: Result, source: EvalSource): void {
+      uiState = 'invalid';
+      clearTimers();
+      const first =
+        result.diagnostics.find((d) => d.severity === 'error') ??
+        ({
+          severity: 'error',
+          where: 'resources',
+          message: 'The tester could not read this input.',
+        } as Diagnostic);
+      setErrorState(first.where === 'selector' ? 'selector' : 'resources');
+      hideActions();
+      setSummary(result.summary, true);
+      setCanonical(null);
+      const rest = result.diagnostics.filter((d) => d !== first);
+      resultsBox!.innerHTML =
+        errorCardHtml(first, source === 'commit') + diagnosticsHtml(rest);
+      if (source !== 'seed') writeHash(null);
+    }
+
+    function evaluate(source: EvalSource): void {
+      clearTimers();
+      const resourcesText = view.state.doc.toString();
+      if (resourcesText.trim().length === 0) {
+        renderEmpty();
+        if (source !== 'seed') writeHash(null);
+        return;
+      }
+
+      let result: Result | null = null;
+      try {
+        result = engine.testSelector(resourcesText, selectorText(), mode);
+      } catch (err) {
+        console.error('[K8sLabelSelectorTester] testSelector threw:', err);
+        result = null;
+      }
+
+      if (result && result.ok) {
+        uiState = 'valid';
+        setErrorState(null);
+        renderResult(result);
+        setCanonical(result);
+        setSummary(result.summary, false);
+
+        const fragment = currentFragment();
+        if (fragment.length > 0 && fragment.length <= MAX_HASH_LEN) {
+          shareBtn!.hidden = false;
+          shareBtn!.dataset.copy = location.origin + location.pathname + location.search + fragment;
+          // Gated on BOTH a fully valid run AND a user-initiated eval: a boot
+          // seed must never write the URL or the restore store.
+          if (source !== 'seed') {
+            writeHash(fragment);
+            recordToolLastInput(SLUG, fragment);
+          }
+        } else {
+          // Too long to be a dependable link: keep testing, drop the share.
+          shareBtn!.hidden = true;
+          shareBtn!.dataset.copy = '';
+          if (source !== 'seed') writeHash(null);
+        }
+        return;
+      }
+
+      const failed: Result =
+        result ??
+        ({
+          ok: false,
+          mode,
+          requirements: [],
+          canonical: '',
+          empty: false,
+          verdicts: [],
+          matchCount: 0,
+          resourceCount: 0,
+          totalResources: 0,
+          truncated: false,
+          diagnostics: [
+            {
+              severity: 'error',
+              where: 'resources',
+              message: 'The tester hit an unexpected error on this input.',
+            },
+          ],
+          summary: 'Not evaluated — 1 error',
+        } as Result);
+
+      if (source !== 'type') {
+        showError(failed, source);
+        return;
+      }
+
+      // Mid-typing: hold the previous panel, nothing goes red yet. The error only
+      // surfaces once the typing has been idle for ERROR_HOLD_MS.
+      uiState = 'pending';
+      setErrorState(null);
+      hideActions();
+      setSummary('', false);
+      errTimer = window.setTimeout(() => showError(failed, 'type'), ERROR_HOLD_MS);
+    }
+
+    /* ---- Seed (before any listener fires, so nothing writes the hash) ---- */
+
+    const firstExample = examples[0];
+    let seedResources = firstExample?.resources ?? '';
+    let seedChip: number | null = firstExample ? 0 : null;
+    if (firstExample) {
+      mode = firstExample.mode;
+      if (firstExample.mode === 'yaml') yamlInput.value = firstExample.selector;
+      else exprInput.value = firstExample.selector;
+    }
+
+    function applyShareState(state: ShareState): void {
+      mode = state.mode === 'yaml' ? 'yaml' : 'expr';
+      if (mode === 'yaml') yamlInput!.value = state.selector;
+      else exprInput!.value = state.selector;
+      seedResources = state.resources;
+      seedChip = null;
+    }
+
+    let fromHash = false;
+    try {
+      const shared = engine.decodeState(window.location.hash);
+      if (shared && shared.resources.trim().length > 0) {
+        applyShareState(shared);
+        fromHash = true;
+      }
+    } catch {
+      /* malformed fragment — fall through to the restore/example tiers */
+    }
+    if (!fromHash) {
+      const restored = getRestoredLastInput(SLUG);
+      if (restored) {
+        try {
+          const state = engine.decodeState(restored);
+          if (state && state.resources.trim().length > 0) applyShareState(state);
+        } catch {
+          /* malformed stored value — keep the example seed */
+        }
+      }
+    }
+
+    const view = makeEditor(editorHost, seedResources);
+    applyModeChrome();
+    setActiveChip(seedChip);
+
+    /* ---- Events ---------------------------------------------------------- */
+
+    function setMode(next: SelectorMode, focus: boolean): void {
+      if (mode !== next) {
+        mode = next;
+        applyModeChrome();
+        setActiveChip(null);
+        clearTimers();
+        evaluate('commit');
+      }
+      if (focus) (next === 'expr' ? modeExprBtn! : modeYamlBtn!).focus();
+    }
+
+    modeExprBtn.addEventListener('click', () => setMode('expr', false));
+    modeYamlBtn.addEventListener('click', () => setMode('yaml', false));
+
+    // WAI-ARIA radio group keyboard pattern: arrows move AND select; Home/End
+    // jump to the ends.
+    function onModeKeydown(e: KeyboardEvent): void {
+      switch (e.key) {
+        case 'ArrowRight':
+        case 'ArrowDown':
+        case 'ArrowLeft':
+        case 'ArrowUp':
+          e.preventDefault();
+          setMode(mode === 'expr' ? 'yaml' : 'expr', true);
+          break;
+        case 'Home':
+          e.preventDefault();
+          setMode('expr', true);
+          break;
+        case 'End':
+          e.preventDefault();
+          setMode('yaml', true);
+          break;
+      }
+    }
+    modeExprBtn.addEventListener('keydown', onModeKeydown);
+    modeYamlBtn.addEventListener('keydown', onModeKeydown);
+
+    for (const field of [exprInput, yamlInput]) {
+      field.addEventListener('input', () => {
+        setActiveChip(null);
+        clearTimers();
+        evalTimer = window.setTimeout(() => evaluate('type'), DEBOUNCE_MS);
+      });
+      // `evt` is typed `Event`, not `KeyboardEvent`: `field` is a UNION of two
+      // element types, and TypeScript collapses `addEventListener` to the
+      // intersection of their overloads, which loses the event map. Narrowing
+      // here keeps the loop (both fields behave identically apart from the
+      // newline) instead of duplicating the handler twice.
+      field.addEventListener('keydown', (evt) => {
+        const e = evt as KeyboardEvent;
+        if (e.key !== 'Enter') return;
+        const isTextarea = field instanceof HTMLTextAreaElement;
+        if (e.ctrlKey || e.metaKey || !isTextarea) {
+          e.preventDefault();
+          clearTimers();
+          evaluate('commit');
+          if (window.matchMedia?.('(pointer: coarse)').matches) field.blur();
+          return;
+        }
+        // Plain Enter in the textarea must still insert the newline — flush on
+        // the next tick, once the value includes it.
+        window.setTimeout(() => {
+          clearTimers();
+          evaluate('commit');
+        }, 0);
+      });
+      // Committing on blur means a half-typed selector that the user tabbed away
+      // from still explains itself, instead of sitting silently in `pending`.
+      field.addEventListener('blur', () => {
+        if (uiState === 'pending') {
+          clearTimers();
+          evaluate('commit');
+        }
+      });
+    }
+
+    chips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const idx = Number(chip.dataset.exampleIdx);
+        if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+        const example = examples[idx];
+        mode = example.mode;
+        if (mode === 'yaml') yamlInput!.value = example.selector;
+        else exprInput!.value = example.selector;
+        applyModeChrome();
+        liveReady = false;
+        setEditorDoc(example.resources);
+        liveReady = true;
+        setActiveChip(idx);
+        clearTimers();
+        evaluate('commit');
+      });
+    });
+
+    view.contentDOM.addEventListener('blur', () => {
+      if (uiState === 'pending') {
+        clearTimers();
+        evaluate('commit');
+      }
+    });
+
+    wireSnapshotUI({
+      slug: SLUG,
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      // The snapshot payload is the same `#s=` fragment the share link uses, so
+      // the grammar toggle and the selector come back with the resources.
+      getValue: () => currentFragment(),
+      setValue: (value) => {
+        let state: ShareState | null = null;
+        try {
+          state = engine.decodeState(value);
+        } catch {
+          return;
+        }
+        if (!state) return;
+        mode = state.mode === 'yaml' ? 'yaml' : 'expr';
+        if (mode === 'yaml') yamlInput!.value = state.selector;
+        else exprInput!.value = state.selector;
+        applyModeChrome();
+        liveReady = false;
+        setEditorDoc(state.resources);
+        liveReady = true;
+        setActiveChip(null);
+        clearTimers();
+        evaluate('commit');
+      },
+    });
+
+    /* ---- First render: never writes the hash ---------------------------- */
+
+    evaluate('seed');
+    liveReady = true;
+    requestAnimationFrame(() => view.requestMeasure());
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

@@ -84,6 +84,11 @@ const TOOL_PATHS = {
     lib: 'grafana-dashboard-validator',
     component: 'GrafanaDashboardValidatorPlayground.astro',
   },
+  {
+  'kubernetes-label-selector-tester': {
+    lib: 'kubernetes-label-selector-tester',
+    component: 'K8sLabelSelectorTesterPlayground.astro',
+  },
 };
 
 const missing = liveTools.map((t) => t.slug).filter((slug) => !TOOL_PATHS[slug]);
