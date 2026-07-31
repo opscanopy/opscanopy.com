@@ -81,14 +81,41 @@ At 2 per session, roughly one session a day, the blog backlog clears in **3
 sessions**. The 7 guides should wait until after that — they are long-form (one is
 a 200-minute read) and posting them alongside would look like bulk dumping.
 
-**dev.to key is dead — 401 as of 2026-07-31.** It authenticated on 27 Jul and no
-longer does, so it was revoked or expired. Nothing can publish there until it is
-replaced: dev.to → Settings → Extensions → DEV Community API Keys → Generate.
+**dev.to API access is not working — 401 as of 2026-07-31.** Publishing there is
+paused until this is resolved. Do NOT keep generating keys; two have already failed
+and a third will behave the same.
 
-> Note on diagnosing this: **curl returns a false 401 on this machine** for keys
-> that Node's `fetch` authenticates fine — verified by comparing SHA-256 of the
-> exact bytes both clients sent. Always test with `fetch`, never curl, or you will
-> chase a key that was never broken. The 401 above was confirmed via fetch.
+What has been ruled out:
+
+| Checked | Result |
+|---|---|
+| Old key expired? | Yes — but a **freshly generated key also 401s** (different SHA-256, so genuinely new) |
+| Key malformed? | No — 24 chars, all alphanumeric, no BOM or stray whitespace |
+| Activation delay? | No — still 401 after 20s and on a later retry |
+| My tooling? | No — **Pushkar reproduced the 401 with curl on his own shell** |
+| Account suspended? | No — profile visible, joined Jun 13, public API returns 200 |
+| Content moderated? | **No — all 7 articles from 27 Jul are still live**, canonicals intact |
+
+Healthy account, intact content, two valid-looking keys, and every authenticated
+endpoint refuses (`/users/me` and `/articles/me` both 401).
+
+**Leading hypothesis: dev.to restricted API access on the account after the 27 Jul
+burst.** The timing fits — the working key died within days of seven posts going out
+in one day, replacement keys do not work either, and the articles themselves were
+left untouched, which is what an API restriction looks like rather than content
+moderation. It cannot be confirmed from outside the platform.
+
+If that is the cause, it is the concrete cost of over-posting on 27 Jul, and the
+reason the limits above are now enforced in code instead of documented as intent.
+
+**Next step is human:** email **yo@dev.to** from the account address and ask whether
+API access has been restricted and what restores it.
+
+> Separate diagnostic trap, still true: **curl returns false 401s on this machine**
+> for keys that Node's `fetch` accepts — verified by comparing SHA-256 of the identical
+> bytes each client sent. That is why an earlier working key was regenerated twice for
+> nothing. It does NOT explain the current failure: this 401 reproduces under `fetch`
+> AND under curl run directly by Pushkar.
 
 **Bluesky — 4 posted, 23 queued.** Healthy: 8 followers, following 50, so posts now
 actually reach people. Lower risk than dev.to since these are link posts rather
