@@ -34,9 +34,30 @@ Enforced in code, not just documented:
 - `MAX_PER_RUN = 3` is a ceiling `--limit` cannot exceed
 - A dry run still shows the whole queue — that is information, not action
 
+## Operational rules for whoever runs this
+
+**Never pipe a `--publish` run.** On 2026-07-31 a publish command piped to `head -4`
+was killed by SIGPIPE after its first post, publishing 1 of 2 and reporting nothing.
+Redirect to a file and `cat` it instead:
+
+```bash
+node scripts/syndicate.mjs --target bluesky --limit 1 --publish > /tmp/pub.txt 2>&1; cat /tmp/pub.txt
+```
+
+**Preview and publish are different commands.** The same day, `--publish` was passed
+on a command intended as a preview. Dry-run first, read it, then re-run with
+`--publish` added. Never assemble both in one step.
+
+## Session log
+
+| Date | dev.to | Bluesky | Notes |
+|---|---|---|---|
+| 2026-07-27 | **7** | 2 | Too many. See the near-miss above. |
+| 2026-07-31 | 0 | 2 | Normal. 4-day gap. dev.to key dead — see below. |
+
 ## Current state
 
-**dev.to — 19 published, 13 still queued**
+**dev.to — 20 published, 13 still queued** (blocked, see key note below)
 
 Done today: 7 Common .gitlab-ci.yml Mistakes · How to Convert a docker run Command
 · Why Isn't My Alert Reaching the Right Receiver · Why Did Prometheus Drop My Target
@@ -59,9 +80,18 @@ At 2 per session, roughly one session a day, the blog backlog clears in **3
 sessions**. The 7 guides should wait until after that — they are long-form (one is
 a 200-minute read) and posting them alongside would look like bulk dumping.
 
-**Bluesky — 2 posted, 25 queued.** Lower risk (link posts, not articles) but the
-account has **0 followers**, so posts currently reach nobody. Following ~20 real
-DevOps accounts would do more than another ten posts.
+**dev.to key is dead — 401 as of 2026-07-31.** It authenticated on 27 Jul and no
+longer does, so it was revoked or expired. Nothing can publish there until it is
+replaced: dev.to → Settings → Extensions → DEV Community API Keys → Generate.
+
+> Note on diagnosing this: **curl returns a false 401 on this machine** for keys
+> that Node's `fetch` authenticates fine — verified by comparing SHA-256 of the
+> exact bytes both clients sent. Always test with `fetch`, never curl, or you will
+> chase a key that was never broken. The 401 above was confirmed via fetch.
+
+**Bluesky — 4 posted, 23 queued.** Healthy: 8 followers, following 50, so posts now
+actually reach people. Lower risk than dev.to since these are link posts rather
+than full articles.
 
 ## How to run it
 
