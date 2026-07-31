@@ -1,0 +1,1598 @@
+---
+/**
+ * SystemdUnitValidatorPlayground — the interactive Systemd Unit Validator island.
+ *
+ * ONE CodeMirror editor with NO language mode (the CronToSystemd precedent — an
+ * INI-ish unit file gains nothing from a highlighter, and a wrong one would
+ * mis-colour `#` inside a value) plus line numbers, because every finding names a
+ * line. Each finding row carries three affordances: a line badge that selects and
+ * centres that line in the editor, the directive it is about, and a copy button
+ * that yields one plain-text line fit for pasting into a review.
+ *
+ * Two controls beyond the usual: a System/User scope toggle (three rules only
+ * make sense in one scope) and a read-only "Detected" chip showing which unit
+ * kind the sections add up to.
+ *
+ * UX contract (CLAUDE.md), ported from CidrCheckerPlayground /
+ * DockerfileLinterPlayground: example chips at `var(--radius-pill)`, ONE ~160ms
+ * debounce with the exact hint line, a ~600ms calm-error hold before anything
+ * goes red, per-row copy + `data-copy-all` + `data-copy-link`, a single visible
+ * `role="status"` summary plus an sr-only copy-status span, a results container
+ * that is NOT `aria-live`, glossary captions instead of tooltips, and
+ * `escapeHtml()` on every injected value — including values that land inside an
+ * HTML attribute.
+ *
+ * Deep link: `createHashState('unit')` (`src/lib/hash-state.ts`). The fragment is
+ * written ONLY after a valid, user-initiated evaluation — never on the boot seed,
+ * which would hand every first-time visitor a shareable URL for input they never
+ * typed. Hash logic is ported from CidrCheckerPlayground, NOT from
+ * SubnetCalculatorPlayground, which writes during its own boot seed.
+ *
+ * Runtime contract (lazy-imported inside the boot closure so the engine and the
+ * CodeMirror runtime code-split away from the page shell):
+ *   ../lib/systemd-lint/engine   → lint, summaryLine, kindLabel
+ *   ../lib/systemd-lint/examples → examples: SystemdExample[]
+ *
+ * Only the example LABELS are read at build time (so the chips are
+ * server-rendered and exist before hydration); the unit files themselves come
+ * from the lazy import by index, which keeps multi-line text out of HTML
+ * attributes entirely.
+ */
+import { examples } from '../lib/systemd-lint/examples';
+---
+
+<section class="su-pg" aria-label="Systemd Unit Validator playground">
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Example chips ────────────────────────────────────────────────── */}
+    <div class="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:px-5">
+      <span class="eyebrow shrink-0">Examples</span>
+      <div id="su-chips" class="su-chips" role="group" aria-label="Examples">
+        {
+          examples.map((ex, i) => (
+            <button type="button" class="su-chip" data-example-idx={String(i)} aria-pressed="false">
+              {ex.label}
+            </button>
+          ))
+        }
+      </div>
+      <p class="su-gloss caption text-mute">
+        <strong class="font-medium text-body">WantedBy=</strong> lives in
+        <span class="code-mono">[Install]</span> and is what <span class="code-mono">systemctl enable</span>
+        reads to create its symlinks. <strong class="font-medium text-body">Type=</strong> tells systemd
+        how to decide the service is up. <strong class="font-medium text-body">Persistent=true</strong>
+        makes a calendar timer run immediately at boot if it missed its window.
+      </p>
+    </div>
+
+    {/* ── Scope toggle + detected kind ─────────────────────────────────── */}
+    <div
+      class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-hairline px-4 py-3 sm:px-5"
+    >
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="eyebrow shrink-0">Scope</span>
+        <div id="su-scope" class="su-scope" role="group" aria-label="Manager scope">
+          <button type="button" class="su-scope__btn" data-scope="system" aria-pressed="true">
+            System
+          </button>
+          <button type="button" class="su-scope__btn" data-scope="user" aria-pressed="false">
+            User
+          </button>
+        </div>
+      </div>
+      <p id="su-kind" class="su-kind code-mono text-mute">Detected: —</p>
+    </div>
+
+    {/* ── Input editor (dark instrument slab) ──────────────────────────── */}
+    <div class="su-pane bg-inverse">
+      <div class="su-pane__bar">
+        <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+          <span class="su-pane__dot"></span>
+          <span class="su-pane__dot"></span>
+          <span class="su-pane__dot"></span>
+        </span>
+        <span class="su-pane__name code-mono">unit file</span>
+        <span class="su-pane__tag code-mono">input</span>
+      </div>
+      <div id="su-input" class="su-editor"></div>
+    </div>
+
+    {/* ── Hints + snapshots ────────────────────────────────────────────── */}
+    <div class="border-b border-hairline px-4 pt-3 pb-4 sm:px-5">
+      <p id="su-run-hint" class="su-hint caption text-mute">
+        Results update as you type — press Enter to run now.
+      </p>
+      <p class="su-hint caption text-mute">
+        Press <kbd class="su-kbd">Esc</kbd> to release keyboard focus from the editor;
+        <kbd class="su-kbd">⌘</kbd>/<kbd class="su-kbd">Ctrl</kbd> + <kbd class="su-kbd">Enter</kbd>
+        checks and leaves the editor. Tap a <span class="code-mono">Line</span> badge to jump to that
+        line. Nothing you paste is uploaded.
+      </p>
+      <div class="su-snap-row mt-3 flex flex-wrap items-center gap-2">
+        <button id="su-snap-save" type="button" class="su-snap-btn">Save snapshot</button>
+        <select
+          id="su-snap-select"
+          class="su-snap-select"
+          aria-label="Load a saved snapshot"
+          disabled
+        >
+          <option value="">No snapshots yet</option>
+        </select>
+        <button
+          id="su-snap-delete"
+          type="button"
+          class="su-snap-delete"
+          aria-label="Delete this snapshot"
+          hidden>&times;</button
+        >
+      </div>
+    </div>
+
+    {/* ── Findings ─────────────────────────────────────────────────────── */}
+    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <span class="flex flex-wrap items-center gap-2">
+          <span class="eyebrow">Findings</span>
+          <button
+            id="su-share"
+            type="button"
+            class="su-copy su-copy--labeled"
+            data-copy-link
+            data-copy=""
+            data-copy-label="Copy link"
+            hidden
+          >
+            <svg
+              class="su-copy-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6.75 9.25l2.5-2.5"></path>
+              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
+              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
+            </svg>
+            <svg
+              class="su-check-icon hidden"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="su-copy-label">Copy link</span>
+          </button>
+          <button
+            id="su-copy-all"
+            type="button"
+            class="su-copy su-copy--labeled"
+            data-copy-all
+            data-copy=""
+            data-copy-label="Copy report"
+            hidden
+          >
+            <svg
+              class="su-copy-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="5" y="5" width="9" height="9" rx="1.5"></rect>
+              <path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"></path>
+            </svg>
+            <svg
+              class="su-check-icon hidden"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="su-copy-label">Copy report</span>
+          </button>
+        </span>
+        <span id="su-summary" class="su-summary code-mono text-mute" role="status" aria-live="polite"
+        ></span>
+      </div>
+      <div id="su-results" class="su-results">
+        <p class="su-empty body-sm text-mute">
+          Paste a <span class="code-mono">.service</span>, <span class="code-mono">.timer</span> or
+          <span class="code-mono">.socket</span> file above — or tap an example — to see line-numbered
+          findings here, each with the reason it matters and the fix.
+        </p>
+      </div>
+      <span id="su-copy-status" class="sr-only" role="status" aria-live="polite"></span>
+    </div>
+  </div>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  /* ── Example chips ───────────────────────────────────────────────────── */
+  .su-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .su-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-brand-strong);
+    cursor: pointer;
+    touch-action: manipulation;
+    transition:
+      background 0.12s ease,
+      box-shadow 0.12s ease;
+  }
+  .su-chip:hover,
+  .su-chip[aria-pressed='true'] {
+    background: var(--color-brand-soft);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+  }
+  .su-chip:focus-visible,
+  .su-scope__btn:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  .su-gloss {
+    margin: 0;
+    font-size: 12px;
+    line-height: 17px;
+    text-wrap: pretty;
+  }
+
+  /* ── Scope toggle ────────────────────────────────────────────────────── */
+  .su-scope {
+    display: inline-flex;
+    gap: 4px;
+    padding: 3px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas-soft-2);
+  }
+  .su-scope__btn {
+    padding: 3px 12px;
+    border: none;
+    border-radius: var(--radius-xs);
+    background: transparent;
+    color: var(--color-body);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    line-height: 18px;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition:
+      background 0.12s ease,
+      color 0.12s ease;
+  }
+  .su-scope__btn[aria-pressed='true'] {
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-ink);
+  }
+  .su-kind {
+    margin: 0;
+    font-size: 11.5px;
+    line-height: 18px;
+    white-space: nowrap;
+  }
+
+  /* ── Input pane (dark instrument slab) ───────────────────────────────── */
+  .su-pane {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+  }
+  .su-pane__bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .su-pane__dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.18);
+  }
+  .su-pane__name {
+    /* 0.72 alpha over --color-inverse clears 4.5:1 in both themes. */
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 12px;
+  }
+  .su-pane__tag {
+    margin-left: auto;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  /* CodeMirror host. Background stays transparent so the slab shows through. */
+  .su-editor {
+    overflow: hidden;
+    padding-inline: 4px;
+  }
+  .su-editor :global(.cm-editor) {
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+    color: #eae7e0;
+  }
+  .su-editor :global(.cm-editor.cm-focused) {
+    outline: 2px solid var(--color-link);
+    outline-offset: -2px;
+  }
+  .su-editor :global(.cm-scroller) {
+    overflow: auto;
+    min-height: 260px;
+    max-height: 460px;
+    font-family: var(--font-mono);
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+  }
+  .su-editor :global(.cm-scroller)::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .su-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: var(--radius-pill);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  .su-editor :global(.cm-gutters) {
+    background: transparent;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .su-editor :global(.cm-lineNumbers .cm-gutterElement) {
+    color: #a9a39a;
+  }
+  .su-editor :global(.cm-content) {
+    padding: 14px 0 16px;
+  }
+  .su-editor :global(.cm-line) {
+    padding-inline: 4px;
+  }
+  /* Invalid input: a hairline red rule down the editor, never a flash. */
+  .su-pane.su-pane--error .su-editor :global(.cm-editor) {
+    box-shadow: inset 2px 0 0 0 var(--color-error);
+  }
+
+  .su-hint {
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  .su-hint + .su-hint {
+    margin-top: 4px;
+  }
+  .su-hint .code-mono {
+    font-size: 12px;
+  }
+  .su-kbd {
+    border: 1px solid currentColor;
+    border-radius: var(--radius-xs);
+    padding: 0 3px;
+    font-size: 0.85em;
+  }
+
+  /* ── Snapshot row ────────────────────────────────────────────────────── */
+  .su-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition:
+      background 0.12s ease,
+      box-shadow 0.12s ease;
+  }
+  .su-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .su-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .su-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .su-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition:
+      background 0.12s ease,
+      color 0.12s ease;
+  }
+  .su-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
+
+  /* ── Findings panel ──────────────────────────────────────────────────── */
+  .su-summary {
+    min-width: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+  .su-results {
+    min-height: 120px;
+  }
+  .su-copy-status--fail {
+    display: block;
+    margin-top: 10px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-error-deep);
+  }
+
+  /* ── Runtime-injected markup (Astro scoped styles never reach it) ────── */
+  :global(.su-group) {
+    margin-top: 12px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+    animation: su-rise 0.18s ease both;
+  }
+  :global(.su-group:first-child) {
+    margin-top: 0;
+  }
+  :global(.su-group__head) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+  :global(.su-group__count) {
+    margin-left: auto;
+    text-transform: none;
+    letter-spacing: 0;
+    white-space: nowrap;
+  }
+  :global(.su-row) {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 10px 12px 14px;
+  }
+  :global(.su-row + .su-row) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.su-row__body) {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  :global(.su-row__head) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  :global(.su-pill) {
+    flex: 0 0 auto;
+    padding: 1px 7px;
+    border-radius: var(--radius-pill);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  :global(.su-pill--error) {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
+  :global(.su-pill--warning) {
+    background: var(--color-warning-soft);
+    color: var(--color-warning-deep);
+  }
+  :global(.su-pill--info) {
+    background: var(--color-canvas-soft-2);
+    color: var(--color-body);
+  }
+  :global(.su-directive) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 7px;
+    border-radius: var(--radius-pill);
+    background: var(--color-canvas-soft);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-brand-strong);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+  }
+  :global(.su-jump) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 7px;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: var(--color-canvas-soft-2);
+    color: var(--color-body);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    line-height: 16px;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  :global(.su-jump:hover) {
+    background: var(--color-canvas-soft-3);
+    color: var(--color-ink);
+  }
+  :global(.su-jump:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  :global(.su-row__title) {
+    flex: 1 1 100%;
+    margin: 4px 0 0;
+    font-size: 13.5px;
+    line-height: 19px;
+    color: var(--color-ink);
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+  }
+  :global(.su-row__detail) {
+    margin: 4px 0 0;
+    font-size: 12.5px;
+    line-height: 18px;
+    color: var(--color-body);
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+  }
+  :global(.su-fix) {
+    display: flex;
+    gap: 7px;
+    margin-top: 7px;
+    padding: 7px 9px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas-soft);
+    color: var(--color-body);
+  }
+  :global(.su-fix__label) {
+    flex: 0 0 auto;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 17px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-accent-ink);
+  }
+  :global(.su-fix__text) {
+    margin: 0;
+    min-width: 0;
+    font-size: 12.5px;
+    line-height: 17px;
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+  }
+  :global(.su-fix__text code) {
+    font-family: var(--font-mono);
+    font-size: 0.94em;
+  }
+  :global(.su-note) {
+    margin: 0;
+    padding: 9px 14px;
+    border-top: 1px solid var(--color-hairline);
+    font-size: 12px;
+    line-height: 17px;
+    color: var(--color-mute);
+    text-wrap: pretty;
+  }
+  :global(.su-clean) {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-brand-soft);
+    box-shadow: var(--shadow-hairline);
+  }
+  :global(.su-clean__icon) {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    color: var(--color-brand-strong);
+  }
+  :global(.su-clean__title) {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+    color: var(--color-ink);
+  }
+  :global(.su-clean__sub) {
+    margin: 2px 0 0;
+    font-size: 12.5px;
+    line-height: 18px;
+    color: var(--color-body);
+    text-wrap: pretty;
+  }
+  :global(.su-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+  }
+  :global(.su-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.su-error__title) {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.su-error__detail) {
+    margin-top: 2px;
+    font-size: 13px;
+    line-height: 19px;
+    text-wrap: pretty;
+    overflow-wrap: anywhere;
+  }
+  :global(.su-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 96px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+
+  /* ── Copy buttons: icon-only per row, labeled in the header ──────────── */
+  :global(.su-copy) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    touch-action: manipulation;
+    transition:
+      color 0.12s ease,
+      background 0.12s ease;
+  }
+  :global(.su-copy:hover) {
+    color: var(--color-brand-strong);
+    background: var(--color-hairline);
+  }
+  :global(.su-copy:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  :global(.su-copy--labeled) {
+    width: auto;
+    height: 26px;
+    gap: 6px;
+    padding: 0 10px;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  :global(.su-copy--copied) {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+
+  /* Coarse-pointer tap targets, in the two tiers the contract defines: chips
+     and icon-only per-row copy buttons at 44px, labeled header copy controls at
+     36px (wide text targets, not the primary in-result action). The row's own
+     line/directive badges and the scope toggle sit at the labeled tier. */
+  @media (pointer: coarse) {
+    .su-chip {
+      min-height: 44px;
+    }
+    :global(.su-copy) {
+      width: 44px;
+      height: 44px;
+    }
+    :global(.su-copy--labeled) {
+      width: auto;
+      height: auto;
+      min-height: 36px;
+    }
+    :global(.su-jump),
+    :global(.su-directive) {
+      min-height: 36px;
+      padding-inline: 10px;
+    }
+    .su-scope__btn {
+      min-height: 36px;
+    }
+  }
+
+  @keyframes su-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.su-group),
+    :global(.su-clean) {
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  import { escapeHtml } from '../lib/escape-html';
+  import { copyTextToClipboard } from '../lib/clipboard';
+  import { base64UrlDecode, base64UrlEncode } from '../lib/codec';
+  import { createHashState } from '../lib/hash-state';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  import type { EditorView } from '@codemirror/view';
+
+  /* ---- Engine contract, mirrored structurally (never statically imported) -- */
+  type Severity = 'error' | 'warning' | 'info';
+  type Scope = 'system' | 'user';
+  type Finding = {
+    id: string;
+    severity: Severity | string;
+    title: string;
+    detail: string;
+    line?: number;
+    directive?: string;
+    remediation?: string;
+  };
+  type LintResult = {
+    ok: boolean;
+    error?: string;
+    findings: Finding[];
+    summary: { errors: number; warnings: number; infos: number };
+    stats: { lines: number; sections: number; directives: number };
+    kind: string;
+    scope: string;
+    truncatedRules: { ruleId: string; shown: number; total: number }[];
+    truncated: boolean;
+  };
+  type EngineModule = {
+    lint: (text: string, opts?: { scope?: Scope }) => LintResult;
+    summaryLine: (result: LintResult) => string;
+    kindLabel: (kind: string) => string;
+  };
+  type Example = { id: string; label: string; unit: string; scope?: Scope };
+
+  const ROOT_SEL = '.su-pg';
+  const SLUG = 'systemd-unit-validator';
+  /** The deep-link fragment key. New to this tool — CronToSystemd uses `cron`. */
+  const hashState = createHashState('unit');
+  /* One debounce, inside the contract's 130–220ms band. */
+  const DEBOUNCE_MS = 160;
+  /* Nothing goes red until the typing has been idle this long. */
+  const ERROR_HOLD_MS = 600;
+  const RESET_MS = 1800;
+  /* Past ~2000 chars a fragment stops being a dependable URL (browser, proxy and
+     chat-client limits), so we neither write it nor offer the share link — the
+     validator itself keeps working on files of any size. */
+  const MAX_HASH_LEN = 2000;
+  /* DOM cap: the engine caps findings at 20 per rule, but ten capped rules is
+     still 200 rows, and rendering those is what freezes a tab — not the engine,
+     which is linear. Each group says what it is hiding. */
+  const MAX_ROWS_PER_GROUP = 50;
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.suWired === 'true') return;
+      root.dataset.suWired = 'true';
+      void init(root);
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  function normaliseExamples(raw: unknown): Example[] {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((item, i) => {
+        const o = (item ?? {}) as Record<string, unknown>;
+        return {
+          id: typeof o.id === 'string' && o.id ? o.id : `example-${i + 1}`,
+          label: typeof o.label === 'string' && o.label ? o.label : `Example ${i + 1}`,
+          unit: typeof o.unit === 'string' ? o.unit : '',
+          scope: o.scope === 'user' ? ('user' as const) : undefined,
+        } satisfies Example;
+      })
+      .filter((e) => e.unit.length > 0);
+  }
+
+  /* ---- Icons (decorative) ------------------------------------------------- */
+
+  const ALERT_SVG =
+    '<svg class="su-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const CHECK_SVG =
+    '<svg class="su-clean__icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"></circle><path d="M7.5 12.5l3 3 6-6.5"></path></svg>';
+  const COPY_ICON_SVG =
+    '<svg class="su-copy-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"/></svg>';
+  const CHECK_ICON_SVG =
+    '<svg class="su-check-icon hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
+
+  /* ---- Pure render helpers ------------------------------------------------ */
+
+  const SEV_ORDER: Severity[] = ['error', 'warning', 'info'];
+  const SEV_GROUP: Record<Severity, string> = {
+    error: 'Errors',
+    warning: 'Warnings',
+    info: 'Notes',
+  };
+  const SEV_WORD: Record<Severity, string> = {
+    error: 'error',
+    warning: 'warning',
+    info: 'note',
+  };
+
+  function normSeverity(value: string): Severity {
+    return value === 'error' || value === 'warning' || value === 'info' ? value : 'info';
+  }
+
+  function plural(n: number, word: string): string {
+    return `${n} ${word}${n === 1 ? '' : 's'}`;
+  }
+
+  /** Escape, then render `backticks` as inline code — remediation text only. */
+  function remediationHtml(text: string): string {
+    return escapeHtml(text).replace(/`([^`]+)`/g, (_m, code: string) => `<code>${code}</code>`);
+  }
+
+  /** One plain-text line per finding: `L12 wrong-section: message — fix: hint`. */
+  function rowText(finding: Finding): string {
+    const where = typeof finding.line === 'number' ? `L${finding.line} ` : '';
+    const fix = finding.remediation ? ` — fix: ${finding.remediation}` : '';
+    return `${where}${finding.id}: ${finding.title}${fix}`;
+  }
+
+  function rowHtml(finding: Finding, index: number): string {
+    const sev = normSeverity(String(finding.severity));
+    const hasLine = typeof finding.line === 'number' && Number.isFinite(finding.line);
+    const jump = hasLine
+      ? `<button type="button" class="su-jump" data-su-jump="${escapeHtml(String(finding.line))}" ` +
+        `aria-label="Jump to line ${escapeHtml(String(finding.line))} in the editor">Line ${escapeHtml(
+          String(finding.line),
+        )}</button>`
+      : '';
+    const directive = finding.directive
+      ? `<span class="su-directive">${escapeHtml(finding.directive)}</span>`
+      : '';
+    const fix = finding.remediation
+      ? '<div class="su-fix"><span class="su-fix__label">Fix</span>' +
+        `<p class="su-fix__text">${remediationHtml(finding.remediation)}</p></div>`
+      : '';
+    return (
+      `<div class="su-row su-row--${sev}">` +
+      '<div class="su-row__body">' +
+      '<div class="su-row__head">' +
+      `<span class="su-pill su-pill--${sev}">${escapeHtml(SEV_WORD[sev])}</span>` +
+      directive +
+      jump +
+      `<p class="su-row__title">${escapeHtml(finding.title)}</p>` +
+      '</div>' +
+      `<p class="su-row__detail">${escapeHtml(finding.detail)}</p>` +
+      fix +
+      '</div>' +
+      `<button class="su-copy" type="button" data-su-row="${escapeHtml(String(index))}" data-copy="" ` +
+      `aria-label="Copy this ${escapeHtml(SEV_WORD[sev])}" title="Copy">` +
+      COPY_ICON_SVG +
+      CHECK_ICON_SVG +
+      '</button></div>'
+    );
+  }
+
+  function groupHtml(sev: Severity, findings: { finding: Finding; index: number }[]): string {
+    const shown = findings.slice(0, MAX_ROWS_PER_GROUP);
+    const rows = shown.map(({ finding, index }) => rowHtml(finding, index)).join('');
+    const cap =
+      findings.length > shown.length
+        ? `<p class="su-note">Showing the first ${shown.length} of ${findings.length} ` +
+          `${SEV_WORD[sev]}s. Fix these and re-run to see the rest.</p>`
+        : '';
+    return (
+      '<div class="su-group">' +
+      `<p class="su-group__head"><span>${escapeHtml(SEV_GROUP[sev])}</span>` +
+      `<span class="su-group__count">${escapeHtml(String(findings.length))}</span></p>` +
+      rows +
+      cap +
+      '</div>'
+    );
+  }
+
+  /** Engine-level caps, stated rather than hidden. */
+  function truncationHtml(result: LintResult): string {
+    const notes: string[] = [];
+    for (const rule of result.truncatedRules.slice(0, 6)) {
+      notes.push(
+        `${escapeHtml(rule.ruleId)} matched ${escapeHtml(String(rule.total))} places; the first ` +
+          `${escapeHtml(String(rule.shown))} are listed.`,
+      );
+    }
+    if (result.truncatedRules.length > 6) {
+      notes.push(`…and ${escapeHtml(String(result.truncatedRules.length - 6))} more capped rules.`);
+    }
+    if (result.truncated) {
+      notes.push(
+        'This file produced more findings than one report can usefully hold, so the list stops here.',
+      );
+    }
+    if (notes.length === 0) return '';
+    return `<div class="su-group"><p class="su-group__head"><span>Limits</span></p>${notes
+      .map((n) => `<p class="su-note">${n}</p>`)
+      .join('')}</div>`;
+  }
+
+  function cleanHtml(result: LintResult, kindWord: string): string {
+    return (
+      '<div class="su-clean">' +
+      CHECK_SVG +
+      `<div><p class="su-clean__title">Nothing matched — this ${escapeHtml(kindWord)} looks like it ` +
+      'was written on purpose.</p>' +
+      `<p class="su-clean__sub">Every rule ran over ${escapeHtml(
+        plural(result.stats.directives, 'directive'),
+      )} in ${escapeHtml(plural(result.stats.sections, 'section'))} and none of them matched. ` +
+      'The reference below lists exactly what was checked — and what this validator deliberately ' +
+      'does not check.</p></div></div>'
+    );
+  }
+
+  function errorCardHtml(message: string, isAlert: boolean): string {
+    return (
+      `<div class="su-error"${isAlert ? ' role="alert"' : ''}>` +
+      ALERT_SVG +
+      '<div><p class="su-error__title">This is not a unit file this validator can read</p>' +
+      `<p id="su-error-detail" class="su-error__detail">${escapeHtml(message)}</p></div></div>`
+    );
+  }
+
+  /** The plain-text report behind "Copy report" — built for a PR comment. */
+  function reportText(result: LintResult, summary: string): string {
+    const lines = [`Systemd Unit Validator — ${summary}`, `Scope: ${result.scope}`, ''];
+    for (const sev of SEV_ORDER) {
+      const group = result.findings.filter((f) => normSeverity(String(f.severity)) === sev);
+      if (group.length === 0) continue;
+      lines.push(`${SEV_GROUP[sev].toUpperCase()} (${group.length})`);
+      for (const finding of group) lines.push(`  ${rowText(finding)}`);
+      lines.push('');
+    }
+    if (result.findings.length === 0) lines.push('No findings.', '');
+    for (const rule of result.truncatedRules) {
+      lines.push(`Note: ${rule.ruleId} matched ${rule.total} places; ${rule.shown} listed.`);
+    }
+    if (result.truncated) lines.push('Note: the finding list was capped.');
+    lines.push('Checked client-side at opscanopy.com/systemd-unit-validator/ — 0 bytes uploaded.');
+    return lines.join('\n');
+  }
+
+  /* ---- Share fragment ----------------------------------------------------- */
+
+  /**
+   * The payload is base64url of the unit text, with the scope appended when it is
+   * not the default — a link that reproduced the text but not the scope would
+   * show the recipient DIFFERENT findings than the sender saw, which is the one
+   * thing this site cannot do.
+   */
+  function encodeShare(text: string, scope: Scope): string {
+    const payload = base64UrlEncode(text);
+    return scope === 'user' ? `${payload}&scope=user` : payload;
+  }
+
+  /**
+   * Decode a `#unit=` fragment. Two accepted forms, in order: the base64url
+   * payload `encodeShare` writes, and RAW TEXT (`#unit=%5BUnit%5D`). Accepting
+   * the second is deliberate — a fragment is typo- and attacker-controlled input,
+   * and the honest degradation for "this is not my payload" is to check it as
+   * pasted text and show a real diagnostic, not to silently drop it and display
+   * an example the visitor never asked for.
+   */
+  function decodeShare(raw: string | null): { text: string; scope: Scope | null } | null {
+    if (raw === null || raw === '') return null;
+    const amp = raw.indexOf('&');
+    const payload = amp === -1 ? raw : raw.slice(0, amp);
+    const params = amp === -1 ? '' : raw.slice(amp);
+    const scope: Scope | null = /scope=user/.test(params)
+      ? 'user'
+      : /scope=system/.test(params)
+        ? 'system'
+        : null;
+    try {
+      const decoded = base64UrlDecode(payload);
+      // A unit file always contains printable runs; base64 of unrelated text can
+      // decode into mojibake, so require something plausible before trusting it.
+      if (decoded.trim() !== '' && /[\x20-\x7e\r\n\t]{3,}/.test(decoded)) {
+        return { text: decoded, scope };
+      }
+    } catch {
+      /* not our payload — fall through to the raw-text form */
+    }
+    return { text: raw, scope: null };
+  }
+
+  /* ---- Instance init ----------------------------------------------------- */
+
+  async function init(root: HTMLElement): Promise<void> {
+    const editorHost = el<HTMLElement>(root, '#su-input');
+    const paneEl = el<HTMLElement>(root, '.su-pane');
+    const resultsBox = el<HTMLElement>(root, '#su-results');
+    const summaryEl = el<HTMLElement>(root, '#su-summary');
+    const kindEl = el<HTMLElement>(root, '#su-kind');
+    const shareBtn = el<HTMLButtonElement>(root, '#su-share');
+    const copyAllBtn = el<HTMLButtonElement>(root, '#su-copy-all');
+    const copyStatus = el<HTMLElement>(root, '#su-copy-status');
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#su-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#su-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#su-snap-delete');
+    const chips = Array.from(root.querySelectorAll<HTMLButtonElement>('#su-chips .su-chip'));
+    const scopeBtns = Array.from(
+      root.querySelectorAll<HTMLButtonElement>('#su-scope .su-scope__btn'),
+    );
+
+    if (
+      !editorHost ||
+      !paneEl ||
+      !resultsBox ||
+      !summaryEl ||
+      !kindEl ||
+      !shareBtn ||
+      !copyAllBtn ||
+      !copyStatus ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
+    ) {
+      return;
+    }
+
+    /* ---- Copy plumbing --------------------------------------------------- */
+
+    function setCopyStatus(message: string, failed: boolean): void {
+      copyStatus!.textContent = message;
+      copyStatus!.classList.toggle('sr-only', !failed);
+      copyStatus!.classList.toggle('su-copy-status--fail', failed);
+    }
+
+    function setCopied(btn: HTMLButtonElement, copied: boolean): void {
+      btn.classList.toggle('su-copy--copied', copied);
+      btn.querySelector('.su-copy-icon')?.classList.toggle('hidden', copied);
+      btn.querySelector('.su-check-icon')?.classList.toggle('hidden', !copied);
+      const label = btn.querySelector<HTMLElement>('.su-copy-label');
+      if (label) {
+        label.textContent = copied ? 'Copied' : (btn.dataset.copyLabel ?? 'Copy');
+      } else if (copied) {
+        btn.dataset.prevAriaLabel = btn.getAttribute('aria-label') ?? '';
+        btn.setAttribute('aria-label', 'Copied');
+      } else if (btn.dataset.prevAriaLabel) {
+        btn.setAttribute('aria-label', btn.dataset.prevAriaLabel);
+        delete btn.dataset.prevAriaLabel;
+      }
+    }
+
+    async function handleCopy(btn: HTMLButtonElement): Promise<void> {
+      const ok = await copyTextToClipboard(btn.dataset.copy ?? '');
+      if (ok) {
+        setCopied(btn, true);
+        setCopyStatus('Copied to clipboard.', false);
+        window.clearTimeout(Number(btn.dataset.copyTimer));
+        btn.dataset.copyTimer = String(
+          window.setTimeout(() => {
+            setCopied(btn, false);
+            if (copyStatus!.textContent === 'Copied to clipboard.') setCopyStatus('', false);
+          }, RESET_MS),
+        );
+      } else {
+        setCopyStatus('Copy failed — select the value manually.', true);
+      }
+    }
+
+    root.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      const copyBtn = target.closest<HTMLButtonElement>('.su-copy');
+      if (copyBtn && root.contains(copyBtn)) {
+        void handleCopy(copyBtn);
+        return;
+      }
+      const jumpBtn = target.closest<HTMLButtonElement>('[data-su-jump]');
+      if (jumpBtn && root.contains(jumpBtn)) {
+        jumpToLine(Number(jumpBtn.dataset.suJump));
+      }
+    });
+
+    /* ---- Lazy engine + examples + CodeMirror ----------------------------- */
+
+    let engine: EngineModule;
+    let examples: Example[] = [];
+    let EditorState: typeof import('@codemirror/state').EditorState;
+    let EditorViewCtor: typeof import('@codemirror/view').EditorView;
+    let keymap: typeof import('@codemirror/view').keymap;
+    let lineNumbers: typeof import('@codemirror/view').lineNumbers;
+    let highlightActiveLine: typeof import('@codemirror/view').highlightActiveLine;
+    let defaultKeymap: typeof import('@codemirror/commands').defaultKeymap;
+    // Named `cmHistory`, not `history`: a bare `history` would shadow
+    // `window.history`, which the hash state needs for replaceState.
+    let cmHistory: typeof import('@codemirror/commands').history;
+    let historyKeymap: typeof import('@codemirror/commands').historyKeymap;
+    let indentWithTab: typeof import('@codemirror/commands').indentWithTab;
+
+    try {
+      const [engineMod, examplesMod, stateMod, viewMod, commandsMod] = await Promise.all([
+        import('../lib/systemd-lint/engine'),
+        import('../lib/systemd-lint/examples'),
+        import('@codemirror/state'),
+        import('@codemirror/view'),
+        import('@codemirror/commands'),
+      ]);
+      engine = engineMod as unknown as EngineModule;
+      examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+      ({ EditorState } = stateMod);
+      ({ EditorView: EditorViewCtor, keymap, lineNumbers, highlightActiveLine } = viewMod);
+      ({ history: cmHistory, defaultKeymap, historyKeymap, indentWithTab } = commandsMod);
+    } catch (err) {
+      summaryEl.textContent = '';
+      resultsBox.innerHTML = errorCardHtml(
+        'The validator engine failed to load. Reload the page to try again.',
+        true,
+      );
+      console.error('[SystemdUnitValidator] engine/CodeMirror import failed:', err);
+      return;
+    }
+
+    /* ---- State ----------------------------------------------------------- */
+
+    type EvalSource = 'type' | 'commit' | 'seed';
+    type UiState = 'empty' | 'valid' | 'pending' | 'invalid';
+
+    let uiState: UiState = 'empty';
+    let evalTimer: number | undefined;
+    let errTimer: number | undefined;
+    let liveReady = false;
+    let scope: Scope = 'system';
+
+    function clearTimers(): void {
+      window.clearTimeout(evalTimer);
+      window.clearTimeout(errTimer);
+    }
+
+    /* ---- Editor ---------------------------------------------------------- */
+
+    function makeEditor(host: HTMLElement, doc: string): EditorView {
+      const state = EditorState.create({
+        doc,
+        extensions: [
+          lineNumbers(),
+          cmHistory(),
+          highlightActiveLine(),
+          EditorViewCtor.lineWrapping,
+          // CodeMirror puts role="textbox" on the content DOM; without a name
+          // that is an unlabelled input field for a screen reader (and an axe
+          // violation). aria-describedby points at the live-eval hint line.
+          EditorViewCtor.contentAttributes.of({
+            'aria-label': 'Unit file input',
+            'aria-describedby': 'su-run-hint',
+          }),
+          keymap.of([
+            // Ours FIRST, so they win over defaultKeymap's Enter/Escape.
+            {
+              key: 'Mod-Enter',
+              run: () => {
+                clearTimers();
+                evaluate('commit');
+                view.contentDOM.blur();
+                return true;
+              },
+            },
+            {
+              // Plain Enter must still insert the newline, so this returns false
+              // and lets insertNewlineAndIndent run — the eval is flushed on the
+              // next tick, once the document includes the newline.
+              key: 'Enter',
+              run: () => {
+                window.setTimeout(() => {
+                  clearTimers();
+                  evaluate('commit');
+                }, 0);
+                return false;
+              },
+            },
+            {
+              // The Tab-trap escape hatch: indentWithTab means Tab indents, so
+              // Escape is the documented way out of the editor.
+              key: 'Escape',
+              run: (v) => {
+                v.contentDOM.blur();
+                return true;
+              },
+            },
+            ...defaultKeymap,
+            ...historyKeymap,
+            indentWithTab,
+          ]),
+          EditorViewCtor.updateListener.of((u) => {
+            if (!u.docChanged || !liveReady) return;
+            clearChips();
+            clearTimers();
+            evalTimer = window.setTimeout(() => evaluate('type'), DEBOUNCE_MS);
+          }),
+          // No language mode on purpose (the CronToSystemd precedent): a unit
+          // file is INI-ish, and an approximate highlighter would colour a `#`
+          // inside a value as a comment — the exact thing this tool is here to
+          // tell you is NOT a comment.
+          EditorViewCtor.theme({
+            '&': { color: '#eae7e0' },
+            '.cm-content': { caretColor: '#eae7e0' },
+            '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#eae7e0' },
+            '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
+              backgroundColor: 'rgba(79, 138, 200, 0.34)',
+            },
+            '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.04)' },
+            '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+          }),
+        ],
+      });
+      return new EditorViewCtor({ state, parent: host });
+    }
+
+    function setEditorDoc(doc: string): void {
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
+      view.requestMeasure();
+    }
+
+    /** Select and centre a physical line — the line badge's whole purpose. */
+    function jumpToLine(lineNumber: number): void {
+      if (!Number.isFinite(lineNumber)) return;
+      const clamped = Math.min(Math.max(1, Math.trunc(lineNumber)), view.state.doc.lines);
+      const line = view.state.doc.line(clamped);
+      view.dispatch({
+        selection: { anchor: line.from, head: line.to },
+        effects: EditorViewCtor.scrollIntoView(line.from, { y: 'center' }),
+      });
+      view.focus();
+    }
+
+    /* ---- Chrome ---------------------------------------------------------- */
+
+    function setSummary(text: string, isError: boolean): void {
+      summaryEl!.textContent = text;
+      summaryEl!.classList.toggle('text-error-deep', isError);
+      summaryEl!.classList.toggle('text-mute', !isError);
+    }
+
+    function setKind(label: string): void {
+      kindEl!.textContent = `Detected: ${label}`;
+    }
+
+    function setErrorState(on: boolean): void {
+      paneEl!.classList.toggle('su-pane--error', on);
+      if (on) {
+        view.contentDOM.setAttribute('aria-invalid', 'true');
+        view.contentDOM.setAttribute('aria-describedby', 'su-run-hint su-error-detail');
+      } else {
+        view.contentDOM.removeAttribute('aria-invalid');
+        view.contentDOM.setAttribute('aria-describedby', 'su-run-hint');
+      }
+    }
+
+    function hideActions(): void {
+      shareBtn!.hidden = true;
+      shareBtn!.dataset.copy = '';
+      copyAllBtn!.hidden = true;
+      copyAllBtn!.dataset.copy = '';
+    }
+
+    function setActiveChip(idx: number | null): void {
+      chips.forEach((chip) => {
+        chip.setAttribute(
+          'aria-pressed',
+          idx !== null && chip.dataset.exampleIdx === String(idx) ? 'true' : 'false',
+        );
+      });
+    }
+
+    function clearChips(): void {
+      setActiveChip(null);
+    }
+
+    function setScope(next: Scope): void {
+      scope = next;
+      scopeBtns.forEach((btn) => {
+        btn.setAttribute('aria-pressed', btn.dataset.scope === next ? 'true' : 'false');
+      });
+    }
+
+    /* ---- Render ---------------------------------------------------------- */
+
+    function renderEmpty(): void {
+      uiState = 'empty';
+      setErrorState(false);
+      hideActions();
+      setSummary('', false);
+      setKind('—');
+      resultsBox!.innerHTML =
+        '<p class="su-empty body-sm text-mute">Paste a <span class="code-mono">.service</span>, ' +
+        '<span class="code-mono">.timer</span> or <span class="code-mono">.socket</span> file above — ' +
+        'or tap an example — to see line-numbered findings here, each with the reason it matters and ' +
+        'the fix.</p>';
+    }
+
+    function renderResult(result: LintResult, summary: string, kindWord: string): void {
+      const indexed = result.findings.map((finding, index) => ({ finding, index }));
+      const groups = SEV_ORDER.map((sev) =>
+        indexed.filter(({ finding }) => normSeverity(String(finding.severity)) === sev),
+      );
+      const html =
+        result.findings.length === 0
+          ? cleanHtml(result, kindWord)
+          : groups
+              .map((group, i) => (group.length > 0 ? groupHtml(SEV_ORDER[i], group) : ''))
+              .join('') + truncationHtml(result);
+      resultsBox!.innerHTML = html;
+
+      // Multi-line and quote-bearing payloads round-trip badly through HTML
+      // attributes, so per-row copy text is assigned on the live elements.
+      resultsBox!.querySelectorAll<HTMLButtonElement>('[data-su-row]').forEach((btn) => {
+        const finding = result.findings[Number(btn.dataset.suRow)];
+        if (finding) btn.dataset.copy = rowText(finding);
+      });
+
+      copyAllBtn!.hidden = false;
+      copyAllBtn!.dataset.copy = reportText(result, summary);
+    }
+
+    function showError(message: string, source: EvalSource): void {
+      uiState = 'invalid';
+      clearTimers();
+      setErrorState(true);
+      hideActions();
+      setSummary('Could not check', true);
+      setKind('—');
+      resultsBox!.innerHTML = errorCardHtml(message, source === 'commit');
+      if (source !== 'seed') hashState.write(null);
+    }
+
+    function evaluate(source: EvalSource): void {
+      clearTimers();
+      const text = view.state.doc.toString();
+      if (text.trim() === '') {
+        renderEmpty();
+        if (source !== 'seed') hashState.write(null);
+        return;
+      }
+
+      let result: LintResult | null = null;
+      try {
+        result = engine.lint(text, { scope });
+      } catch (err) {
+        console.error('[SystemdUnitValidator] lint threw:', err);
+        result = null;
+      }
+
+      if (result && result.ok) {
+        uiState = 'valid';
+        setErrorState(false);
+        let summary = '';
+        let kindWord = 'unit';
+        try {
+          summary = engine.summaryLine(result);
+          kindWord = engine.kindLabel(result.kind);
+        } catch {
+          summary = plural(result.findings.length, 'finding');
+        }
+        renderResult(result, summary, kindWord);
+        setSummary(summary, result.summary.errors > 0);
+        setKind(kindWord);
+
+        const payload = encodeShare(text, scope);
+        if (hashState.build(payload).length <= MAX_HASH_LEN) {
+          shareBtn!.hidden = false;
+          shareBtn!.dataset.copy =
+            location.origin + location.pathname + location.search + hashState.build(payload);
+          // Gated on BOTH a fully valid check AND a user-initiated eval: a boot
+          // seed must never write the URL or the restore store.
+          if (source !== 'seed') {
+            hashState.write(payload);
+            recordToolLastInput(SLUG, text);
+          }
+        } else {
+          // Too long to be a dependable link: keep checking, drop the share.
+          shareBtn!.hidden = true;
+          shareBtn!.dataset.copy = '';
+          if (source !== 'seed') hashState.write(null);
+        }
+        return;
+      }
+
+      const message =
+        result?.error ??
+        'The validator could not read this file. Check it against the reference below.';
+
+      if (source !== 'type') {
+        showError(message, source);
+        return;
+      }
+
+      // Mid-typing: hold the previous panel, nothing goes red yet. The error only
+      // surfaces once the typing has been idle for ERROR_HOLD_MS.
+      uiState = 'pending';
+      setErrorState(false);
+      hideActions();
+      setSummary('', false);
+      errTimer = window.setTimeout(() => showError(message, 'type'), ERROR_HOLD_MS);
+    }
+
+    /* ---- Seed (before any listener fires, so nothing writes the hash) ---- */
+
+    const firstExample = examples[0];
+    let seedText = firstExample?.unit ?? '';
+    let seedChip: number | null = firstExample ? 0 : null;
+    let seedScope: Scope = firstExample?.scope ?? 'system';
+
+    const shared = decodeShare(hashState.read());
+    if (shared !== null) {
+      seedText = shared.text;
+      seedChip = null;
+      if (shared.scope) seedScope = shared.scope;
+    } else {
+      const restored = getRestoredLastInput(SLUG);
+      if (restored && restored.trim() !== '') {
+        seedText = restored;
+        seedChip = null;
+      }
+    }
+
+    const view = makeEditor(editorHost, seedText);
+    setActiveChip(seedChip);
+    setScope(seedScope);
+
+    /* ---- Events ---------------------------------------------------------- */
+
+    chips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const idx = Number(chip.dataset.exampleIdx);
+        if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+        liveReady = false;
+        setEditorDoc(examples[idx].unit);
+        liveReady = true;
+        setActiveChip(idx);
+        // An example that only makes sense in one scope carries it, so the
+        // toggle follows the chip rather than silently contradicting it.
+        setScope(examples[idx].scope ?? 'system');
+        clearTimers();
+        evaluate('commit');
+      });
+    });
+
+    scopeBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const next: Scope = btn.dataset.scope === 'user' ? 'user' : 'system';
+        if (next === scope) return;
+        setScope(next);
+        clearTimers();
+        evaluate('commit');
+      });
+    });
+
+    // Committing on blur means a half-typed file that the user tabbed away from
+    // still explains itself, instead of sitting silently in `pending`.
+    view.contentDOM.addEventListener('blur', () => {
+      if (uiState === 'pending') {
+        clearTimers();
+        evaluate('commit');
+      }
+    });
+
+    wireSnapshotUI({
+      slug: SLUG,
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: () => view.state.doc.toString(),
+      setValue: (value) => {
+        liveReady = false;
+        setEditorDoc(value);
+        liveReady = true;
+        clearChips();
+        clearTimers();
+        evaluate('commit');
+      },
+    });
+
+    /* ---- First render: never writes the hash ---------------------------- */
+
+    evaluate('seed');
+    liveReady = true;
+    requestAnimationFrame(() => view.requestMeasure());
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

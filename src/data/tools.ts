@@ -781,6 +781,26 @@ export const tools: Tool[] = [
     ],
     accent: 'develop',
   },
+  {
+    slug: 'systemd-unit-validator',
+    name: 'Systemd Unit Validator',
+    tagline: 'Lint .service, .timer and .socket files for typos and misconfigurations — in your browser, no root.',
+    description:
+      'Paste a unit file and get line-numbered findings: a directive in the wrong section, a typo systemd silently ignores, an OnCalendar= that never fires, Restart= that stops the unit loading at all. Every finding says what systemd itself does about it, and carries the fix. No systemd, no root, no upload.',
+    status: 'planned',
+    category: 'Scheduling',
+    keywords: [
+      'systemd unit file validator',
+      'service file checker',
+      'timer validator online',
+      'systemd-analyze verify online',
+      'OnCalendar syntax checker',
+      'systemd timer not firing',
+      'systemd unit file syntax check',
+      'validate systemd service file',
+    ],
+    accent: 'ship',
+  },
 ];
 
 export const liveTools = tools.filter((t) => t.status === 'live');

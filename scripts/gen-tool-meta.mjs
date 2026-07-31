@@ -89,6 +89,14 @@ const TOOL_PATHS = {
     lib: 'kubernetes-label-selector-tester',
     component: 'K8sLabelSelectorTesterPlayground.astro',
   },
+  {
+  // Slug ≠ lib dir again: the SEO head query is "systemd unit validator", the code
+  // lives under the shorter systemd-lint (which also owns calendar.ts, the shared
+  // OnCalendar grammar that cron-to-systemd imports from).
+  'systemd-unit-validator': {
+    lib: 'systemd-lint',
+    component: 'SystemdUnitValidatorPlayground.astro',
+  },
 };
 
 const missing = liveTools.map((t) => t.slug).filter((slug) => !TOOL_PATHS[slug]);
