@@ -51,8 +51,11 @@ describe('analyzeChain — the happy paths', () => {
     ]);
     expect(report.certs.map((c) => c.role)).toEqual(['leaf', 'intermediate', 'root']);
     expect(report.edges.every((e) => e.status === 'verified')).toBe(true);
+    // Two ISSUER links, not three: the root's own self-signature is an edge but it
+    // is not chain verification, and counting it here credited a check that
+    // "proves nothing" (bug: root self-edge inflated the headline tally).
     expect(report.summary).toBe(
-      '3 certificates — chain order OK · all 3 signatures verified · leaf expires in 1767 days',
+      '3 certificates — chain order OK · all 2 signatures verified · leaf expires in 1767 days',
     );
   });
 
@@ -91,9 +94,14 @@ describe('analyzeChain — the happy paths', () => {
   it('summarizes a missing intermediate', async () => {
     const report = await analyzeChain(DEMO_CHAIN_MISSING_INTERMEDIATE, NOW);
     expect(report.ok).toBe(true);
+    // Bug: this used to read "missing intermediate · 1 signature verified" — the
+    // only edge was the root vouching for itself, and the leaf's signature was
+    // never checked. On a page whose promise is verifiable answers that reads as
+    // "the chain verified" right next to "missing intermediate".
     expect(report.summary).toBe(
-      '2 certificates — missing intermediate · 1 signature verified · leaf expires in 1767 days',
+      '2 certificates — missing intermediate · no signature checked — the issuer is not in this paste · leaf expires in 1767 days',
     );
+    expect(report.edges.filter((e) => e.subjectIndex !== e.issuerIndex)).toEqual([]);
     expect(report.diagnostics.some((d) => d.code === 'missing-intermediate')).toBe(true);
     expect(report.stats.errors).toBeGreaterThan(0);
   });
@@ -109,7 +117,7 @@ describe('analyzeChain — the happy paths', () => {
   it('summarizes an expired lone leaf without inventing a signature verdict', async () => {
     const report = await analyzeChain(BADSSL_EXPIRED_LEAF, NOW);
     expect(report.summary).toBe(
-      '1 certificate — missing intermediate · no signature could be checked · leaf expired about 4126 days ago',
+      '1 certificate — missing intermediate · no signature checked — the issuer is not in this paste · leaf expired about 4126 days ago',
     );
   });
 
@@ -217,6 +225,21 @@ describe('analyzeChain — input tolerance', () => {
         'No certificate found. Paste one or more "-----BEGIN CERTIFICATE-----" blocks — the output of "openssl s_client -showcerts -connect host:443" works as-is.',
       );
     }
+  });
+
+  it('says the markers lost their line breaks instead of "paste a BEGIN block"', async () => {
+    // Bug: the BEGIN marker is line-anchored, so a PEM that came back from a JSON
+    // field or an HTML page as one long line produced the generic "No certificate
+    // found. Paste one or more -----BEGIN CERTIFICATE----- blocks" — advice the
+    // user has already followed, with nothing pointing at the real problem.
+    const oneLine = DEMO_LEAF.replace(/\n/g, ' ');
+    const report = await analyzeChain(oneLine, NOW);
+    expect(report.ok).toBe(false);
+    expect(kinds(report.inputIssues)).toContain('markers-inline');
+    expect(kinds(report.inputIssues)).not.toContain('nothing');
+    expect(issueText(report.inputIssues, 'markers-inline')).toContain('not on a line of its own');
+    // A normal paste never trips it.
+    expect(kinds((await analyzeChain(DEMO_LEAF, NOW)).inputIssues)).not.toContain('markers-inline');
   });
 
   it('caps the number of certificates it will parse', async () => {

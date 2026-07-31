@@ -80,12 +80,28 @@ function summarize(certs: ReportCert[], report: Omit<CertReport, 'summary'>): st
   else if (certs.length === 1) order = 'single certificate';
   else order = 'chain order OK';
 
-  const { verified, failed } = report.stats;
-  const total = report.edges.length;
+  // Only ISSUER→SUBJECT edges are chain verification. A self-signed root's own
+  // signature is also an edge, but crediting it in this headline made a paste with
+  // a missing intermediate read "missing intermediate · 1 signature verified" —
+  // the leaf's signature was never checked at all, and the one line the page
+  // designates as the answer implied the chain had been verified.
+  const chainEdges = report.edges.filter((e) => e.subjectIndex !== e.issuerIndex);
+  const selfEdges = report.edges.filter((e) => e.subjectIndex === e.issuerIndex);
+  const total = chainEdges.length;
+  const verified = chainEdges.filter((e) => e.status === 'verified').length;
+  const failed = chainEdges.filter((e) => e.status === 'failed').length;
   let signatures: string;
-  if (total === 0) signatures = 'no signature could be checked';
-  else if (failed > 0) signatures = `${failed} signature${failed === 1 ? '' : 's'} failed`;
-  else if (verified === total) {
+  if (failed > 0) signatures = `${failed} signature${failed === 1 ? '' : 's'} failed`;
+  else if (total === 0) {
+    // Name the reason nothing was checked. "1 signature verified" next to
+    // "missing intermediate" was the worst possible reading of a root's self-edge.
+    const unlinked = certs.some(
+      (cert, index) => !cert.selfIssued && !chainEdges.some((e) => e.subjectIndex === index),
+    );
+    if (unlinked) signatures = 'no signature checked — the issuer is not in this paste';
+    else if (selfEdges.some((e) => e.status === 'verified')) signatures = 'self-signature verified';
+    else signatures = 'no signature could be checked';
+  } else if (verified === total) {
     signatures = total === 1 ? '1 signature verified' : `all ${total} signatures verified`;
   } else signatures = `${verified} of ${total} signatures verified`;
 

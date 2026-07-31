@@ -595,6 +595,13 @@ import { examples } from '../lib/cert-chain/examples';
     box-shadow: inset 0 0 0 1px var(--color-error);
     color: var(--color-error-deep);
   }
+  /* Amber, not red: the input is unusable but nothing is wrong with it (a pasted
+     PRIVATE KEY). Diagnostic amber pair, never accent-ink. */
+  :global(.cd-error--warning) {
+    background: var(--color-warning-soft);
+    box-shadow: inset 0 0 0 1px var(--color-warning);
+    color: var(--color-warning-deep);
+  }
   :global(.cd-error + .cd-block) {
     margin-top: 12px;
   }
@@ -973,15 +980,22 @@ import { examples } from '../lib/cert-chain/examples';
     }
 
     function hostnameBlockHtml(result: HostnameResult): string {
-      const cls = result.matched ? 'cd-badge--ok' : 'cd-badge--bad';
-      const verdict = result.matched ? 'Matches' : 'No match';
+      // `unusable` is the third state: the input was not a hostname at all (a URL,
+      // a host:port pair), so there is no verdict. Rendering it as "No match" would
+      // be a confident wrong answer about a certificate that may cover the host.
+      const cls = result.unusable
+        ? 'cd-badge--warn'
+        : result.matched
+          ? 'cd-badge--ok'
+          : 'cd-badge--bad';
+      const verdict = result.unusable ? 'Not checked' : result.matched ? 'Matches' : 'No match';
       return (
         '<div class="cd-block">' +
         '<div class="cd-block__head"><span>Hostname check</span>' +
         `<span class="cd-block__actions"><span class="cd-badge ${cls}">${verdict}</span></span></div>` +
         '<p class="cd-block__sub">RFC 6125 name matching, against the leaf certificate only.</p>' +
         rowHtml('Hostname', result.hostname, { copy: result.hostname, copyLabel: 'the hostname' }) +
-        `<div class="cd-note">${result.matched ? INFO_SVG : WARN_SVG}<span>${escapeHtml(result.reason)}</span></div>` +
+        `<div class="cd-note${result.unusable ? ' cd-note--warning' : ''}">${result.matched ? INFO_SVG : WARN_SVG}<span>${escapeHtml(result.reason)}</span></div>` +
         '</div>'
       );
     }
@@ -994,7 +1008,22 @@ import { examples } from '../lib/cert-chain/examples';
         (e) => e.subjectIndex === subjectIndex && e.issuerIndex === subjectIndex,
       );
       const chosen = edge ?? self;
-      if (!chosen) return '';
+      if (!chosen) {
+        // No issuer in the paste and not self-issued: the signature was never
+        // checked. Rendering nothing here is what let a "missing intermediate"
+        // report look like the leaf had been verified — nowhere on the page did it
+        // say otherwise.
+        const cert = report.certs[subjectIndex];
+        if (!cert || cert.selfIssued) return '';
+        const issuerName = cert.issuer.text || 'its issuer';
+        return (
+          '<div class="cd-edge">' +
+          EDGE_UNKNOWN_SVG +
+          `<span>${escapeHtml(
+            `Signature not checked — the certificate that issued this one ("${issuerName}") is not in this paste.`,
+          )}<span class="cd-edge__algo">${escapeHtml(cert.sigAlgDisplay)}</span></span></div>`
+        );
+      }
       const issuerName =
         report.certs[chosen.issuerIndex]?.commonName ||
         report.certs[chosen.issuerIndex]?.subject.text ||
@@ -1191,11 +1220,15 @@ import { examples } from '../lib/cert-chain/examples';
                 ? 'FAILED'
                 : `not verified (${edge.reason ?? 'no reason given'})`;
           lines.push(`  signature check: ${verdict} — ${edge.algorithm}`);
+        } else if (!cert.selfIssued) {
+          lines.push(`  signature check: not checked — "${cert.issuer.text}" is not in this paste`);
         }
         lines.push('');
       });
       if (hostResult) {
-        lines.push(`hostname ${hostResult.hostname}: ${hostResult.matched ? 'MATCH' : 'NO MATCH'}`);
+        lines.push(
+          `hostname ${hostResult.hostname}: ${hostResult.unusable ? 'NOT CHECKED' : hostResult.matched ? 'MATCH' : 'NO MATCH'}`,
+        );
         lines.push(`  ${hostResult.reason}`);
         lines.push('');
       }
@@ -1261,10 +1294,17 @@ import { examples } from '../lib/cert-chain/examples';
       window.clearTimeout(errTimer);
     }
 
-    function setErrorState(on: boolean): void {
-      input!.classList.toggle('cd-input--error', on);
+    /**
+     * `invalid: false` is the amber path: the input is unusable but nothing about
+     * it is wrong (a pasted PRIVATE KEY is the case the spec names). The message
+     * still gets wired to the field via aria-describedby, but no red border and no
+     * aria-invalid — "you did something wrong" is not the answer there.
+     */
+    function setErrorState(on: boolean, invalid = true): void {
+      input!.classList.toggle('cd-input--error', on && invalid);
       if (on) {
-        input!.setAttribute('aria-invalid', 'true');
+        if (invalid) input!.setAttribute('aria-invalid', 'true');
+        else input!.removeAttribute('aria-invalid');
         input!.setAttribute('aria-describedby', 'cd-input-hint cd-run-hint cd-error-detail');
       } else {
         input!.removeAttribute('aria-invalid');
@@ -1296,21 +1336,29 @@ import { examples } from '../lib/cert-chain/examples';
       setActiveChip(null);
     }
 
-    /** The single hard-error card: shown when NOTHING parsed. */
+    /**
+     * The "nothing parsed" card. Red when an input issue is an actual error, amber
+     * when the paste simply held nothing to decode (a PRIVATE KEY block).
+     */
     function showError(report: CertReport, isAlert: boolean): void {
       state = 'invalid';
       clearTimers();
-      setErrorState(true);
-      hideActions();
       payloads = [];
       const worst =
         report.inputIssues.find((i) => i.severity === 'error') ??
         report.inputIssues.find((i) => i.severity === 'warning') ??
         report.inputIssues[0];
+      // A paste with nothing to decode is not automatically a mistake. The
+      // private-key case is the tool's whole privacy argument ("it never left this
+      // page") and used to render in error tokens with a red field, which read as
+      // "you did something wrong". Red is reserved for an actual error issue.
+      const hard = report.inputIssues.some((i) => i.severity === 'error');
+      setErrorState(true, hard);
+      hideActions();
       const others = report.inputIssues.filter((i) => i !== worst);
-      setSummary('no certificates found', true);
+      setSummary('no certificates found', hard);
       resultsBox!.innerHTML =
-        `<div class="cd-error"${isAlert ? ' role="alert"' : ''}>` +
+        `<div class="cd-error${hard ? '' : ' cd-error--warning'}"${isAlert && hard ? ' role="alert"' : ''}>` +
         ALERT_SVG +
         '<div><p class="cd-error__title">No certificate to decode yet</p>' +
         `<p id="cd-error-detail" class="cd-error__detail">${escapeHtml(worst?.message ?? '')}</p>` +
@@ -1346,7 +1394,7 @@ import { examples } from '../lib/cert-chain/examples';
 
       setSummary(
         hostResult
-          ? `${report.summary} · hostname ${hostResult.matched ? 'matches' : 'does not match'}`
+          ? `${report.summary} · hostname ${hostResult.unusable ? 'not checked' : hostResult.matched ? 'matches' : 'does not match'}`
           : report.summary,
         report.stats.errors > 0,
       );

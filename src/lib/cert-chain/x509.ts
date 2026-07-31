@@ -412,11 +412,20 @@ function parseCertificateInner(der: Uint8Array): ParsedCert | null {
 
   const sigAlgParts = readChildren(sigAlgNode);
   if (!sigAlgParts || sigAlgParts.length < 1) return null;
+  // The tag has to be asserted, not assumed. `decodeOid` only looks at content
+  // octets, so a mangled identifier byte (0x06 → 0x07, or the algorithm's NULL
+  // parameters turned into something else) still decoded to
+  // 1.2.840.113549.1.1.11 and the page reported a clean, VERIFIED certificate
+  // that OpenSSL and every browser reject as malformed.
+  if (sigAlgParts[0].tagNumber !== TAG.OID || sigAlgParts[0].tagClass !== 0) return null;
   const sigAlgOid = decodeOid(sigAlgParts[0].content);
   if (!sigAlgOid) return null;
 
   const sigBits = decodeBitString(sigValueNode.content);
   if (!sigBits) return null;
+  // A signature is a whole number of octets. Non-zero unused bits here are
+  // malformed, and were accepted — another mutant that read back "verified".
+  if (sigBits.unusedBits !== 0) return null;
 
   const fields = readChildren(tbsNode);
   if (!fields || fields.length < 6) return null;

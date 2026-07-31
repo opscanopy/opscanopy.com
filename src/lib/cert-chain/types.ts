@@ -230,6 +230,7 @@ export type InputIssueKind =
   | 'bad-base64'
   | 'not-a-certificate'
   | 'headerless'
+  | 'markers-inline'
   | 'noise-ignored'
   | 'too-many';
 
@@ -245,6 +246,13 @@ export interface HostnameResult {
   /** The hostname as checked (trimmed, lower-cased, brackets and dot stripped). */
   hostname: string;
   matched: boolean;
+  /**
+   * True when the input is not a hostname or IP literal at all (a URL, a
+   * `host:port` pair, a malformed address) so NO verdict was reached. `matched`
+   * is false in that case, but it means "not checked", not "does not match" —
+   * renderers must show a third, neutral state rather than a failing one.
+   */
+  unusable?: boolean;
   /** The SAN (or commonName) that matched. */
   matchedSan?: string;
   /** True when there were no SANs at all and the commonName was used instead. */

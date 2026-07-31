@@ -217,7 +217,12 @@ export function buildChain(certs: ParsedCert[], now?: Date | number): ChainResul
 
   const leftovers = unique.filter((cert) => !used.has(cert));
   const ordered = [...walked, ...leftovers];
-  const roles = ordered.map(roleOf);
+  // Anything past the walk is a leftover: it is in the paste but nothing links it
+  // into the chain. Badging it by its own shape ('leaf', 'root') contradicts the
+  // extra-certificate finding directly below — two cards would read "Leaf".
+  const roles = ordered.map((cert, index) =>
+    index >= walked.length ? 'extra' : roleOf(cert),
+  ) as ChainRole[];
 
   if (leftovers.length > 0) {
     diagnostics.push({
@@ -331,7 +336,15 @@ export function buildChain(certs: ParsedCert[], now?: Date | number): ChainResul
   // ── 7. Edges: real issuer links first, then self-signatures ──
   const edges: ChainEdge[] = [];
   for (let i = 0; i + 1 < ordered.length; i += 1) {
-    if (sameSubjectAsIssuerOf(ordered[i + 1], ordered[i])) {
+    // The cross-signed guard has to match the walk at step 3. Without it a
+    // cross-signed twin (same subject, same key, different issuer) was recorded
+    // as the issuer of its self-signed sibling, and because the keys are
+    // identical by definition the check "verified" — so the page named the wrong
+    // signer and suppressed the honest self-signature edge.
+    if (
+      !isCrossSignedTwin(ordered[i + 1], ordered[i]) &&
+      sameSubjectAsIssuerOf(ordered[i + 1], ordered[i])
+    ) {
       edges.push({ subjectIndex: i, issuerIndex: i + 1 });
     }
   }
@@ -367,7 +380,13 @@ const IPV4_RE = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 function parseIpv4(text: string): number[] | null {
   const match = IPV4_RE.exec(text);
   if (!match) return null;
-  const octets = match.slice(1).map(Number);
+  const parts = match.slice(1);
+  // A zero-padded octet is octal to inet_aton and glibc: 203.0.113.010 is the
+  // host 203.0.113.8, not .10. Accepting it made the tool answer "listed as an IP
+  // address in the certificate" about an address the OS would never dial. Same
+  // policy as `src/lib/ip-core.ts` (repo-wide since 099f8c2) — refuse, never guess.
+  if (parts.some((part) => part.length > 1 && part.startsWith('0'))) return null;
+  const octets = parts.map(Number);
   return octets.every((o) => o >= 0 && o <= 255) ? octets : null;
 }
 
@@ -429,6 +448,14 @@ function normalizeName(name: string): string {
  *
  * commonName is used ONLY when there is no subjectAltName at all, and saying so
  * is part of the answer: browsers stopped reading commonName in 2017.
+ *
+ * Input that is not a host name at all is REFUSED by name (`unusable: true`)
+ * rather than matched. A URL or a `host:port` pair used to go straight into the
+ * RFC 6125 matcher, which answered confidently and wrongly in both directions:
+ * `https://www.shop.example.com` "matched" the wildcard `*.shop.example.com`
+ * (the residual `https://www` holds no dot, so it looked like exactly one label)
+ * and `www.shop.example.com:443` matched nothing at all — telling an SRE their
+ * SAN list was wrong when it was fine. The value is never silently rewritten.
  */
 export function matchHostname(cert: ParsedCert, hostname: string): HostnameResult {
   const raw = typeof hostname === 'string' ? hostname.trim() : '';
@@ -439,9 +466,52 @@ export function matchHostname(cert: ParsedCert, hostname: string): HostnameResul
     return {
       hostname: host,
       matched: false,
+      unusable: true,
       reason: 'Enter a hostname to check it against this certificate’s names.',
       namesChecked: 0,
     };
+  }
+
+  const unusable = (reason: string): HostnameResult => ({
+    hostname: host,
+    matched: false,
+    unusable: true,
+    reason,
+    namesChecked: 0,
+  });
+
+  if (/\s/.test(host)) {
+    return unusable(
+      'A hostname cannot contain a space. Enter exactly one host name — no scheme, no port, ' +
+        'nothing else on the line.',
+    );
+  }
+  if (host.includes('/')) {
+    return unusable(
+      'That looks like a URL, not a hostname. Enter just the host — no scheme, no port and no ' +
+        'path (for example www.example.com).',
+    );
+  }
+  if (host.includes('@')) {
+    return unusable(
+      'That looks like a URL with credentials, or an email address — not a hostname. Enter just ' +
+        'the host part, the text after the "@".',
+    );
+  }
+  if (host.includes(':') && parseIpv6(host) === null) {
+    return unusable(
+      'That looks like a host:port pair. Enter just the hostname — a certificate lists names, ' +
+        'never ports, so the port plays no part in the match. (A bare or bracketed IPv6 literal ' +
+        'is fine here.)',
+    );
+  }
+  // All-digit labels can only ever be an IPv4 literal, so a failed parse is a
+  // malformed address rather than a name that happens to match nothing.
+  if (/^\d[\d.]*$/.test(host) && parseIpv4(host) === null) {
+    return unusable(
+      `${host} is not a valid IPv4 address. Each octet must be 0–255 with no leading zeros — ` +
+        'glibc reads a leading zero as octal, so 203.0.113.010 is really the host 203.0.113.8.',
+    );
   }
 
   const dnsSans = cert.sans.filter((san) => san.kind === 'dns');

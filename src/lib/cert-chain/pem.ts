@@ -161,6 +161,9 @@ const BLOCK_ISSUES: Record<Exclude<BlockKind, 'certificate'>, InputIssue> = {
   ),
 };
 
+/** A BEGIN marker anywhere in the text, line-anchored or not. */
+const MARKER_ANYWHERE_RE = /-{5}BEGIN [A-Za-z0-9 #]*CERTIFICATE-{5}/i;
+
 export interface ExtractResult {
   /** DER bytes of every certificate block that decoded, in paste order. */
   ders: Uint8Array[];
@@ -246,6 +249,21 @@ export function extractCertificateDers(raw: string): ExtractResult {
           ),
         );
       }
+    }
+    if (ders.length === 0 && MARKER_ANYWHERE_RE.test(text)) {
+      // The markers ARE there — they just are not on lines of their own, which is
+      // what a JSON field or an HTML round-trip does to a PEM file. Telling this
+      // user to "paste a BEGIN CERTIFICATE block" is advice they have followed.
+      push(
+        issue(
+          'markers-inline',
+          'error',
+          'This paste contains a "-----BEGIN CERTIFICATE-----" marker, but not on a line of its ' +
+            'own — the line breaks were lost somewhere (a JSON field or a web page will do that). ' +
+            'Each BEGIN and END marker has to sit alone on its line. Put the newlines back and ' +
+            'paste again.',
+        ),
+      );
     }
   } else if (hasNoiseOutsideBlocks(text, blocks)) {
     push(
