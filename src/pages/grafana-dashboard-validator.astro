@@ -1,0 +1,707 @@
+---
+/**
+ * Grafana Dashboard Validator — the grafana-dashboard-validator tool page.
+ *
+ * The reference section IS the rule catalog: one anchored subsection per rule
+ * (`#rule-no-uid` … `#rule-panel-zero-size`) that the playground's rule chips
+ * link straight into. Every COUNT on this page — how many rules, how many are
+ * errors, the input and diagnostic caps, the pinned Grafana version — is derived
+ * from the engine's own exports rather than typed in prose, because a shipped
+ * page in an earlier wave carried two mutually inconsistent hand-written figures.
+ */
+import Shell from '../components/Shell.astro';
+import GrafanaDashboardValidatorPlayground from '../components/GrafanaDashboardValidatorPlayground.astro';
+import Button from '../components/Button.astro';
+import CodeBlock from '../components/CodeBlock.astro';
+import ToolHero from '../components/ToolHero.astro';
+import ToolGapVisual from '../components/ToolGapVisual.astro';
+import ToolPipeline from '../components/ToolPipeline.astro';
+import FaqList from '../components/FaqList.astro';
+import ToolCrossLinks from '../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../data/site';
+import { getTool } from '../data/tools';
+import { softwareAppLd, faqPageLd } from '../lib/jsonld';
+import {
+  GRAFANA_RULES_VERSION,
+  KNOWN_SCHEMA_VERSION,
+  MAX_DIAGNOSTICS_PER_RULE,
+  MAX_DIAGNOSTICS_TOTAL,
+  MAX_INPUT_CHARS,
+  RULE_IDS,
+  RULE_SEVERITY,
+  type RuleId,
+} from '../lib/grafana-dashboard-validator/engine';
+
+const tool = getTool('grafana-dashboard-validator');
+const pagePath = '/grafana-dashboard-validator/';
+const pageUrl = `${site.url}${pagePath}`;
+
+/* ── Every number on this page, derived ──────────────────────────────────── */
+const ruleCount = RULE_IDS.length;
+const errorRules = RULE_IDS.filter((id) => RULE_SEVERITY[id] === 'error').length;
+const warningRules = RULE_IDS.filter((id) => RULE_SEVERITY[id] === 'warning').length;
+const noteRules = RULE_IDS.filter((id) => RULE_SEVERITY[id] === 'info').length;
+const inputCap = MAX_INPUT_CHARS.toLocaleString('en-US');
+const totalCap = MAX_DIAGNOSTICS_TOTAL.toLocaleString('en-US');
+
+/** Per-rule page copy. Typed as a full `Record<RuleId, …>`, so a rule added to
+ *  the engine without copy here is a type error rather than a blank subsection. */
+const ruleCopy: Record<RuleId, { title: string; what: string; fix: string; extra?: string }> = {
+  'no-uid': {
+    title: 'Give the dashboard a uid',
+    what: 'Without a uid, every import creates a NEW dashboard instead of updating the one already there — so the same file imported twice leaves two copies, and every link anyone saved points at whichever one is now stale. Grafana accepts up to 40 characters of letters, digits, hyphens and underscores.',
+    fix: '"uid": "api-slo"',
+  },
+  'root-id-set': {
+    title: 'id must be null in a committed file',
+    what: 'id is a row number inside one Grafana database. Carried into another instance it either fails the import or lands on a dashboard that has nothing to do with yours. Grafana assigns its own, always.',
+    fix: '"id": null',
+  },
+  'empty-title': {
+    title: 'Title the dashboard',
+    what: 'A missing or blank title lists as "New dashboard", which is unfindable in search and indistinguishable from every other unnamed board somebody created by accident.',
+    fix: '"title": "API SLO"',
+  },
+  'duplicate-panel-id': {
+    title: 'Panel ids must be unique',
+    what: 'Grafana keys panel links, "View panel" URLs and repeats by panel id. Two panels sharing one id break all three, and nothing in the interface says so — the second panel simply stops being addressable.',
+    fix: 'Renumber one of them; ids only have to be unique inside this dashboard',
+  },
+  'duplicate-variable': {
+    title: 'Variable names must be unique',
+    what: 'Two entries in templating.list with the same name: Grafana keeps the last one and silently drops the first, so the variable\'s type, query and default are whichever the second declaration happened to set.',
+    fix: 'Rename or delete one of them',
+  },
+  'schema-version-old': {
+    title: 'Re-export an old schemaVersion',
+    what: 'schemaVersion records which of Grafana\'s own format migrations the JSON has already been through. Below 36 a panel\'s datasource is still a name string; below 16 panels still live inside rows. Grafana migrates on load, but the file in your repository does not — so a review of that file is a review of something Grafana will never render.',
+    fix: 'Open it in Grafana 9 or newer and export again',
+    extra: 'error below 16',
+  },
+  'schema-version-unknown': {
+    title: 'A schemaVersion this linter has not seen',
+    what: `Newer than the pinned ${KNOWN_SCHEMA_VERSION}, missing entirely, or written as a string instead of a number. Reported as a note and never as an error: an unknown schema is a limit of this linter, not a defect in your dashboard.`,
+    fix: 'Nothing to change — the note marks the findings below as advisory',
+  },
+  'undefined-variable': {
+    title: 'Every $variable must be declared',
+    what: 'A reference nothing declares is left in the query as literal text, so the query runs with "$env" still inside it and the panel returns nothing — or, worse, returns something plausible. Grafana\'s own built-ins ($__rate_interval, $__from, $__range and the rest) are known and never reported, and neither is $1, which is a regex backreference.',
+    fix: 'Add it under templating.list, or fix the spelling',
+    extra: 'warning inside a regex',
+  },
+  'unused-variable': {
+    title: 'A variable nobody reads',
+    what: 'Declared but never referenced by any panel, query, title, link or annotation. Harmless in itself — except that a "query" variable nobody reads still runs its query on every single dashboard load.',
+    fix: 'Delete it, or use it',
+  },
+  'legacy-var-syntax': {
+    title: '[[var]] is the pre-Grafana 6 form',
+    what: 'It still resolves, and it is still deprecated. It is also the only form that cannot carry a format, so a value that needs to be a regex alternation or a CSV list has to be rewritten before it can be formatted at all.',
+    fix: '"${env}", or "${env:regex}" when the query needs a pattern',
+  },
+  'datasource-by-name': {
+    title: 'Reference datasources by uid, not name',
+    what: 'A name resolves only if a datasource with exactly that name exists on the target instance. That single difference is what separates a dashboard that imports from one that shows "Datasource not found" on a colleague\'s Grafana. The { type, uid } form has been what Grafana writes since schemaVersion 36.',
+    fix: '"datasource": { "type": "prometheus", "uid": "P1809F7CD0C75ACF3" }',
+  },
+  'unresolved-ds-input': {
+    title: '${DS_…} needs the import dialog',
+    what: '"Export for sharing externally" replaces every datasource with an __inputs placeholder that only Dashboards → Import fills in. Provision that same file instead and Grafana reports "Datasource ${DS_PROMETHEUS} not found" — and a ${DS_…} reference with no __inputs block at all fails that way even through the dialog.',
+    fix: 'Import through the dialog, or substitute the real { type, uid } first',
+  },
+  'empty-targets': {
+    title: 'A panel with no query',
+    what: 'No targets at all, so the panel renders empty. Panel types that never query — row, text, dashlist, news, alertlist, annolist — are not reported, and neither are library panels, whose queries live in the library rather than in this file.',
+    fix: 'Add a target, or delete the panel',
+  },
+  'deprecated-panel-type': {
+    title: 'graph, singlestat and table-old',
+    what: 'Grafana 9–12 migrates these when the dashboard loads, which is exactly why they are worth flagging: what you review in the JSON is not what anybody will see on screen. Re-saving from Grafana 9 or newer writes the migration into the file, so the review and the render finally agree.',
+    fix: '"type": "timeseries" / "stat" / "table"',
+  },
+  'angular-panel': {
+    title: 'AngularJS panel plugins',
+    what: 'Angular support was deprecated in Grafana 9 and removed across Grafana 11–12. Unlike the core types above, a plugin has no automatic migration — so the panel does not degrade, it renders nothing.',
+    fix: 'piechart for grafana-piechart-panel, geomap for grafana-worldmap-panel',
+  },
+  'repeat-undefined': {
+    title: 'A repeat over nothing',
+    what: 'A repeat naming a variable that does not exist produces one panel and no error message. A row meant to fan out over every cluster quietly shows a single cluster, and the dashboard looks finished.',
+    fix: 'Declare the variable, or remove "repeat"',
+  },
+  'time-range-absurd': {
+    title: 'A default range nobody wants',
+    what: 'Ranges longer than a year, ranges that run backwards, zero-length ranges, and expressions Grafana cannot parse at all. Every panel runs the default range the moment the dashboard opens, which makes this the cheapest performance mistake in the file to fix.',
+    fix: '"time": { "from": "now-6h", "to": "now" }',
+  },
+  'refresh-aggressive': {
+    title: 'A refresh under ten seconds',
+    what: 'Below ten seconds the queries queue faster than they finish, in every tab that has the dashboard open, and the datasource pays for all of them. Grafana\'s own min_refresh_interval setting may override you anyway, which means the JSON says one thing and the instance does another.',
+    fix: '"refresh": "1m"',
+  },
+  'override-suspect': {
+    title: 'An override that applies nothing',
+    what: 'A byName matcher with no value matches no field; an override with an empty properties array sets nothing. Grafana keeps both in the JSON and applies neither, so they read like configuration that is doing something.',
+    fix: 'Give it something to match and something to set, or delete it',
+  },
+  'empty-row': {
+    title: 'A row with no panels',
+    what: 'A collapsed row with an empty panels array is invisible until somebody expands it and finds nothing inside. An EXPANDED row is not reported when its panels follow it as siblings — that is how Grafana actually stores them, and reporting it would fire on every modern dashboard.',
+    fix: 'Delete the row, or move panels into it',
+  },
+  'panel-no-type': {
+    title: 'A panel with no type',
+    what: 'Nothing tells Grafana what to render, so it draws an empty box where the panel should be. Every panel Grafana exports carries a type; one without it has been hand-edited, merged badly, or produced by a generator.',
+    fix: '"type": "timeseries"',
+  },
+  'panel-zero-size': {
+    title: 'A panel that occupies no space',
+    what: 'A gridPos with a width or height of zero is invisible. A missing gridPos makes Grafana fall back to a default position, where panels can land on top of each other. The grid is 24 columns wide.',
+    fix: '"gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }',
+  },
+};
+
+const rules = RULE_IDS.map((id) => ({ id, severity: RULE_SEVERITY[id], ...ruleCopy[id] }));
+
+/** `{` opens an expression in an Astro template, so the placeholder lives here. */
+const dsPlaceholder = '${DS_PROMETHEUS}';
+const metaDescription =
+  'Lint Grafana dashboard JSON in your browser: undefined variables, ${DS_…} placeholders, ' +
+  'Angular panels, duplicate ids, bad schemaVersion. Nothing uploaded.';
+
+const severityLabel: Record<string, string> = {
+  error: 'error',
+  warning: 'warning',
+  info: 'note',
+};
+
+/** Mirrors the DELIBERATELY SILENT block at the top of the engine's rules.ts. */
+const silent = [
+  {
+    what: 'Full schema validation',
+    why: 'This is a structural lint, not a schema check. Grafana’s dashboard schema is large, versioned and still moving; a partial schema check reported as a schema check would be a lie.',
+  },
+  {
+    what: 'PromQL, LogQL and SQL inside targets',
+    why: 'A query language deserves its own tool. The PromQL Explainer does that job properly instead of this one half-parsing expressions.',
+  },
+  {
+    what: 'Anything that needs your Grafana',
+    why: 'Whether a uid is taken, whether a plugin is installed, whether a folder exists. There is no network here, so guessing would be inventing.',
+  },
+  {
+    what: 'Typos inside $__names',
+    why: 'Everything beginning with two underscores is treated as a Grafana built-in, because Grafana keeps adding them. Calling next year’s built-in "undefined" would be worse than missing a typo.',
+  },
+  {
+    what: 'Panels with no title',
+    why: 'Text panels and single-stat tiles are legitimately untitled. Only the DASHBOARD title is required.',
+  },
+  {
+    what: 'gridPos overlap and layout geometry',
+    why: 'Grafana repacks the grid when the dashboard loads, so an overlap in the JSON is not an overlap on screen.',
+  },
+  {
+    what: 'Legacy rows[] panel sizing',
+    why: 'Pre-schemaVersion-16 layouts used span, not gridPos. Reporting a missing gridPos there would fire on every panel of a dashboard whose real problem is already an error.',
+  },
+  {
+    what: 'A refresh this linter cannot parse',
+    why: 'Guessing what "1m30s" resolves to is guessing, and the finding would be about the guess rather than the dashboard.',
+  },
+  {
+    what: 'Deprecated fields inside panel options',
+    why: 'They are per-plugin, they move every release, and Grafana migrates them on load. A rule about them would be stale within a minor version.',
+  },
+];
+
+/** The variable syntaxes Grafana accepts, and the two things that look like them. */
+const variableForms = [
+  {
+    form: '$env',
+    since: 'Always',
+    note: 'Ends at the first character that is not a letter, digit or underscore — so "$env-prod" is the variable env followed by the literal text "-prod".',
+  },
+  {
+    form: '${env}',
+    since: 'Grafana 6',
+    note: 'The current form. Unambiguous next to surrounding text, and the only one that can carry a format.',
+  },
+  {
+    form: '${env:regex}',
+    since: 'Grafana 6',
+    note: 'A formatted interpolation — regex, csv, json, pipe, glob and others — which is what makes a multi-value variable safe inside a query.',
+  },
+  {
+    form: '[[env]]',
+    since: 'Pre-Grafana 6',
+    note: 'Deprecated. Still resolves, cannot take a format. Reported as legacy-var-syntax.',
+  },
+  {
+    form: '$__rate_interval',
+    since: 'Grafana 7.2',
+    note: 'A built-in, not one of yours. Every name beginning with two underscores is treated as a built-in and never reported.',
+  },
+  {
+    form: '${DS_PROMETHEUS}',
+    since: '—',
+    note: 'Not a template variable at all: an __inputs import placeholder. Reported as unresolved-ds-input.',
+  },
+];
+
+/** schemaVersion milestones that change how the same JSON is read. */
+const schemaMilestones = [
+  {
+    version: '16',
+    grafana: '5.x',
+    change:
+      'Panels moved out of "rows" into a top-level "panels" array, and gridPos replaced span. Below this, everything about a dashboard\'s layout is stored differently.',
+  },
+  {
+    version: '36',
+    grafana: '8.3–9.x',
+    change:
+      'A panel\'s "datasource" became a { type, uid } reference instead of a name string. This is the migration behind most "works on my instance" imports.',
+  },
+  {
+    version: '39',
+    grafana: '11.x',
+    change:
+      'The schema current through the Grafana 11 line, where Angular panels were disabled by default.',
+  },
+  {
+    version: String(KNOWN_SCHEMA_VERSION),
+    grafana: '12.x',
+    change: `The newest schema this linter knows. Anything above ${KNOWN_SCHEMA_VERSION} is reported as a note, never an error.`,
+  },
+];
+
+const faqs = [
+  {
+    q: 'What does the Grafana Dashboard Validator check?',
+    a: `${ruleCount} rules over a real parse of the dashboard: ${errorRules} errors, ${warningRules} warnings and ${noteRules} notes. The errors are the ones that change what Grafana does — a template variable nothing declares, a \${DS_…} placeholder with no __inputs block, an AngularJS panel that renders nothing on Grafana 11–12, two panels sharing an id, a repeat over a variable that does not exist, a panel with no type, and a schemaVersion so old that the JSON and the render are different dashboards. The warnings are the portability and review problems: a missing uid, a database id left in a committed file, a datasource referenced by name, a deprecated graph or singlestat panel, an invisible zero-width panel, a default time range longer than a year, a sub-ten-second refresh. Every rule has its own subsection on this page, and the playground's rule chips link straight to it.`,
+  },
+  {
+    q: 'Does my dashboard ever leave my browser?',
+    a: 'No. The parser and all the rules are JavaScript running in your tab — there is no server, no API call and no logging, so 0 bytes are uploaded. That matters more here than for most tools: a dashboard JSON is a map of your internal estate. Metric names, datasource uids, hostnames in legend formats, service names in variable queries, sometimes an internal URL in a panel link. It is exactly the file you should not paste into a random online formatter.',
+  },
+  {
+    q: 'Is this schema validation?',
+    a: 'No, and it says so rather than implying otherwise. Grafana’s dashboard schema is large, versioned and still moving, so a partial schema check presented as a schema check would be worse than no check at all. What this does is a structural lint: it reads the shapes that break imports and reviews — variables, datasource references, panel types, ids, layout, time and refresh — and names the JSON path of each finding. It does not parse PromQL, does not know your plugins, and does not talk to a Grafana. The full list of what it deliberately stays silent about is in "What it deliberately does not flag" above.',
+  },
+  {
+    q: 'Why does my import fail with "Datasource ${DS_PROMETHEUS} not found"?',
+    a: 'Because the file was produced by "Export for sharing externally". That export replaces every datasource reference with a placeholder — ${DS_PROMETHEUS} — and adds an "__inputs" block describing what each placeholder needs. Only the Dashboards → Import dialog reads that block and prompts you to pick a real datasource. Provisioning the same file, POSTing it to the API, or committing it into a Git-synced folder skips the dialog entirely, so the placeholder survives into the saved dashboard and every panel fails to resolve it. Either import it through the dialog, or substitute the real { type, uid } before you provision it. This linter reports the placeholder as an error either way, because the file cannot be provisioned as it stands.',
+  },
+  {
+    q: 'What is the difference between uid and id?',
+    a: 'The uid is the identifier you choose. It is part of the dashboard URL, it is what provisioning and the API address, and it should live in version control alongside the JSON. The id is a row number in one Grafana instance’s database — it means nothing anywhere else. A file with a uid updates the same dashboard every time it is imported; a file without one creates a new copy on every import. A file with a stale id either fails the import or targets a dashboard that has nothing to do with yours, which is why an export should carry "id": null.',
+  },
+  {
+    q: 'My dashboard uses graph panels. Will it still work on Grafana 12?',
+    a: 'The core graph, singlestat and table-old panels are migrated automatically when the dashboard loads, so they keep working — but the JSON in your repository is not migrated, which means the file you review and the panel Grafana renders are two different things. Re-save the dashboard from Grafana 9 or newer to write the migration into the file. AngularJS panel PLUGINS are a different story: grafana-piechart-panel, grafana-worldmap-panel and the rest have no automatic migration, and Angular support was deprecated in Grafana 9 and removed across Grafana 11–12, so those panels render nothing and have to be replaced by hand.',
+  },
+  {
+    q: 'Which Grafana version is this pinned to, and what if mine is newer?',
+    a: `The rule set is pinned to ${GRAFANA_RULES_VERSION}, printed on this page and on every copied report so a report is never ambiguous about what checked it. Version-sensitive rules are phrased as ranges — "Grafana 9–12", "removed across Grafana 11–12" — rather than as one exact release, because your instance is somewhere near this point rather than exactly on it. If your dashboard's schemaVersion is higher than ${KNOWN_SCHEMA_VERSION}, you get an INFO note saying so and the schema-specific findings are marked advisory. An unknown schema is a limit of this linter, not a defect in your dashboard, so it is never reported as an error.`,
+  },
+  {
+    q: 'Why is an undefined variable an error rather than a warning?',
+    a: 'Because Grafana does not fail — it interpolates nothing and runs the query with the literal text still in it. A PromQL selector of {env="$env"} matches no series, so the panel is empty; a regex-matching selector can match far MORE series than you meant, so the panel is populated and wrong. Neither case produces a message anywhere in the interface. The one exception this linter makes is a reference inside a string that looks like a regular expression, where "$" is also an end-of-line anchor: there the finding drops to a warning, because the "$env" you wrote may genuinely have been an anchor followed by text.',
+  },
+  {
+    q: 'How large a dashboard can it handle?',
+    a: `Up to ${inputCap} characters, which covers a generated dashboard of several thousand panels; a 500-panel dashboard lints in a few milliseconds. Past that limit it refuses with a message rather than freezing your tab, because an input that big is a log or an archive rather than a dashboard. Findings are capped too, at ${MAX_DIAGNOSTICS_PER_RULE} per rule and ${totalCap} in total, and the panel states the cap and the real count whenever one applies — a truncated list that did not say it was truncated would be the same kind of quiet wrongness this tool exists to catch.`,
+  },
+];
+
+const softwareApp = softwareAppLd({
+  name: 'Grafana Dashboard Validator',
+  description: `Free in-browser Grafana dashboard JSON linter: ${ruleCount} rules for undefined template variables, unresolved \${DS_…} import placeholders, AngularJS panels, duplicate panel ids, invisible panels and an outdated schemaVersion. No install, no upload.`,
+  url: pageUrl,
+  subCategory: 'Observability',
+  featureList: [
+    `${ruleCount} rules pinned to ${GRAFANA_RULES_VERSION}`,
+    'Every finding carries the JSON path it lives at',
+    'Flattens nested rows, collapsed rows and legacy rows[] layouts',
+    'Indexes template variables in all four syntaxes, built-ins included',
+    'Tolerates comments, trailing commas, API wrappers and BOMs — and says so',
+    'Saved snapshots and copy-as-report',
+    '100% client-side, no upload, no signup',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+const faqPage = faqPageLd(faqs);
+
+const pipeline = [
+  {
+    title: 'Parse it, and say what that took.',
+    body: 'Strict JSON first. Then a byte-order mark, `// comments`, trailing commas, an API `{ dashboard: … }` wrapper or a dashboard stored as an escaped string — each one recovered and each one reported, because Grafana’s API is not this forgiving.',
+  },
+  {
+    title: 'Flatten every panel layout.',
+    body: 'Top-level `panels`, the children a collapsed row holds, the siblings an expanded row owns, and pre-schemaVersion-16 `rows[]` — all into one list where each panel remembers the JSON path it came from.',
+  },
+  {
+    title: 'Index the variables.',
+    body: 'Every string in the document is scanned for `$var`, `${var}`, `${var:format}` and `[[var]]`, matched against what `templating.list` declares plus Grafana’s built-ins. Used, unused and unresolved fall out of the same index.',
+  },
+  {
+    title: `Run ${ruleCount} rules, then report a path and a fix.`,
+    body: 'Each rule runs inside its own try/catch, so one tripping costs a single note instead of the other findings. Every diagnostic names the path, the reason and the change to make — ready to paste into a review.',
+  },
+];
+---
+
+<Shell
+  title="Grafana Dashboard Validator — Lint Dashboard JSON Free"
+  description={metaDescription}
+  canonical="/grafana-dashboard-validator"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <ToolHero
+    slug="grafana-dashboard-validator"
+    eyebrow="Grafana Dashboard Validator · Observability"
+    badges={[
+      { label: 'Runs in your browser', variant: 'live' },
+      { label: `${ruleCount} rules`, variant: 'neutral' },
+      { label: GRAFANA_RULES_VERSION, variant: 'neutral' },
+      { label: 'No signup', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">Find the import traps before the dashboard ships.</Fragment>
+    <Fragment slot="lead">
+      {ruleCount} rules over a real parse of your dashboard JSON: the template variable nothing declares,
+      the <span class="code-mono">{dsPlaceholder}</span> placeholder provisioning will never
+      resolve, the AngularJS panel Grafana 12 removed, the panel with no
+      <span class="code-mono">type</span> that draws an empty box. Every finding names the JSON path it
+      lives at — and nothing you paste leaves the tab.
+    </Fragment>
+  </ToolHero>
+
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pt-8 pb-20 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">Grafana Dashboard Validator playground</h2>
+      <GrafanaDashboardValidatorPlayground />
+    </div>
+  </section>
+
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">The Gap</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            A dashboard that imports is not a dashboard that works.
+          </h2>
+          <ToolGapVisual />
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            Grafana is forgiving in the worst possible way. An undefined variable is not an error —
+            the query simply runs with <span class="code-mono">$env</span> still inside it, so the
+            panel is empty, or matches far more series than you meant and is populated and wrong. A
+            panel with no <span class="code-mono">type</span> draws a blank box. A
+            <span class="code-mono">repeat</span> over a variable that does not exist renders exactly
+            one panel and looks finished. Nothing in the interface objects to any of it.
+          </p>
+          <p class="body-md text-pretty text-body">
+            And a dashboard is the one artefact nobody can review. A four-thousand-line JSON diff
+            where <span class="code-mono">gridPos</span> values shifted, ids were renumbered and
+            <span class="code-mono">fieldConfig</span> was rewritten by the UI is not a diff a human
+            reads — it is a diff a human approves. The defects that survive review are the ones that
+            look like every other line in the file.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Ask an assistant for a dashboard and you inherit the same class of bug with more
+            confidence attached. Generated dashboards are fluent: plausible panel titles, plausible
+            PromQL, a <span class="code-mono">templating</span> block — and queries that reference
+            variables the block never declares, a <span class="code-mono">schemaVersion</span> picked
+            from a model's memory of some older Grafana, and panel types that were removed two major
+            releases ago. Verifying the claim takes seconds. Knowing what to verify is the hard part,
+            so this tool does that part: every rule is listed on this page, and so is everything it
+            deliberately refuses to flag.
+          </p>
+          <p class="body-sm text-mute">
+            Reviewing the queries too? <a class="link-inline" href="/promql-explainer/"
+              >PromQL Explainer</a
+            > breaks a query into plain English, and
+            <a class="link-inline" href="/alertmanager-route-tester/">Alertmanager Route Tester</a>
+            proves where the alerts those panels watch actually land.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="The Pipeline"
+    heading="How it works."
+    lead="Four steps, all inside your browser tab, re-run as you type."
+    steps={pipeline}
+  />
+
+  <section id="reference" class="scroll-mt-24 border-t border-hairline bg-canvas-soft">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Reference</p>
+        <h2 class="display-lg mt-3 text-ink">Variables, schema versions, and all {ruleCount} rules.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          The rule set is pinned to <span class="code-mono text-ink">{GRAFANA_RULES_VERSION}</span>, and
+          every version-sensitive finding is phrased as a range rather than one exact release. {
+            errorRules
+          } rules are errors, {warningRules} are warnings and {noteRules} are notes.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 max-w-5xl">
+        <h3 class="display-sm text-ink">The four variable syntaxes</h3>
+        <p class="body-sm mt-2 max-w-3xl text-pretty text-body">
+          All four resolve today, and two things that look like variables are not variables at all.
+          The linter reads every one of these out of every string in the document — queries, titles,
+          legend formats, panel links, annotation queries and other variables' queries.
+        </p>
+        <div class="card-soft mt-4 mb-12 overflow-x-auto">
+          <table class="gdv-table w-full text-left">
+            <thead>
+              <tr>
+                <th class="eyebrow px-4 py-3">Form</th>
+                <th class="eyebrow px-4 py-3">Since</th>
+                <th class="eyebrow px-4 py-3">What to know</th>
+              </tr>
+            </thead>
+            <tbody>
+              {
+                variableForms.map((row) => (
+                  <tr class="border-t border-hairline align-top">
+                    <td class="code-mono px-4 py-2.5 whitespace-nowrap text-ink">{row.form}</td>
+                    <td class="px-4 py-2.5 whitespace-nowrap text-mute">{row.since}</td>
+                    <td class="px-4 py-2.5 text-pretty text-body">{row.note}</td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="display-sm text-ink">schemaVersion milestones</h3>
+        <p class="body-sm mt-2 max-w-3xl text-pretty text-body">
+          The Grafana column is the release range each migration shipped in, not a one-to-one mapping:
+          Grafana bumps <span class="code-mono">schemaVersion</span> inside minor releases, so treat
+          these as landmarks rather than a lookup table.
+        </p>
+        <div class="card-soft mt-4 mb-12 overflow-x-auto">
+          <table class="gdv-table w-full text-left">
+            <thead>
+              <tr>
+                <th class="eyebrow px-4 py-3">schemaVersion</th>
+                <th class="eyebrow px-4 py-3">Grafana</th>
+                <th class="eyebrow px-4 py-3">What changed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {
+                schemaMilestones.map((row) => (
+                  <tr class="border-t border-hairline align-top">
+                    <td class="code-mono px-4 py-2.5 whitespace-nowrap text-ink">{row.version}</td>
+                    <td class="px-4 py-2.5 whitespace-nowrap text-mute">{row.grafana}</td>
+                    <td class="px-4 py-2.5 text-pretty text-body">{row.change}</td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="display-sm text-ink">The rule catalog</h3>
+        <p class="body-sm mt-2 mb-6 max-w-3xl text-pretty text-body">
+          An <strong class="font-medium text-ink">error</strong> means Grafana does something other
+          than what the JSON says; a <strong class="font-medium text-ink">warning</strong> means it
+          loads and it is wrong or unportable; a <strong class="font-medium text-ink">note</strong> is
+          worth knowing. Every finding in the playground links to its rule here.
+        </p>
+        <div class="grid gap-4 sm:grid-cols-2">
+          {
+            rules.map((rule) => (
+              <div id={`rule-${rule.id}`} class="gdv-rule card scroll-mt-24 p-5">
+                <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span class="code-mono text-xs text-accent-ink">{rule.id}</span>
+                  <span class={`gdv-sev gdv-sev--${rule.severity} code-mono`}>
+                    {severityLabel[rule.severity]}
+                  </span>
+                  {rule.extra && <span class="gdv-sev gdv-sev--extra code-mono">{rule.extra}</span>}
+                </div>
+                <h4 class="body-md mt-2 font-medium text-ink">{rule.title}</h4>
+                <p class="body-sm mt-2 text-pretty text-body">{rule.what}</p>
+                <p class="gdv-fix mt-3">
+                  <span class="gdv-fix__label code-mono">Fix</span>
+                  <span class="gdv-fix__text code-mono">{rule.fix}</span>
+                </p>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="not-checked" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">The Fence</p>
+        <h2 class="display-lg mt-3 text-balance text-ink">What it deliberately does not flag.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          Every one of these was considered and rejected, and the same list sits in a comment at the
+          top of the engine. Silence you can read is worth more than a rule you learn to ignore.
+        </p>
+      </div>
+      <div class="mx-auto mt-10 grid max-w-5xl gap-4 sm:grid-cols-2">
+        {
+          silent.map((item) => (
+            <div class="card p-5">
+              <h3 class="body-md font-medium text-ink">{item.what}</h3>
+              <p class="body-sm mt-2 text-pretty text-body">{item.why}</p>
+            </div>
+          ))
+        }
+      </div>
+      <p class="caption mx-auto mt-8 max-w-3xl text-center text-pretty text-mute">
+        Limits, stated rather than hidden: the linter reads up to {inputCap} characters, keeps at most {
+          MAX_DIAGNOSTICS_PER_RULE
+        } findings per rule and {totalCap} in total, and tells you the real count whenever a cap
+        applies.
+      </p>
+    </div>
+  </section>
+
+  <section id="next" class="scroll-mt-24 bg-inverse text-inverse-fg">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+        <div class="min-w-0">
+          <p class="eyebrow !text-cyan">Next Step</p>
+          <h2 class="display-lg mt-3 text-balance text-inverse-fg">
+            Paste the report into the review.
+          </h2>
+          <p class="body-md mt-4 text-pretty text-white/70">
+            "Copy report" gives you the whole run as plain text — one line per finding, with the JSON
+            path, the rule id and the fix, and the pinned rule version at the top so nobody has to
+            guess what checked it. Then keep going: read the queries those panels run, and prove the
+            alerts they watch reach somebody.
+          </p>
+          <div class="mt-7 flex flex-wrap items-center gap-3">
+            <Button href="/promql-explainer/" variant="secondary">PromQL Explainer</Button>
+            <Button href="/alertmanager-route-tester/" variant="secondary">
+              Alertmanager Route Tester
+            </Button>
+          </div>
+        </div>
+        <CodeBlock
+          lang="text"
+          filename="report.txt"
+          code={`Grafana Dashboard Validator — 7 errors, 12 warnings, 3 notes
+  — variables: 2 defined, 2 unresolved, schemaVersion 27
+Rules: ${GRAFANA_RULES_VERSION}
+
+ERRORS (7)
+  error duplicate-panel-id (panels[1].id): Panel id 1 is
+    already used by "Requests" (panels[0]).
+  error undefined-variable (panels[2].targets[0].expr):
+    "$cluster" is used here, but no template variable named
+    "cluster" is defined and it is not a Grafana built-in.`}
+        />
+      </div>
+    </div>
+  </section>
+
+  <FaqList faqs={faqs} />
+
+  <ToolCrossLinks slug="grafana-dashboard-validator">
+    <Fragment slot="lead">
+      The Grafana Dashboard Validator is one tool in <span translate="no">{site.name}</span> — a
+      growing canopy of browser-based validators, converters and testers that never touch a server.
+    </Fragment>
+    <Fragment slot="links">
+      Related: <a class="link-inline" href="/promql-explainer/">PromQL Explainer</a> for the queries
+      inside the panels,
+      <a class="link-inline" href="/alertmanager-route-tester/">Alertmanager Route Tester</a> for where
+      the alerts beside them land, the
+      <a class="link-inline" href="/prometheus-relabel-tester/">Prometheus Relabel Tester</a> for the
+      labels your variables filter on, and the
+      <a class="link-inline" href="/json-yaml-converter/">JSON ↔ YAML Converter</a> when the
+      provisioning file around the dashboard needs reshaping — or browse the full
+      <a class="link-inline" href={`${navLinks[0].href}/`}>tools directory</a>.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      Not affiliated with, endorsed by or sponsored by Grafana Labs. "Grafana" is a trademark of
+      Raintank, Inc. dba Grafana Labs, used here only to describe what this tool reads. Provided
+      as-is for convenience; always confirm a dashboard against the Grafana that will render it.
+      <span translate="no">{site.name}</span> is free and open.
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>
+
+<style>
+  @reference "../styles/global.css";
+
+  .gdv-table th {
+    font-weight: inherit;
+    white-space: nowrap;
+  }
+  .gdv-table td {
+    font-size: 13px;
+    line-height: 18px;
+  }
+  .gdv-sev {
+    padding: 1px 8px;
+    border-radius: var(--radius-pill);
+    font-size: 10.5px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .gdv-sev--error {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
+  .gdv-sev--warning {
+    background: var(--color-warning-soft);
+    color: var(--color-warning-deep);
+  }
+  .gdv-sev--info {
+    background: var(--color-canvas-soft-2);
+    color: var(--color-body);
+  }
+  .gdv-sev--extra {
+    background: var(--color-canvas-soft);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-mute);
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .gdv-fix {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+    margin: 0;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas-soft);
+  }
+  .gdv-fix__label {
+    flex: 0 0 auto;
+    font-size: 10px;
+    line-height: 16px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-accent-ink);
+  }
+  .gdv-fix__text {
+    min-width: 0;
+    font-size: 12px;
+    line-height: 17px;
+    color: var(--color-body);
+    overflow-wrap: anywhere;
+  }
+</style>

@@ -262,6 +262,43 @@ export const TOOL_FIXTURES: ToolFixture[] = [
     inputSelector: '#cd-input',
     resultsSelector: '#cd-results',
   },
+  {
+    // Tool 7 — Grafana Dashboard Validator. The boot seed is the "Kitchen sink"
+    // chip (21 of the 22 rules fire at once), not the clean dashboard: a
+    // dashboard with nothing wrong renders no per-row copy button, and J1 copies
+    // one. Chip 2 IS the clean dashboard, which is what J3 needs — it asserts
+    // chip 2 evaluates without any error signal.
+    //
+    // `hashKey: null` on purpose and permanently: a dashboard is kilobytes to
+    // megabytes of JSON, one or two orders of magnitude past the ~2000-char
+    // fragment cap. The playground omits `data-copy-link` entirely and never
+    // touches `location.hash` — J3 asserts both halves (no fragment ever
+    // written, and an unknown `#s=` key ignored rather than parsed).
+    //
+    // `invalidInput` is chosen so every PREFIX of it produces a DIFFERENT
+    // diagnostic than the pinned one: `"`, `"p`, … `"panel` are all unterminated
+    // strings ("a string is opened here but never closed"), and only the closed
+    // `"panels"` is valid JSON of the wrong shape. That matters for J2 — if a
+    // slow keystroke burst surfaced an intermediate diagnostic, matching the
+    // pinned string would make the run look calm when it was not.
+    //
+    // `xssPayload` is a complete one-line dashboard whose panel title carries the
+    // markup and whose panel type is `graph`, so `deprecated-panel-type` quotes
+    // that title straight into its message — the one place this tool renders
+    // untrusted text. Both strings are pinned by
+    // `src/lib/grafana-dashboard-validator/engine.test.ts`.
+    slug: 'grafana-dashboard-validator',
+    family: 'cm',
+    hashKey: null,
+    seededResultString: 'Panel id 1 is already used by "Requests" (panels[0]).',
+    invalidInput: '"panels"',
+    calmErrorString:
+      'This JSON is a string, not an object — paste the dashboard JSON itself, starting with "{".',
+    xssPayload:
+      '{"title":"Ops","panels":[{"id":1,"type":"graph","title":"<img src=x onerror=alert(1)>","gridPos":{"h":8,"w":12,"x":0,"y":0},"targets":[{"refId":"A","expr":"up"}]}]}',
+    inputSelector: '#gd-input .cm-content',
+    resultsSelector: '#gd-results',
+  },
 ];
 
 /** Fixtures for one family — used by the family-gated journey steps. */
