@@ -167,6 +167,27 @@ describe('buildChain — diagnostics', () => {
     );
   });
 
+  it('does NOT record a cross-signed twin as the issuer of its self-signed sibling', () => {
+    // Bug: the edge loop omitted the cross-signed guard the walk applies, so the
+    // self-signed ISRG Root X2 got an edge pointing at its cross-signed twin. The
+    // twin has the same public key by definition, so the check "verified" and the
+    // page printed "ISRG Root X2 really did sign this certificate" — naming the
+    // wrong signer and suppressing the honest self-signature edge.
+    const chain = buildChain(certsOf(CROSS_SIGNED_PAIR));
+    expect(chain.edges.filter((e) => e.subjectIndex !== e.issuerIndex)).toEqual([]);
+    expect(chain.edges).toContainEqual({ subjectIndex: 0, issuerIndex: 0 });
+  });
+
+  it('badges a certificate that is not in the chain "extra", not "leaf"', () => {
+    // Bug: `roles` was mapped from each certificate's own shape, so a leftover
+    // leaf was badged "Leaf" with the leaf gloss ("the end of the chain") directly
+    // under the finding that says it is not part of the chain at all.
+    const chain = buildChain(certsOf([DEMO_LEAF, BADSSL_WILDCARD_LEAF, DEMO_INTERMEDIATE].join('\n')));
+    expect(codes(chain.diagnostics)).toContain('extra-certificate');
+    expect(chain.roles).toEqual(['leaf', 'intermediate', 'extra']);
+    expect(chain.ordered[2].commonName).toBe('*.badssl.com');
+  });
+
   it('reports a v1 certificate’s own parse warnings alongside the chain ones', () => {
     const chain = buildChain(certsOf(DEMO_LEAF_V1));
     expect(chain.ordered[0].warnings.length).toBeGreaterThan(0);
@@ -370,6 +391,53 @@ describe('matchHostname — RFC 6125', () => {
       sans: [{ kind: 'dns', value: 'w*.example.com' }],
     };
     expect(matchHostname(fake, 'www.example.com').matched).toBe(false);
+  });
+
+  it('refuses a URL instead of matching it against a wildcard', () => {
+    // Bug: `https://www.shop.example.com` ended `.shop.example.com`, and the
+    // residual prefix `https://www` holds no dot, so it was accepted as "exactly
+    // one label" and the tool answered "Matches" with the wildcard rule quoted at
+    // it. A URL is not a hostname; refuse it by name and never rewrite the value.
+    const r = matchHostname(demo, 'https://www.shop.example.com');
+    expect(r.matched).toBe(false);
+    expect(r.unusable).toBe(true);
+    expect(r.reason).toContain('That looks like a URL');
+    expect(r.hostname).toBe('https://www.shop.example.com');
+  });
+
+  it('refuses a host:port pair rather than reporting a correct certificate as no-match', () => {
+    // Bug: nothing stripped the port, so `www.shop.example.com:443` — a host the
+    // certificate genuinely covers via *.shop.example.com — came back "No match"
+    // with no mention of the port. At 2am that reads as "my SAN list is wrong".
+    const r = matchHostname(demo, 'www.shop.example.com:443');
+    expect(r.matched).toBe(false);
+    expect(r.unusable).toBe(true);
+    expect(r.reason).toContain('host:port');
+    // The same host without the port still matches, so the guard is not swallowing
+    // the legitimate case.
+    expect(matchHostname(demo, 'www.shop.example.com').matched).toBe(true);
+  });
+
+  it('refuses other non-hostname shapes but leaves IPv6 literals alone', () => {
+    expect(matchHostname(demo, 'user@shop.example.com').unusable).toBe(true);
+    expect(matchHostname(demo, 'shop.example.com extra').unusable).toBe(true);
+    expect(matchHostname(demo, 'shop.example.com/health').unusable).toBe(true);
+    // IPv6 is full of colons and must still be matched, bare or bracketed.
+    expect(matchHostname(demo, '2001:db8::10').matched).toBe(true);
+    expect(matchHostname(demo, '[2001:db8::10]').matched).toBe(true);
+    expect(matchHostname(demo, '2001:db8::10').unusable).toBeUndefined();
+  });
+
+  it('refuses a zero-padded IPv4 octet instead of reading it as decimal', () => {
+    // Bug: IPV4_RE allowed \d{1,3} and Number('010') === 10, so 203.0.113.010
+    // "matched" the 203.0.113.10 IP SAN — but inet_aton/glibc read 010 as octal,
+    // so the host the OS dials is 203.0.113.8. Same policy as ip-core (099f8c2).
+    const r = matchHostname(demo, '203.0.113.010');
+    expect(r.matched).toBe(false);
+    expect(r.unusable).toBe(true);
+    expect(r.reason).toContain('no leading zeros');
+    // The unpadded address still matches.
+    expect(matchHostname(demo, '203.0.113.10').matched).toBe(true);
   });
 
   it('handles an empty or absurd hostname without throwing', () => {

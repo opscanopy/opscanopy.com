@@ -70,6 +70,8 @@ export interface DerNode {
 const MAX_CHILDREN = 20_000;
 /** Length fields wider than this are refused outright. */
 const MAX_LENGTH_OCTETS = 4;
+/** No real OID is longer than ~40 content octets; see `decodeOid`. */
+const MAX_OID_OCTETS = 128;
 
 /**
  * Read one TLV at `offset`. Returns `null` when the buffer is too short, the
@@ -168,6 +170,12 @@ export function readSequence(buf: Uint8Array, offset = 0): DerNode[] | null {
  */
 export function decodeOid(content: Uint8Array): string | null {
   if (!content || content.length === 0) return null;
+  // The BigInt shift below is O(n) per octet, so the decode is O(n²) in the
+  // content length: a hand-built 533 KB OID froze the main thread for ~3 minutes
+  // before returning "not a certificate". Every other bound in this engine is
+  // capped; this one was not. The longest OID in any real certificate is well
+  // under 40 octets, so nothing legitimate is anywhere near this ceiling.
+  if (content.length > MAX_OID_OCTETS) return null;
 
   // Every sub-identifier — the first one included — is a base-128 big-endian
   // value with the continuation bit set on all but its last octet.

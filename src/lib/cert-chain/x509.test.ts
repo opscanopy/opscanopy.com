@@ -10,6 +10,7 @@
  * validity-window assertion lives in chain.test.ts where `now` is injected.
  */
 import { describe, expect, it } from 'vitest';
+import { TAG, readChildren, readNode } from './der';
 import { extractCertificateDers } from './pem';
 import { parseCertificate } from './x509';
 import {
@@ -314,6 +315,45 @@ describe('never throws', () => {
       copy[i] ^= 0xff;
       expect(() => parseCertificate(copy)).not.toThrow();
     }
+  });
+
+  it('refuses a mangled signatureAlgorithm OID tag rather than reading it as clean', () => {
+    // Bug: `decodeOid` only ever looked at content octets, so flipping the OID's
+    // identifier byte (0x06 → 0x07) still produced 1.2.840.113549.1.1.11 and the
+    // certificate came back verified with no warnings — a shape OpenSSL and every
+    // browser reject as malformed. Assert the tag, do not assume it.
+    const { ders } = extractCertificateDers(DEMO_LEAF);
+    const der = ders[0];
+    const outer = readNode(der, 0)!;
+    const top = readChildren(outer)!;
+    const base = outer.contentStart;
+    // top = [tbsCertificate, signatureAlgorithm, signatureValue]
+    const algOidTagAt = base + top[1].contentStart;
+    expect(der[algOidTagAt]).toBe(TAG.OID);
+    for (const wrong of [0x07, 0x86, 0x05]) {
+      const copy = Uint8Array.from(der);
+      copy[algOidTagAt] = wrong;
+      expect(parseCertificate(copy)).toBeNull();
+    }
+  });
+
+  it('refuses a signature BIT STRING with non-zero unused bits', () => {
+    // Bug: a signature is a whole number of octets, but any unusedBits value 0–7
+    // was accepted, so mutating that octet to 0x01 produced a clean, "verified"
+    // certificate out of a malformed one.
+    const { ders } = extractCertificateDers(DEMO_LEAF);
+    const der = ders[0];
+    const outer = readNode(der, 0)!;
+    const top = readChildren(outer)!;
+    const unusedBitsAt = outer.contentStart + top[2].contentStart;
+    expect(der[unusedBitsAt]).toBe(0);
+    for (const wrong of [0x01, 0x07]) {
+      const copy = Uint8Array.from(der);
+      copy[unusedBitsAt] = wrong;
+      expect(parseCertificate(copy)).toBeNull();
+    }
+    // The untouched certificate still parses, so the check has not gone too far.
+    expect(parseCertificate(der)).not.toBeNull();
   });
 
   it('survives 2 MB of random bytes', () => {

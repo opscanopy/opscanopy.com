@@ -178,8 +178,27 @@ describe('decodeOid', () => {
   });
 
   it('refuses an empty OID and an unterminated final arc', () => {
-    expect(decodeOid(new Uint8Array(0))).toBeNull();
+    expect(decodeOid(b())).toBeNull();
     expect(decodeOid(b(0x2a, 0x86))).toBeNull();
+  });
+
+  it('caps the content length instead of grinding through a crafted arc', () => {
+    // Bug: the BigInt accumulator is O(n) per octet, so decoding was O(n²) with no
+    // bound at all — a hand-built 533 KB OID in a signatureAlgorithm froze the main
+    // thread for ~3 minutes and then returned "not a certificate". Every other
+    // limit in this engine is capped; this one was not.
+    const huge = new Uint8Array(200_000).fill(0x80);
+    huge[huge.length - 1] = 0x01;
+    const started = Date.now();
+    expect(decodeOid(huge)).toBeNull();
+    expect(Date.now() - started).toBeLessThan(1_000);
+    // The longest arc a real certificate carries is nowhere near the cap.
+    const long = new Uint8Array(129).fill(0x80);
+    long[long.length - 1] = 0x01;
+    expect(decodeOid(long)).toBeNull();
+    const atCap = new Uint8Array(128).fill(0x80);
+    atCap[atCap.length - 1] = 0x01;
+    expect(decodeOid(atCap)).not.toBeNull();
   });
 });
 
