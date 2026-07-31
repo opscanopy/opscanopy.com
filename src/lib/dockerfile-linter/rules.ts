@@ -30,6 +30,13 @@
  * │  • `;`-joined update+install. `apt-get update; apt-get install` hides a    │
  * │    failed update, but both commands ARE in the same layer, so DF007 has   │
  * │    nothing to say and a separate shell-semantics rule would be noise.    │
+ * │  • `apt-get update && apt-get upgrade`. Same reasoning: an upgrade uses   │
+ * │    the index in the same layer, so it satisfies DF007 like an install.    │
+ * │  • A POSIX test in `RUN [ -f /etc/passwd ] && …`. It opens with `[` and    │
+ * │    is not JSON, but it is not an exec-form attempt either — Docker runs   │
+ * │    the shell conditional as written, so DF014 stays out of it.            │
+ * │  • `sudo` that is not the command word of a segment: installing the sudo  │
+ * │    PACKAGE is not a DF015 finding.                                        │
  * │  • FROM references whose tag comes from an unresolvable `$VAR`. The real  │
  * │    tag is chosen at build time by `--build-arg`; guessing would be wrong. │
  * │  • `COPY --from=<registry image>`. Anything with a `/`, `:` or `@` is a    │
@@ -385,6 +392,14 @@ function df006(ctx: RuleContext): void {
 
 const APT_UPDATE_RE = /\b(apt-get|apt)\s+(?:-[^\s]+\s+)*update\b/;
 const APT_INSTALL_RE = /\b(?:apt-get|apt)\s+(?:-[^\s]+\s+)*install\b/;
+/**
+ * What SATISFIES a DF007 `apt-get update` — an install or an upgrade. An
+ * `apt-get update && apt-get -y upgrade` already shares one layer with the
+ * update, so the stale-index rationale cannot apply and the "join them" fix was
+ * telling the author to join two commands that are already joined.
+ */
+const APT_USES_INDEX_RE =
+  /\b(?:apt-get|apt)\s+(?:-[^\s]+\s+)*(?:install|upgrade|dist-upgrade|full-upgrade)\b/;
 const APK_UPDATE_RE = /\bapk\s+(?:--?[^\s]+\s+)*update\b/;
 const APK_ADD_RE = /\bapk\s+(?:--?[^\s]+\s+)*add\b/;
 const RPM_INSTALL_RE = /\b(dnf|yum|microdnf)\s+(?:-[^\s]+\s+)*(?:install|groupinstall)\b/;
@@ -400,7 +415,7 @@ function df007(ctx: RuleContext): void {
     const all = ctx.maskedTextOf(instr);
 
     const aptUpdate = segments.find((s) => APT_UPDATE_RE.test(masked(s)));
-    if (aptUpdate && !APT_INSTALL_RE.test(all)) {
+    if (aptUpdate && !APT_USES_INDEX_RE.test(all)) {
       const label = /\bapt-get\b/.test(masked(aptUpdate)) ? 'apt-get' : 'apt';
       ctx.add({
         id: 'DF007',
@@ -538,15 +553,44 @@ function df009(ctx: RuleContext): void {
  *  DF010 — root in the final stage.
  * ────────────────────────────────────────────────────────────────────────── */
 
-function df010(ctx: RuleContext): void {
-  const stage: Stage | undefined = ctx.parsed.stages[ctx.parsed.stages.length - 1];
-  if (!stage) return;
-
+/** The USER a stage ends on, ignoring ONBUILD (which fires in a child build). */
+function lastUserOf(stage: Stage): Instruction | undefined {
   const users = stage.instructions.filter(
     (i) => i.keyword === 'USER' && !i.onbuild && i.argText.trim() !== '',
   );
+  return users[users.length - 1];
+}
 
-  if (users.length === 0) {
+function df010(ctx: RuleContext): void {
+  const stages = ctx.parsed.stages;
+  const stage: Stage | undefined = stages[stages.length - 1];
+  if (!stage) return;
+
+  let last = lastUserOf(stage);
+  let inherited = false;
+
+  // `FROM base` inherits the referenced stage's image config, USER included — so
+  // a final stage that FROMs an earlier stage which ran `USER node` does NOT run
+  // as root. Walking only backwards makes the chain strictly shorten, so it
+  // always terminates.
+  if (!last) {
+    let cursor: Stage = stage;
+    for (;;) {
+      const ref = cursor.resolvedImage.trim().toLowerCase();
+      if (ref === '' || cursor.unresolved) break;
+      const parent = stages.find((s) => s.index < cursor.index && s.name === ref);
+      if (!parent) break;
+      const parentUser = lastUserOf(parent);
+      if (parentUser) {
+        last = parentUser;
+        inherited = true;
+        break;
+      }
+      cursor = parent;
+    }
+  }
+
+  if (!last) {
     ctx.add({
       id: 'DF010',
       severity: 'warning',
@@ -560,9 +604,25 @@ function df010(ctx: RuleContext): void {
     return;
   }
 
-  const last = users[users.length - 1];
   const account = unquote(last.argText.trim()).split(':')[0];
   if (account !== 'root' && account !== '0') return;
+
+  // An INHERITED root is not a "switch back" — the final stage wrote no USER at
+  // all — so it gets the never-sets wording, attributed to its own FROM line.
+  if (inherited) {
+    ctx.add({
+      id: 'DF010',
+      severity: 'warning',
+      title: 'The final stage never sets USER, so the container runs as root.',
+      detail:
+        'Without a USER instruction the process runs as uid 0 inside the container. A writable bind mount, a container escape or one compromised dependency then acts as root.',
+      line: stage.line,
+      remediation:
+        'Create an unprivileged user and switch to it before CMD, e.g. `USER node`, or `RUN adduser --system app` then `USER app`.',
+    });
+    return;
+  }
+
   ctx.add({
     id: 'DF010',
     severity: 'warning',
@@ -647,7 +707,12 @@ function df012(ctx: RuleContext): void {
 
 function df015(ctx: RuleContext): void {
   for (const instr of runsOf(ctx.parsed)) {
-    const hit = ctx.shellOf(instr).find((s) => /(?:^|\s)sudo(?:\s|$)/.test(masked(s)));
+    // `sudo` only counts as the COMMAND WORD of a segment. Matching it anywhere
+    // flagged `apt-get install -y sudo ca-certificates` — the devcontainer shape —
+    // and told the author to "drop sudo", i.e. to delete a package from the
+    // install list. A post-pipe `curl … | sudo bash` segment still trims to
+    // `sudo bash`, so every legitimate hit survives the anchor.
+    const hit = ctx.shellOf(instr).find((s) => /^\s*sudo(?:\s|$)/.test(masked(s)));
     if (!hit) continue;
     ctx.add({
       id: 'DF015',
