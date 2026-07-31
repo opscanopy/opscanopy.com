@@ -698,6 +698,26 @@ export const tools: Tool[] = [
     ],
     accent: 'develop',
   },
+  {
+    slug: 'jq-playground',
+    name: 'jq Playground',
+    tagline: 'Test jq expressions against your JSON — real jq 1.8.2 running in your browser.',
+    description:
+      'Run the real jq 1.8.2 binary, compiled to WebAssembly, against your own JSON — no server round-trip, no upload, and no re-implementation that "mostly" matches. One card per output, honest compile/runtime/parse-error classification, and -r/-s/-n/-c as one-tap toggles.',
+    status: 'planned',
+    category: 'Logs',
+    keywords: [
+      'jq playground online',
+      'jq tester',
+      'jqplay alternative',
+      'test jq expression online',
+      'run jq in browser',
+      'jq 1.8 playground',
+      'kubectl json jq tester',
+      'jq expression tester no upload',
+    ],
+    accent: 'develop',
+  },
 ];
 
 export const liveTools = tools.filter((t) => t.status === 'live');

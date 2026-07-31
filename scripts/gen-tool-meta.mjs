@@ -76,6 +76,7 @@ const TOOL_PATHS = {
     lib: 'dockerfile-linter',
     component: 'DockerfileLinterPlayground.astro',
   },
+  'jq-playground': { lib: 'jq-playground', component: 'JqPlayground.astro' },
 };
 
 const missing = liveTools.map((t) => t.slug).filter((slug) => !TOOL_PATHS[slug]);

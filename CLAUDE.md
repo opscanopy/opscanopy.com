@@ -73,6 +73,8 @@ CodeMirror v6 is used in 13 tools: `AlertLint`, `GHA Validator`, `GHA Expression
 
 Engines are dynamically imported inside the boot closure so the heavy logic code-splits away from the page shell.
 
+**`jq-playground` is the first vendor WASM runtime on the site** (`jq-wasm@3.0.0-jq-1.8.2`, exact pin — real jq 1.8.2, 907 KB / ~324 KB gzipped): the binary arrives via the Vite asset import `import('jq-wasm/jq.wasm?url')` inside the boot closure and is passed to `loadJq({ wasmURL })`, so it is hashed into `dist/_astro/` and fetched same-origin (the CSP allows `connect-src 'self'` only) — **never hand-copy a `.wasm` into `public/`** (that is the older hand-rolled Go PoC's pattern, `engines/alertlint/` → `public/engine.wasm`, and it is not how vendor WASM ships here). The loaded handle is synchronous, `jq.version` is a string property read from the binary (the UI badge — never hardcode it), and a non-terminating filter exhausts jq's heap and throws an Emscripten `Aborted()` out of `jq.raw()`, which the engine turns into a diagnostic and a fresh module.
+
 #### Playground UX contract (set by the ip-converter / cidr-checker / subnet-calculator overhauls)
 
 New or reworked playgrounds should follow the conventions these three tools share:
