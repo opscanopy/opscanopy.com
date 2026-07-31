@@ -36,6 +36,15 @@ export default defineConfig({
   // never mistaken for specs and `.test.ts` is never collected here.
   testMatch: /.*\.spec\.ts$/,
   fullyParallel: true,
+  // These journeys assert TIMING contracts — a 130-220ms debounce and a ~600ms
+  // calm-error hold — so the runner's own CPU contention is a measurement error,
+  // not a property of the tool. At 4 workers on this machine, J2 saw
+  // `pressSequentially` stall past the hold window often enough to report a
+  // stale intermediate diagnostic as a contract violation (~1 run in 3 with only
+  // four tools in the table; it gets worse as the matrix grows to ten).
+  // Two workers keeps most of the wall-clock win while making the timing
+  // assertions trustworthy. Raise it only for a suite with no timing assertions.
+  workers: 2,
   // Flake must fail loudly rather than be papered over by a rerun — the
   // journeys assert timing contracts (debounce, calm-error hold) where a
   // silent retry would hide a real regression.
