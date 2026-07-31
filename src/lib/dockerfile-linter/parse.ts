@@ -431,7 +431,17 @@ function readHeredoc(
       i += 1;
       break;
     }
-    bodyLines.push({ line: i + 1, text: candidate });
+    // A whole-line shell COMMENT is space-filled, keeping its length so every
+    // `lineAt` offset still maps to the right physical line. A comment can never
+    // contain a command, but an apostrophe in one ("# don't ask why") would be
+    // read by `maskQuoted` as an opening single quote and blank the ENTIRE rest
+    // of the body — which silently switched off DF007/008/011/012/015 for the
+    // whole heredoc and made the tool announce "nice Dockerfile" on a file with
+    // `curl … | sh` in it.
+    bodyLines.push({
+      line: i + 1,
+      text: /^\s*#/.test(candidate) ? ' '.repeat(candidate.length) : candidate,
+    });
   }
 
   let text = '';
@@ -483,6 +493,37 @@ function parseFlags(
   return { flags, rest };
 }
 
+/**
+ * Tell a POSIX `[ … ]` test apart from a botched JSON array.
+ *
+ * `RUN [ -f /etc/passwd ] && echo present` opens with `[` and does not parse as
+ * JSON, but it is not an exec-form attempt at all: Docker runs exactly what the
+ * author wrote. Reporting it as DF014 was an ERROR on valid input whose stated
+ * fix (`RUN ["-f","/etc/passwd"]`) breaks the build. Three shapes that no JSON
+ * array can have, and every `['nginx']`-style near-miss still falls through:
+ *
+ *   • a first word starting `-` or `!` (`[ -d /tmp ]`, `[ ! -f x ]`);
+ *   • a bare comparison operator and no comma (`[ "$X" = "y" ]`);
+ *   • a shell command separator right after the closing bracket (`] && …`,
+ *     `] || exit 1`, `] | tee …`).
+ *
+ * An UNTERMINATED array (`CMD ["nginx"`) is deliberately still DF014: it has no
+ * closing bracket to reason about and Docker really does demote it to shell form.
+ */
+function looksLikeShellTest(trimmed: string): boolean {
+  const close = trimmed.endsWith(']') ? trimmed.length - 1 : trimmed.indexOf(']');
+  if (close < 1) return false;
+  const inner = trimmed.slice(1, close).trim();
+  const after = trimmed.slice(close + 1).trim();
+
+  const first = inner.split(/\s+/)[0] ?? '';
+  if (first === '!' || /^-[A-Za-z]/.test(first)) return true;
+  if (!inner.includes(',') && /(?:^|\s)(?:=|==|!=|-eq|-ne|-lt|-le|-gt|-ge)(?:\s|$)/.test(inner)) {
+    return true;
+  }
+  return /^(?:&&|\|\||\|)/.test(after);
+}
+
 function execFormOf(
   keyword: string,
   argText: string,
@@ -491,6 +532,7 @@ function execFormOf(
   if (!EXEC_FORM_KEYWORDS.has(keyword) || !trimmed.startsWith('[')) {
     return { brokenJson: false };
   }
+  if (looksLikeShellTest(trimmed)) return { brokenJson: false };
   try {
     const parsed: unknown = JSON.parse(trimmed);
     if (Array.isArray(parsed) && parsed.every((v) => typeof v === 'string')) {

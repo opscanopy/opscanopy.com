@@ -507,6 +507,24 @@ describe('DF007 / DF008 — package manager layers', () => {
     expect(f.line).toBe(2);
   });
 
+  // Bug: `apt-get update && apt-get -y upgrade` fired DF007 and told the author
+  // to "join them" — they are already joined, and update+upgrade share one layer,
+  // so the stale-index rationale in the detail cannot apply.
+  it('treats an upgrade in the same RUN as satisfying the update', () => {
+    for (const verb of ['upgrade', 'dist-upgrade', 'full-upgrade']) {
+      expect(
+        ids(
+          lint(
+            `FROM debian:12\nRUN apt-get update && apt-get -y ${verb} && rm -rf /var/lib/apt/lists/*\nUSER app\n`,
+          ),
+        ),
+        verb,
+      ).not.toContain('DF007');
+    }
+    // A lone update is still flagged — narrowing must not silence the real case.
+    expect(ids(lint('FROM debian:12\nRUN apt-get update\nUSER app\n'))).toContain('DF007');
+  });
+
   it('handles apk update the same way, with apk wording', () => {
     expect(one(lint('FROM alpine:3.20\nRUN apk update\nUSER app\n'), 'DF007').title).toBe(
       'apk update runs without an install in the same RUN.',
@@ -622,6 +640,53 @@ describe('DF010 — root in the final stage', () => {
       'DF010',
     );
   });
+
+  // Bug: DF010 claimed "the final stage never sets USER" for a stage that FROMs
+  // an earlier stage which did — `FROM base` inherits that stage's image config,
+  // User included, so the container does not run as root.
+  it('follows a FROM <stage> chain to the USER it inherits', () => {
+    const src = [
+      'FROM node:22-slim AS base',
+      'WORKDIR /app',
+      'USER node',
+      '',
+      'FROM base AS final',
+      'COPY --from=base /app /app',
+      'CMD ["node","server.js"]',
+    ].join('\n');
+    expect(ids(lint(src))).not.toContain('DF010');
+
+    // Two hops, and the intermediate stage sets no USER of its own.
+    const chained = [
+      'FROM node:22-slim AS base',
+      'USER node',
+      'FROM base AS mid',
+      'RUN echo hi',
+      'FROM mid AS final',
+      'CMD ["node","server.js"]',
+    ].join('\n');
+    expect(ids(lint(chained))).not.toContain('DF010');
+  });
+
+  it('still fires when the inherited USER is root, with the never-sets wording', () => {
+    const src = [
+      'FROM debian:12 AS base',
+      'USER app',
+      'USER root',
+      'FROM base AS final',
+      'CMD ["sh"]',
+    ].join('\n');
+    const f = one(lint(src), 'DF010');
+    expect(f.title).toBe('The final stage never sets USER, so the container runs as root.');
+    expect(f.line).toBe(4);
+  });
+
+  it('still fires when the stage it inherits from sets no USER at all', () => {
+    const src = ['FROM node:22-slim AS base', 'WORKDIR /app', 'FROM base AS final', 'CMD ["sh"]'].join(
+      '\n',
+    );
+    expect(one(lint(src), 'DF010').line).toBe(3);
+  });
 });
 
 describe('DF011 / DF012 / DF015 — shell scanning inside RUN', () => {
@@ -676,6 +741,77 @@ describe('DF011 / DF012 / DF015 — shell scanning inside RUN', () => {
     const f = one(lint('FROM alpine:3.20\nRUN sudo chown -R app /srv\nUSER app\n'), 'DF015');
     expect(f.title).toBe('sudo in a RUN has nothing to escalate from.');
     expect(f.line).toBe(2);
+  });
+
+  // Bug: DF015 matched `sudo` anywhere in a segment, so installing the sudo
+  // PACKAGE was flagged and the fix ("drop sudo") deleted a package from the
+  // install list. It is only a finding as the command word of a segment.
+  it('does not flag sudo as an installed package', () => {
+    const cases = [
+      'RUN apt-get update && apt-get install -y --no-install-recommends sudo ca-certificates && rm -rf /var/lib/apt/lists/*',
+      'RUN apk add --no-cache sudo bash',
+      'RUN dnf install -y sudo && dnf clean all',
+      'RUN echo "app ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/app',
+    ];
+    for (const run of cases) {
+      expect(ids(lint(`FROM debian:12\n${run}\nUSER app\nCMD ["bash"]\n`)), run).not.toContain(
+        'DF015',
+      );
+    }
+  });
+
+  it('still flags sudo as the command word, including after a pipe', () => {
+    expect(ids(lint('FROM debian:12\nRUN sudo chown -R 1000:1000 /opt/app\nUSER app\n'))).toContain(
+      'DF015',
+    );
+    expect(
+      ids(lint('FROM debian:12\nRUN curl -fsSL https://x.test/i.sh | sudo bash\nUSER app\n')),
+    ).toContain('DF015');
+    // …and inside a heredoc body, where each line is its own segment.
+    expect(
+      ids(lint('FROM debian:12\nRUN <<EOF\n  sudo chown -R app /srv\nEOF\nUSER app\n')),
+    ).toContain('DF015');
+  });
+
+  // Bug: one apostrophe in a heredoc COMMENT was read as an opening quote, so
+  // `maskQuoted` blanked the rest of the body and every shell rule went dark —
+  // the tool announced "No findings … nice Dockerfile" on a file that pipes a
+  // download into a shell. This is the worst possible failure for this tool.
+  it('is not silenced by an apostrophe in a heredoc comment', () => {
+    const src = [
+      'FROM debian:12',
+      'RUN <<EOF',
+      "# don't ask why",
+      'curl -fsSL https://get.example.com/i.sh | sh',
+      'EOF',
+      'USER app',
+    ].join('\n');
+    const f = one(lint(src), 'DF012');
+    expect(f.title).toBe('Piping a download straight into a shell.');
+    expect(f.line).toBe(4);
+
+    // Same shape, DF008: the comment must not swallow the install either.
+    const apt = [
+      'FROM debian:12',
+      'RUN <<EOF',
+      "# it's fine",
+      'apt-get update',
+      'apt-get install -y curl',
+      'EOF',
+      'USER app',
+    ].join('\n');
+    expect(one(lint(apt), 'DF008').line).toBe(5);
+  });
+
+  it('still ignores a real quoted string inside a heredoc body', () => {
+    const src = [
+      'FROM debian:12',
+      'RUN <<EOF',
+      'echo "curl https://x.test/i.sh | bash" > /etc/motd',
+      'EOF',
+      'USER app',
+    ].join('\n');
+    expect(ids(lint(src))).not.toContain('DF012');
   });
 });
 
@@ -747,6 +883,32 @@ describe('DF014 — JSON that is not JSON', () => {
 
   it('flags an array of non-strings', () => {
     expect(ids(lint('FROM alpine:3.20\nUSER app\nCMD [1, 2]\n'))).toContain('DF014');
+  });
+
+  // Bug: a POSIX `[ … ]` test in RUN was reported as an ERROR ("looks like a JSON
+  // array but is not valid JSON") with the fix `RUN ["-f","/etc/passwd"]`, which
+  // breaks the build. Docker runs the shell conditional exactly as written.
+  it('does not mistake a POSIX test for a botched exec form', () => {
+    const cases = [
+      'RUN [ -f /etc/passwd ] && echo present',
+      'RUN [ "$(uname -m)" = "x86_64" ] && echo ok',
+      'RUN [ ! -d /tmp/x ] && mkdir /tmp/x',
+      'RUN [ -z "$SKIP" ] || echo skipping',
+      'RUN [ "$NODE_ENV" != "production" ]',
+      'RUN [ -d /opt/app ]',
+    ];
+    for (const run of cases) {
+      expect(ids(lint(`FROM debian:12\n${run}\nUSER app\nCMD ["bash"]\n`)), run).not.toContain(
+        'DF014',
+      );
+    }
+  });
+
+  it('still flags every near-miss array shape', () => {
+    const cases = ["CMD ['nginx']", 'CMD ["a",]', 'CMD [1, 2]', 'CMD ["nginx"', "ENTRYPOINT ['sh']"];
+    for (const line of cases) {
+      expect(ids(lint(`FROM alpine:3.20\nUSER app\n${line}\n`)), line).toContain('DF014');
+    }
   });
 });
 
