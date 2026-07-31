@@ -84,12 +84,10 @@ const TOOL_PATHS = {
     lib: 'grafana-dashboard-validator',
     component: 'GrafanaDashboardValidatorPlayground.astro',
   },
-  {
   'kubernetes-label-selector-tester': {
     lib: 'kubernetes-label-selector-tester',
     component: 'K8sLabelSelectorTesterPlayground.astro',
   },
-  {
   // Slug ≠ lib dir again: the SEO head query is "systemd unit validator", the code
   // lives under the shorter systemd-lint (which also owns calendar.ts, the shared
   // OnCalendar grammar that cron-to-systemd imports from).
@@ -97,7 +95,6 @@ const TOOL_PATHS = {
     lib: 'systemd-lint',
     component: 'SystemdUnitValidatorPlayground.astro',
   },
-  {
   'terraform-plan-summarizer': {
     lib: 'terraform-plan-summarizer',
     component: 'TerraformPlanSummarizerPlayground.astro',

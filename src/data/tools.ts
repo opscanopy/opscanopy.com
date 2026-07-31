@@ -760,6 +760,8 @@ export const tools: Tool[] = [
       'grafana graph to timeseries migration',
       'datasource ds_prometheus not found',
       'review grafana dashboard pull request',
+    ],
+    accent: 'develop',
   },
   {
     slug: 'kubernetes-label-selector-tester',
@@ -798,6 +800,8 @@ export const tools: Tool[] = [
       'systemd timer not firing',
       'systemd unit file syntax check',
       'validate systemd service file',
+    ],
+    accent: 'ship',
   },
   {
     slug: 'terraform-plan-summarizer',
@@ -872,8 +876,6 @@ export const categoryAccent: Record<string, string> = {
   Config: '#35786a',
   Docker: '#3b82b8',
   Utilities: '#7a6e52',
-  // Olive — the only unclaimed band left between the leaf brand (#4a8c3f) and
-  // the Utilities khaki (#7a6e52), so an IaC card is not mistaken for either.
   IaC: '#667a33',
 };
 
