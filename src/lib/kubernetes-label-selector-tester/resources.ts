@@ -53,6 +53,18 @@ export interface ParsedResource {
   labels: Record<string, string>;
   labelsPath: string;
   labelIssues: LabelIssue[];
+  /**
+   * Keys the document CARRIES but whose value YAML did not read as a scalar —
+   * a map, a list, or the classic unquoted date (`released: 2024-06-01`, which
+   * js-yaml resolves to a `Date`). Mapped to what YAML made of them.
+   *
+   * They cannot go in `labels` (there is no string to compare against) and they
+   * must NOT be treated as absent: claiming "no released label at all" about a
+   * manifest whose `released:` line is right there — and firing the amber
+   * absent-key annotation on it — is the confidently-wrong answer this tool
+   * exists to prevent. `evaluateClause` reads this set and refuses to decide.
+   */
+  unreadableLabels: Record<string, string>;
 }
 
 export interface ResourceParse {
@@ -91,6 +103,9 @@ function typeName(value: unknown): string {
   if (typeof value === 'string') return 'string';
   if (typeof value === 'number') return 'number';
   if (typeof value === 'boolean') return 'boolean';
+  // `released: 2024-06-01` — js-yaml's default schema resolves an unquoted date
+  // to a Date. Calling that "a map" was wrong and unrecognisable.
+  if (value instanceof Date) return 'date';
   if (typeof value === 'object') return 'map';
   return 'value';
 }
@@ -101,26 +116,30 @@ function readLabels(
   path: string,
   docIndex: number,
   diagnostics: Diagnostic[],
-): { labels: Record<string, string>; issues: LabelIssue[] } {
+): { labels: Record<string, string>; issues: LabelIssue[]; unreadable: Record<string, string> } {
   const labels: Record<string, string> = {};
   const issues: LabelIssue[] = [];
-  if (raw === undefined || raw === null) return { labels, issues };
+  const unreadable: Record<string, string> = {};
+  if (raw === undefined || raw === null) return { labels, issues, unreadable };
   if (!isPlainObject(raw)) {
     diagnostics.push(
       resWarn(
         `document ${docIndex} has ${path} written as a ${typeName(raw)}, not a key/value map — it was read as having no labels.`,
       ),
     );
-    return { labels, issues };
+    return { labels, issues, unreadable };
   }
   for (const [key, value] of Object.entries(raw)) {
     const keyProblem = validateLabelKey(key);
     if (keyProblem) issues.push({ key, message: sentenceCase(keyProblem) });
     const coerced = coerceLabelScalar(value);
     if (coerced === null) {
+      // The key IS in the document; only its value is unusable. Record it so no
+      // clause can report it as absent.
+      unreadable[key] = typeName(value);
       issues.push({
         key,
-        message: `Label ${key} is a ${typeName(value)}, not a label value — Kubernetes labels are strings.`,
+        message: `Label ${key} is a ${typeName(value)}, not a label value — Kubernetes labels are strings. Quote it to make it one.`,
       });
       continue;
     }
@@ -138,9 +157,9 @@ function readLabels(
       key: '',
       message: `…and ${group(hidden)} more label problem${hidden === 1 ? '' : 's'} on this resource.`,
     });
-    return { labels, issues: kept };
+    return { labels, issues: kept, unreadable };
   }
-  return { labels, issues };
+  return { labels, issues, unreadable };
 }
 
 /** `spec.template` and a CronJob's `spec.jobTemplate.spec.template`. */
@@ -198,6 +217,7 @@ function readObject(
       labels: own.labels,
       labelsPath,
       labelIssues: own.issues,
+      unreadableLabels: own.unreadable,
     },
   ];
 
@@ -223,6 +243,7 @@ function readObject(
         labels: templateLabels.labels,
         labelsPath: fieldPath,
         labelIssues: templateLabels.issues,
+        unreadableLabels: templateLabels.unreadable,
       });
     }
   }

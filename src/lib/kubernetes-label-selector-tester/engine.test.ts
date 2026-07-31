@@ -456,7 +456,7 @@ describe('structured selectors', () => {
     expect(result.ok).toBe(true);
     expect(result.requirements[0].values).toEqual(['2']);
     expect(notes(result)).toContain(
-      'matchLabels.version was written as 2, so YAML read it as a number. Kubernetes label values are strings — quote it as "2".',
+      'matchLabels.version is not quoted, so YAML read it as the number 2. Kubernetes label values are strings — quote the value exactly as you wrote it.',
     );
     expect(pod(result, 'p').matches).toBe(true);
   });
@@ -644,9 +644,187 @@ describe('label key and value validation', () => {
     );
     expect(pod(result, 'p').labels).toEqual({ debug: 'true' });
     expect(pod(result, 'p').labelIssues[0].message).toBe(
-      'Label debug was written as true, so YAML read it as a boolean. Kubernetes label values are strings — quote it as "true".',
+      'Label debug is not quoted, so YAML read it as the boolean true. Kubernetes label values are strings — quote the value exactly as you wrote it.',
     );
     expect(pod(result, 'p').matches).toBe(true);
+  });
+
+  /*
+   * REGRESSION: the note used to read "Label version was written as 1, so YAML
+   * read it as a number … quote it as "1"" for a manifest that said `1.0`. It
+   * stated as fact something the user never typed, and its remediation silently
+   * changed the value. js-yaml hands back a `number`; the source token is gone,
+   * so the sentence may never claim to quote it.
+   */
+  it('never claims what the user typed, and never tells them to quote the coerced value', () => {
+    for (const [written, coerced] of [
+      ['1.0', '1'],
+      ['010', '10'],
+      ['0755', '755'],
+      ['0x1f', '31'],
+      ['1e3', '1000'],
+    ]) {
+      const result = testSelector(
+        `kind: Pod\nmetadata:\n  name: p\n  labels: { version: ${written} }\n`,
+        'app',
+        'expr',
+      );
+      const message = pod(result, 'p').labelIssues[0].message;
+      expect(message).toBe(
+        `Label version is not quoted, so YAML read it as the number ${coerced}. Kubernetes label values are strings — quote the value exactly as you wrote it.`,
+      );
+      expect(message).not.toContain(`quote it as "${coerced}"`);
+      expect(message).not.toContain('was written as');
+    }
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   6b. A label whose YAML value is not a scalar — present, not absent
+   ═════════════════════════════════════════════════════════════════════════
+
+   REGRESSION (the worst bug this tool could ship): an unquoted date, a list or a
+   nested map as a label value used to be DROPPED from the label set, after which
+   every clause on that key reported the key as ABSENT — including the amber
+   "matches *because* the key is absent" annotation, on a document that plainly
+   carries the key, in an ok:true run. `kubectl apply` rejects such a manifest
+   outright ("cannot unmarshal !!timestamp into string"), so "absent" is not the
+   ground truth under any reading.
+*/
+
+describe('labels whose YAML value is not a scalar', () => {
+  const DATE_POD = `kind: Pod
+metadata:
+  name: web-1
+  labels:
+    app: web
+    released: 2024-06-01
+`;
+  const LIST_POD = 'kind: Pod\nmetadata:\n  name: p\n  labels:\n    tags: [a, b]\n';
+  const MAP_POD = 'kind: Pod\nmetadata:\n  name: p\n  labels:\n    nested: { x: y }\n';
+
+  it('an unquoted date is reported as a date, not as a map', () => {
+    const result = testSelector(DATE_POD, 'app=web', 'expr');
+    expect(result.ok).toBe(true);
+    expect(pod(result, 'web-1').labelIssues).toEqual([
+      {
+        key: 'released',
+        message:
+          'Label released is a date, not a label value — Kubernetes labels are strings. Quote it to make it one.',
+      },
+    ]);
+    expect(pod(result, 'web-1').unreadableLabels).toEqual({ released: 'date' });
+  });
+
+  it('!= and notin do NOT match on it and do NOT claim the key is absent', () => {
+    for (const selector of ['released!=2024-06-01', 'released notin (2024-06-01)']) {
+      const result = testSelector(DATE_POD, selector, 'expr');
+      const trace = clause(result, 'web-1', 'released');
+      expect(trace.holds, selector).toBe(false);
+      expect(trace.keyAbsent, selector).toBe(false);
+      expect(trace.absentKeyMatch, selector).toBe(false);
+      expect(trace.undecided, selector).toBe(true);
+      expect(trace.reason, selector).toBe(
+        'label released is set, but YAML read its value as a date, not a string — quote it in the manifest and this clause can be decided',
+      );
+      expect(pod(result, 'web-1').matches, selector).toBe(false);
+    }
+  });
+
+  it('= and in do not match it either, and say why instead of saying "absent"', () => {
+    const result = testSelector(DATE_POD, 'released=2024-06-01', 'expr');
+    const trace = clause(result, 'web-1', 'released');
+    expect(trace.holds).toBe(false);
+    expect(trace.keyAbsent).toBe(false);
+    expect(trace.undecided).toBe(true);
+    expect(trace.reason).not.toContain('no released label');
+  });
+
+  it('Exists holds and DoesNotExist fails — the key IS present', () => {
+    const exists = clause(testSelector(DATE_POD, 'released', 'expr'), 'web-1', 'released');
+    expect(exists.holds).toBe(true);
+    expect(exists.keyAbsent).toBe(false);
+    expect(exists.undecided).toBe(false);
+    expect(exists.reason).toBe(
+      'label released is set — YAML read its value as a date, which Exists does not look at',
+    );
+
+    const missing = clause(testSelector(DATE_POD, '!released', 'expr'), 'web-1', 'released');
+    expect(missing.holds).toBe(false);
+    expect(missing.keyAbsent).toBe(false);
+    expect(missing.reason).toBe(
+      'label released is set (YAML read its value as a date), so DoesNotExist fails',
+    );
+  });
+
+  it('list- and map-valued labels behave the same way', () => {
+    for (const [source, kind, key] of [
+      [LIST_POD, 'list', 'tags'],
+      [MAP_POD, 'map', 'nested'],
+    ]) {
+      const result = testSelector(source, `${key}!=a`, 'expr');
+      const trace = clause(result, 'p', key);
+      expect(trace.keyAbsent, kind).toBe(false);
+      expect(trace.absentKeyMatch, kind).toBe(false);
+      expect(trace.reason, kind).toContain(`YAML read its value as a ${kind}`);
+    }
+  });
+
+  it('a resource whose only label is unreadable is NOT reported as having no labels', () => {
+    const result = testSelector(
+      'kind: Pod\nmetadata:\n  name: only\n  labels:\n    released: 2024-06-01\n',
+      'released!=2024-06-01',
+      'expr',
+    );
+    expect(result.ok).toBe(true);
+    expect(notes(result).join(' | ')).not.toContain('no labels at all');
+  });
+
+  it('still reports a genuinely unlabelled resource as having no labels', () => {
+    const result = testSelector(
+      'kind: Pod\nmetadata:\n  name: bare\n',
+      'env notin (prod)',
+      'expr',
+    );
+    expect(notes(result)).toContain(
+      '1 resource has no labels at all. NotIn and != clauses still match it — that is apimachinery’s rule, not a quirk of this tester.',
+    );
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   6c. Field paths named in selector errors must be paths that can exist
+   ═════════════════════════════════════════════════════════════════════════ */
+
+describe('selector error field paths', () => {
+  /*
+   * REGRESSION: a Service's plain `spec.selector` was reported as
+   * `spec.selector.matchLabels.app`, a field the API server rejects outright —
+   * the same page's FAQ says so. `.matchLabels` may only be named when the
+   * target actually uses the structured fields.
+   */
+  it('a plain spec.selector is named without an impossible .matchLabels segment', () => {
+    const result = testSelector(
+      FIVE_PODS,
+      'kind: Service\nspec:\n  selector:\n    app: { a: b }\n',
+      'yaml',
+    );
+    expect(result.ok).toBe(false);
+    expect(errors(result)).toEqual([
+      'Selector: spec.selector.app is a map, not a label value.',
+    ]);
+  });
+
+  it('a structured spec.selector still names .matchLabels', () => {
+    const result = testSelector(
+      FIVE_PODS,
+      'kind: Deployment\nspec:\n  selector:\n    matchLabels:\n      app: { a: b }\n',
+      'yaml',
+    );
+    expect(result.ok).toBe(false);
+    expect(errors(result)).toEqual([
+      'Selector: spec.selector.matchLabels.app is a map, not a label value.',
+    ]);
   });
 });
 
