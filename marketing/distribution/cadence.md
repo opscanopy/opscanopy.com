@@ -59,8 +59,9 @@ on a command intended as a preview. Dry-run first, read it, then re-run with
 
 **dev.to — 20 published, 13 still queued** (blocked, see key note below)
 
-Done today: 7 Common .gitlab-ci.yml Mistakes · How to Convert a docker run Command
-· Why Isn't My Alert Reaching the Right Receiver · Why Did Prometheus Drop My Target
+Syndicated on 2026-07-27: 7 Common .gitlab-ci.yml Mistakes · How to Convert a docker
+run Command · Why Isn't My Alert Reaching the Right Receiver · Why Did Prometheus
+Drop My Target
 
 Remaining queue (6 blog + 7 guides):
 
