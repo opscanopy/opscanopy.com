@@ -262,6 +262,34 @@ export const TOOL_FIXTURES: ToolFixture[] = [
     inputSelector: '#cd-input',
     resultsSelector: '#cd-results',
   },
+  {
+    // Tool 9 — Systemd Unit Validator. The boot seed is the "3 planted issues"
+    // chip, NOT the clean forking service: a unit with nothing wrong renders no
+    // per-row copy button, and J1 and J5 both operate one.
+    //
+    // `invalidInput` is the linter's one FATAL path, and it is a real one — a
+    // section header that does not end in `]` is what systemd calls an invalid
+    // section header, and it refuses to load the file rather than lint it. Kept
+    // to five characters on purpose: J2 types it into CodeMirror one key at a
+    // time, and every extra keystroke widens the window in which a CDP stall can
+    // surface an intermediate diagnostic and force the spec's retry.
+    //
+    // `xssPayload` is a single assignment with no section header, which is valid
+    // unit-file grammar (systemd parses it, logs "Assignment outside of section"
+    // and ignores it). The engine echoes the WHOLE line back inside that
+    // finding's detail — pinned by `engine.test.ts` — so the payload genuinely
+    // reaches the rendered output instead of being rejected at the door.
+    slug: 'systemd-unit-validator',
+    family: 'cm',
+    hashKey: '#unit=',
+    seededResultString: 'belongs in [Install], not [Unit]',
+    invalidInput: '[Unit',
+    calmErrorString:
+      '“[Unit” on line 1 looks like a section header but has no closing “]” — systemd refuses to load a unit file with an invalid section header.',
+    xssPayload: 'ExecStart=<img src=x onerror=alert(1)>',
+    inputSelector: '#su-input .cm-content',
+    resultsSelector: '#su-results',
+  },
 ];
 
 /** Fixtures for one family — used by the family-gated journey steps. */

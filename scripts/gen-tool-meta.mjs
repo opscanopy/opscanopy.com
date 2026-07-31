@@ -80,6 +80,13 @@ const TOOL_PATHS = {
   // Slug ≠ lib dir: the SEO head query is "certificate decoder", the code lives
   // under the shorter cert-chain (same split as cve-ignore-converter).
   'certificate-decoder': { lib: 'cert-chain', component: 'CertificateDecoderPlayground.astro' },
+  // Slug ≠ lib dir again: the SEO head query is "systemd unit validator", the code
+  // lives under the shorter systemd-lint (which also owns calendar.ts, the shared
+  // OnCalendar grammar that cron-to-systemd imports from).
+  'systemd-unit-validator': {
+    lib: 'systemd-lint',
+    component: 'SystemdUnitValidatorPlayground.astro',
+  },
 };
 
 const missing = liveTools.map((t) => t.slug).filter((slug) => !TOOL_PATHS[slug]);

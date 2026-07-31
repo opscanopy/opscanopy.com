@@ -20,6 +20,7 @@
  *   and translate cron lists (a,b), ranges (a-b), steps (* /n, a-b/n) and "*".
  */
 
+import { SYSTEMD_DOW } from '../systemd-lint/calendar';
 import type { SystemdResult } from './types';
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -58,8 +59,16 @@ const FIELD_SPECS: FieldSpec[] = [
   { min: 0, max: 7, name: 'day-of-week', names: DOW_NAMES },
 ];
 
-/** systemd OnCalendar day-of-week tokens, indexed by cron DOW number (0 = Sun). */
-const SYSTEMD_DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+/*
+ * `SYSTEMD_DOW` — systemd OnCalendar day-of-week tokens, indexed by cron DOW
+ * number (0 = Sun) — now comes from `../systemd-lint/calendar`, which is also
+ * where the Systemd Unit Validator's `validateOnCalendar()` lives. CONSTANTS
+ * ONLY: no logic moved out of this file, and the rendering rules below are
+ * unchanged. The point of sharing the table is that the tool which WRITES
+ * OnCalendar= and the tool which CHECKS it can no longer drift apart on the
+ * weekday names — and `engine.test.ts` feeds every conversion here back through
+ * that validator as a round-trip gate.
+ */
 
 /* ────────────────────────────────────────────────────────────────────────
  * @macro table

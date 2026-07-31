@@ -1,0 +1,576 @@
+---
+/**
+ * Systemd Unit Validator — die systemd-unit-validator Tool-Seite (SEO-Oberfläche).
+ *
+ * Jede ZAHL auf dieser Seite kommt aus der Engine und steht nicht im Prosatext:
+ * `CHECK_IDS.length`, `ALL_DIRECTIVE_NAMES.length`, die Tabelle der
+ * Kalender-Kurzformen und die drei Obergrenzen. Eine Zahl, die aus dem Code
+ * stammt, den sie beschreibt, kann nicht von ihm abweichen.
+ */
+import Shell from '../../components/Shell.astro';
+import SystemdUnitValidatorPlayground from '../../components/SystemdUnitValidatorPlayground.astro';
+import Button from '../../components/Button.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import ToolHero from '../../components/ToolHero.astro';
+import ToolGapVisual from '../../components/ToolGapVisual.astro';
+import ToolPipeline from '../../components/ToolPipeline.astro';
+import FaqList from '../../components/FaqList.astro';
+import ToolCrossLinks from '../../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../../data/site';
+import { getTool } from '../../data/tools';
+import { softwareAppLd, faqPageLd } from '../../lib/jsonld';
+import { CALENDAR_SHORTHANDS } from '../../lib/systemd-lint/calendar';
+import { ALL_DIRECTIVE_NAMES } from '../../lib/systemd-lint/directives';
+import {
+  MAX_FINDINGS_PER_RULE,
+  MAX_FINDINGS_TOTAL,
+  MAX_INPUT_CHARS,
+} from '../../lib/systemd-lint/engine';
+import { CHECK_IDS } from '../../lib/systemd-lint/rules';
+import type { Locale as __Locale } from '../../i18n/config';
+import { localizeKey as __l } from '../../i18n/utils';
+const __lang = (Astro.currentLocale ?? 'en') as __Locale;
+
+const tool = getTool('systemd-unit-validator');
+const pagePath = '/systemd-unit-validator/';
+const pageUrl = `${site.url}${pagePath}`;
+
+const checkCount = CHECK_IDS.length;
+const directiveCount = ALL_DIRECTIVE_NAMES.length;
+const maxChars = MAX_INPUT_CHARS.toLocaleString('de-DE');
+const shorthands = Object.entries(CALENDAR_SHORTHANDS);
+
+const faqs = [
+  {
+    q: 'Was prüft der Systemd Unit Validator?',
+    a: `${checkCount} Prüfungen auf einem echten Parse der Datei, in vier Gruppen. Struktur: ein ungültiger Sektionskopf, ein klein geschriebenes [unit], eine unbekannte oder doppelte Sektion, eine Zeile ohne „=“, eine Zuweisung vor der ersten Sektion. Namen: eine Direktive in der falschen Sektion (User= in [Unit]), ein Tippfehler, den systemd wegwirft (ExecStrat=), ein veralteter Name, ein Name, den die Tabelle einfach nicht kennt. Werte: ein falsches Enum — systemd vergleicht die nämlich case-sensitiv —, ein Boolean, der keiner ist, ein Exec*-Pfad, der nicht absolut ist, Shell-Syntax in einer Exec*-Zeile, die systemd nicht interpretiert, ein unbekannter %-Specifier und ein „Kommentar“ am Zeilenende, der in Wahrheit Teil des Werts ist. Semantik: ein Service ohne ExecStart=, zwei ExecStart=-Zeilen bei Type≠oneshot, Type=forking ohne PIDFile=, Restart=always mit Type=oneshot, ein Timer ohne Trigger, ein OnCalendar=, das systemd nicht parsen kann, Persistent= auf einem monotonen Timer, ein Socket ohne Listen*, ein fehlendes [Install] und ein System-Target in einer User-Unit.`,
+  },
+  {
+    q: 'Ist das systemd-analyze verify?',
+    a: 'Nein, und das kann es auch nicht sein. systemd-analyze verify läuft auf einer Maschine mit systemd, braucht für alles im System-Suchpfad meist root und löst Ihre Unit vor allem gegen DIESEN Host auf: dessen Benutzer, Pfade, Drop-ins und andere Units. Das macht es zum gründlicheren Werkzeug — und zum falschen für den Moment, in dem Sie die Prüfung wirklich wollen: ein .service in einem Pull Request auf einem macOS-Laptop, oder eine Unit, die ein Assistent gerade für Sie geschrieben hat. Diese Seite liest eine Datei als Text, in Ihrem Browser, und benennt den Unterschied ausdrücklich — alles, was sie aus dem Text allein nicht wissen kann, steht weiter unten aufgelistet statt geraten.',
+  },
+  {
+    q: 'Verlässt meine Unit-Datei jemals meinen Browser?',
+    a: `Nein. Der Parser und alle ${checkCount} Prüfungen sind JavaScript, das in Ihrem Tab läuft — es gibt keinen Server, keinen API-Aufruf und kein Logging, also werden 0 Bytes hochgeladen. Das zählt hier besonders: Unit-Dateien enthalten interne Hostnamen, private Pfade, Namen von Dienstkonten, EnvironmentFile=-Orte und gelegentlich ein Credential, das niemand in einen Wert hätte schreiben sollen.`,
+  },
+  {
+    q: 'Warum feuert mein systemd-Timer nie?',
+    a: 'Die häufigste Ursache ist mit Abstand ein OnCalendar=, das systemd nicht parsen kann, weil cron-Syntax hineingeschrieben wurde. Zwei Formen erklären fast alle Fälle. Erstens ein nacktes „*/15“: eine Kalender-Wiederholung in systemd braucht einen ausdrücklichen Startwert, „*:00/15:00“ oder „00/15“ wird also akzeptiert und „*/15“ komplett abgelehnt. Zweitens ein ganzer fünffeldiger crontab-Zeitplan („0 3 * * *“): systemd-Kalenderereignisse sind „DOW YYYY-MM-DD HH:MM:SS“ und keine fünf Felder — dieses Tool erkennt die Form und schickt Sie zum Konverter. Danach lohnt der Blick auf einen Timer ohne jeden Trigger und auf ein .timer ohne Unit=, dessen .service anders heißt. Eine Unit, die systemd nicht lädt, erscheint nie in systemctl list-timers — deshalb sieht nichts falsch aus.',
+  },
+  {
+    q: 'Warum ist WantedBy= in [Unit] ein Fehler und keine Warnung?',
+    a: 'Weil die Einstellung überhaupt nicht wirkt. systemd liest WantedBy= nur aus [Install]; überall sonst protokolliert es „Unknown key name \'WantedBy\' in section \'Unit\', ignoring.“ und macht weiter. Die Unit lädt, startet von Hand, sieht gesund aus — und systemctl enable tut stillschweigend nichts, sodass sie nach einem Reboot nicht wiederkommt. Auf dieser Seite heißt Fehler: systemd verweigert die Unit ODER verwirft die Einstellung vollständig; Warnung heißt: die Einstellung greift und ist eine Falle. Eine verworfene Einstellung gehört in die erste Gruppe, weil die Datei dann nicht mehr beschreibt, was die Maschine tun wird.',
+  },
+  {
+    q: 'Warum ist eine unbekannte Direktive nur ein Hinweis?',
+    a: `Weil diese Seite eine Direktiven-Tabelle mitbringt — ${directiveCount} Namen — und Ihre Maschine ein systemd. Mit jedem Release kommen neue Direktiven hinzu, ein Name, den diese Tabelle nicht kennt, kann dort also völlig gültig sein, wo Sie ihn ausführen werden. Das als Fehler zu melden würde Sie darauf trainieren, den ganzen Bericht zu ignorieren — das Einzige, was ein Linter nicht überlebt. Ein Name, der einer echten Direktive knapp danebenliegt, ist ein anderer Fall: dort ist die Evidenz stark genug für die Aussage, dass systemd die Zeile wegwirft, und DAS wird als Fehler mit Korrektur gemeldet.`,
+  },
+  {
+    q: 'Was ändert der Schalter System / User?',
+    a: 'Drei Dinge, alle darüber, welcher Manager die Datei lädt. Im User-Scope wird ein WantedBy= mit einem System-Target (multi-user.target, graphical.target) gemeldet: der User-Manager hat kein solches Target, systemctl --user enable hat also nichts zu verlinken und die Unit startet nie — default.target ist gemeint, und timers.target existiert dort tatsächlich. Der Scope reist außerdem im Share-Link mit, damit ein verschickter Link dieselben Funde zeigt wie Ihr Bildschirm. Alles andere — Parse, Namen, Werte — ist identisch, denn systemd liest die Datei in beiden Fällen gleich.',
+  },
+  {
+    q: 'Kann er eine Template-Unit, ein Drop-in oder meine Abhängigkeiten prüfen?',
+    a: 'Er liest genau eine Datei, also: ein Template wird normal geparst und %i als Hinweis gemeldet (es hat nur einen Wert, wenn die Datei name@.service heißt und als name@instance.service gestartet wird); ein Drop-in-Fragment parst für sich problemlos, aber hier weiß niemand, was es überschreibt, also sieht eine Teildatei aus wie eine Unit ohne ExecStart=; und eine in After=, Wants= oder Unit= genannte Unit wird nie aufgelöst, weil diese Datei nicht vor uns liegt. Bei allen drei zu raten wäre eine selbstbewusst falsche Antwort — schlimmer als keine.',
+  },
+  {
+    q: 'Wie groß darf die Unit-Datei sein, und werden Funde jemals abgeschnitten?',
+    a: `Bis ${maxChars} Zeichen, also etwa viertausend Zeilen — zwei Größenordnungen mehr als jede echte Unit-Datei. Darüber verweigert das Tool mit einer Meldung, statt Ihren Tab einzufrieren, denn eine so große Eingabe ist ein Journal-Auszug und keine Unit. Funde sind ebenfalls begrenzt: ${MAX_FINDINGS_PER_RULE} pro Prüfung und ${MAX_FINDINGS_TOTAL} insgesamt, und das Panel nennt die Grenze und die echte Anzahl, sobald eine greift. Die Ergebnisliste ist separat auf 50 Zeilen pro Schweregrad begrenzt, wieder mit der echten Zahl.`,
+  },
+];
+
+const softwareApp = softwareAppLd({
+  name: 'Systemd Unit Validator',
+  description: `Kostenloser systemd-Unit-Validator im Browser: ${checkCount} Prüfungen für Direktiven in der falschen Sektion, Tippfehler, die systemd stillschweigend ignoriert, ungültige OnCalendar=-Ausdrücke, Type/Restart-Konflikte und Timer, die nie feuern. Kein systemd, kein root, kein Upload.`,
+  url: pageUrl,
+  subCategory: 'Scheduling',
+  featureList: [
+    `${checkCount} Prüfungen für Struktur, Direktivennamen, Werte und Unit-Semantik`,
+    'Funde mit Zeilennummer, die im Editor zur Zeile springen',
+    'Vollständige OnCalendar=-Grammatik nach systemd.time(7), geteilt mit dem cron-Konverter',
+    'Liest Fortsetzungszeilen, Kommentare darin, wiederholte Direktiven und Listen-Resets',
+    'System- und User-Scope, beide im Share-Link enthalten',
+    'Teilbarer Link, gespeicherte Snapshots, Bericht kopieren',
+    '100 % clientseitig, kein Upload, keine Anmeldung',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+const faqPage = faqPageLd(faqs);
+
+const pipeline = [
+  {
+    title: 'So parsen wie systemd.',
+    body: 'Eine `\\`-Fortsetzung klappt auf die nächste Zeile — und eine Kommentarzeile innerhalb dieser Fortsetzung wird verworfen, nicht eingefaltet. `#` und `;` beginnen einen Kommentar nur am Zeilenanfang: es gibt KEINE Kommentare am Zeilenende, `RestartSec=30 # später` setzt den Wert also wirklich auf `30 # später`.',
+  },
+  {
+    title: 'Auflösen, was tatsächlich gilt.',
+    body: 'Eine wiederholte Listen-Direktive hängt an; ein wiederholter Skalar bedeutet, dass der letzte still gewinnt; eine leere Zuweisung setzt die Liste zurück. Die Regeln lesen also den Wert, bei dem systemd landet, nicht den ersten in der Datei — und sagen, welche Zeile verloren hat.',
+  },
+  {
+    title: 'Namen, Werte und Semantik prüfen.',
+    body: `Jeder Name wird in der Sektion gesucht, in der er steht, gegen ${directiveCount} bekannte Direktiven. Werte werden nur dort geprüft, wo systemd streng ist: Enums case-sensitiv, Booleans case-insensitiv und OnCalendar= gegen die vollständige Grammatik aus systemd.time(7).`,
+  },
+  {
+    title: 'Sagen, was systemd selbst tun würde.',
+    body: 'Jeder Fund nennt die physische Zeile und zitiert die Konsequenz — „verweigert das Laden der Unit“, „protokolliert Unknown key name und ignoriert die Zeile“. Wo diese Seite etwas nicht wissen kann, sagt sie das, statt zu raten.',
+  },
+];
+
+const reference: { section: string; rows: { name: string; what: string }[] }[] = [
+  {
+    section: '[Unit]',
+    rows: [
+      { name: 'Description=', what: 'Eine Zeile, sichtbar in systemctl status und in Logs.' },
+      { name: 'Documentation=', what: 'URIs, durch Leerzeichen getrennt — man:, https:, file:.' },
+      { name: 'After=', what: 'Nur Reihenfolge: nach diesen starten, falls sie auch starten.' },
+      { name: 'Wants=', what: 'Diese mitziehen, aber nicht mit ihnen scheitern.' },
+      { name: 'Requires=', what: 'Mitziehen und mit ihnen scheitern. Reihenfolge ist NICHT impliziert.' },
+      { name: 'ConditionPathExists=', what: 'Unit überspringen (nicht scheitern lassen), wenn der Pfad fehlt.' },
+      { name: 'StartLimitIntervalSec=', what: 'Fenster für das Start-Ratelimit. Steht hier, nicht in [Service].' },
+      { name: 'StartLimitBurst=', what: 'Erlaubte Starts in diesem Fenster, bevor systemd aufgibt.' },
+    ],
+  },
+  {
+    section: '[Install]',
+    rows: [
+      { name: 'WantedBy=', what: 'Wohin `systemctl enable` verlinkt. Timer: timers.target.' },
+      { name: 'RequiredBy=', what: 'Wie WantedBy=, aber das Target scheitert mit dieser Unit.' },
+      { name: 'Alias=', what: 'Zusätzlicher Name, auf den die Unit nach dem Enable hört.' },
+      { name: 'Also=', what: 'Weitere Units, die mit dieser aktiviert und deaktiviert werden.' },
+    ],
+  },
+  {
+    section: '[Service]',
+    rows: [
+      { name: 'Type=', what: 'simple, exec, forking, oneshot, dbus, notify, notify-reload, idle.' },
+      { name: 'ExecStart=', what: 'Absoluter Pfad. Nur eine Zeile, außer bei Type=oneshot. Keine Shell.' },
+      { name: 'ExecStartPre=', what: 'Läuft vor ExecStart=; ein Fehler bricht den Start ab.' },
+      { name: 'ExecReload=', what: 'Was `systemctl reload` ausführt. Gehört hierhin, nie in [Unit].' },
+      { name: 'ExecStop=', what: 'Optionaler sanfter Stopp; systemd sendet danach trotzdem die Kill-Signale.' },
+      { name: 'PIDFile=', what: 'Praktisch Pflicht bei Type=forking: benennt den echten Hauptprozess.' },
+      { name: 'Restart=', what: 'no, on-success, on-failure, on-abnormal, on-watchdog, on-abort, always.' },
+      { name: 'RestartSec=', what: 'Wartezeit vor einem Neustart. NICHT „RestartSecs“.' },
+      { name: 'RemainAfterExit=', what: 'Ein fertiges oneshot als aktiv melden statt als beendet.' },
+      { name: 'User= / Group=', what: 'Unter wem der Prozess läuft. [Service], nie [Unit].' },
+      { name: 'DynamicUser=', what: 'Wegwerf-UID pro Start. Zusammen mit StateDirectory= verwenden.' },
+      { name: 'StateDirectory=', what: 'systemd erstellt /var/lib/<name> und setzt bei jedem Start den Owner.' },
+      { name: 'WorkingDirectory=', what: 'Arbeitsverzeichnis der Prozesse. Beeinflusst die Exec*-Suche nicht.' },
+      { name: 'Environment=', what: 'KEY=value-Paare; wiederholbar, und $KEY expandiert in Exec*-Zeilen.' },
+      { name: 'EnvironmentFile=', what: 'Paare aus einer Datei lesen. Mit `-` davor ist ein Fehlen erlaubt.' },
+      { name: 'TimeoutStartSec=', what: 'Wie lange systemd auf das Ende des Starts wartet.' },
+    ],
+  },
+  {
+    section: '[Timer]',
+    rows: [
+      { name: 'OnCalendar=', what: 'Wanduhr-Zeitplan, Syntax nach systemd.time(7). Wiederholbar.' },
+      { name: 'OnBootSec=', what: 'Monoton: so lange nach dem Boot.' },
+      { name: 'OnUnitActiveSec=', what: 'Monoton: so lange nach der letzten Aktivierung der Unit.' },
+      { name: 'AccuracySec=', what: 'Spielraum, den systemd zum Bündeln von Wakeups nutzen darf. Standard 1min.' },
+      { name: 'RandomizedDelaySec=', what: 'Streut den Feuerzeitpunkt gegen einen Thundering Herd.' },
+      { name: 'Persistent=', what: 'Nur Kalender-Timer: einen im ausgeschalteten Zustand versäumten Lauf nachholen.' },
+      { name: 'Unit=', what: 'Was getriggert wird. Standard: der .service mit demselben Basisnamen.' },
+      { name: 'WakeSystem=', what: 'Weckt die Maschine aus dem Suspend. Braucht passende Hardware.' },
+    ],
+  },
+  {
+    section: '[Socket]',
+    rows: [
+      { name: 'ListenStream=', what: 'Port, Adresse:Port oder absoluter Pfad für einen UNIX-Socket.' },
+      { name: 'ListenDatagram=', what: 'Das Äquivalent für UDP / SOCK_DGRAM.' },
+      { name: 'Accept=', what: 'no: ein Service bekommt den Listening-Socket. yes: einer pro Verbindung.' },
+      { name: 'SocketMode=', what: 'Rechte für einen UNIX-Socket oder FIFO, z. B. 0660.' },
+      { name: 'SocketUser= / SocketGroup=', what: 'Eigentümer eines UNIX-Sockets im Dateisystem.' },
+      { name: 'Service=', what: 'Was aktiviert wird. Standard: der .service mit demselben Basisnamen.' },
+      { name: 'FileDescriptorName=', what: 'Benennt den FD, damit ein Service mehrere Sockets unterscheiden kann.' },
+    ],
+  },
+];
+
+const calendarForms = [
+  { form: 'DOW YYYY-MM-DD HH:MM:SS', what: 'Die volle Form. Wochentag, Datum und Sekunden sind optional; ein Datum allein bedeutet 00:00:00.' },
+  { form: '*', what: 'Jeder Wert für diese Komponente.' },
+  { form: 'a,b,c', what: 'Eine Liste von Werten.' },
+  { form: 'a..b', what: 'Ein Bereich, kleinerer Wert zuerst. Wochentage laufen Mon..Sun, Sun kann also keinen Bereich beginnen.' },
+  { form: 'a/n', what: 'Alle n, beginnend bei a. Der Startwert ist NICHT optional — siehe unten.' },
+  { form: 'a..b/n', what: 'Alle n über einen Bereich.' },
+  { form: '*-*~03', what: 'Drittletzter Tag des Monats (das `~` zählt vom Monatsende zurück).' },
+  { form: '… UTC | … Europe/Berlin', what: 'Eine Zeitzone am Ende. Braucht systemd 242 oder neuer; der Name wird gegen die tzdata des Hosts aufgelöst.' },
+];
+
+const silent = [
+  {
+    what: 'Ob die Units existieren, von denen Sie abhängen',
+    why: 'After=, Wants= und Unit= nennen andere Dateien. Die liegen nicht vor uns, ein „Unit nicht gefunden“ wäre also erfunden.',
+  },
+  {
+    what: 'Ob ein Pfad, ein Benutzer oder ein Capability existiert',
+    why: 'ExecStart=/usr/local/bin/x wird darauf geprüft, absolut zu sein, nicht darauf, da zu sein. Den Rest weiß nur Ihre Maschine.',
+  },
+  {
+    what: 'Syntax von Zeitspannen',
+    why: 'systemds Grammatik für `5min`, `1h30s` und `2 weeks` ist großzügig. Sie nachzubauen würde mehr Fehlalarme erzeugen als Treffer.',
+  },
+  {
+    what: 'Drop-ins und Übereinstimmung mit dem Dateinamen',
+    why: 'Ein .d/-Override und die Frage, ob der Dateiname zu dem passt, was Unit= erwartet, liegen beide außerhalb einer eingefügten Datei.',
+  },
+  {
+    what: 'Reihenfolge ohne Abhängigkeit',
+    why: 'After= ohne Wants= ist häufig Absicht. Das zu melden wäre eine Meinung im Gewand eines Funds.',
+  },
+  {
+    what: 'Werte in [Mount], [Path], [Swap], [Automount], [Slice] und [Scope]',
+    why: 'Ihre Direktiven-NAMEN sind bekannt — `What=` in [Service] wird also korrekt zugeordnet — aber ihre Werte werden nicht geprüft, und die Ergebnisse sagen das ausdrücklich.',
+  },
+  {
+    what: 'ProtectSystem=, ProtectHome=, RestrictNamespaces= und Verwandte',
+    why: 'Sie nehmen benannte Werte ODER einen Boolean, eine strenge Prüfung würde also gültige Eingaben ablehnen. Sie werden absichtlich als opake Strings geführt.',
+  },
+  {
+    what: 'PrivateTmp= als reiner Boolean',
+    why: 'systemd 257 hat `PrivateTmp=disconnected` ergänzt. Ein Validator, der einen gültigen Wert zum Fehler erklärt, ist genau der Fehlalarm, gegen den dieses Tool existiert.',
+  },
+  {
+    what: 'Der nächste Feuerzeitpunkt eines Timers',
+    why: 'Dafür braucht es eine Uhr und eine Zeitzonendatenbank. Ein als Fakt gedruckter, still falscher „nächster Lauf“ ist schlimmer als keine Antwort.',
+  },
+  {
+    what: 'Alles über das laufende System',
+    why: 'Kein systemctl, kein Journal, kein Drop-in-Baum, keine tzdata. Eine Datei, als Text gelesen — genau deshalb braucht es kein root und lädt nichts hoch.',
+  },
+];
+---
+
+<Shell
+  title="Systemd Unit Validator — .service und .timer prüfen"
+  description={`systemd-Unit-Datei im Browser prüfen: ${checkCount} Prüfungen für Direktiven in der falschen Sektion, Tippfehler, die systemd ignoriert, und ein OnCalendar=, das nie feuert.`}
+  canonical="/systemd-unit-validator"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <ToolHero
+    slug="systemd-unit-validator"
+    eyebrow="Systemd Unit Validator · Scheduling"
+    badges={[
+      { label: 'Läuft in Ihrem Browser', variant: 'live' },
+      { label: `${checkCount} Prüfungen`, variant: 'neutral' },
+      { label: 'Kein root nötig', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">Eine systemd-Unit prüfen, bevor systemd sie ignoriert.</Fragment>
+    <Fragment slot="lead">
+      <span class="code-mono">.service</span>-, <span class="code-mono">.timer</span>- und
+      <span class="code-mono">.socket</span>-Dateien, geprüft gegen die Art, wie
+      <span translate="no">systemd</span> sie selbst liest: die Direktive in der falschen Sektion, der
+      Tippfehler, den es ohne Hinweis verwirft, das <span class="code-mono">OnCalendar=</span>, das
+      bedeutet, dass Ihr Timer nie feuert. Jeder Fund nennt eine Zeile, sagt, was
+      <span translate="no">systemd</span> selbst damit tut, und liefert den Fix — und nichts, was Sie
+      einfügen, verlässt den Tab.
+    </Fragment>
+  </ToolHero>
+
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pt-8 pb-20 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">Systemd Unit Validator Playground</h2>
+      <SystemdUnitValidatorPlayground />
+    </div>
+  </section>
+
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">Die Lücke</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            <span translate="no">systemd</span> sagt Ihnen nicht, wenn es Sie ignoriert.
+          </h2>
+          <ToolGapVisual />
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            Eine Unit-Datei, die lädt, ist keine Unit-Datei, die funktioniert. Schreiben Sie
+            <span class="code-mono">User=deploy</span> in <span class="code-mono">[Unit]</span> statt in
+            <span class="code-mono">[Service]</span>, läuft der Dienst als root; schreiben Sie
+            <span class="code-mono">WantedBy=</span> dorthin, tut
+            <span class="code-mono">systemctl enable</span> stillschweigend nichts, und die Unit kommt
+            nach einem Reboot nicht wieder. Beides protokolliert eine Zeile — „Unknown key name …
+            ignoring“ — in ein Journal, das an einem guten Tag niemand liest, und beides hinterlässt
+            eine Unit, die in <span class="code-mono">systemctl status</span> gesund aussieht.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Das Prüfwerkzeug, das <span translate="no">systemd</span> selbst mitbringt,
+            <span class="code-mono">systemd-analyze verify</span>, ist gründlicher, als diese Seite es
+            je sein wird — und es braucht eine Maschine mit <span translate="no">systemd</span>,
+            meistens root, und es löst Ihre Unit gegen die Benutzer, Pfade und Drop-ins DIESES Hosts
+            auf. Nichts davon haben Sie, während Sie einen <span class="code-mono">.service</span> in
+            einem Pull Request auf einem Laptop reviewen.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Und dann ist da generierter Output. Bitten Sie einen Assistenten um einen Timer, und Sie
+            bekommen etwas Flüssiges und Plausibles: <span class="code-mono">RestartSecs=5</span> (diese
+            Direktive gibt es nicht), <span class="code-mono">ExecReload=</span> in
+            <span class="code-mono">[Unit]</span>, ein <span class="code-mono">WantedBy=</span> im
+            falschen Block — oder den häufigsten Fall überhaupt:
+            <span class="code-mono">OnCalendar=*/15</span>, cron-Syntax, die
+            <span translate="no">systemd</span> komplett ablehnt, sodass ein Timer bleibt, der nie
+            feuert und nie in <span class="code-mono">systemctl list-timers</span> auftaucht. Die
+            Behauptung zu prüfen dauert eine Sekunde; zu wissen, was zu prüfen ist, ist der schwierige
+            Teil. Genau dafür sind die {checkCount} Prüfungen hier.
+          </p>
+          <p class="body-sm text-mute">
+            Migration von <span translate="no">cron</span>? Der
+            <a class="link-inline" href={__l('/cron-to-systemd', __lang)}
+              >Cron-zu-systemd-Konverter</a
+            > schreibt das Paar aus <span class="code-mono">.timer</span> und
+            <span class="code-mono">.service</span> für Sie — fügen Sie das Ergebnis dann hier ein, um
+            Ihre Handkorrekturen zu prüfen. Beide Tools teilen eine
+            <span class="code-mono">OnCalendar=</span>-Grammatik und können sich über einen Zeitplan
+            also nicht widersprechen.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="Die Pipeline"
+    heading="So funktioniert es."
+    lead="Vier Schritte, alle in Ihrem Browser-Tab, bei jeder Eingabe neu."
+    steps={pipeline}
+  />
+
+  <section id="reference" class="scroll-mt-24 border-t border-hairline bg-canvas-soft">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Referenz</p>
+        <h2 class="display-lg mt-3 text-ink">Welche Direktive wohin gehört.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          <span translate="no">systemd</span> liest eine Direktive nur aus der Sektion, die sie besitzt,
+          und vergleicht Sektions- wie Direktivennamen
+          <strong class="font-medium text-ink">case-sensitiv</strong>. Dies sind die, die in echten
+          Units vorkommen — der Validator kennt insgesamt {directiveCount} Namen, über fünf Sektionen,
+          die er prüft, und sechs, die er benennt, aber nicht prüft.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 max-w-5xl space-y-8">
+        {
+          reference.map((group) => (
+            <div>
+              <h3 class="display-sm code-mono text-ink">{group.section}</h3>
+              <div class="card-soft mt-3 overflow-x-auto">
+                <table class="suv-table w-full text-left">
+                  <thead>
+                    <tr>
+                      <th class="eyebrow px-4 py-3">Direktive</th>
+                      <th class="eyebrow px-4 py-3">Was sie tut</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {group.rows.map((row) => (
+                      <tr class="border-t border-hairline align-top">
+                        <td class="code-mono px-4 py-2.5 whitespace-nowrap text-ink">{row.name}</td>
+                        <td class="px-4 py-2.5 text-body">{row.what}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))
+        }
+      </div>
+
+      <div class="mx-auto mt-14 max-w-5xl">
+        <h3 class="display-sm text-ink">
+          <span class="code-mono">OnCalendar=</span>-Syntax
+        </h3>
+        <p class="body-sm mt-2 max-w-3xl text-pretty text-body">
+          Das eine Feld, in dem ein Fehler unsichtbar bleibt: ein Zeitplan, den
+          <span translate="no">systemd</span> nicht parsen kann, heißt, dass die Unit nicht lädt — der
+          Timer feuert also nie UND erscheint nie als defekt. Der Validator prüft die vollständige
+          Grammatik aus <span class="code-mono">systemd.time(7)</span> — dasselbe Modul, gegen das der
+          <a class="link-inline" href={__l('/cron-to-systemd', __lang)}>Cron-zu-systemd-Konverter</a>
+          schreibt.
+        </p>
+
+        <div class="mt-5 grid gap-6 lg:grid-cols-2">
+          <div class="card-soft overflow-x-auto">
+            <table class="suv-table w-full text-left">
+              <thead>
+                <tr>
+                  <th class="eyebrow px-4 py-3">Form</th>
+                  <th class="eyebrow px-4 py-3">Bedeutung</th>
+                </tr>
+              </thead>
+              <tbody>
+                {
+                  calendarForms.map((row) => (
+                    <tr class="border-t border-hairline align-top">
+                      <td class="code-mono px-4 py-2.5 text-ink">{row.form}</td>
+                      <td class="px-4 py-2.5 text-body">{row.what}</td>
+                    </tr>
+                  ))
+                }
+              </tbody>
+            </table>
+          </div>
+          <div class="card-soft overflow-x-auto">
+            <table class="suv-table w-full text-left">
+              <thead>
+                <tr>
+                  <th class="eyebrow px-4 py-3">Kurzform</th>
+                  <th class="eyebrow px-4 py-3">Entspricht</th>
+                </tr>
+              </thead>
+              <tbody>
+                {
+                  shorthands.map(([name, expansion]) => (
+                    <tr class="border-t border-hairline align-top">
+                      <td class="code-mono px-4 py-2.5 whitespace-nowrap text-ink">{name}</td>
+                      <td class="code-mono px-4 py-2.5 text-body">{expansion}</td>
+                    </tr>
+                  ))
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="mt-6 grid gap-4 lg:grid-cols-2">
+          <div class="min-w-0">
+            <p class="caption mb-2 text-mute">Abgelehnt — die Wiederholung hat keinen Startwert</p>
+            <CodeBlock
+              lang="ini"
+              code={`[Timer]
+OnCalendar=*/15
+OnCalendar=0 3 * * *`}
+            />
+          </div>
+          <div class="min-w-0">
+            <p class="caption mb-2 text-mute">Akzeptiert — alle 15 Minuten und täglich 03:00</p>
+            <CodeBlock
+              lang="ini"
+              code={`[Timer]
+OnCalendar=*-*-* *:00/15:00
+OnCalendar=*-*-* 03:00:00`}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="not-checked" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Der Zaun</p>
+        <h2 class="display-lg mt-3 text-balance text-ink">Was er bewusst nicht prüft.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          Jeder Punkt wurde geprüft und verworfen, und dieselbe Liste steht als Kommentar am Kopf der
+          Engine. Ein Validator, der rät, wäre schlimmer als einer, der sagt: „Ich lese eine Datei, als
+          Text.“
+        </p>
+      </div>
+      <div class="mx-auto mt-10 grid max-w-5xl gap-4 sm:grid-cols-2">
+        {
+          silent.map((item) => (
+            <div class="card p-5">
+              <h3 class="body-md font-medium text-ink">{item.what}</h3>
+              <p class="body-sm mt-2 text-pretty text-body">{item.why}</p>
+            </div>
+          ))
+        }
+      </div>
+      <p class="caption mx-auto mt-8 max-w-3xl text-center text-pretty text-mute">
+        Grenzen, genannt statt versteckt: der Validator liest bis zu {maxChars} Zeichen, behält höchstens
+        {' '}{MAX_FINDINGS_PER_RULE} Funde pro Prüfung und {MAX_FINDINGS_TOTAL} insgesamt, rendert
+        höchstens 50 Zeilen pro Schweregrad und nennt die echte Anzahl, sobald eine Grenze greift. Eine
+        unbekannte Direktive ist immer ein Hinweis, nie ein Fehler.
+      </p>
+    </div>
+  </section>
+
+  <section id="next" class="scroll-mt-24 bg-inverse text-inverse-fg">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+        <div class="min-w-0">
+          <p class="eyebrow !text-cyan">Nächster Schritt</p>
+          <h2 class="display-lg mt-3 text-balance text-inverse-fg">
+            Den Bericht ins Review einfügen.
+          </h2>
+          <p class="body-md mt-4 text-pretty text-white/70">
+            „Bericht kopieren“ gibt Ihnen den ganzen Lauf als Klartext — eine Zeile pro Fund, mit
+            Zeilennummer, Prüfungs-ID und Fix. Und dann weiter: eine
+            <span translate="no">crontab</span>-Zeile in einen echten Timer verwandeln oder einen
+            <span translate="no">cron</span>-Zeitplan erst in Klartext nachlesen.
+          </p>
+          <div class="mt-7 flex flex-wrap items-center gap-3">
+            <Button href={__l('/cron-to-systemd', __lang)} variant="secondary"
+              >Cron-zu-systemd-Konverter</Button
+            >
+            <Button href={__l('/cron-expression-tester', __lang)} variant="secondary"
+              >Cron-Expression-Tester</Button
+            >
+          </div>
+        </div>
+        <CodeBlock
+          lang="text"
+          filename="report.txt"
+          code={`Systemd Unit Validator — 2 errors, 1 warning across 8 lines
+Scope: system
+
+ERRORS (2)
+  L3 wrong-section: WantedBy= belongs in [Install], not [Unit].
+  L8 typo-directive: ExecStrat= is not a systemd directive — did you mean ExecStart=?
+
+WARNINGS (1)
+  missing-install: No [Install] section, so "systemctl enable" has nothing to do.`}
+        />
+      </div>
+    </div>
+  </section>
+
+  <FaqList faqs={faqs} />
+
+  <ToolCrossLinks slug="systemd-unit-validator">
+    <Fragment slot="lead">
+      Der Systemd Unit Validator ist eines der Tools in <span translate="no">{site.name}</span> — einem
+      wachsenden Dach aus browserbasierten Validatoren, Konvertern und Testern, die nie einen Server
+      berühren.
+    </Fragment>
+    <Fragment slot="links">
+      Verwandt: <a class="link-inline" href={__l('/cron-to-systemd', __lang)}
+        >Cron-zu-systemd-Konverter</a
+      >, um den Timer überhaupt zu schreiben,
+      <a class="link-inline" href={__l('/cron-expression-tester', __lang)}>Cron-Expression-Tester</a>,
+      um die <span translate="no">cron</span>-Seite in Klartext zu lesen, der
+      <a class="link-inline" href={__l('/dockerfile-linter', __lang)}>Dockerfile Linter</a> und der
+      <a class="link-inline" href={__l('/gitlab-ci-validator', __lang)}>GitLab CI Validator</a> für
+      dieselbe „vor dem Ausliefern erwischen“-Prüfung an anderer Konfiguration, und der
+      <a class="link-inline" href={__l('/env-example-checker', __lang)}>Env Example Checker</a> für die
+      Variablen, die ein <span class="code-mono">EnvironmentFile=</span> liefern soll — oder
+      durchsuchen Sie das vollständige
+      <a class="link-inline" href={__l(navLinks[0].href, __lang)}>Tool-Verzeichnis</a>.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      Nicht mit dem <span translate="no">systemd</span>-Projekt verbunden oder von ihm unterstützt.
+      Direktiven- und Formatnamen beschreiben nur, was dieses Tool prüft; bestätigen Sie eine Unit
+      immer gegen die <span translate="no">systemd</span>-Version, die sie laden wird.
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>
+
+<style>
+  @reference "../../styles/global.css";
+
+  .suv-table th {
+    font-weight: inherit;
+    white-space: nowrap;
+  }
+  .suv-table td {
+    font-size: 13px;
+    line-height: 18px;
+  }
+</style>
