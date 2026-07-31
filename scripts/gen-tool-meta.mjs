@@ -97,6 +97,11 @@ const TOOL_PATHS = {
     lib: 'systemd-lint',
     component: 'SystemdUnitValidatorPlayground.astro',
   },
+  {
+  'terraform-plan-summarizer': {
+    lib: 'terraform-plan-summarizer',
+    component: 'TerraformPlanSummarizerPlayground.astro',
+  },
 };
 
 const missing = liveTools.map((t) => t.slug).filter((slug) => !TOOL_PATHS[slug]);

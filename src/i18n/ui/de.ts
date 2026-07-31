@@ -145,6 +145,8 @@ const de: Partial<UiDict> = {
   'category.Config': 'Config',
   'category.Docker': 'Docker',
   'category.Utilities': 'Werkzeuge',
+  // "IaC" (Infrastructure as Code) ist auch im Deutschen der Fachbegriff.
+  'category.IaC': 'IaC',
   'category.all': 'Alle',
 
   // Tool catalog (/tools)
