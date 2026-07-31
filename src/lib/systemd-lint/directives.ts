@@ -486,9 +486,26 @@ const SERVICE_DIRECTIVES: Record<string, DirectiveSpec> = {
     'Use the “+” prefix on the individual Exec* line that needs full privileges instead.',
     B,
   ),
+  // systemd 229 moved the start-rate-limit and emergency-action settings from
+  // [Service] to [Unit], but load-fragment-gperf.gperf.in still carries a
+  // `Service.` entry for each of these five — upstream `docker.service` ships
+  // `StartLimitBurst=` in [Service] on purpose. Calling that "wrong-section, has
+  // no effect at all" was a false error on a working unit, and the fix would have
+  // been a no-op. NOTE the two that are NOT aliased: `StartLimitIntervalSec=` and
+  // `SuccessAction=` have no `Service.` entry, so those stay wrong-section errors.
   StartLimitInterval: deprecated(
     'It moved to [Unit] as `StartLimitIntervalSec=`; systemd still reads it here for compatibility.',
   ),
+  StartLimitBurst: deprecated('It moved to [Unit]; systemd still reads it here for compatibility.'),
+  StartLimitAction: deprecated(
+    'It moved to [Unit]; systemd still reads it here for compatibility.',
+    enumOf(ACTION_VALUES, 'emergency action'),
+  ),
+  FailureAction: deprecated(
+    'It moved to [Unit]; systemd still reads it here for compatibility.',
+    enumOf(ACTION_VALUES, 'emergency action'),
+  ),
+  RebootArgument: deprecated('It moved to [Unit]; systemd still reads it here for compatibility.'),
   SysVStartPriority: deprecated('A SysV compatibility leftover with no effect on a native unit.'),
 };
 

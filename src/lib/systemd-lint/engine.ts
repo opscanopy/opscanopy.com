@@ -134,6 +134,15 @@ class Collector {
     this.findings.push(finding);
   };
 
+  /**
+   * True when a further finding with this id would be counted and then dropped.
+   * A rule consults it before paying for EVIDENCE it only needs in order to show
+   * the finding — never to decide whether something is wrong.
+   */
+  atCap = (ruleId: string): boolean =>
+    (this.kept.get(ruleId) ?? 0) >= MAX_FINDINGS_PER_RULE ||
+    this.findings.length >= MAX_FINDINGS_TOTAL;
+
   /** Rules that matched more than they kept, in first-seen order. */
   truncatedRules(): TruncatedRule[] {
     const out: TruncatedRule[] = [];
@@ -256,6 +265,7 @@ export function lint(text: string, opts?: { scope?: Scope }): LintResult {
       return list.length > 0 ? list[list.length - 1].value : undefined;
     },
     report: collector.add,
+    atCap: collector.atCap,
   };
 
   for (const rule of RULES) {

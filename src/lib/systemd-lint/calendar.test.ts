@@ -86,11 +86,39 @@ describe('validateOnCalendar — shorthands', () => {
   });
 
   it('refuses to combine a shorthand with anything else', () => {
-    const r = validateOnCalendar('daily UTC');
+    const r = validateOnCalendar('daily tomorrow');
     expect(r.valid).toBe(false);
     expect(r.error).toBe(
-      '“daily” is a complete calendar shorthand on its own — it cannot be combined with “UTC”.',
+      '“daily” is a complete calendar shorthand on its own — it cannot be combined with “tomorrow”.',
     );
+  });
+
+  // Regression: `OnCalendar=daily UTC` was reported as a hard error ("this timer
+  // never fires") on an expression systemd.time(7)'s own example table lists —
+  // the shorthand guard fired before the timezone was ever split off.
+  it('accepts a shorthand with a trailing timezone', () => {
+    const r = validateOnCalendar('daily UTC');
+    expect(r.error).toBeUndefined();
+    expect(r.valid).toBe(true);
+    expect(r.timezone).toBe('UTC');
+    expect(r.expansion).toBe('*-*-* 00:00:00 UTC');
+    // UTC needs no tzdata, so it earns no caveat.
+    expect(r.notes).toEqual(['“daily” is systemd shorthand for “*-*-* 00:00:00”.']);
+  });
+
+  it('accepts a shorthand with a named timezone and keeps the tzdata caveat', () => {
+    const r = validateOnCalendar('weekly Pacific/Auckland');
+    expect(r.valid).toBe(true);
+    expect(r.timezone).toBe('Pacific/Auckland');
+    expect(r.expansion).toBe('Mon *-*-* 00:00:00 Pacific/Auckland');
+    expect(r.notes).toHaveLength(2);
+    expect(r.notes[1]).toContain('needs systemd 242 or newer');
+  });
+
+  it('accepts the other shorthand+timezone pairings', () => {
+    for (const expr of ['hourly UTC', 'monthly Europe/Berlin', 'daily Asia/Kolkata']) {
+      expect(validateOnCalendar(expr).valid, expr).toBe(true);
+    }
   });
 });
 
@@ -98,8 +126,17 @@ describe('validateOnCalendar — the */step trap', () => {
   // The single most common mistake: cron's `*/15` is not systemd calendar
   // syntax. systemd consumes the `*` and then fails on the leftover `/15`, so
   // the whole expression is rejected and the timer never fires.
+  // Regression: the fix used to name “00/15”, a bare component that this
+  // validator (and systemd) reject on their own — following the advice literally
+  // produced a second error. It now names a whole expression.
   const stepMessage =
-    'A systemd calendar repeat needs an explicit start value before the “/”: write “00/15”, not “*/15”.';
+    'A systemd calendar repeat needs an explicit start value before the “/”: write “*-*-* *:00/15:00”, not “*/15”.';
+
+  it('names a fix that is itself valid', () => {
+    const quoted = stepMessage.match(/write “([^”]+)”/);
+    expect(quoted).not.toBeNull();
+    expect(validateOnCalendar(quoted![1]).valid).toBe(true);
+  });
 
   it('rejects a bare */15', () => {
     const r = validateOnCalendar('*/15');
@@ -194,6 +231,65 @@ describe('validateOnCalendar — timezones', () => {
   it('rejects trailing junk that is not a timezone', () => {
     expect(validateOnCalendar('*-*-* 06:00:00 tomorrow').error).toBe(
       '“tomorrow” is not a timezone systemd would accept at the end of a calendar expression.',
+    );
+  });
+
+  // Regression: a bare timezone consumed the only token and every other part
+  // stayed null, so `OnCalendar=UTC` — a timer systemd refuses to load — was
+  // reported VALID. A false all-clear is the worst answer this tool can give.
+  it('rejects a bare timezone with nothing to schedule', () => {
+    for (const expr of ['UTC', 'Asia/Kolkata']) {
+      const r = validateOnCalendar(expr);
+      expect(r.valid, expr).toBe(false);
+      expect(r.error, expr).toBe(
+        `“${expr}” is a timezone, not a schedule — a calendar expression needs a weekday, a date or a time as well.`,
+      );
+    }
+  });
+
+  it('still accepts a timezone that qualifies a real schedule', () => {
+    expect(validateOnCalendar('Mon UTC').valid).toBe(true);
+    expect(validateOnCalendar('*-*-* 06:00 Asia/Kolkata').valid).toBe(true);
+  });
+});
+
+// Every row here is verbatim from the systemd.time(7) "CALENDAR EVENTS" example
+// table; each was reported as a hard error before this suite existed.
+describe('validateOnCalendar — systemd.time(7) example-table rows', () => {
+  const rows = [
+    'Wed, 17:48',
+    'Mon,Sun 12-*-* 2,1:23',
+    'Wed..Sat,Tue 12-10-15 1:2:3',
+    '05:40:23.4200004/3.1700005',
+    'daily UTC',
+    'weekly Pacific/Auckland',
+  ];
+  for (const expr of rows) {
+    it(`accepts ${expr}`, () => {
+      const r = validateOnCalendar(expr);
+      expect(r.error, `expected ${expr} to be valid`).toBeUndefined();
+      expect(r.valid).toBe(true);
+    });
+  }
+
+  it('maps a two-digit year the way systemd fix_year() does', () => {
+    // 12 → 2012 and 89 → 1989, so both ends of `89..12` run forwards.
+    expect(validateOnCalendar('89-01-01 00:00:00').valid).toBe(true);
+    expect(validateOnCalendar('89..12-01-01 00:00:00').valid).toBe(true);
+    // …and a three-digit year is still nothing systemd would take.
+    expect(validateOnCalendar('150-01-01 00:00:00').error).toBe(
+      'Year 150 is out of range — systemd allows 1970..2199.',
+    );
+  });
+
+  it('tolerates only ONE trailing comma in the weekday list', () => {
+    expect(validateOnCalendar('Wed,,').valid).toBe(false);
+    expect(validateOnCalendar(',Wed 17:48').valid).toBe(false);
+  });
+
+  it('keeps rejecting a fractional step where the field has no fractions', () => {
+    expect(validateOnCalendar('*-*-* 00:00/1.5:00').error).toBe(
+      '“1.5” is not a repeat step systemd can use in “00/1.5”.',
     );
   });
 });
