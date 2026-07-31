@@ -8,8 +8,9 @@
  *   1. CLASSIFY the failure. `jq.raw()` does not throw on user errors; it
  *      returns exit codes, and jq overloads code 5 for BOTH "your program blew
  *      up at runtime" and "your input is not JSON". Those need different
- *      wording and point at different editors, so they are disambiguated by the
- *      first stderr line (`jq: parse error:` ⇒ the input).
+ *      wording and point at different editors, so they are disambiguated by
+ *      jq's OWN stderr line (`jq: parse error:` ⇒ the input) — which is not
+ *      necessarily the first one: `debug` and `stderr` write before it.
  *   2. SPLIT the stream. jq emits a stream of values, not one value, and the
  *      UI shows one card per output. For JSON output that split is provable
  *      from the text; for `-r` it is not (a raw string can contain newlines),
@@ -116,9 +117,10 @@ export function getJq(init?: JqLoadInit): Promise<JqHandle> {
 /**
  * Drop the memoized module so the next `getJq()` builds a fresh one.
  *
- * Called after an Emscripten `abort()` — a filter that never terminates
- * exhausts jq's WebAssembly heap and aborts (verified: `[repeat(1)]` throws a
- * `WebAssembly.RuntimeError` after ~0.8 s, `[recurse(.next?)]` after ~3 s).
+ * Called after an Emscripten `abort()` — a non-terminating filter whose stream
+ * is COLLECTED exhausts jq's WebAssembly heap and aborts (verified: `[repeat(1)]`
+ * throws after ~1.7 s, `[recurse(.next?)]` after ~2-3 s). A bare, streaming
+ * generator does NOT abort: it blocks the tab until reload.
  * Empirically the module keeps working afterwards, but "empirically" is not a
  * guarantee about a heap that just ran out, so the next run starts clean. The
  * `.wasm` itself comes from the HTTP cache, so re-instantiation is cheap.
@@ -391,6 +393,94 @@ function splitPosition(raw: string, pattern: RegExp): Positioned {
   };
 }
 
+/**
+ * Which stderr line actually explains the failure, and where it sat.
+ *
+ * NOT `stderrLines[0]`: `debug`, `debug(msg)` and `stderr` write to stderr from
+ * inside the user's program, BEFORE jq's own diagnostic. Taking line 0 made
+ * `debug` + invalid JSON report an input parse error as a *runtime error in the
+ * program*, with the debug dump `["DEBUG:",1]` as the error text and the red
+ * rule on the program pane.
+ *
+ * `prefix` covers the second shape: the `stderr` builtin writes without a
+ * trailing newline, so jq's diagnostic can be glued onto the end of the
+ * program's own output (`1jq: parse error: …`). The glued-on program output is
+ * kept as a notice.
+ *
+ * Two deliberate narrowings, because a mid-line `jq: ` is ambiguous — jq gives
+ * us one unframed byte stream:
+ *   - the `jq: `-PREFIXED pass runs over EVERY line first, so a debug dump that
+ *     merely contains `jq: ` text cannot outrank a real diagnostic;
+ *   - the glued search only runs when the program calls `stderr`, the only
+ *     builtin that writes a partial line. `halt_error` also writes without a
+ *     newline, but it terminates jq, so nothing can follow it — which is what
+ *     keeps `halt_error("… jq: parse error: …")` classified as the runtime
+ *     error it is.
+ */
+interface PrimaryLine {
+  text: string;
+  index: number;
+  prefix: string;
+}
+
+const DIAGNOSTIC_RE = /jq: (?:parse error: |error: |error \(at )/;
+
+function primaryStderrLine(lines: string[], program: string): PrimaryLine {
+  const own = lines.findIndex((line) => line.startsWith('jq: '));
+  if (own >= 0) return { text: lines[own], index: own, prefix: '' };
+  if (/\bstderr\b/.test(program)) {
+    for (let i = 0; i < lines.length; i += 1) {
+      const match = DIAGNOSTIC_RE.exec(lines[i]);
+      if (match && match.index > 0) {
+        return { text: lines[i].slice(match.index), index: i, prefix: lines[i].slice(0, match.index) };
+      }
+    }
+  }
+  return { text: lines[0] ?? '', index: 0, prefix: '' };
+}
+
+/** Every stderr line except the one being shown as THE error. */
+function otherLines(lines: string[], primary: PrimaryLine): string[] {
+  const rest: string[] = [];
+  lines.forEach((line, i) => {
+    if (i !== primary.index) rest.push(cleanLine(line));
+    else if (primary.prefix.length > 0) rest.push(primary.prefix);
+  });
+  return rest;
+}
+
+/**
+ * jq reports parse and compile positions as 1-based **byte** offsets into the
+ * line; CodeMirror — and the card's "line 1, column 12" — counts UTF-16 code
+ * units. Any non-ASCII character before the error made the reported column
+ * drift right (`{"café":1,}` → jq says 12, the `}` is character 11), so the
+ * number has to be converted before it is shown.
+ *
+ * A column past the end of the line (jq's "at EOF" shapes) keeps its overshoot
+ * rather than being clamped, so it still means "beyond the last character".
+ */
+export function byteColumnToCharColumn(lineText: string, byteColumn: number): number {
+  if (!Number.isFinite(byteColumn) || byteColumn <= 1) return byteColumn;
+  let bytes = 0;
+  let units = 0;
+  for (let i = 0; i < lineText.length; ) {
+    const code = lineText.codePointAt(i) as number;
+    const unitLen = code > 0xffff ? 2 : 1;
+    bytes += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
+    units += unitLen;
+    if (bytes >= byteColumn) return units;
+    i += unitLen;
+  }
+  return units + (byteColumn - bytes);
+}
+
+/** The same conversion, against line `line` of `doc` (1-based). */
+function charColumnIn(doc: string, line: number, byteColumn: number): number {
+  const lineText = doc.split('\n')[line - 1];
+  if (lineText === undefined) return byteColumn;
+  return byteColumnToCharColumn(lineText, byteColumn);
+}
+
 /** Strip whichever `jq: …` scaffolding a stderr line carries. */
 function cleanLine(line: string): string {
   if (line.startsWith(PARSE_PREFIX)) return line.slice(PARSE_PREFIX.length);
@@ -449,10 +539,19 @@ export const UNBOUNDED_HINT =
   'synchronously in this tab, so a filter that never ends will freeze the page until you ' +
   'reload — wrap it in limit(n; …) or first(…).';
 
+/**
+ * MEASURED, not assumed: only the shapes whose stream is COLLECTED abort. On jq
+ * 1.8.2 in this repo `[repeat(1)]` aborts after ~1.7 s and `[recurse(.a)]` after
+ * ~2 s, because the array being built exhausts the WebAssembly heap. A bare
+ * `repeat(1)` or `recurse(.a)` just streams to stdout and was still running
+ * after 40 s in node (150 s in Chrome) — it freezes the tab until reload. The
+ * hint must not promise an abort it cannot deliver.
+ */
 export const RECURSE_HINT =
   'recurse(.field) keeps recursing after it reaches the end: .field on the last node is null, ' +
-  'and null.field is null again, forever — adding ? does not stop it. jq will exhaust its memory ' +
-  'and abort. Write recurse(.field?; . != null) instead.';
+  'and null.field is null again, forever — adding ? does not stop it. Collected ([…], length, ' +
+  'last) it exhausts jq’s memory and aborts after a second or two; left streaming it freezes ' +
+  'this tab until you reload. Write recurse(.field?; . != null) instead.';
 
 /**
  * `recurse(f)` where `f` is a bare field path — the shape that walks off the end
@@ -680,7 +779,11 @@ export async function runJq(
     // covers BOTH a runtime error and an input parse error (disambiguated by the
     // stderr prefix); and `halt_error(n)` can produce ANY other code (1 and 2
     // observed), which is still the user's program talking, not ours.
-    const firstLine = stderrLines[0] ?? '';
+    //
+    // The prefix must be read off jq's OWN line, not off stderr line 0 — see
+    // `primaryStderrLine`.
+    const primary = primaryStderrLine(stderrLines, prog);
+    const firstLine = primary.text;
     const kind: JqErrorKind =
       run.exitCode === 3 ? 'compile' : firstLine.startsWith('jq: parse error:') ? 'input' : 'runtime';
 
@@ -712,7 +815,7 @@ export async function runJq(
         )
         .map(cleanLine);
     } else if (kind === 'input') {
-      const positioned = splitPosition(firstLine.slice(PARSE_PREFIX.length), INPUT_POS_RE);
+      const positioned = splitPosition(firstLine.replace(/^jq: parse error:\s*/, ''), INPUT_POS_RE);
       parts = {
         kind,
         message:
@@ -721,7 +824,7 @@ export async function runJq(
         column: positioned.column,
         scope: positioned.line === undefined ? null : 'input',
       };
-      noticeLines = stderrLines.slice(1).map(cleanLine);
+      noticeLines = otherLines(stderrLines, primary);
     } else {
       const message = cleanLine(firstLine);
       parts = {
@@ -734,7 +837,12 @@ export async function runJq(
         // line number. Reporting it as one would be a confidently wrong answer.
         scope: null,
       };
-      noticeLines = stderrLines.slice(1).map(cleanLine);
+      noticeLines = otherLines(stderrLines, primary);
+    }
+
+    // jq counts columns in BYTES; the card and the editors count characters.
+    if (parts.line !== undefined && parts.column !== undefined && parts.scope !== null) {
+      parts.column = charColumnIn(parts.scope === 'input' ? text : prog, parts.line, parts.column);
     }
 
     const partial = collectRows(
