@@ -69,6 +69,12 @@ export interface RuleContext {
   scalar(section: string, key: string): string | undefined;
   /** Emit a finding. */
   report(finding: Finding): void;
+  /**
+   * True when this rule id has already kept every finding it will show, so the
+   * next one is counted and dropped. Only for skipping work that would go into a
+   * finding nobody sees — never for deciding whether something is wrong.
+   */
+  atCap(ruleId: string): boolean;
 }
 
 /** How many characters of a quoted value a finding title will show. */
@@ -244,12 +250,22 @@ function inlineCommentIn(value: string): string | null {
 }
 
 function directiveRules(ctx: RuleContext): void {
+  // Repeats and resets are gathered per (section NAME, directive) pair, across
+  // every block with that name: systemd merges repeated headers, so `User=` in two
+  // [Service] blocks is one directive set twice and the first value is silently
+  // discarded — the class of bug this tool exists to name. Gathered per section
+  // OBJECT, that case produced nothing but the generic "[Service] appears twice",
+  // and the discarded line was never pointed at.
+  const perSectionKeys = new Map<string, Map<string, Assignment[]>>();
+
   for (const section of ctx.parsed.sections) {
     const checked = (CHECKED_SECTIONS as readonly string[]).includes(section.name);
 
-    // Repeats and resets are reported once per (section-name, directive) pair,
-    // so a directive repeated in two merged [Service] blocks reports once.
-    const perKey = new Map<string, Assignment[]>();
+    let perKey = perSectionKeys.get(section.name);
+    if (!perKey) {
+      perKey = new Map<string, Assignment[]>();
+      perSectionKeys.set(section.name, perKey);
+    }
 
     for (const assignment of section.assignments) {
       const list = perKey.get(assignment.key);
@@ -331,8 +347,10 @@ function directiveRules(ctx: RuleContext): void {
       if (spec.kind === 'exec') execRules(ctx, assignment);
       if (spec.kind === 'calendar') calendarRules(ctx, assignment);
     }
+  }
 
-    if (!checked) continue;
+  for (const [sectionName, perKey] of perSectionKeys) {
+    if (!(CHECKED_SECTIONS as readonly string[]).includes(sectionName)) continue;
 
     for (const [key, list] of perKey) {
       const resets = list.filter((a) => a.value === '');
@@ -351,7 +369,7 @@ function directiveRules(ctx: RuleContext): void {
 
       const assigned = list.filter((a) => a.value !== '');
       if (assigned.length < 2) continue;
-      const spec = specFor(section.name, key);
+      const spec = specFor(sectionName, key);
       if (!spec) continue; // unknown name — already reported, no repeat claim
       const last = assigned[assigned.length - 1];
       const previous = assigned[assigned.length - 2];
@@ -403,6 +421,18 @@ function nameRules(ctx: RuleContext, section: Section, assignment: Assignment): 
     return;
   }
 
+  // Telling a typo from an unrecognised name costs two Damerau-Levenshtein
+  // sweeps, the second over all 439 known names. Once BOTH ids that answer can
+  // produce are capped, the finding is counted and dropped either way, so the
+  // sweep buys nothing but latency — and it is paid per line: a 199,000-character
+  // paste of non-unit `KEY=value` lines (a `systemctl show` dump, an `.env`, a
+  // concatenated unit tree) froze the tab for 20 seconds INSIDE the input limit
+  // this page advertises as the point where it stops instead of freezing.
+  if (ctx.atCap('typo-directive') && ctx.atCap('unknown-directive')) {
+    reportUnknownDirective(ctx, assignment);
+    return;
+  }
+
   // The current section's own names first, so a tie prefers the local fix.
   const local = Object.keys(SECTION_TABLES[section.name] ?? {});
   const suggestion =
@@ -422,6 +452,11 @@ function nameRules(ctx: RuleContext, section: Section, assignment: Assignment): 
     return;
   }
 
+  reportUnknownDirective(ctx, assignment);
+}
+
+/** The info finding for a name the table simply does not carry. */
+function reportUnknownDirective(ctx: RuleContext, assignment: Assignment): void {
   ctx.report({
     id: 'unknown-directive',
     severity: 'info',

@@ -8,6 +8,7 @@ import {
   MAX_FINDINGS_PER_RULE,
   MAX_FINDINGS_TOTAL,
   MAX_INPUT_CHARS,
+  editDistance,
   lint,
   parseUnit,
   summaryLine,
@@ -254,6 +255,58 @@ Type=oneshot
     expect(find(r, 'repeated-scalar-directive').title).toBe(
       'Type= is set 3 times; only the value on line 5 takes effect.',
     );
+  });
+
+  // Regression: the repeat/reset pass gathered assignments per section OBJECT, so a
+  // scalar set once in each of two merged [Service] blocks was never reported — the
+  // discarded value got nothing but the generic "[Service] appears twice", even
+  // though the same pair inside ONE block warns. The unit-shape rules already
+  // spanned merged sections via ctx.effective.
+  it('warns about a scalar repeated across two merged sections of the same name', () => {
+    const r = lint(`[Unit]
+Description=Test
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/true
+User=alice
+
+[Service]
+User=bob
+
+[Install]
+WantedBy=multi-user.target
+`);
+    expect(has(r, 'duplicate-section')).toBe(true);
+    const finding = find(r, 'repeated-scalar-directive');
+    expect(finding.severity).toBe('warning');
+    expect(finding.line).toBe(10);
+    expect(finding.title).toBe('User= is set twice; only the value on line 10 takes effect.');
+    expect(finding.detail).toContain('discards the earlier one on line 7');
+  });
+
+  it('appends a list directive across two merged sections of the same name', () => {
+    const r = lint(`[Service]
+Type=oneshot
+ExecStartPre=/usr/bin/first
+
+[Service]
+ExecStartPre=/usr/bin/second
+ExecStart=/usr/bin/true
+`);
+    expect(find(r, 'repeated-list-directive').title).toBe(
+      'ExecStartPre= appears twice — systemd appends, so both run in order.',
+    );
+  });
+
+  it('still reports a repeat inside one section exactly once', () => {
+    const r = lint(`[Service]
+Type=simple
+ExecStart=/usr/bin/true
+User=alice
+User=bob
+`);
+    expect(r.findings.filter((f) => f.id === 'repeated-scalar-directive')).toHaveLength(1);
   });
 
   it('reads the LAST value of a repeated scalar for the other rules', () => {
@@ -639,6 +692,53 @@ ExecStart=/usr/bin/true
     expect(has(lint(CLEAN_SERVICE), 'wrong-section')).toBe(false);
   });
 
+  // Regression: upstream `docker.service` ships `StartLimitBurst=3` in [Service]
+  // with a comment explaining that systemd 229+ reads it in both places, and the
+  // validator called it an error whose "setting has no effect at all" — a false
+  // error on a working unit, with a remediation that changes nothing.
+  // load-fragment-gperf.gperf.in has a `Service.` entry for each of these five.
+  for (const line of [
+    'StartLimitInterval=60',
+    'StartLimitBurst=3',
+    'StartLimitAction=none',
+    'FailureAction=none',
+    'RebootArgument=recovery',
+  ]) {
+    it(`treats ${line.split('=')[0]}= in [Service] as a compat alias, not a wrong section`, () => {
+      const r = lint(`[Unit]
+Description=Test
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/dockerd
+${line}
+
+[Install]
+WantedBy=multi-user.target
+`);
+      expect(has(r, 'wrong-section')).toBe(false);
+      expect(severityOf(r, 'deprecated-directive')).toBe('info');
+      expect(find(r, 'deprecated-directive').detail).toContain(
+        'systemd still reads it here for compatibility',
+      );
+    });
+  }
+
+  // The two siblings that have NO `Service.` gperf entry must still be errors —
+  // narrowing the rule above must not silence the cases it exists for.
+  for (const line of ['StartLimitIntervalSec=60', 'SuccessAction=exit']) {
+    it(`still errors on ${line.split('=')[0]}= in [Service]`, () => {
+      const r = lint(`[Service]
+Type=simple
+ExecStart=/usr/bin/true
+${line}
+`);
+      expect(find(r, 'wrong-section').title).toBe(
+        `${line.split('=')[0]}= belongs in [Unit], not [Service].`,
+      );
+    });
+  }
+
   it('does not flag a directive that is legal in several sections', () => {
     // ExecStartPre= is valid in [Service] AND [Socket]; Description= in [Unit].
     const r = lint(`[Unit]
@@ -700,6 +800,36 @@ ExecStart=/usr/bin/true
 Frobnicate=yes
 `);
     expect(has(r, 'typo-directive')).toBe(false);
+  });
+
+  // `editDistance` grew a `max` ceiling and three reused row buffers to stop a
+  // 199 KB paste from freezing the tab. Both are easy to get subtly wrong — a
+  // stale buffer cell or an early return one step too soon would change what the
+  // page tells someone to rename — so the metric itself is pinned here.
+  describe('editDistance', () => {
+    it('is exact without a ceiling', () => {
+      expect(editDistance('ExecStart', 'ExecStart')).toBe(0);
+      expect(editDistance('ExecStrat', 'ExecStart')).toBe(1); // transposition
+      expect(editDistance('RestartSecs', 'RestartSec')).toBe(1);
+      expect(editDistance('Wantedby', 'WantedBy')).toBe(1);
+      expect(editDistance('', 'Type')).toBe(4);
+      expect(editDistance('Type', '')).toBe(4);
+      expect(editDistance('Type', 'Sockets')).toBe(6);
+    });
+
+    it('returns max + 1 instead of the exact value once it is past the ceiling', () => {
+      expect(editDistance('ExecStrat', 'ExecStart', 2)).toBe(1);
+      expect(editDistance('Frobnicate', 'ExecStart', 2)).toBe(3);
+      expect(editDistance('Frobnicate', 'ExecStart', 1)).toBe(2);
+      expect(editDistance('Frobnicate', 'ExecStart', 0)).toBe(1);
+    });
+
+    it('gives the same answers when its row buffers are reused', () => {
+      // A long pair first, so the buffers are larger than the short pair needs.
+      expect(editDistance('ConditionPathIsSymbolicLink', 'ConditionPathIsMountPoint')).toBe(10);
+      expect(editDistance('Ttype', 'Type')).toBe(1);
+      expect(editDistance('Ttype', 'Type')).toBe(1);
+    });
   });
 });
 
@@ -963,9 +1093,12 @@ OnCalendar=*/15
     const finding = find(r, 'oncalendar-invalid');
     expect(finding.severity).toBe('error');
     expect(finding.title).toBe('OnCalendar=*/15 is not a valid calendar expression.');
+    // The quoted fix has to be an expression this same validator accepts —
+    // “00/15” was not, so the advice produced a second error (see calendar.test).
     expect(finding.detail).toBe(
-      'A systemd calendar repeat needs an explicit start value before the “/”: write “00/15”, not ' +
-        '“*/15”. systemd refuses to load a timer whose OnCalendar= it cannot parse, so this timer never fires.',
+      'A systemd calendar repeat needs an explicit start value before the “/”: write ' +
+        '“*-*-* *:00/15:00”, not “*/15”. systemd refuses to load a timer whose OnCalendar= it cannot ' +
+        'parse, so this timer never fires.',
     );
     expect(finding.remediation).toBe(
       'Check the expression with `systemd-analyze calendar \'…\'` on a machine that has systemd.',
@@ -1466,6 +1599,65 @@ describe('lint — caps are stated, never silent', () => {
       expect(capped!.total).toBe(pathological);
     }
   });
+
+  // Regression (frozen tab): the caps used to bound the OUTPUT but not the WORK.
+  // Telling a typo from a merely unrecognised name costs a Damerau-Levenshtein
+  // sweep over all 439 known names, and it ran for every assignment even after
+  // both of the rules that could show the answer were capped — a 199,000-character
+  // paste of non-unit `KEY=value` lines (a `systemctl show` dump, an `.env`) stalled
+  // the main thread for 20 s, INSIDE the input limit the page advertises as the
+  // point where it stops instead of freezing your tab.
+  //
+  // Once both ids are capped the finding is counted and dropped whichever it is,
+  // so the distinction is no longer paid for: a late typo is counted under
+  // `unknown-directive` instead. That is the deliberate trade — it costs a number
+  // in a "matched N places" note, never a finding anyone sees.
+  it('stops paying for a suggestion once both name rules are capped', () => {
+    const lines = ['[Service]', 'Type=oneshot', 'ExecStart=/usr/bin/true'];
+    for (let i = 0; i < MAX_FINDINGS_PER_RULE; i += 1) lines.push(`ExecStrat=/usr/bin/x${i}`);
+    for (let i = 0; i < MAX_FINDINGS_PER_RULE; i += 1) lines.push(`Zorblat${i}Xyzzy=1`);
+    lines.push('ExecStrat=/usr/bin/late');
+    const r = lint(lines.join('\n'));
+
+    // Every typo the user actually SEES still names ExecStart=.
+    const typos = r.findings.filter((f) => f.id === 'typo-directive');
+    expect(typos).toHaveLength(MAX_FINDINGS_PER_RULE);
+    for (const finding of typos) {
+      expect(finding.title).toBe('ExecStrat= is not a systemd directive — did you mean ExecStart=?');
+    }
+    // The 21st typo arrives past both caps and is counted as unknown.
+    expect(r.truncatedRules.find((t) => t.ruleId === 'typo-directive')).toBeUndefined();
+    const unknown = r.truncatedRules.find((t) => t.ruleId === 'unknown-directive');
+    expect(unknown).toEqual({
+      ruleId: 'unknown-directive',
+      shown: MAX_FINDINGS_PER_RULE,
+      total: MAX_FINDINGS_PER_RULE + 1,
+    });
+  });
+
+  // The same bug, measured end to end. The bound is ~3× the observed cost of the
+  // fixed path (2.5 s in node on the machine this was written on) and ~10× under
+  // the 26–30 s the unbounded sweep took: it exists to catch a re-introduction of
+  // per-character matrix allocation, not to police milliseconds.
+  it('scans a full-size paste of unknown names without blocking for seconds', () => {
+    let text = '[Service]\n';
+    let i = 0;
+    while (text.length < MAX_INPUT_CHARS - 40) {
+      text += `Zorblat${i}Xyzzy=value here\n`;
+      i += 1;
+    }
+    expect(text.length).toBeLessThanOrEqual(MAX_INPUT_CHARS);
+
+    const started = Date.now();
+    const r = lint(text);
+    const elapsed = Date.now() - started;
+
+    expect(r.ok).toBe(true);
+    expect(r.findings.filter((f) => f.id === 'unknown-directive')).toHaveLength(
+      MAX_FINDINGS_PER_RULE,
+    );
+    expect(elapsed, `lint took ${elapsed} ms`).toBeLessThan(8000);
+  }, 60_000);
 });
 
 /* ════════════════════════════════════════════════════════════════════════

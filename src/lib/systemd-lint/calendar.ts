@@ -96,11 +96,26 @@ interface FieldSpec {
   name: string;
   min: number;
   max: number;
-  /** Seconds may carry a fractional part (`00.5`). */
+  /** Seconds may carry a fractional part (`00.5`), in the value AND the step. */
   fractional?: boolean;
+  /** Applied before the range check — see `fixYear`. */
+  mapValue?: (n: number) => number;
 }
 
-const YEAR: FieldSpec = { name: 'Year', min: 1970, max: 2199 };
+/**
+ * systemd's own `fix_year()` (calendarspec.c): a one- or two-digit year is a
+ * shorthand, `12` → 2012 and `89` → 1989, which is why systemd.time(7)'s example
+ * table normalises `Mon,Sun 12-*-* 2,1:23` to `Mon,Sun 2012-*-* 01,02:23:00`.
+ * The range check therefore has to run on the MAPPED value, or a documented-valid
+ * expression is reported as out of range.
+ */
+function fixYear(n: number): number {
+  if (n < 70) return n + 2000;
+  if (n < 100) return n + 1900;
+  return n;
+}
+
+const YEAR: FieldSpec = { name: 'Year', min: 1970, max: 2199, mapValue: fixYear };
 const MONTH: FieldSpec = { name: 'Month', min: 1, max: 12 };
 const DAY: FieldSpec = { name: 'Day', min: 1, max: 31 };
 const HOUR: FieldSpec = { name: 'Hour', min: 0, max: 23 };
@@ -137,12 +152,21 @@ function isTimezoneToken(token: string): boolean {
   return /^utc$/i.test(token) || TZ_RE.test(token);
 }
 
+/** The one caveat a named timezone earns. Shared so both paths word it alike. */
+function timezoneNote(timezone: string): string {
+  return (
+    `Timezone “${timezone}” is passed through unchecked: systemd resolves it against the host’s own ` +
+    'tzdata, which this page cannot read. Note that a timezone on OnCalendar= needs systemd 242 or newer.'
+  );
+}
+
 /** Digits, with an optional fractional part where the field allows one. */
 function parseValue(token: string, spec: FieldSpec): number | null {
   const pattern = spec.fractional ? /^\d+(?:\.\d+)?$/ : /^\d+$/;
   if (!pattern.test(token)) return null;
   const n = Number(token);
-  return Number.isFinite(n) ? n : null;
+  if (!Number.isFinite(n)) return null;
+  return spec.mapValue ? spec.mapValue(n) : n;
 }
 
 /**
@@ -167,7 +191,11 @@ function checkComponent(raw: string, spec: FieldSpec): string | null {
     const stepText = slash === -1 ? null : item.slice(slash + 1);
 
     if (stepText !== null) {
-      if (!/^\d+$/.test(stepText)) {
+      // A field that takes a fractional VALUE also takes a fractional STEP:
+      // systemd.time(7) normalises `05:40:23.4200004/3.1700005` rather than
+      // rejecting it, so requiring integer digits here called a valid timer dead.
+      const stepPattern = spec.fractional ? /^\d+(?:\.\d+)?$/ : /^\d+$/;
+      if (!stepPattern.test(stepText)) {
         return `“${stepText}” is not a repeat step systemd can use in “${item}”.`;
       }
       if (Number(stepText) === 0) {
@@ -214,7 +242,11 @@ function checkComponent(raw: string, spec: FieldSpec): string | null {
 
 /** The weekday part: `Mon`, `Mon..Fri`, `Mon,Wed,Fri`, `Mon..Thu,Sun`. */
 function checkWeekdays(raw: string): string | null {
-  for (const item of raw.split(',')) {
+  // systemd tolerates ONE trailing comma on the weekday list — its own
+  // systemd.time(7) example table normalises `Wed, 17:48` to `Wed *-*-* 17:48:00`.
+  // Any other empty item in the list is still an error.
+  const list = raw.endsWith(',') ? raw.slice(0, -1) : raw;
+  for (const item of list.split(',')) {
     if (item === '') {
       return `“${raw}” has an empty item in its weekday list.`;
     }
@@ -302,20 +334,32 @@ export function validateOnCalendar(expr: string): CalendarValidation {
   // expression. Cron's most-used idiom is the most likely thing to be pasted
   // here, so it gets the fix rather than a parser message.
   if (text.includes('*/')) {
+    // The fix names a WHOLE expression this validator (and systemd) accepts. An
+    // earlier wording said `write “00/15”` — a bare component, which systemd
+    // itself rejects, so following the advice literally produced a second error.
     return fail(
-      'A systemd calendar repeat needs an explicit start value before the “/”: write “00/15”, not “*/15”.',
+      'A systemd calendar repeat needs an explicit start value before the “/”: write ' +
+        '“*-*-* *:00/15:00”, not “*/15”.',
     );
   }
 
   const parts = text.split(/\s+/);
 
-  // A shorthand stands for the WHOLE expression.
-  const shorthand = CALENDAR_SHORTHANDS[text.toLowerCase()];
+  // A shorthand stands for the WHOLE expression — except that a trailing timezone
+  // may follow it. systemd.time(7)'s example table carries `daily UTC` and
+  // `weekly Pacific/Auckland` verbatim, so this has to be split off BEFORE the
+  // lookup: rejecting the pair called a working timer unloadable.
+  const trailingTz = parts.length === 2 && isTimezoneToken(parts[1]) ? parts[1] : null;
+  const shorthandWord = trailingTz === null ? text : parts[0];
+  const shorthand = CALENDAR_SHORTHANDS[shorthandWord.toLowerCase()];
   if (shorthand) {
+    const notes = [`“${shorthandWord}” is systemd shorthand for “${shorthand}”.`];
+    if (trailingTz !== null && !/^utc$/i.test(trailingTz)) notes.push(timezoneNote(trailingTz));
     return {
       valid: true,
-      notes: [`“${text}” is systemd shorthand for “${shorthand}”.`],
-      expansion: shorthand,
+      notes,
+      expansion: trailingTz === null ? shorthand : `${shorthand} ${trailingTz}`,
+      ...(trailingTz !== null ? { timezone: trailingTz } : {}),
     };
   }
   const firstAsShorthand = CALENDAR_SHORTHANDS[parts[0].toLowerCase()];
@@ -370,6 +414,16 @@ export function validateOnCalendar(expr: string): CalendarValidation {
     );
   }
 
+  // A timezone qualifies a schedule; it is not one. `OnCalendar=UTC` consumes
+  // nothing else, and systemd refuses to load the timer — reporting it clean
+  // would be a false all-clear on a timer that never fires.
+  if (weekdays === null && date === null && time === null) {
+    return fail(
+      `“${text}” is a timezone, not a schedule — a calendar expression needs a weekday, a date or a ` +
+        'time as well.',
+    );
+  }
+
   if (weekdays !== null) {
     const error = checkWeekdays(weekdays);
     if (error) return fail(error);
@@ -385,10 +439,7 @@ export function validateOnCalendar(expr: string): CalendarValidation {
 
   const notes: string[] = [];
   if (timezone !== null && !/^utc$/i.test(timezone)) {
-    notes.push(
-      `Timezone “${timezone}” is passed through unchecked: systemd resolves it against the host’s own ` +
-        'tzdata, which this page cannot read. Note that a timezone on OnCalendar= needs systemd 242 or newer.',
-    );
+    notes.push(timezoneNote(timezone));
   }
 
   return { valid: true, notes, ...(timezone !== null ? { timezone } : {}) };

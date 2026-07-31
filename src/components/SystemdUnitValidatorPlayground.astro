@@ -1076,6 +1076,30 @@ import { examples } from '../lib/systemd-lint/examples';
    * pasted text and show a real diagnostic, not to silently drop it and display
    * an example the visitor never asked for.
    */
+  /**
+   * The `#unit=` payload when — and only when — its percent-escapes are malformed
+   * (`#unit=%%%x%%%`, `#unit=%zz`, `#unit=50%off`). `decodeURIComponent` throws on
+   * those, so `hashState.read()` reports `null`, which is indistinguishable from
+   * "no link at all": the boot then seeded example 1 (or the visitor's own previous
+   * unit) and reported findings for a file the link never carried, with nothing on
+   * screen saying the payload was dropped. Handing the still-encoded remainder to
+   * `decodeShare` puts it back on the documented raw-text path, which ends in a
+   * real diagnostic card.
+   */
+  function undecodableUnitFragment(): string | null {
+    const hash = new URL(window.location.href).hash;
+    const prefix = '#unit=';
+    if (!hash.startsWith(prefix)) return null;
+    const raw = hash.slice(prefix.length);
+    try {
+      decodeURIComponent(raw);
+      return null; // decodable — `hashState.read()` has already had its say
+    } catch {
+      const trimmed = raw.trim();
+      return trimmed === '' ? null : trimmed;
+    }
+  }
+
   function decodeShare(raw: string | null): { text: string; scope: Scope | null } | null {
     if (raw === null || raw === '') return null;
     const amp = raw.indexOf('&');
@@ -1472,16 +1496,19 @@ import { examples } from '../lib/systemd-lint/examples';
         setKind(kindWord);
 
         const payload = encodeShare(text, scope);
+        // Remembered OUTSIDE the fragment-length branch: a unit past ~1.4 KB of
+        // text is too long for a dependable link but well inside the 16 KB the
+        // last-input store takes, and it used to be forgotten entirely. The stored
+        // value is the share payload, scope included — see the note on `encodeShare`:
+        // restoring the text without the scope shows findings for a unit nobody has.
+        if (source !== 'seed') recordToolLastInput(SLUG, payload);
         if (hashState.build(payload).length <= MAX_HASH_LEN) {
           shareBtn!.hidden = false;
           shareBtn!.dataset.copy =
             location.origin + location.pathname + location.search + hashState.build(payload);
           // Gated on BOTH a fully valid check AND a user-initiated eval: a boot
           // seed must never write the URL or the restore store.
-          if (source !== 'seed') {
-            hashState.write(payload);
-            recordToolLastInput(SLUG, text);
-          }
+          if (source !== 'seed') hashState.write(payload);
         } else {
           // Too long to be a dependable link: keep checking, drop the share.
           shareBtn!.hidden = true;
@@ -1516,16 +1543,21 @@ import { examples } from '../lib/systemd-lint/examples';
     let seedChip: number | null = firstExample ? 0 : null;
     let seedScope: Scope = firstExample?.scope ?? 'system';
 
-    const shared = decodeShare(hashState.read());
+    const shared = decodeShare(hashState.read() ?? undecodableUnitFragment());
     if (shared !== null) {
       seedText = shared.text;
       seedChip = null;
       if (shared.scope) seedScope = shared.scope;
     } else {
-      const restored = getRestoredLastInput(SLUG);
-      if (restored && restored.trim() !== '') {
-        seedText = restored;
+      // Through `decodeShare` as well: the store holds the share payload, so the
+      // scope comes back with the text. A raw-text value written by an older build
+      // is not base64, so it falls through to `decodeShare`'s raw-text form and
+      // restores exactly as it used to.
+      const restored = decodeShare(getRestoredLastInput(SLUG));
+      if (restored !== null && restored.text.trim() !== '') {
+        seedText = restored.text;
         seedChip = null;
+        if (restored.scope) seedScope = restored.scope;
       }
     }
 
@@ -1575,10 +1607,20 @@ import { examples } from '../lib/systemd-lint/examples';
       saveBtn: snapSaveBtn,
       snapshotSelect: snapSelect,
       deleteBtn: snapDeleteBtn,
-      getValue: () => view.state.doc.toString(),
+      // The snapshot stores the share payload, not the bare text — `wire.ts`'s own
+      // docstring prescribes reusing the tool's share serializer, and here it is
+      // load-bearing: a snapshot taken in User scope and reloaded in System scope
+      // used to come back as "nothing matched", hiding the very finding it was
+      // saved for.
+      getValue: () => encodeShare(view.state.doc.toString(), scope),
       setValue: (value) => {
+        const restored = decodeShare(value) ?? { text: value, scope: null };
         liveReady = false;
-        setEditorDoc(value);
+        // `encodeShare` only spells out the non-default scope, so a payload with no
+        // scope marker was saved in System — restore that rather than leaving the
+        // toggle wherever it happens to be.
+        setScope(restored.scope ?? 'system');
+        setEditorDoc(restored.text);
         liveReady = true;
         clearChips();
         clearTimers();
