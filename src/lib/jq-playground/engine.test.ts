@@ -25,6 +25,7 @@ import {
   MAX_OUTPUT_ROWS,
   MAX_PROGRAM_CHARS,
   buildFlags,
+  byteColumnToCharColumn,
   getJq,
   getJqVersion,
   runJq,
@@ -346,6 +347,86 @@ describe('error classification, beyond the three headline shapes', () => {
     expect(result.totalNotices).toBe(1);
   });
 
+  /*
+   * REGRESSION (was: "confidently wrong error classification"). Exit 5 used to
+   * be disambiguated by stderr line 0, but `debug`/`stderr` write to stderr from
+   * inside the program, BEFORE jq's own diagnostic. `debug` + invalid JSON was
+   * therefore reported as a RUNTIME error in the program, with the debug dump
+   * `["DEBUG:",1]` as the error text and the red rule on the program pane, while
+   * the real parse error was demoted to a secondary "jq also wrote to stderr"
+   * notice. Classification now reads jq's own line wherever it sits.
+   */
+  it('classifies by jq’s OWN stderr line, not by a debug dump that precedes it', async () => {
+    const result = err(await runJq('debug', '1 {oops'));
+    expect(result.exitCode).toBe(5);
+    expect(result.errorKind).toBe('input');
+    expect(result.error).toBe('Invalid numeric literal at EOF');
+    expect(result.errorLine).toBe(1);
+    expect(result.errorColumn).toBe(7);
+    expect(result.errorScope).toBe('input');
+    // The debug dump survives as a notice instead of masquerading as the error.
+    expect(result.notices).toEqual(['["DEBUG:",1]']);
+  });
+
+  it('recovers jq’s diagnostic when `stderr` glued it onto the same line', async () => {
+    // `stderr` writes without a trailing newline, so jq 1.8.2 emits ONE line:
+    // `1jq: parse error: Invalid numeric literal at EOF at line 1, column 7`.
+    const result = err(await runJq('stderr|.', '1 {oops'));
+    expect(result.errorKind).toBe('input');
+    expect(result.error).toBe('Invalid numeric literal at EOF');
+    expect(result.errorScope).toBe('input');
+    expect(result.notices).toEqual(['1']);
+  });
+
+  it('does NOT mistake a halt_error message that quotes jq’s prefix for a parse error', async () => {
+    // The glued-line recovery must not fire here: halt_error terminates jq, so
+    // nothing of jq's own can follow the message on that line.
+    const result = err(await runJq('halt_error', '"oops jq: parse error: fake at line 9, column 9"'));
+    expect(result.errorKind).toBe('runtime');
+    expect(result.errorScope).toBeNull();
+    expect(result.error).toBe('oops jq: parse error: fake at line 9, column 9');
+  });
+
+  /*
+   * REGRESSION (was: "jq's BYTE columns presented as editor columns"). jq counts
+   * parse/compile columns in bytes; the card says "line 1, column N" and the
+   * editors count UTF-16 units, so any non-ASCII before the error pushed the
+   * number right — `{"café":1,}` reported column 12 for a `}` that is character
+   * 11, and `{"日本語":1,}` reported 16 for character 10.
+   */
+  it('reports the CHARACTER column, not jq’s byte column, for a non-ASCII input line', async () => {
+    const accented = err(await runJq('.', '{"café":1,}'));
+    expect(accented.errorKind).toBe('input');
+    expect(accented.error).toBe('Expected another key-value pair');
+    expect(accented.errorColumn).toBe(11); // jq's stderr says 12 (bytes)
+    const cjk = err(await runJq('.', '{"日本語":1,}'));
+    expect(cjk.errorColumn).toBe(10); // jq's stderr says 16 (bytes)
+    // ASCII is unaffected — the conversion is the identity there.
+    expect(err(await runJq('.', '{"ab":1,}')).errorColumn).toBe(9);
+  });
+
+  it('converts the byte column on a non-ASCII PROGRAM line too', async () => {
+    const result = err(await runJq('"ééé" | fooo', 'null'));
+    expect(result.errorKind).toBe('compile');
+    expect(result.errorLine).toBe(1);
+    expect(result.errorColumn).toBe(9); // jq's stderr says 12 (bytes)
+    expect(result.errorScope).toBe('program');
+  });
+
+  it('converts byte columns on later lines, and leaves an overshoot honest', () => {
+    expect(byteColumnToCharColumn('{"ab":1,}', 9)).toBe(9);
+    expect(byteColumnToCharColumn('{"café":1,}', 12)).toBe(11);
+    expect(byteColumnToCharColumn('{"日本語":1,}', 16)).toBe(10);
+    // An astral character is 4 bytes and 2 UTF-16 units, which is what
+    // CodeMirror counts.
+    expect(byteColumnToCharColumn('"😀"x', 6)).toBe(4);
+    expect(byteColumnToCharColumn('"😀"x', 7)).toBe(5);
+    expect(byteColumnToCharColumn('abc', 1)).toBe(1);
+    expect(byteColumnToCharColumn('abc', 0)).toBe(0);
+    // Past the end of the line (jq's "at EOF" shapes) keeps the overshoot.
+    expect(byteColumnToCharColumn('é', 5)).toBe(4);
+  });
+
   it('halt_error(n) sets an arbitrary exit code and is still the user’s runtime error', async () => {
     // Verified against jq 1.8.2: halt_error(1) exits 1 and halt_error(2) exits 2,
     // so "anything that is not 3 and not a parse error is a runtime error" is the
@@ -549,10 +630,16 @@ describe('guards — the engine never throws and never freezes on hostile input'
   });
 
   it('flags recurse(.field) — the shape that recurses on null for ever', () => {
+    // REGRESSION: this hint used to promise flatly that "jq will exhaust its
+    // memory and abort". MEASURED on jq 1.8.2: only a COLLECTED stream aborts
+    // (`[repeat(1)]` ~1.7 s); a bare streaming `repeat(1)`/`recurse(.a)` was
+    // still running after 40 s in node and blocks the tab until reload. The
+    // hint must describe both outcomes.
     const hint =
       'recurse(.field) keeps recursing after it reaches the end: .field on the last node is ' +
-      'null, and null.field is null again, forever — adding ? does not stop it. jq will exhaust ' +
-      'its memory and abort. Write recurse(.field?; . != null) instead.';
+      'null, and null.field is null again, forever — adding ? does not stop it. Collected ' +
+      '([…], length, last) it exhausts jq’s memory and aborts after a second or two; left ' +
+      'streaming it freezes this tab until you reload. Write recurse(.field?; . != null) instead.';
     expect(unboundedRiskHint('[recurse(.next) | .id]')).toBe(hint);
     expect(unboundedRiskHint('[recurse(.next?) | .id]')).toBe(hint);
     expect(unboundedRiskHint('[recurse(.a.b)]')).toBe(hint);

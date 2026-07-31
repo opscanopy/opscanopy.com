@@ -9,7 +9,8 @@
  * claim, so it must never become a literal.
  *
  * WASM lifecycle: the shell, both editors and the seeded state render
- * immediately; the ~907 KB (≈324 KB gzipped) jq binary is fetched at idle via
+ * immediately; the jq binary (928,824 bytes = 907 KiB uncompressed; MEASURED
+ * 336 KiB gzip -6, 242 KiB brotli q11) is fetched at idle via
  * `requestIdleCallback`, behind a one-time "Loading jq" status in the results
  * panel. If instantiation fails the panel keeps a persistent card with a Retry
  * button — `getJq()` clears its memo on rejection precisely so Retry can work.
@@ -251,7 +252,7 @@ import { examples } from '../lib/jq-playground/examples';
       </div>
       <div id="jq-results" class="jqp-results">
         <p class="jqp-empty body-sm text-mute">
-          Loading jq — the real binary, compiled to WebAssembly (about 324 KB over the wire, cached
+          Loading jq — the real binary, compiled to WebAssembly (250–340 KB over the wire, cached
           after your first visit). The example below runs as soon as it lands.
         </p>
       </div>
@@ -883,6 +884,9 @@ import { examples } from '../lib/jq-playground/examples';
   /* A single output can be megabytes. Clip what goes into the DOM, keep the
      whole value on the copy button, and say so. */
   const MAX_ROW_DISPLAY_CHARS = 4000;
+  /* The program editor's accessible name, and the flag that tells the shared
+     editor factory which of the two editors it is building. */
+  const PROGRAM_LABEL = 'jq program';
 
   function boot(): void {
     document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
@@ -1282,6 +1286,14 @@ import { examples } from '../lib/jq-playground/examples';
               if (!u.docChanged || !liveReady) return;
               setActiveChip(null);
               clearTimers();
+              // The unbounded-risk warning has to be painted on the DOC CHANGE,
+              // not inside evaluate(): jq runs synchronously and `await getJq()`
+              // is already resolved by then, so evaluate() blocks the main thread
+              // on the same microtask checkpoint that wrote the warning — the
+              // browser never gets a frame, and for a filter that never returns
+              // the warning is never seen at all. Painting it here gives it the
+              // whole debounce window.
+              if (label === PROGRAM_LABEL) applyRiskHint(u.state.doc.toString());
               evalTimer = window.setTimeout(() => evaluate('type'), DEBOUNCE_MS);
             }),
             EditorViewCtor.theme({
@@ -1360,10 +1372,12 @@ import { examples } from '../lib/jq-playground/examples';
       });
     }
 
-    function applyRiskHint(): void {
+    // `programText` is passed in from the editor's updateListener, where
+    // `programView` is not yet assigned (its own initialiser is still running).
+    function applyRiskHint(programText?: string): void {
       let hint: string | null = null;
       try {
-        hint = engine.unboundedRiskHint(programView.state.doc.toString());
+        hint = engine.unboundedRiskHint(programText ?? programView.state.doc.toString());
       } catch {
         hint = null;
       }
@@ -1410,7 +1424,7 @@ import { examples } from '../lib/jq-playground/examples';
       setSummary('loading jq…', false);
       resultsBox!.innerHTML =
         '<p class="jqp-empty body-sm text-mute">Loading jq — the real binary, compiled to ' +
-        'WebAssembly (about 324 KB over the wire, cached after your first visit). The example ' +
+        'WebAssembly (250–340 KB over the wire, cached after your first visit). The example ' +
         'below runs as soon as it lands.</p>';
     }
 
@@ -1444,10 +1458,15 @@ import { examples } from '../lib/jq-playground/examples';
         );
       }
       if (!result.outputsExact) {
+        // Two things land here, so the note must not name only one of them: a
+        // raw string containing newlines, and a filter whose two passes disagree
+        // (anything non-deterministic — `now` is the common one). Claiming the
+        // newline reason for a `now` filter would be a confident wrong answer.
         notes.push(
-          `jq produced ${plural(result.totalOutputs, 'output')}, but with -r a raw string can ` +
-            `contain newlines, so the boundaries are not recoverable from the text — the whole ` +
-            `raw output is shown as one block instead of guessing at rows.`,
+          `jq produced ${plural(result.totalOutputs, 'output')}, but the row boundaries cannot be ` +
+            `proven from -r text — a raw string may contain newlines, and a non-deterministic ` +
+            `filter such as now differs between the two passes. The whole raw output is shown as ` +
+            `one block instead of guessing at rows.`,
         );
       }
       const body =
@@ -1513,7 +1532,13 @@ import { examples } from '../lib/jq-playground/examples';
             ? 'input parse error'
             : result.errorKind === 'runtime'
               ? `runtime error · exit ${group(result.exitCode)}`
-              : 'jq unavailable';
+              : // An `engine` error with jq already loaded is an Emscripten
+                // abort — this run ran out of WASM heap. jq itself is still
+                // there (the badge still reads its version and the next run
+                // works), so "jq unavailable" would overstate it.
+                engineReady
+                ? 'run aborted'
+                : 'jq unavailable';
       setSummary(label, true);
       renderErr(result, source === 'commit');
       if (source !== 'seed') writeHash(null);
@@ -1635,7 +1660,7 @@ import { examples } from '../lib/jq-playground/examples';
       }
     }
 
-    const programView = makeEditor(programHost, seedProgram, 'jq program', []);
+    const programView = makeEditor(programHost, seedProgram, PROGRAM_LABEL, []);
     const inputView = makeEditor(inputHost, seedInput, 'JSON input', [jsonLang()]);
     applyFlagChrome();
     setActiveChip(seedChip);
