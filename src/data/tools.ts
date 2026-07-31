@@ -740,6 +740,29 @@ export const tools: Tool[] = [
     ],
     accent: 'ship',
   },
+  {
+    slug: 'grafana-dashboard-validator',
+    name: 'Grafana Dashboard Validator',
+    tagline:
+      'Lint Grafana dashboard JSON for broken variables, legacy panels and import traps — in your browser.',
+    description:
+      'Paste a dashboard JSON and read every import trap with the JSON path it lives at: template variables nothing declares, ${DS_…} placeholders Grafana cannot resolve, Angular panels that render nothing on Grafana 12, duplicate panel ids, invisible panels and a schemaVersion older than the file looks. 22 rules pinned to a stated Grafana version, entirely client-side.',
+    status: 'planned',
+    category: 'Observability',
+    keywords: [
+      'grafana dashboard json validator',
+      'grafana dashboard linter',
+      'validate grafana dashboard json online',
+      'grafana dashboard import failed',
+      'grafana schemaversion checker',
+      'undefined template variable grafana',
+      'grafana angular panel checker',
+      'grafana graph to timeseries migration',
+      'datasource ds_prometheus not found',
+      'review grafana dashboard pull request',
+    ],
+    accent: 'develop',
+  },
 ];
 
 export const liveTools = tools.filter((t) => t.status === 'live');

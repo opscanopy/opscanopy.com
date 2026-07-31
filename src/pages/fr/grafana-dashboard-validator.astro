@@ -1,0 +1,720 @@
+---
+/**
+ * Grafana Dashboard Validator — la page de l'outil grafana-dashboard-validator.
+ *
+ * La section de référence EST le catalogue de règles : une sous-section ancrée par
+ * règle (`#rule-no-uid` … `#rule-panel-zero-size`), vers laquelle pointent
+ * directement les puces de règle du playground. Chaque NOMBRE de cette page est
+ * dérivé des exports du moteur au lieu d'être saisi à la main dans le texte.
+ */
+import Shell from '../../components/Shell.astro';
+import GrafanaDashboardValidatorPlayground from '../../components/GrafanaDashboardValidatorPlayground.astro';
+import Button from '../../components/Button.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import ToolHero from '../../components/ToolHero.astro';
+import ToolGapVisual from '../../components/ToolGapVisual.astro';
+import ToolPipeline from '../../components/ToolPipeline.astro';
+import FaqList from '../../components/FaqList.astro';
+import ToolCrossLinks from '../../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../../data/site';
+import { getTool } from '../../data/tools';
+import { softwareAppLd, faqPageLd } from '../../lib/jsonld';
+import {
+  GRAFANA_RULES_VERSION,
+  KNOWN_SCHEMA_VERSION,
+  MAX_DIAGNOSTICS_PER_RULE,
+  MAX_DIAGNOSTICS_TOTAL,
+  MAX_INPUT_CHARS,
+  RULE_IDS,
+  RULE_SEVERITY,
+  type RuleId,
+} from '../../lib/grafana-dashboard-validator/engine';
+import type { Locale as __Locale } from '../../i18n/config';
+import { localizeKey as __l } from '../../i18n/utils';
+const __lang = (Astro.currentLocale ?? 'en') as __Locale;
+
+const tool = getTool('grafana-dashboard-validator');
+const pagePath = '/grafana-dashboard-validator/';
+const pageUrl = `${site.url}${pagePath}`;
+
+/* ── Chaque nombre de cette page, dérivé ─────────────────────────────────── */
+const ruleCount = RULE_IDS.length;
+const errorRules = RULE_IDS.filter((id) => RULE_SEVERITY[id] === 'error').length;
+const warningRules = RULE_IDS.filter((id) => RULE_SEVERITY[id] === 'warning').length;
+const noteRules = RULE_IDS.filter((id) => RULE_SEVERITY[id] === 'info').length;
+const inputCap = MAX_INPUT_CHARS.toLocaleString('fr-FR');
+const totalCap = MAX_DIAGNOSTICS_TOTAL.toLocaleString('fr-FR');
+
+/** `{` ouvre une expression dans un template Astro — d'où cette constante. */
+const dsPlaceholder = '${DS_PROMETHEUS}';
+const metaDescription =
+  'Analysez le JSON d’un dashboard Grafana dans votre navigateur : variables non déclarées, ' +
+  'placeholders ${DS_…}, panneaux Angular, ids en double, schemaVersion ancienne. Aucun envoi.';
+
+const ruleCopy: Record<RuleId, { title: string; what: string; fix: string; extra?: string }> = {
+  'no-uid': {
+    title: 'Donnez un uid au dashboard',
+    what: 'Sans uid, chaque import crée un NOUVEAU dashboard au lieu de mettre à jour celui qui existe déjà : le même fichier importé deux fois laisse donc deux copies, et tout lien enregistré pointe vers celui qui est désormais périmé. Grafana accepte jusqu’à 40 caractères parmi lettres, chiffres, tirets et tirets bas.',
+    fix: '"uid": "api-slo"',
+  },
+  'root-id-set': {
+    title: 'id doit valoir null dans un fichier committé',
+    what: 'id est un numéro de ligne dans une seule base de données Grafana. Transporté vers une autre instance, soit l’import échoue, soit il atterrit sur un dashboard qui n’a rien à voir avec le vôtre. Grafana attribue toujours le sien.',
+    fix: '"id": null',
+  },
+  'empty-title': {
+    title: 'Donnez un titre au dashboard',
+    what: 'Un title absent ou vide s’affiche comme « New dashboard » : introuvable dans la recherche et impossible à distinguer de tous les autres tableaux créés par accident.',
+    fix: '"title": "API SLO"',
+  },
+  'duplicate-panel-id': {
+    title: 'Les ids de panneau doivent être uniques',
+    what: 'Grafana adresse les liens de panneau, les URL « View panel » et les repeats par l’id du panneau. Deux panneaux partageant un id cassent les trois, et l’interface n’en dit rien : le second panneau cesse simplement d’être adressable.',
+    fix: 'Renumérotez l’un des deux ; les ids ne doivent être uniques qu’à l’intérieur de ce dashboard',
+  },
+  'duplicate-variable': {
+    title: 'Les noms de variable doivent être uniques',
+    what: 'Deux entrées de templating.list portant le même name : Grafana garde la dernière et abandonne la première en silence. Le type, la requête et la valeur par défaut de la variable sont donc ceux que la seconde déclaration a fixés par hasard.',
+    fix: 'Renommez ou supprimez l’une des deux',
+  },
+  'schema-version-old': {
+    title: 'Réexportez une schemaVersion ancienne',
+    what: 'schemaVersion enregistre les migrations de format de Grafana par lesquelles le JSON est déjà passé. En dessous de 36, la datasource d’un panneau est encore un nom ; en dessous de 16, les panneaux vivent encore dans rows. Grafana migre au chargement, mais le fichier de votre dépôt ne se migre pas tout seul : relire ce fichier, c’est donc relire quelque chose que Grafana n’affichera jamais.',
+    fix: 'Ouvrez-le dans Grafana 9 ou plus récent et réexportez',
+    extra: 'erreur en dessous de 16',
+  },
+  'schema-version-unknown': {
+    title: 'Une schemaVersion que ce linter ne connaît pas',
+    what: `Plus récente que la ${KNOWN_SCHEMA_VERSION} épinglée, absente, ou écrite comme chaîne au lieu d’un nombre. Signalée comme note et jamais comme erreur : un schéma inconnu est une limite de ce linter, pas un défaut de votre dashboard.`,
+    fix: 'Rien à changer — la note marque les résultats ci-dessous comme indicatifs',
+  },
+  'undefined-variable': {
+    title: 'Toute $variable doit être déclarée',
+    what: 'Une référence que rien ne déclare reste dans la requête sous forme de texte littéral : la requête s’exécute avec « $env » dedans et le panneau ne renvoie rien — ou, pire, renvoie quelque chose de plausible. Les variables intégrées de Grafana ($__rate_interval, $__from, $__range et les autres) sont connues et jamais signalées, ni $1, qui est une rétro-référence de regex.',
+    fix: 'Ajoutez-la sous templating.list, ou corrigez l’orthographe',
+    extra: 'avertissement dans une regex',
+  },
+  'unused-variable': {
+    title: 'Une variable que personne ne lit',
+    what: 'Déclarée mais jamais référencée par un panneau, une requête, un titre, un lien ou une annotation. Inoffensive en soi — sauf qu’une variable de type « query » que personne ne lit exécute quand même sa requête à chaque chargement du dashboard.',
+    fix: 'Supprimez-la, ou utilisez-la',
+  },
+  'legacy-var-syntax': {
+    title: '[[var]] est la forme d’avant Grafana 6',
+    what: 'Elle se résout toujours, et elle est toujours dépréciée. C’est aussi la seule forme qui ne peut pas porter de format : une valeur qui doit devenir une alternative de regex ou une liste CSV doit donc être réécrite avant de pouvoir être formatée.',
+    fix: '"${env}", ou "${env:regex}" quand la requête a besoin d’un motif',
+  },
+  'datasource-by-name': {
+    title: 'Référencez les datasources par uid, pas par nom',
+    what: 'Un nom ne se résout que si une datasource portant exactement ce nom existe sur l’instance cible. Cette seule différence sépare un dashboard qui s’importe d’un dashboard qui affiche « Datasource not found » sur le Grafana d’un collègue. La forme { type, uid } est ce que Grafana écrit depuis schemaVersion 36.',
+    fix: '"datasource": { "type": "prometheus", "uid": "P1809F7CD0C75ACF3" }',
+  },
+  'unresolved-ds-input': {
+    title: '${DS_…} exige la boîte de dialogue d’import',
+    what: '« Export for sharing externally » remplace chaque datasource par un placeholder __inputs que seul Dashboards → Import renseigne. Si vous provisionnez ce même fichier, Grafana signale « Datasource ${DS_PROMETHEUS} not found » — et une référence ${DS_…} sans aucun bloc __inputs échoue de la même façon, même via la boîte de dialogue.',
+    fix: 'Importez via la boîte de dialogue, ou substituez d’abord la vraie { type, uid }',
+  },
+  'empty-targets': {
+    title: 'Un panneau sans requête',
+    what: 'Aucun targets du tout : le panneau s’affiche vide. Les types de panneau qui n’interrogent jamais — row, text, dashlist, news, alertlist, annolist — ne sont pas signalés, ni les library panels, dont les requêtes vivent dans la bibliothèque et non dans ce fichier.',
+    fix: 'Ajoutez un target, ou supprimez le panneau',
+  },
+  'deprecated-panel-type': {
+    title: 'graph, singlestat et table-old',
+    what: 'Grafana 9–12 les migre au chargement du dashboard, et c’est précisément pour cela qu’ils méritent d’être signalés : ce que vous relisez dans le JSON n’est pas ce que quiconque verra à l’écran. Réenregistrer depuis Grafana 9 ou plus récent inscrit la migration dans le fichier, et la relecture et l’affichage finissent par concorder.',
+    fix: '"type": "timeseries" / "stat" / "table"',
+  },
+  'angular-panel': {
+    title: 'Plugins de panneau AngularJS',
+    what: 'Le support d’Angular a été déprécié dans Grafana 9 et retiré au fil de Grafana 11–12. Contrairement aux types du cœur ci-dessus, un plugin n’a aucune migration automatique : le panneau ne se dégrade pas, il n’affiche rien.',
+    fix: 'piechart pour grafana-piechart-panel, geomap pour grafana-worldmap-panel',
+  },
+  'repeat-undefined': {
+    title: 'Un repeat sur rien',
+    what: 'Un repeat qui nomme une variable inexistante produit un seul panneau et aucun message d’erreur. Une ligne censée se déployer sur chaque cluster en montre un en silence, et le dashboard a l’air terminé.',
+    fix: 'Déclarez la variable, ou retirez « repeat »',
+  },
+  'time-range-absurd': {
+    title: 'Une plage par défaut dont personne ne veut',
+    what: 'Plages de plus d’un an, plages à l’envers, plages de longueur nulle et expressions que Grafana ne sait pas analyser. Chaque panneau exécute la plage par défaut au moment où le dashboard s’ouvre, ce qui en fait l’erreur de performance la moins coûteuse à corriger du fichier.',
+    fix: '"time": { "from": "now-6h", "to": "now" }',
+  },
+  'refresh-aggressive': {
+    title: 'Un refresh sous dix secondes',
+    what: 'En dessous de dix secondes, les requêtes s’empilent plus vite qu’elles ne se terminent, dans chaque onglet où le dashboard est ouvert, et la datasource paie pour toutes. Le min_refresh_interval de Grafana peut de toute façon vous passer devant : le JSON dit une chose et l’instance en fait une autre.',
+    fix: '"refresh": "1m"',
+  },
+  'override-suspect': {
+    title: 'Un override qui n’applique rien',
+    what: 'Un matcher byName sans valeur ne correspond à aucun champ ; un override dont le tableau properties est vide ne fixe rien. Grafana garde les deux dans le JSON et n’applique ni l’un ni l’autre : ils se lisent donc comme une configuration qui fait quelque chose.',
+    fix: 'Donnez-lui quelque chose à cibler et quelque chose à fixer, ou supprimez-le',
+  },
+  'empty-row': {
+    title: 'Une ligne sans panneaux',
+    what: 'Une ligne repliée dont le tableau panels est vide reste invisible jusqu’à ce que quelqu’un la déplie et n’y trouve rien. Une ligne DÉPLIÉE n’est pas signalée lorsque ses panneaux la suivent comme frères : c’est ainsi que Grafana les stocke réellement, et le signaler déclencherait sur tous les dashboards modernes.',
+    fix: 'Supprimez la ligne, ou déplacez des panneaux dedans',
+  },
+  'panel-no-type': {
+    title: 'Un panneau sans type',
+    what: 'Rien n’indique à Grafana quoi afficher : il dessine une boîte vide à la place du panneau. Tout panneau exporté par Grafana porte un type ; un panneau sans type a été édité à la main, mal fusionné, ou produit par un générateur.',
+    fix: '"type": "timeseries"',
+  },
+  'panel-zero-size': {
+    title: 'Un panneau qui n’occupe aucune place',
+    what: 'Un gridPos de largeur ou de hauteur nulle est invisible. Un gridPos absent fait retomber Grafana sur une position par défaut, où les panneaux peuvent se superposer. La grille compte 24 colonnes.',
+    fix: '"gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }',
+  },
+};
+
+const rules = RULE_IDS.map((id) => ({ id, severity: RULE_SEVERITY[id], ...ruleCopy[id] }));
+
+const severityLabel: Record<string, string> = {
+  error: 'erreur',
+  warning: 'avertissement',
+  info: 'note',
+};
+
+/** Reflète le bloc DELIBERATELY SILENT en tête du rules.ts du moteur. */
+const silent = [
+  {
+    what: 'La validation complète du schéma',
+    why: 'Ceci est un lint structurel, pas une vérification de schéma. Le schéma de dashboard de Grafana est vaste, versionné et encore mouvant ; une vérification partielle présentée comme une vérification de schéma serait un mensonge.',
+  },
+  {
+    what: 'PromQL, LogQL et SQL dans targets',
+    why: 'Un langage de requête mérite son propre outil. Le PromQL Explainer fait ce travail correctement, plutôt que de laisser cet outil analyser des expressions à moitié.',
+  },
+  {
+    what: 'Tout ce qui nécessite votre Grafana',
+    why: 'Savoir si un uid est pris, si un plugin est installé, si un dossier existe. Il n’y a pas de réseau ici : deviner reviendrait à inventer.',
+  },
+  {
+    what: 'Les fautes de frappe dans les noms $__',
+    why: 'Tout ce qui commence par deux tirets bas est traité comme une variable intégrée de Grafana, parce que Grafana en ajoute sans cesse. Appeler « non définie » la variable intégrée de l’an prochain serait pire que de laisser passer une faute de frappe.',
+  },
+  {
+    what: 'Les panneaux sans titre',
+    why: 'Les panneaux de texte et les tuiles à valeur unique sont légitimement sans titre. Seul le titre du DASHBOARD est obligatoire.',
+  },
+  {
+    what: 'Les chevauchements de gridPos et la géométrie de la mise en page',
+    why: 'Grafana réagence la grille au chargement du dashboard : un chevauchement dans le JSON n’est pas un chevauchement à l’écran.',
+  },
+  {
+    what: 'La taille des panneaux dans les rows[] héritées',
+    why: 'Les mises en page antérieures à schemaVersion 16 utilisaient span, pas gridPos. Y signaler un gridPos absent déclencherait sur chaque panneau d’un dashboard dont le vrai problème est déjà une erreur.',
+  },
+  {
+    what: 'Un refresh que ce linter ne sait pas analyser',
+    why: 'Deviner ce que vaut « 1m30s » revient à deviner, et le résultat porterait sur la supposition plutôt que sur le dashboard.',
+  },
+  {
+    what: 'Les champs dépréciés dans les options de panneau',
+    why: 'Ils diffèrent d’un plugin à l’autre, changent à chaque version et sont migrés par Grafana au chargement. Une règle à leur sujet serait périmée en une version mineure.',
+  },
+];
+
+/** Les syntaxes de variable que Grafana accepte, et deux choses qui y ressemblent. */
+const variableForms = [
+  {
+    form: '$env',
+    since: 'Toujours',
+    note: 'Se termine au premier caractère qui n’est ni une lettre, ni un chiffre, ni un tiret bas : « $env-prod » est donc la variable env suivie du texte littéral « -prod ».',
+  },
+  {
+    form: '${env}',
+    since: 'Grafana 6',
+    note: 'La forme actuelle. Sans ambiguïté à côté du texte qui l’entoure, et la seule qui puisse porter un format.',
+  },
+  {
+    form: '${env:regex}',
+    since: 'Grafana 6',
+    note: 'Une interpolation formatée — regex, csv, json, pipe, glob et d’autres — et c’est ce qui rend sûre une variable multivaleur au sein d’une requête.',
+  },
+  {
+    form: '[[env]]',
+    since: 'Avant Grafana 6',
+    note: 'Dépréciée. Se résout encore, ne peut pas porter de format. Signalée comme legacy-var-syntax.',
+  },
+  {
+    form: '$__rate_interval',
+    since: 'Grafana 7.2',
+    note: 'Une variable intégrée, pas une des vôtres. Tout nom commençant par deux tirets bas est traité comme intégré et n’est jamais signalé.',
+  },
+  {
+    form: '${DS_PROMETHEUS}',
+    since: '—',
+    note: 'Pas une variable de template du tout : un placeholder d’import __inputs. Signalé comme unresolved-ds-input.',
+  },
+];
+
+/** Jalons de schemaVersion qui changent la lecture du même JSON. */
+const schemaMilestones = [
+  {
+    version: '16',
+    grafana: '5.x',
+    change:
+      'Les panneaux sont sortis de « rows » vers un tableau « panels » de premier niveau, et gridPos a remplacé span. En dessous, tout ce qui concerne la mise en page est stocké autrement.',
+  },
+  {
+    version: '36',
+    grafana: '8.3–9.x',
+    change:
+      'La « datasource » d’un panneau est devenue une référence { type, uid } au lieu d’un nom. Cette migration est derrière la plupart des imports « ça marche sur mon instance ».',
+  },
+  {
+    version: '39',
+    grafana: '11.x',
+    change:
+      'Le schéma en vigueur sur la ligne Grafana 11, où les panneaux Angular ont été désactivés par défaut.',
+  },
+  {
+    version: String(KNOWN_SCHEMA_VERSION),
+    grafana: '12.x',
+    change: `Le schéma le plus récent que connaît ce linter. Toute valeur supérieure à ${KNOWN_SCHEMA_VERSION} est signalée comme note, jamais comme erreur.`,
+  },
+];
+
+const faqs = [
+  {
+    q: 'Que vérifie le Grafana Dashboard Validator ?',
+    a: `${ruleCount} règles sur une véritable analyse du dashboard : ${errorRules} erreurs, ${warningRules} avertissements et ${noteRules} notes. Les erreurs sont celles qui changent ce que fait Grafana — une variable de template que rien ne déclare, un placeholder \${DS_…} sans bloc __inputs, un panneau AngularJS qui n’affiche rien sur Grafana 11–12, deux panneaux partageant un id, un repeat sur une variable inexistante, un panneau sans type, et une schemaVersion si ancienne que le JSON et l’affichage sont deux dashboards différents. Les avertissements sont les problèmes de portabilité et de relecture : un uid absent, un id de base de données laissé dans un fichier committé, une datasource référencée par nom, un panneau graph ou singlestat déprécié, un panneau invisible de largeur nulle, une plage de temps par défaut de plus d’un an, un refresh sous dix secondes. Chaque règle a sa propre sous-section sur cette page, et les puces de règle du playground y renvoient directement.`,
+  },
+  {
+    q: 'Mon dashboard quitte-t-il un jour mon navigateur ?',
+    a: 'Non. Le parseur et toutes les règles sont du JavaScript exécuté dans votre onglet — pas de serveur, pas d’appel d’API, pas de journalisation, donc 0 octet envoyé. Cela compte plus ici que pour la plupart des outils : le JSON d’un dashboard est une carte de votre parc interne. Noms de métriques, uids de datasources, noms d’hôtes dans les formats de légende, noms de service dans les requêtes de variables, parfois une URL interne dans un lien de panneau. C’est exactement le fichier qu’il ne faut pas coller dans un formateur en ligne quelconque.',
+  },
+  {
+    q: 'Est-ce une validation de schéma ?',
+    a: 'Non, et l’outil le dit plutôt que de le laisser croire. Le schéma de dashboard de Grafana est vaste, versionné et encore mouvant : une vérification partielle présentée comme une vérification de schéma serait pire que pas de vérification du tout. Ce qui est fait ici est un lint structurel : il lit les formes qui cassent les imports et les relectures — variables, références de datasource, types de panneau, ids, mise en page, temps et refresh — et nomme le chemin JSON de chaque résultat. Il n’analyse pas PromQL, ne connaît pas vos plugins et ne parle à aucun Grafana. La liste complète de ce qu’il passe volontairement sous silence est plus haut, dans « Ce qu’il ne signale pas volontairement ».',
+  },
+  {
+    q: 'Pourquoi mon import échoue-t-il avec « Datasource ${DS_PROMETHEUS} not found » ?',
+    a: 'Parce que le fichier a été produit par « Export for sharing externally ». Cet export remplace chaque référence de datasource par un placeholder — ${DS_PROMETHEUS} — et ajoute un bloc « __inputs » décrivant ce dont chaque placeholder a besoin. Seule la boîte de dialogue Dashboards → Import lit ce bloc et vous demande de choisir une vraie datasource. Provisionner le même fichier, le POSTer à l’API ou le déposer dans un dossier synchronisé par Git contourne complètement la boîte de dialogue : le placeholder survit dans le dashboard enregistré et tous les panneaux échouent à le résoudre. Soit vous importez via la boîte de dialogue, soit vous substituez la vraie { type, uid } avant de provisionner. Ce linter signale le placeholder comme une erreur dans les deux cas, parce que le fichier n’est pas provisionnable en l’état.',
+  },
+  {
+    q: 'Quelle est la différence entre uid et id ?',
+    a: 'Le uid est l’identifiant que vous choisissez. Il fait partie de l’URL du dashboard, c’est lui que le provisioning et l’API adressent, et il doit vivre dans le contrôle de version à côté du JSON. Le id est un numéro de ligne dans la base de données d’une seule instance Grafana : ailleurs, il ne signifie rien. Un fichier avec uid met à jour le même dashboard à chaque import ; un fichier sans uid crée une nouvelle copie à chaque fois. Un fichier avec un id périmé échoue à l’import ou cible un dashboard qui n’a rien à voir avec le vôtre : c’est pourquoi un export devrait porter « id » : null.',
+  },
+  {
+    q: 'Mon dashboard utilise des panneaux graph. Fonctionnera-t-il encore sur Grafana 12 ?',
+    a: 'Les panneaux du cœur graph, singlestat et table-old sont migrés automatiquement au chargement du dashboard : ils continuent donc de fonctionner — mais le JSON de votre dépôt n’est pas migré, ce qui veut dire que le fichier que vous relisez et le panneau que Grafana affiche sont deux choses différentes. Réenregistrez le dashboard depuis Grafana 9 ou plus récent pour inscrire la migration dans le fichier. Les PLUGINS de panneau AngularJS sont une autre histoire : grafana-piechart-panel, grafana-worldmap-panel et les autres n’ont aucune migration automatique, et le support d’Angular a été déprécié dans Grafana 9 puis retiré au fil de Grafana 11–12. Ces panneaux n’affichent rien et doivent être remplacés à la main.',
+  },
+  {
+    q: 'Sur quelle version de Grafana est-ce épinglé, et si la mienne est plus récente ?',
+    a: `Le jeu de règles est épinglé à ${GRAFANA_RULES_VERSION}, imprimé sur cette page et sur chaque rapport copié, pour qu’un rapport ne soit jamais ambigu sur ce qui l’a vérifié. Les règles sensibles à la version sont formulées comme des plages — « Grafana 9–12 », « retiré au fil de Grafana 11–12 » — plutôt que comme une version exacte, parce que votre instance se situe près de ce point et non exactement dessus. Si la schemaVersion de votre dashboard dépasse ${KNOWN_SCHEMA_VERSION}, vous recevez une NOTE qui le dit et les résultats propres au schéma sont marqués comme indicatifs. Un schéma inconnu est une limite de ce linter, pas un défaut de votre dashboard : il n’est donc jamais signalé comme une erreur.`,
+  },
+  {
+    q: 'Pourquoi une variable non déclarée est-elle une erreur et non un avertissement ?',
+    a: 'Parce que Grafana n’échoue pas : il n’interpole rien et exécute la requête avec le texte littéral dedans. Un sélecteur PromQL {env="$env"} ne correspond à aucune série, le panneau est donc vide ; un sélecteur avec correspondance par regex peut correspondre à BIEN PLUS de séries que voulu, le panneau est donc rempli et faux. Aucun des deux cas ne produit de message où que ce soit dans l’interface. La seule exception que fait ce linter concerne une référence à l’intérieur d’une chaîne qui ressemble à une expression régulière, où « $ » est aussi une ancre de fin de ligne : là, le résultat descend à un avertissement, parce que le « $env » que vous avez écrit peut réellement avoir été une ancre suivie de texte.',
+  },
+  {
+    q: 'Quelle taille de dashboard peut-il traiter ?',
+    a: `Jusqu’à ${inputCap} caractères, ce qui couvre un dashboard généré de plusieurs milliers de panneaux ; un dashboard de 500 panneaux est analysé en quelques millisecondes. Au-delà, il refuse avec un message plutôt que de figer votre onglet, parce qu’une entrée de cette taille est un journal ou une archive, pas un dashboard. Les résultats sont plafonnés aussi : ${MAX_DIAGNOSTICS_PER_RULE} par règle et ${totalCap} au total, et le panneau indique le plafond et le nombre réel dès que l’un s’applique — une liste tronquée qui ne dirait pas qu’elle est tronquée serait exactement le genre d’erreur silencieuse que cet outil existe pour attraper.`,
+  },
+];
+
+const softwareApp = softwareAppLd({
+  name: 'Grafana Dashboard Validator',
+  description: `Linter gratuit de JSON de dashboard Grafana dans le navigateur : ${ruleCount} règles pour les variables de template non déclarées, les placeholders d’import \${DS_…} non résolus, les panneaux AngularJS, les ids de panneau en double, les panneaux invisibles et une schemaVersion périmée. Sans installation, sans envoi.`,
+  url: pageUrl,
+  subCategory: 'Observability',
+  featureList: [
+    `${ruleCount} règles épinglées à ${GRAFANA_RULES_VERSION}`,
+    'Chaque résultat porte le chemin JSON où il se trouve',
+    'Aplatit les lignes imbriquées, les lignes repliées et les mises en page rows[] héritées',
+    'Indexe les variables de template dans les quatre syntaxes, variables intégrées incluses',
+    'Tolère les commentaires, les virgules finales, les wrappers d’API et les BOM — et le dit',
+    'Snapshots enregistrés et copie du rapport',
+    '100 % côté client, sans envoi, sans inscription',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+const faqPage = faqPageLd(faqs);
+
+const pipeline = [
+  {
+    title: 'Analyser, et dire ce que cela a coûté.',
+    body: 'D’abord du JSON strict. Puis une marque d’ordre des octets, des `// commentaires`, des virgules finales, un wrapper d’API `{ dashboard: … }` ou un dashboard stocké comme chaîne échappée — chaque cas récupéré et chaque cas signalé, car l’API de Grafana n’est pas aussi indulgente.',
+  },
+  {
+    title: 'Aplatir toutes les mises en page de panneaux.',
+    body: 'Le `panels` de premier niveau, les enfants d’une ligne repliée, les frères qu’une ligne dépliée possède, et les `rows[]` d’avant schemaVersion 16 — le tout dans une seule liste où chaque panneau garde le chemin JSON dont il vient.',
+  },
+  {
+    title: 'Indexer les variables.',
+    body: 'Chaque chaîne du document est parcourue à la recherche de `$var`, `${var}`, `${var:format}` et `[[var]]`, puis confrontée à ce que déclare `templating.list` plus les variables intégrées de Grafana. Utilisées, inutilisées et non résolues sortent du même index.',
+  },
+  {
+    title: `Exécuter ${ruleCount} règles, puis signaler un chemin et un correctif.`,
+    body: 'Chaque règle tourne dans son propre try/catch : une règle qui trébuche coûte une seule note au lieu des autres résultats. Chaque diagnostic nomme le chemin, la raison et la modification à faire — prêt à coller dans une relecture.',
+  },
+];
+---
+
+<Shell
+  title="Grafana Dashboard Validator — analyser le JSON"
+  description={metaDescription}
+  canonical="/grafana-dashboard-validator"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <ToolHero
+    slug="grafana-dashboard-validator"
+    eyebrow="Grafana Dashboard Validator · Observability"
+    badges={[
+      { label: 'Tourne dans votre navigateur', variant: 'live' },
+      { label: `${ruleCount} règles`, variant: 'neutral' },
+      { label: GRAFANA_RULES_VERSION, variant: 'neutral' },
+      { label: 'Sans inscription', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">Trouvez les pièges d’import avant la mise en ligne du dashboard.</Fragment>
+    <Fragment slot="lead">
+      {ruleCount} règles sur une véritable analyse de votre JSON : la variable de template que rien ne
+      déclare, le placeholder <span class="code-mono">{dsPlaceholder}</span> que le provisioning ne
+      résoudra jamais, le panneau AngularJS que Grafana 12 a retiré, le panneau sans
+      <span class="code-mono">type</span> qui dessine une boîte vide. Chaque résultat nomme le chemin
+      JSON où il se trouve — et rien de ce que vous collez ne quitte l’onglet.
+    </Fragment>
+  </ToolHero>
+
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pt-8 pb-20 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">Playground du Grafana Dashboard Validator</h2>
+      <GrafanaDashboardValidatorPlayground />
+    </div>
+  </section>
+
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">Le manque</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            Un dashboard qui s’importe n’est pas un dashboard qui fonctionne.
+          </h2>
+          <ToolGapVisual />
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            Grafana est indulgent de la pire manière possible. Une variable non déclarée n’est pas une
+            erreur : la requête s’exécute simplement avec <span class="code-mono">$env</span> dedans, le
+            panneau est donc vide, ou correspond à bien plus de séries que voulu et se retrouve rempli
+            et faux. Un panneau sans <span class="code-mono">type</span> dessine une boîte blanche. Un
+            <span class="code-mono">repeat</span> sur une variable inexistante affiche exactement un
+            panneau et a l’air terminé. Rien dans l’interface ne s’y oppose.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Et un dashboard est le seul artefact que personne ne peut relire. Un diff JSON de quatre
+            mille lignes où les valeurs de <span class="code-mono">gridPos</span> ont bougé, où les ids
+            ont été renumérotés et où l’interface a réécrit
+            <span class="code-mono">fieldConfig</span> n’est pas un diff qu’un humain lit : c’est un diff
+            qu’un humain approuve. Les défauts qui survivent à la relecture sont ceux qui ressemblent à
+            toutes les autres lignes du fichier.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Demandez un dashboard à un assistant et vous héritez de la même classe de bug avec plus
+            d’assurance par-dessus. Les dashboards générés sont fluides : titres de panneaux
+            plausibles, PromQL plausible, un bloc <span class="code-mono">templating</span> — et des
+            requêtes qui référencent des variables que ce bloc ne déclare jamais, une
+            <span class="code-mono">schemaVersion</span> tirée du souvenir d’un Grafana plus ancien, et
+            des types de panneaux retirés depuis deux versions majeures. Vérifier l’affirmation prend
+            quelques secondes. Savoir quoi vérifier est la partie difficile, et c’est celle que fait
+            cet outil : chaque règle figure sur cette page, et tout ce qu’il refuse de signaler aussi.
+          </p>
+          <p class="body-sm text-mute">
+            Vous relisez aussi les requêtes ? <a
+              class="link-inline"
+              href={__l('/promql-explainer', __lang)}>PromQL Explainer</a
+            > décompose une requête en langage clair, et
+            <a class="link-inline" href={__l('/alertmanager-route-tester', __lang)}
+              >Alertmanager Route Tester</a
+            > prouve où atterrissent vraiment les alertes que ces panneaux surveillent.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="Le pipeline"
+    heading="Comment ça marche."
+    lead="Quatre étapes, toutes dans votre onglet, rejouées à chaque frappe."
+    steps={pipeline}
+  />
+
+  <section id="reference" class="scroll-mt-24 border-t border-hairline bg-canvas-soft">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Référence</p>
+        <h2 class="display-lg mt-3 text-ink">
+          Variables, versions de schéma et les {ruleCount} règles.
+        </h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          Le jeu de règles est épinglé à <span class="code-mono text-ink">{GRAFANA_RULES_VERSION}</span>,
+          et chaque résultat sensible à la version est formulé comme une plage plutôt que comme une
+          version exacte. {errorRules} règles sont des erreurs, {warningRules} des avertissements et {
+            noteRules
+          } des notes.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 max-w-5xl">
+        <h3 class="display-sm text-ink">Les quatre syntaxes de variable</h3>
+        <p class="body-sm mt-2 max-w-3xl text-pretty text-body">
+          Les quatre se résolvent aujourd’hui, et deux choses qui ressemblent à des variables n’en sont
+          pas. Le linter les lit toutes dans chaque chaîne du document : requêtes, titres, formats de
+          légende, liens de panneau, requêtes d’annotation et requêtes d’autres variables.
+        </p>
+        <div class="card-soft mt-4 mb-12 overflow-x-auto">
+          <table class="gdv-table w-full text-left">
+            <thead>
+              <tr>
+                <th class="eyebrow px-4 py-3">Forme</th>
+                <th class="eyebrow px-4 py-3">Depuis</th>
+                <th class="eyebrow px-4 py-3">Ce qu’il faut savoir</th>
+              </tr>
+            </thead>
+            <tbody>
+              {
+                variableForms.map((row) => (
+                  <tr class="border-t border-hairline align-top">
+                    <td class="code-mono px-4 py-2.5 whitespace-nowrap text-ink">{row.form}</td>
+                    <td class="px-4 py-2.5 whitespace-nowrap text-mute">{row.since}</td>
+                    <td class="px-4 py-2.5 text-pretty text-body">{row.note}</td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="display-sm text-ink">Jalons de schemaVersion</h3>
+        <p class="body-sm mt-2 max-w-3xl text-pretty text-body">
+          La colonne Grafana indique la plage de versions dans laquelle chaque migration est arrivée,
+          pas une correspondance stricte : Grafana incrémente
+          <span class="code-mono">schemaVersion</span> aussi au sein des versions mineures. Prenez ces
+          lignes comme des repères, pas comme une table de correspondance.
+        </p>
+        <div class="card-soft mt-4 mb-12 overflow-x-auto">
+          <table class="gdv-table w-full text-left">
+            <thead>
+              <tr>
+                <th class="eyebrow px-4 py-3">schemaVersion</th>
+                <th class="eyebrow px-4 py-3">Grafana</th>
+                <th class="eyebrow px-4 py-3">Ce qui a changé</th>
+              </tr>
+            </thead>
+            <tbody>
+              {
+                schemaMilestones.map((row) => (
+                  <tr class="border-t border-hairline align-top">
+                    <td class="code-mono px-4 py-2.5 whitespace-nowrap text-ink">{row.version}</td>
+                    <td class="px-4 py-2.5 whitespace-nowrap text-mute">{row.grafana}</td>
+                    <td class="px-4 py-2.5 text-pretty text-body">{row.change}</td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="display-sm text-ink">Le catalogue de règles</h3>
+        <p class="body-sm mt-2 mb-6 max-w-3xl text-pretty text-body">
+          Une <strong class="font-medium text-ink">erreur</strong> signifie que Grafana fait autre chose
+          que ce que dit le JSON ; un <strong class="font-medium text-ink">avertissement</strong> signifie
+          qu’il charge et qu’il est faux ou non portable ; une
+          <strong class="font-medium text-ink">note</strong> est bonne à savoir. Chaque résultat du playground
+          renvoie à sa règle ici.
+        </p>
+        <div class="grid gap-4 sm:grid-cols-2">
+          {
+            rules.map((rule) => (
+              <div id={`rule-${rule.id}`} class="gdv-rule card scroll-mt-24 p-5">
+                <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span class="code-mono text-xs text-accent-ink">{rule.id}</span>
+                  <span class={`gdv-sev gdv-sev--${rule.severity} code-mono`}>
+                    {severityLabel[rule.severity]}
+                  </span>
+                  {rule.extra && <span class="gdv-sev gdv-sev--extra code-mono">{rule.extra}</span>}
+                </div>
+                <h4 class="body-md mt-2 font-medium text-ink">{rule.title}</h4>
+                <p class="body-sm mt-2 text-pretty text-body">{rule.what}</p>
+                <p class="gdv-fix mt-3">
+                  <span class="gdv-fix__label code-mono">Fix</span>
+                  <span class="gdv-fix__text code-mono">{rule.fix}</span>
+                </p>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="not-checked" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">La clôture</p>
+        <h2 class="display-lg mt-3 text-balance text-ink">Ce qu’il ne signale pas volontairement.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          Chacun de ces points a été envisagé puis écarté, et la même liste figure en commentaire en
+          tête du moteur. Un silence que l’on peut lire vaut mieux qu’une règle que l’on apprend à
+          ignorer.
+        </p>
+      </div>
+      <div class="mx-auto mt-10 grid max-w-5xl gap-4 sm:grid-cols-2">
+        {
+          silent.map((item) => (
+            <div class="card p-5">
+              <h3 class="body-md font-medium text-ink">{item.what}</h3>
+              <p class="body-sm mt-2 text-pretty text-body">{item.why}</p>
+            </div>
+          ))
+        }
+      </div>
+      <p class="caption mx-auto mt-8 max-w-3xl text-center text-pretty text-mute">
+        Limites, énoncées plutôt que cachées : le linter lit jusqu’à {inputCap} caractères, conserve au
+        plus {MAX_DIAGNOSTICS_PER_RULE} résultats par règle et {totalCap} au total, et indique le nombre
+        réel dès qu’un plafond s’applique.
+      </p>
+    </div>
+  </section>
+
+  <section id="next" class="scroll-mt-24 bg-inverse text-inverse-fg">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+        <div class="min-w-0">
+          <p class="eyebrow !text-cyan">Étape suivante</p>
+          <h2 class="display-lg mt-3 text-balance text-inverse-fg">
+            Collez le rapport dans la relecture.
+          </h2>
+          <p class="body-md mt-4 text-pretty text-white/70">
+            « Copy report » vous donne l’exécution entière en texte brut : une ligne par résultat, avec
+            le chemin JSON, l’identifiant de la règle et le correctif, et la version épinglée des
+            règles en tête pour que personne n’ait à deviner ce qui l’a vérifié. Puis continuez : lisez
+            les requêtes que ces panneaux exécutent, et prouvez que les alertes qu’ils surveillent
+            atteignent quelqu’un.
+          </p>
+          <div class="mt-7 flex flex-wrap items-center gap-3">
+            <Button href={__l('/promql-explainer', __lang)} variant="secondary">
+              PromQL Explainer
+            </Button>
+            <Button href={__l('/alertmanager-route-tester', __lang)} variant="secondary">
+              Alertmanager Route Tester
+            </Button>
+          </div>
+        </div>
+        <CodeBlock
+          lang="text"
+          filename="report.txt"
+          code={`Grafana Dashboard Validator — 7 errors, 12 warnings, 3 notes
+  — variables: 2 defined, 2 unresolved, schemaVersion 27
+Rules: ${GRAFANA_RULES_VERSION}
+
+ERRORS (7)
+  error duplicate-panel-id (panels[1].id): Panel id 1 is
+    already used by "Requests" (panels[0]).
+  error undefined-variable (panels[2].targets[0].expr):
+    "$cluster" is used here, but no template variable named
+    "cluster" is defined and it is not a Grafana built-in.`}
+        />
+      </div>
+    </div>
+  </section>
+
+  <FaqList faqs={faqs} />
+
+  <ToolCrossLinks slug="grafana-dashboard-validator">
+    <Fragment slot="lead">
+      Le Grafana Dashboard Validator est l’un des outils de <span translate="no">{site.name}</span> — une
+      canopée grandissante de validateurs, convertisseurs et testeurs qui tournent dans le navigateur et
+      ne touchent jamais un serveur.
+    </Fragment>
+    <Fragment slot="links">
+      Associé : <a class="link-inline" href={__l('/promql-explainer', __lang)}>PromQL Explainer</a> pour
+      les requêtes à l’intérieur des panneaux,
+      <a class="link-inline" href={__l('/alertmanager-route-tester', __lang)}
+        >Alertmanager Route Tester</a
+      > pour savoir où atterrissent les alertes d’à côté, le
+      <a class="link-inline" href={__l('/prometheus-relabel-tester', __lang)}
+        >Prometheus Relabel Tester</a
+      > pour les labels sur lesquels vos variables filtrent, et le
+      <a class="link-inline" href={__l('/json-yaml-converter', __lang)}>convertisseur JSON ↔ YAML</a> quand
+      le fichier de provisioning autour du dashboard doit être remanié — ou parcourez l’intégralité du
+      <a class="link-inline" href={__l(navLinks[0].href, __lang)}>répertoire des outils</a>.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      Sans affiliation avec Grafana Labs, ni approbation ni parrainage de leur part. « Grafana » est une
+      marque de Raintank, Inc. dba Grafana Labs, utilisée ici uniquement pour décrire ce que lit cet
+      outil. Fourni tel quel ; confirmez toujours un dashboard auprès du Grafana qui l’affichera.
+      <span translate="no">{site.name}</span> est gratuit et ouvert.
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>
+
+<style>
+  @reference "../../styles/global.css";
+
+  .gdv-table th {
+    font-weight: inherit;
+    white-space: nowrap;
+  }
+  .gdv-table td {
+    font-size: 13px;
+    line-height: 18px;
+  }
+  .gdv-sev {
+    padding: 1px 8px;
+    border-radius: var(--radius-pill);
+    font-size: 10.5px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .gdv-sev--error {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
+  .gdv-sev--warning {
+    background: var(--color-warning-soft);
+    color: var(--color-warning-deep);
+  }
+  .gdv-sev--info {
+    background: var(--color-canvas-soft-2);
+    color: var(--color-body);
+  }
+  .gdv-sev--extra {
+    background: var(--color-canvas-soft);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-mute);
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .gdv-fix {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+    margin: 0;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas-soft);
+  }
+  .gdv-fix__label {
+    flex: 0 0 auto;
+    font-size: 10px;
+    line-height: 16px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-accent-ink);
+  }
+  .gdv-fix__text {
+    min-width: 0;
+    font-size: 12px;
+    line-height: 17px;
+    color: var(--color-body);
+    overflow-wrap: anywhere;
+  }
+</style>
