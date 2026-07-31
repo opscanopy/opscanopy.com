@@ -80,6 +80,10 @@ const TOOL_PATHS = {
   // Slug ≠ lib dir: the SEO head query is "certificate decoder", the code lives
   // under the shorter cert-chain (same split as cve-ignore-converter).
   'certificate-decoder': { lib: 'cert-chain', component: 'CertificateDecoderPlayground.astro' },
+  'terraform-plan-summarizer': {
+    lib: 'terraform-plan-summarizer',
+    component: 'TerraformPlanSummarizerPlayground.astro',
+  },
 };
 
 const missing = liveTools.map((t) => t.slug).filter((slug) => !TOOL_PATHS[slug]);

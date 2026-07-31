@@ -1,0 +1,438 @@
+---
+/**
+ * Terraform Plan Summarizer — la página de la herramienta terraform-plan-summarizer (ES).
+ * Pega la salida de `terraform plan` (o de `terraform show -json`) y obtén las cuatro
+ * cifras que importan, los atributos que fuerzan una sustitución y una comprobación
+ * cruzada contra la propia línea «Plan:» de Terraform.
+ */
+import Shell from '../../components/Shell.astro';
+import TerraformPlanSummarizerPlayground from '../../components/TerraformPlanSummarizerPlayground.astro';
+import Button from '../../components/Button.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import ToolHero from '../../components/ToolHero.astro';
+import ToolGapVisual from '../../components/ToolGapVisual.astro';
+import ToolPipeline from '../../components/ToolPipeline.astro';
+import FaqList from '../../components/FaqList.astro';
+import ToolCrossLinks from '../../components/ToolCrossLinks.astro';
+import { site, navLinks } from '../../data/site';
+import { getTool } from '../../data/tools';
+import { softwareAppLd, faqPageLd } from '../../lib/jsonld';
+
+const tool = getTool('terraform-plan-summarizer');
+const pagePath = '/terraform-plan-summarizer/';
+const pageUrl = `${site.url}${pagePath}`;
+
+const faqs = [
+  {
+    q: '¿Qué formatos de plan acepta?',
+    a: 'Los dos, y detecta cuál has pegado. El primero es la transcripción legible que imprime Terraform —la de +, ~, - y -/+ en el margen izquierdo— incluidos los códigos de color ANSI y los finales de línea CRLF que salen al copiar un log de CI. El segundo es terraform show -json tfplan, el formato de máquina, que lleva resource_changes, replace_paths, action_reason y output_changes y es una interfaz documentada y versionada. El JSON es más fiable y es lo que conviene usar si puedes guardar un fichero de plan; el texto es lo que de verdad tienes cuando la pipeline ya se ha ejecutado. Lo que NO acepta es terraform show -json de tu estado, ni la salida de terraform validate -json: son confusiones habituales, y en ambos casos se te dice qué son y qué comando produce lo correcto.',
+  },
+  {
+    q: '¿Cuál es la diferencia entre -/+ y +/- en un plan?',
+    a: 'El orden de las dos operaciones, y eso decide si hay caída de servicio. -/+ significa destruir y luego crear: el objeto viejo desaparece antes de que exista el nuevo, así que todo lo que dependa de él queda roto durante ese hueco —segundos para una regla de security group, veinte minutos para una instancia RDS—. +/- significa crear y luego destruir, que es exactamente lo que compra lifecycle { create_before_destroy = true }: el reemplazo se construye y solo después se elimina el objeto antiguo. Terraform elige destruir-primero por defecto, así que +/- solo aparece donde alguien lo ha pedido. Esta página escribe los dos órdenes con palabras en cada fila de sustitución, en lugar de hacerte descifrar un glifo de tres caracteres.',
+  },
+  {
+    q: '¿Qué significa realmente «forces replacement»?',
+    a: 'Marca el atributo concreto cuyo cambio no se puede aplicar en el sitio, de modo que el proveedor tiene que borrar el objeto y construir uno nuevo. Es por atributo, y ahí está lo útil: engine_version en un aws_db_instance es una actualización real que querías hacer, mientras que availability_zone o name cambiando por accidente —por una variable renombrada, una etiqueta reformateada, un valor por defecto del proveedor que se movió— es la sustitución sorpresa clásica. Esta página extrae cada uno de esos nombres de atributo del bloque al que pertenece y los muestra como chips en la fila de ese recurso, para que nunca tengas que recorrer un diff de 400 líneas buscando el comentario.',
+  },
+  {
+    q: '¿Por qué una sustitución cuenta a la vez como «add» y como «destroy»?',
+    a: 'Porque Terraform cuenta operaciones, no recursos, y una sustitución son dos operaciones. Así que un plan con un create simple y una sustitución imprime «Plan: 2 to add, 0 to change, 1 to destroy»: la sustitución contribuye a las dos cifras. Es correcto, y es también la línea peor leída de toda la salida de Terraform, porque «2 to add» suena a dos cosas nuevas. Esta página muestra en cambio cuatro tarjetas disjuntas: add es creado directamente, replace es destruido y recreado, y nada se cuenta dos veces. La contabilidad propia de Terraform se imprime debajo, literal, para poder comparar las dos en lugar de confundirlas.',
+  },
+  {
+    q: '¿Es seguro pegar aquí un plan?',
+    a: 'Sí, y por eso esta página existe con esta forma. No hay servidor detrás: el parser es JavaScript que se carga en tu pestaña y se ejecuta ahí, así que el plan nunca sale de tu máquina —puedes comprobarlo en la pestaña de red del navegador, o cargando la página y desconectándote después—. Eso importa más con la salida de un plan que con casi cualquier otra cosa que pegarías en una herramienta web: un plan está lleno de IDs de cuenta, ARNs, rangos de subred y CIDR, documentos de política IAM, reglas de security group y nombres DNS internos. Pegar uno en un chatbot entrega todo eso a un tercero y, en los planes de consumo de la mayoría de asistentes, a los datos de entrenamiento.',
+  },
+  {
+    q: 'Las cifras no cuadran: ¿qué significa el aviso de discrepancia?',
+    a: 'Significa que los recursos que esta página ha podido leer no suman los totales de la propia línea de resumen de Terraform, y nueve de cada diez veces el pegado está incompleto: un visor de logs de CI plegó el centro, un búfer de scrollback lo cortó, o la copia empezó a mitad. El aviso nombra los dos conjuntos de cifras y te dice que confíes en Terraform. La razón de que exista es que la salida legible de Terraform no es explícitamente una interfaz estable, así que un parser de texto acabará desviándose con algún cambio de formato —y un sumarizador que se desvía en silencio imprimiría un total erróneo con seguridad, lo cual es peor que no imprimir nada—. Esa comprobación cruzada es lo que hace defendible parsear un formato inestable.',
+  },
+  {
+    q: '¿Qué significa «(known after apply)» y por qué no hay valor?',
+    a: 'Significa que el valor todavía no existe. Atributos como un ARN, un id, un nombre DNS generado o una dirección IP los asigna el proveedor al crear el objeto, así que en tiempo de plan Terraform de verdad no los conoce y se niega a adivinarlos. No es un error ni un aviso: un plan de algo nuevo está lleno de ellos. Sí tiene una consecuencia práctica: un recurso cuya entrada depende de un valor desconocido tampoco puede evaluarse por completo, y por eso a veces ves una data source marcada como «read during apply» en lugar de resuelta, y por eso un apply puede acabar haciendo más de lo que mostraba el plan.',
+  },
+  {
+    q: '¿Funciona con OpenTofu?',
+    a: 'Sí. OpenTofu se bifurcó de Terraform 1.5.x y conservó los dos formatos de salida: la transcripción de texto usa los mismos símbolos y la misma línea «Plan: N to add, N to change, N to destroy», y tofu show -json emite la misma familia de format_version con la misma forma de resource_changes. Todo lo de esta página se aplica sin cambios, y la línea de versión se lee según el producto que la imprimió. Lo mismo vale para los envoltorios que pasan la salida de Terraform tal cual —Terragrunt, Atlantis, Spacelift— siempre que el texto del plan esté intacto.',
+  },
+  {
+    q: '¿Contra qué versiones de Terraform está probado?',
+    a: 'La ruta JSON está escrita contra format_version 0.1 a 1.x, que abarca de Terraform 0.12 a 1.9 y el OpenTofu actual; un documento con una versión major desconocida se acepta pero lleva un aviso, porque un campo renombrado produciría ceros en silencio. La ruta de texto está probada contra las formas de 1.5 en adelante, que es donde «N to import» se sumó a la línea de resumen y donde aparecen los bloques moved e import; la salida más antigua se parsea en su mayoría, y lo que no, lo atrapa la comprobación cruzada de cifras en lugar de reportarse como un hecho. Lo único que esta página nunca hará es estimar costes: los precios se quedan obsoletos, y una cifra obsoleta impresa con seguridad es justo el tipo de respuesta que este sitio existe para reemplazar.',
+  },
+];
+
+const softwareApp = softwareAppLd({
+  name: 'Terraform Plan Summarizer',
+  description:
+    'Sumarizador de planes de Terraform online y gratuito: pega la salida de terraform plan o de terraform show -json y obtén adds, changes, destroys y replacements contados por separado, los atributos que fuerzan sustitución nombrados y las destrucciones de alto impacto en primer plano — 100 % en el navegador.',
+  url: pageUrl,
+  subCategory: 'IaC',
+  featureList: [
+    'Lee los dos formatos de plan: la transcripción legible y terraform show -json',
+    'Adds, changes, destroys y replacements como cuatro cifras disjuntas',
+    'Cada atributo «forces replacement» nombrado, en el recurso al que pertenece',
+    'Acciones destructivas sobre almacenes de datos, rutas de salida y control planes, primero',
+    'Cifras comprobadas contra la propia línea «Plan:» de Terraform, con aviso ante discrepancia',
+    '100 % en el cliente, sin subidas, sin registro y sin estimación de costes',
+  ],
+  keywords: tool?.keywords.join(', '),
+});
+const faqPage = faqPageLd(faqs);
+
+const pipeline = [
+  {
+    title: 'Detectar el formato, y decirlo cuando el fichero es otro.',
+    body: 'JSON o texto se decide por el primer carácter y por las claves presentes. Un volcado de estado, un resultado de terraform validate -json o un JSON cortado a mitad de array reciben cada uno su nombre, con el comando que produce un plan de verdad — nunca un «entrada no válida» a secas.',
+  },
+  {
+    title: 'Quitar ANSI, normalizar los finales de línea.',
+    body: 'Un plan copiado de GitHub Actions, GitLab o Jenkins llega envuelto en escapes de color y finales CRLF. Ambos se eliminan antes de parsear nada, así que un pegado de CI y uno de terminal dan una salida idéntica. La entrada está limitada a 2.097.152 caracteres: 2 MiB, más o menos un plan de 50.000 líneas.',
+  },
+  {
+    title: 'Leer los recursos, no el diff.',
+    body: 'Cada línea de cabecera «# <dirección> …» lleva la ruta de módulo y el índice, así que es la fuente de verdad para la dirección; la línea de símbolo de debajo aporta el orden de la sustitución. Dentro de cada bloque solo se buscan tres cosas: «# forces replacement», «(sensitive value)» y la razón «(because …)» que da Terraform, que se conserva literal.',
+  },
+  {
+    title: 'Ordenar por lo que se rompe, no por lo que cambia.',
+    body: 'Una tabla de 17 patrones de tipo de recurso en cuatro clases —almacén de datos, ruta de salida, control plane, clave de cifrado— marca solo acciones destructivas, con una frase que nombra qué desaparece concretamente: los datos, la IP pública de salida, los kubeconfig. Un tipo que no está en la tabla queda sin clasificar, y la página lo dice en lugar de insinuar que es seguro.',
+  },
+  {
+    title: 'Comprobar el total y negarse a equivocarse con seguridad.',
+    body: 'La lista parseada se suma a la manera de Terraform —cada sustitución cuenta una vez como add y una vez como destroy— y se compara con la línea «Plan:». La coincidencia se declara. La discrepancia es un aviso que nombra las dos cifras y dice que confíes en Terraform. Aquí nada adivina en silencio.',
+  },
+];
+
+/** La tabla de referencia: cada símbolo y anotación que un plan puede imprimir. */
+const symbols = [
+  {
+    symbol: '+',
+    name: 'create',
+    meaning:
+      'Un objeto nuevo. Todavía no existe nada, así que la mayoría de sus atributos leen (known after apply).',
+  },
+  {
+    symbol: '~',
+    name: 'update in-place',
+    meaning: 'El objeto existente se modifica. El id sobrevive, y también todo lo guardado en él.',
+  },
+  {
+    symbol: '-',
+    name: 'destroy',
+    meaning:
+      'El objeto se borra y no se recrea. Busca la línea (because …): ahí está el motivo.',
+  },
+  {
+    symbol: '-/+',
+    name: 'destroy then create',
+    meaning:
+      'Una sustitución, primero el objeto viejo. Hay una ventana en la que no hay nada — el caso por defecto, y el que hay que leer con cuidado.',
+  },
+  {
+    symbol: '+/-',
+    name: 'create then destroy',
+    meaning:
+      'Una sustitución con create_before_destroy = true. El objeto nuevo existe antes de que el viejo se vaya.',
+  },
+  {
+    symbol: '<=',
+    name: 'read during apply',
+    meaning:
+      'Una data source que no se puede resolver en tiempo de plan. Nunca forma parte de add, change ni destroy.',
+  },
+  {
+    symbol: '# forces replacement',
+    name: 'anotación de atributo',
+    meaning:
+      'Este atributo no puede cambiar en el sitio, así que se sustituye el objeto entero. El único comentario que merece un grep.',
+  },
+  {
+    symbol: '(known after apply)',
+    name: 'anotación de valor',
+    meaning: 'El proveedor lo asigna al crear, así que de verdad todavía no existe. No es un error.',
+  },
+  {
+    symbol: '(sensitive value)',
+    name: 'anotación de valor',
+    meaning:
+      'Marcado como sensible, y el plan lo oculta. Ojo: en el fichero de estado sigue estando en claro.',
+  },
+];
+
+const replaceMath = `Plan: 2 to add, 0 to change, 1 to destroy.
+
+  what Terraform counted            what actually happens
+  ────────────────────────          ─────────────────────
+  + aws_iam_role.app                one NEW role
+  -/+ aws_db_instance.primary       one database replaced
+        counted as +1 add
+        counted as +1 destroy
+
+  this page shows them apart:
+    + add      1   created outright
+    ~ change   0   updated in place
+    − destroy  0   destroyed outright
+    ± replace  1   destroyed and recreated`;
+
+const jsonRecipe = `# The reliable path: save the plan, then read the machine format
+terraform plan -out=tfplan
+terraform show -json tfplan > plan.json     # paste plan.json above
+
+# The path you already have: the text a pipeline printed
+terraform plan -no-color                    # -no-color if you can; ANSI is fine either way
+
+# What NOT to paste — both are told apart from a plan and named
+terraform show -json                        # this is STATE, it has no resource_changes
+terraform validate -json                    # this is a config check, not a plan`;
+
+import type { Locale as __Locale } from '../../i18n/config';
+import { localizeKey as __l } from '../../i18n/utils';
+const __lang = (Astro.currentLocale ?? 'en') as __Locale;
+---
+
+<Shell
+  title="Sumarizador de planes de Terraform — gratis, sin subidas"
+  description="Pega la salida de terraform plan y obtén adds, changes, destroys y replacements contados, con los atributos que fuerzan una sustitución nombrados. Nada se sube."
+  canonical="/terraform-plan-summarizer"
+  jsonLd={[softwareApp, faqPage]}
+>
+  <ToolHero
+    eyebrow="Terraform Plan Summarizer · IaC"
+    badges={[
+      { label: 'Funciona en tu navegador', variant: 'live' },
+      { label: 'Cifras comprobadas', variant: 'neutral' },
+      { label: 'Sin subidas ni registro', variant: 'neutral' },
+    ]}
+  >
+    <Fragment slot="headline">Sumarizador de planes de Terraform — lee el plan antes de aplicarlo</Fragment>
+    <Fragment slot="lead">
+      Pega la salida de <span class="code-mono text-ink" translate="no">terraform plan</span> —color
+      ANSI y CRLF de un log de CI incluidos— o de
+      <span class="code-mono text-ink" translate="no">terraform show -json tfplan</span>. Los adds,
+      changes, destroys y replacements se cuentan como cuatro cifras separadas, cada atributo
+      <span class="code-mono text-ink" translate="no">forces replacement</span> se nombra en el
+      recurso al que pertenece, y todo lo destructivo que toque una base de datos, un NAT gateway o un
+      control plane de clúster se sube arriba. Después los totales se comprueban contra la propia
+      línea de resumen de Terraform — porque un lector de planes que se desvía en silencio es peor que
+      ninguno.
+    </Fragment>
+  </ToolHero>
+
+  <section id="playground" class="scroll-mt-24 bg-canvas-soft pt-8 pb-20 sm:pb-24">
+    <div class="container-page">
+      <h2 class="sr-only">Playground del sumarizador de planes de Terraform</h2>
+      <TerraformPlanSummarizerPlayground />
+    </div>
+  </section>
+
+  <section id="why" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <div>
+          <p class="eyebrow">El hueco</p>
+          <h2 class="display-lg mt-3 text-balance text-ink">
+            El <span class="code-mono" translate="no">-/+</span> que importa está en la línea 310.
+          </h2>
+          <ToolGapVisual />
+        </div>
+        <div class="space-y-4">
+          <p class="body-md text-pretty text-body">
+            Un plan real son miles de líneas de diff de atributos, y la parte que puede tirar
+            producción mide tres caracteres. Revisar uno en un pull request es recorrer un log de CI
+            plegado buscando un <span class="code-mono text-ink" translate="no">-/+</span> entre cientos
+            de cambios de etiqueta <span class="code-mono text-ink" translate="no">~</span>, y luego
+            seguir bajando para encontrar el comentario
+            <span class="code-mono text-ink" translate="no"># forces replacement</span> que dice qué
+            atributo lo provocó. El resumen del final no ayuda:
+            <span class="code-mono text-ink" translate="no">2 to add</span> se lee como dos cosas
+            nuevas, cuando una de ellas es tu base de datos destruida y reconstruida.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Así que la gente pega el plan en un chatbot. Es la peor opción disponible, y por dos
+            motivos. Primero, exfiltración: la salida de un plan lleva IDs de cuenta, ARNs, rangos de
+            subred y CIDR, documentos de política IAM, reglas de security group y nombres DNS internos
+            —un documento con la forma de tu red que nunca adjuntarías a un ticket, entregado a un
+            tercero y, en los planes de consumo, a los datos de entrenamiento—. Segundo, exactitud: un
+            modelo de lenguaje que lee un plan hace reconocimiento de patrones sobre texto. Atribuye un
+            comentario <span class="code-mono text-ink" translate="no">forces replacement</span> al
+            recurso equivocado, se salta recursos en silencio cuando el pegado está cortado y suma con
+            aplomo cifras que nunca contó.
+          </p>
+          <p class="body-md text-pretty text-body">
+            Esta página es la versión con datos de verdad de esa misma pregunta, y es deliberada
+            justamente en lo que una respuesta de IA no puede darte: una declaración de cuánto no sabe.
+            La salida legible de Terraform no es una interfaz estable, así que la lista de recursos
+            parseada se suma y se compara con la propia línea
+            <span class="code-mono text-ink" translate="no">Plan:</span> de Terraform cada vez. Cuando
+            coinciden, lo dice. Cuando no —que es el aspecto de un pegado de CI cortado— nombra las dos
+            cifras y te dice que la de Terraform es la buena. El sexto chip de ejemplo es exactamente
+            ese caso: un log de GitHub Actions cuyo centro plegó el visor, donde la línea de Terraform
+            reporta 4 to add, 3 to change y 2 to destroy y solo 2, 1 y 1 sobrevivieron a la copia.
+          </p>
+          <p class="body-sm text-mute">
+            ¿Estás revisando la pipeline que ejecuta el plan y no el plan? El
+            <a class="link-inline" href={__l('/github-actions-validator', __lang)}>validador de GitHub Actions</a>
+            y el <a class="link-inline" href={__l('/gitlab-ci-validator', __lang)}>validador de GitLab CI</a>
+            revisan el workflow, y el
+            <a class="link-inline" href={__l('/env-example-checker', __lang)}>comprobador de .env.example</a>
+            encuentra las variables que se le olvidó pasar.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <ToolPipeline
+    id="how-it-works"
+    eyebrow="La tubería"
+    heading="Cómo funciona."
+    lead="Cinco pasos deterministas, todos dentro de tu pestaña — dos parsers detrás de un único punto de entrada que autodetecta, y una comprobación cruzada que convierte un formato de entrada inestable en una respuesta honesta."
+    steps={pipeline}
+  />
+
+  <section id="reference" class="scroll-mt-24 border-t border-hairline bg-canvas">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow">Referencia</p>
+        <h2 class="display-lg mt-3 text-ink">Todos los símbolos que un plan puede imprimir.</h2>
+        <p class="body-md mx-auto mt-3 max-w-xl text-pretty text-body">
+          Nueve glifos y anotaciones cargan con todo el significado de un plan. Seis son acciones, tres
+          son notas sobre un valor — y dos de las seis solo se diferencian en el orden de dos
+          operaciones, que es la diferencia entre un cambio progresivo y una caída.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 grid max-w-5xl items-start gap-8 lg:grid-cols-[1.05fr_0.95fr]">
+        <div class="card-soft overflow-x-auto">
+          <table class="tps-table w-full text-left">
+            <thead>
+              <tr>
+                <th class="eyebrow px-4 py-3">Símbolo</th>
+                <th class="eyebrow px-4 py-3">Qué significa</th>
+              </tr>
+            </thead>
+            <tbody>
+              {
+                symbols.map((row) => (
+                  <tr class="border-t border-hairline align-top">
+                    <td class="px-4 py-2.5">
+                      <span class="code-mono text-ink" translate="no">{row.symbol}</span>
+                      <span class="caption mt-0.5 block text-mute">{row.name}</span>
+                    </td>
+                    <td class="px-4 py-2.5 text-body">{row.meaning}</td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="min-w-0 space-y-8">
+          <div>
+            <h3 class="display-sm text-ink">Por qué una sustitución se cuenta dos veces</h3>
+            <p class="body-sm mt-2 mb-4 text-pretty text-body">
+              Terraform cuenta operaciones. Esta página cuenta recursos, e imprime las cifras de
+              Terraform al lado para que ninguna se confunda con la otra.
+            </p>
+            <CodeBlock lang="text" filename="replace-math.txt" code={replaceMath} />
+          </div>
+          <div>
+            <h3 class="display-sm text-ink">Conseguir el fichero correcto</h3>
+            <p class="body-sm mt-2 mb-4 text-pretty text-body">
+              <span class="code-mono" translate="no">show -json</span> contra un plan guardado es la
+              entrada fiable; la transcripción de texto es la que ya tienes. Dos casi-aciertos se
+              reconocen y se nombran.
+            </p>
+            <CodeBlock lang="bash" filename="get-a-plan.sh" code={jsonRecipe} />
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="next" class="scroll-mt-24 bg-inverse text-inverse-fg">
+    <div class="container-page py-16 sm:py-20">
+      <div class="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+        <div class="min-w-0">
+          <p class="eyebrow !text-cyan">Siguiente paso</p>
+          <h2 class="display-lg mt-3 text-balance text-inverse-fg">
+            El plan está bien. Ahora revisa la pipeline que lo ejecuta.
+          </h2>
+          <p class="body-md mt-4 text-pretty text-white/70">
+            Un plan solo es tan fiable como el workflow que lo produjo: el
+            <span translate="no">validador de GitHub Actions</span> y el
+            <span translate="no">validador de GitLab CI</span> atrapan los errores de pipeline que
+            hacen que un plan corra contra el estado o las credenciales equivocadas, y el
+            <span translate="no">comprobador de .env.example</span> encuentra la variable que tu job
+            nunca pasó. Todos, como esta página, se ejecutan por completo en tu navegador.
+          </p>
+          <div class="mt-7 flex flex-wrap items-center gap-3">
+            <Button href={__l('/github-actions-validator', __lang)} variant="secondary">
+              Abrir el validador de GitHub Actions
+            </Button>
+            <Button href={__l('/gitlab-ci-validator', __lang)} variant="secondary">
+              Abrir el validador de GitLab CI
+            </Button>
+          </div>
+        </div>
+        <CodeBlock
+          lang="text"
+          filename="plan-summary.txt"
+          code={`+ add 1   ~ change 1   − destroy 0   ± replace 1
+
+read this first — 1 high blast radius
+  module.data.aws_db_instance.primary      data store
+    forces replacement: engine_version
+    destroy then create — the database does not exist in between
+
+cross-check: reconciles
+  Terraform printed: Plan: 2 to add, 1 to change, 1 to destroy.
+  (the replacement is one of those adds AND the destroy)`}
+        />
+      </div>
+    </div>
+  </section>
+
+  <FaqList faqs={faqs} />
+
+  <ToolCrossLinks lang={__lang}>
+    <Fragment slot="lead">
+      El sumarizador de planes de Terraform es una de las herramientas de
+      <span translate="no">{site.name}</span> — una copa creciente de validadores, convertidores y
+      testers basados en el navegador que nunca tocan un servidor.
+    </Fragment>
+    <Fragment slot="links">
+      Herramientas de infraestructura relacionadas: el
+      <a class="link-inline" href={__l('/docker-run-to-compose', __lang)}>convertidor de docker run a Compose</a>,
+      el <a class="link-inline" href={__l('/env-example-checker', __lang)}>comprobador de .env.example</a>
+      para las variables que un despliegue olvidó, y los validadores de
+      <a class="link-inline" href={__l('/github-actions-validator', __lang)}>GitHub Actions</a> y
+      <a class="link-inline" href={__l('/gitlab-ci-validator', __lang)}>GitLab CI</a> para la pipeline
+      que ejecuta tu plan — o explora el
+      <a class="link-inline" href={__l(navLinks[0].href, __lang)}>directorio completo de herramientas</a>.
+    </Fragment>
+    <Fragment slot="disclaimer">
+      Se ofrece tal cual, por comodidad. Sin afiliación con HashiCorp. Esta página resume lo que dice
+      un plan; no estima costes y no lo hará — los precios se quedan obsoletos, y una cifra obsoleta
+      impresa con seguridad es la única respuesta que una herramienta de datos de verdad no puede dar.
+      Un tipo de recurso ausente de la tabla de radio de impacto está <em>sin clasificar</em>, no
+      demostrado como seguro. <span translate="no">{site.name}</span> es libre y gratuito.
+    </Fragment>
+  </ToolCrossLinks>
+</Shell>
+
+<style>
+  @reference "../../styles/global.css";
+
+  .tps-table th {
+    font-weight: inherit;
+    white-space: nowrap;
+  }
+  .tps-table td {
+    font-size: 13px;
+    line-height: 18px;
+  }
+  .tps-table .code-mono {
+    font-size: 12.5px;
+    overflow-wrap: anywhere;
+  }
+</style>

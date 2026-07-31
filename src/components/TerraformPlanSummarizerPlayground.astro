@@ -1,0 +1,1703 @@
+---
+/**
+ * TerraformPlanSummarizerPlayground — the terraform-plan-summarizer island.
+ *
+ * Paste `terraform plan` output (or `terraform show -json`) and get the four
+ * numbers that matter, the resources behind them, and — the part no other plan
+ * reader does — a cross-check of the parsed list against Terraform's own "Plan:"
+ * line, in which each replacement counts once as an add AND once as a destroy.
+ * When the two disagree the tool says so loudly instead of printing a confident
+ * wrong total.
+ *
+ * Ported from `CidrCheckerPlayground.astro` (the contract reference): example
+ * chips at `var(--radius-pill)`, one debounce plus a 600 ms calm-error hold, the
+ * exact run hint line, per-row copy plus `data-copy-all`, one visible
+ * `role="status"` summary and one sr-only copy status, NO `aria-live` on the
+ * results container, `escapeHtml()` on every injected value (attributes
+ * included), and the two coarse-pointer tap-target tiers.
+ *
+ * FOUR DELIBERATE DEVIATIONS, each with a reason:
+ *
+ *  1. **No deep link, and no `data-copy-link` at all.** Plans run 5,000–50,000
+ *     lines; the smallest useful one is already past the ~2,000-character
+ *     fragment cap every other tool here respects. Nothing in this file reads or
+ *     writes `location.hash`. The share affordance is "Copy summary as Markdown"
+ *     carrying `data-copy-all` — PR-comment shaped, which is where a plan review
+ *     actually happens. It already emits `result_copied` through Layout.astro's
+ *     listener, so analytics is unaffected.
+ *
+ *  2. **Plain textarea, no CodeMirror.** Syntax highlighting a 50,000-line log
+ *     costs ~150 KB of editor for zero information (certificate-decoder and
+ *     chmod-calculator set the same precedent). Input is capped at 2 MiB with a
+ *     note that says exactly how many characters were dropped.
+ *
+ *  3. **The stat band shows four DISJOINT tiles**, not Terraform's overlapping
+ *     add/change/destroy. `+ add` is resources created outright and `± replace`
+ *     is resources destroyed and recreated — a replacement is never counted in
+ *     both tiles. Terraform's own accounting is printed underneath, verbatim, so
+ *     neither number can be mistaken for the other.
+ *
+ *  4. **No cost estimate, permanently.** Pricing goes stale and a stale figure
+ *     printed with confidence is the one mistake this site cannot make.
+ *
+ * Runtime contract (lazy-imported inside the boot closure so the engine and its
+ * fixtures code-split away from the page shell):
+ *   ../lib/terraform-plan-summarizer/engine → summarizePlan, toMarkdown,
+ *                                             formatTerraformTotals
+ */
+import { examples } from '../lib/terraform-plan-summarizer/examples';
+---
+
+<section class="tps-pg" aria-label="Terraform plan summarizer playground">
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Example chips ─────────────────────────────────────────────────── */}
+    <div class="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:px-5">
+      <span class="eyebrow">Examples</span>
+      <div id="tps-chips" class="tps-chips" role="group" aria-label="Examples">
+        {
+          examples.map((ex, i) => (
+            <button type="button" class="tps-chip" data-example-idx={String(i)} aria-pressed="false">
+              {ex.label}
+            </button>
+          ))
+        }
+      </div>
+    </div>
+
+    {/* ── Input ─────────────────────────────────────────────────────────── */}
+    <div class="border-b border-hairline px-4 py-4 sm:px-5">
+      <label class="eyebrow mb-2 block" for="tps-input">Plan output</label>
+      <textarea
+        id="tps-input"
+        class="tps-input code-mono"
+        spellcheck="false"
+        autocapitalize="off"
+        autocorrect="off"
+        autocomplete="off"
+        rows="12"
+        placeholder="Terraform will perform the following actions:&#10;&#10;  # aws_db_instance.primary must be replaced&#10;-/+ resource &quot;aws_db_instance&quot; &quot;primary&quot; {&#10;      ~ engine_version = &quot;13.4&quot; -&gt; &quot;15.3&quot; # forces replacement&#10;    }&#10;&#10;Plan: 1 to add, 0 to change, 1 to destroy."
+        aria-describedby="tps-input-hint tps-run-hint"></textarea>
+      <p id="tps-input-hint" class="tps-hint caption text-mute">
+        Both formats work and the format is detected for you: the human-readable
+        <span class="code-mono">terraform plan</span> transcript (ANSI colour codes and CRLF from a
+        CI log are fine) or <span class="code-mono">terraform show -json tfplan</span>. Up to 2 MiB
+        — roughly a 50,000-line plan. It stays in this tab: there is no server here to send it to,
+        which matters, because plan output is full of account IDs, ARNs, CIDRs and policy JSON.
+      </p>
+      <p id="tps-run-hint" class="tps-hint caption text-mute">Results update as you type — press Enter to run now.</p>
+
+      <div class="tps-control">
+        <span class="eyebrow" id="tps-group-label">Grouping</span>
+        <div class="tps-seg" role="radiogroup" aria-labelledby="tps-group-label">
+          <button
+            id="tps-group-action"
+            type="button"
+            role="radio"
+            aria-checked="true"
+            tabindex="0"
+            class="tps-seg__btn code-mono"
+          >
+            By action
+          </button>
+          <button
+            id="tps-group-module"
+            type="button"
+            role="radio"
+            aria-checked="false"
+            tabindex="-1"
+            class="tps-seg__btn code-mono"
+          >
+            By module
+          </button>
+        </div>
+        <p class="tps-gloss caption text-mute">
+          By action puts replacements and destroys first, because those are the ones that can take
+          something down. By module follows the code instead, which is what you want when one
+          module call is the thing under review.
+        </p>
+      </div>
+
+      <div class="tps-snap-row mt-3 flex flex-wrap items-center gap-2">
+        <button id="tps-snap-save" type="button" class="tps-snap-btn">Save snapshot</button>
+        <select id="tps-snap-select" class="tps-snap-select" aria-label="Load a saved snapshot" disabled>
+          <option value="">No snapshots yet</option>
+        </select>
+        <button id="tps-snap-delete" type="button" class="tps-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
+      </div>
+    </div>
+
+    {/* ── Results ───────────────────────────────────────────────────────── */}
+    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <span class="flex flex-wrap items-center gap-2">
+          <span class="eyebrow">Result</span>
+          <button
+            id="tps-copy-md"
+            type="button"
+            class="tps-copy tps-copy--labeled"
+            data-copy-all
+            data-copy=""
+            data-copy-label="Copy summary as Markdown"
+            hidden
+          >
+            <svg
+              class="tps-copy-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="5" y="5" width="9" height="9" rx="1.5"></rect>
+              <path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"></path>
+            </svg>
+            <svg
+              class="tps-check-icon hidden"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="tps-copy-label">Copy summary as Markdown</span>
+          </button>
+        </span>
+        <span id="tps-summary" class="tps-summary code-mono text-mute" role="status" aria-live="polite"></span>
+      </div>
+      <div id="tps-results" class="tps-results">
+        <p class="tps-empty body-sm text-mute">
+          Paste a plan to see adds, changes, destroys and replacements counted separately, the
+          replacement-forcing attributes named, and the totals cross-checked against Terraform&rsquo;s
+          own summary line.
+        </p>
+      </div>
+      <span id="tps-copy-status" class="sr-only" role="status" aria-live="polite"></span>
+    </div>
+  </div>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  /* ── Example chips ───────────────────────────────────────────────────── */
+  .tps-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 26px;
+  }
+  .tps-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-brand-strong);
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .tps-chip:hover,
+  .tps-chip[aria-pressed='true'] {
+    background: var(--color-brand-soft);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+  }
+  .tps-chip:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+
+  /* ── Input ───────────────────────────────────────────────────────────── */
+  .tps-input {
+    width: 100%;
+    min-height: 260px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 12.5px;
+    line-height: 19px;
+    resize: vertical;
+    white-space: pre;
+    overflow: auto;
+    transition: box-shadow 0.15s ease;
+  }
+  .tps-input::placeholder {
+    color: var(--color-mute);
+  }
+  .tps-input:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .tps-input:focus {
+    outline: none;
+  }
+  .tps-input:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-link);
+    outline: none;
+  }
+  .tps-input--error {
+    box-shadow: inset 0 0 0 1px var(--color-error);
+  }
+  .tps-hint {
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  .tps-hint + .tps-hint {
+    margin-top: 2px;
+  }
+  .tps-hint .code-mono {
+    font-size: 12px;
+  }
+
+  /* ── Grouping control ────────────────────────────────────────────────── */
+  .tps-control {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--color-hairline);
+  }
+  .tps-seg {
+    display: inline-flex;
+    max-width: 100%;
+    padding: 2px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas-soft-2);
+    box-shadow: var(--shadow-hairline);
+  }
+  .tps-seg__btn {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--color-mute);
+    font-size: 12px;
+    line-height: 16px;
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    white-space: nowrap;
+    touch-action: manipulation;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .tps-seg__btn:hover {
+    color: var(--color-body);
+  }
+  .tps-seg__btn[aria-checked='true'] {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+  }
+  .tps-seg__btn:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  .tps-gloss {
+    max-width: 62ch;
+    font-size: 12px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+
+  /* ── Snapshot row (same shape as every other playground) ─────────────── */
+  .tps-snap-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  .tps-snap-btn:hover {
+    background: var(--color-canvas-soft);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .tps-snap-select {
+    height: 30px;
+    max-width: 220px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-size: 12.5px;
+  }
+  .tps-snap-select:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .tps-snap-delete {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .tps-snap-delete:hover {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
+
+  .tps-summary {
+    min-width: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+  .tps-results {
+    min-height: 44px;
+  }
+  .tps-copy-status--fail {
+    display: block;
+    margin-top: 10px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-error-deep);
+  }
+
+  /* ── Runtime-injected: stat band ─────────────────────────────────────── */
+  :global(.tps-stats) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  @media (min-width: 560px) {
+    :global(.tps-stats) {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+  :global(.tps-stat) {
+    min-width: 0;
+    padding: 10px 12px 11px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    border-top: 3px solid var(--color-hairline-strong);
+  }
+  :global(.tps-stat--add) {
+    border-top-color: var(--color-brand);
+  }
+  :global(.tps-stat--change) {
+    border-top-color: var(--color-accent-ink);
+  }
+  :global(.tps-stat--destroy) {
+    border-top-color: var(--color-error);
+  }
+  :global(.tps-stat--replace) {
+    border-top-color: var(--color-warning);
+  }
+  :global(.tps-stat__n) {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 26px;
+  }
+  :global(.tps-stat__sym) {
+    font-size: 15px;
+    font-weight: 600;
+  }
+  :global(.tps-stat--add .tps-stat__n) {
+    color: var(--color-success);
+  }
+  :global(.tps-stat--change .tps-stat__n) {
+    color: var(--color-accent-ink);
+  }
+  :global(.tps-stat--destroy .tps-stat__n) {
+    color: var(--color-error-deep);
+  }
+  :global(.tps-stat--replace .tps-stat__n) {
+    color: var(--color-warning-deep);
+  }
+  :global(.tps-stat__label) {
+    display: block;
+    margin-top: 2px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-body);
+  }
+  :global(.tps-stat__sub) {
+    display: block;
+    margin-top: 2px;
+    font-size: 11.5px;
+    line-height: 16px;
+    color: var(--color-mute);
+    text-wrap: pretty;
+  }
+  :global(.tps-tf-line) {
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-mute);
+    text-wrap: pretty;
+  }
+
+  /* ── Runtime-injected: blocks + rows ─────────────────────────────────── */
+  :global(.tps-block) {
+    margin-top: 12px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    overflow: hidden;
+  }
+  :global(.tps-block__head) {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+  :global(.tps-block__title) {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: var(--color-body);
+  }
+  :global(.tps-block__actions) {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+  :global(.tps-none) {
+    padding: 10px 14px;
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--color-mute);
+    text-wrap: pretty;
+  }
+
+  :global(.tps-row) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 6px 10px;
+    padding: 9px 14px;
+  }
+  :global(.tps-row + .tps-row) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.tps-row__main) {
+    flex: 1 1 220px;
+    min-width: 0;
+  }
+  :global(.tps-row__addr) {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 19px;
+    color: var(--color-ink);
+    overflow-wrap: anywhere;
+  }
+  :global(.tps-row__note) {
+    display: block;
+    margin-top: 3px;
+    font-size: 11.5px;
+    line-height: 17px;
+    color: var(--color-mute);
+    text-wrap: pretty;
+    overflow-wrap: anywhere;
+  }
+  :global(.tps-row__side) {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    gap: 6px;
+  }
+  :global(.tps-forces) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 5px;
+  }
+  :global(.tps-force) {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: var(--radius-pill);
+    background: var(--color-warning-soft);
+    color: var(--color-warning-deep);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 17px;
+    overflow-wrap: anywhere;
+  }
+
+  :global(.tps-badge) {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    padding: 2px 8px;
+    border-radius: var(--radius-pill);
+    background: var(--color-canvas-soft-2);
+    color: var(--color-body);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  :global(.tps-badge--add) {
+    background: var(--color-brand-soft);
+    color: var(--color-brand-strong);
+  }
+  :global(.tps-badge--change) {
+    background: var(--color-canvas);
+    color: var(--color-accent-ink);
+    box-shadow: inset 0 0 0 1px var(--color-accent-ink);
+  }
+  :global(.tps-badge--destroy) {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
+  :global(.tps-badge--replace) {
+    background: var(--color-warning-soft);
+    color: var(--color-warning-deep);
+  }
+
+  /* ── Runtime-injected: reconciliation + notes ────────────────────────── */
+  :global(.tps-note) {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 10px 14px;
+    font-size: 12.5px;
+    line-height: 19px;
+    color: var(--color-body);
+    text-wrap: pretty;
+  }
+  :global(.tps-note + .tps-note) {
+    border-top: 1px solid var(--color-hairline);
+  }
+  :global(.tps-note--error) {
+    background: var(--color-error-soft);
+    color: var(--color-error-deep);
+  }
+  :global(.tps-note--warning) {
+    background: var(--color-warning-soft);
+    color: var(--color-warning-deep);
+  }
+  :global(.tps-note--ok) {
+    background: var(--color-brand-soft);
+    color: var(--color-brand-strong);
+  }
+  :global(.tps-note__icon) {
+    flex: 0 0 auto;
+    width: 15px;
+    height: 15px;
+    margin-top: 2px;
+  }
+
+  /* ── Runtime-injected: the dark-stable high-risk slab ────────────────── */
+  :global(.tps-risk) {
+    margin-top: 12px;
+    border-radius: var(--radius-md);
+    background: var(--color-inverse);
+    color: var(--color-inverse-fg);
+    overflow: hidden;
+  }
+  :global(.tps-risk__head) {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 11px 14px 6px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-cyan);
+  }
+  :global(.tps-risk__lead) {
+    padding: 0 14px 10px;
+    font-size: 12.5px;
+    line-height: 19px;
+    color: var(--color-inverse-fg);
+    text-wrap: pretty;
+  }
+  :global(.tps-risk__row) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 6px 10px;
+    padding: 10px 14px;
+    border-top: 1px solid rgba(244, 241, 234, 0.14);
+  }
+  :global(.tps-risk__addr) {
+    flex: 1 1 220px;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 19px;
+    color: var(--color-inverse-fg);
+    overflow-wrap: anywhere;
+  }
+  :global(.tps-risk__why) {
+    display: block;
+    margin-top: 3px;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    line-height: 18px;
+    letter-spacing: 0.01em;
+    color: var(--color-inverse-fg);
+    text-wrap: pretty;
+  }
+  :global(.tps-risk__class) {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    padding: 2px 8px;
+    border-radius: var(--radius-pill);
+    box-shadow: inset 0 0 0 1px var(--color-cyan);
+    color: var(--color-cyan);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  :global(.tps-risk .tps-copy) {
+    color: var(--color-inverse-fg);
+  }
+  :global(.tps-risk .tps-copy:hover) {
+    color: var(--color-cyan);
+    background: rgba(244, 241, 234, 0.14);
+  }
+
+  /* ── Hard error card + empty state ──────────────────────────────────── */
+  :global(.tps-error) {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-error-soft);
+    box-shadow: inset 0 0 0 1px var(--color-error);
+    color: var(--color-error-deep);
+  }
+  :global(.tps-error__icon) {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  :global(.tps-error__title) {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  :global(.tps-error__detail) {
+    margin-top: 2px;
+    font-size: 13px;
+    line-height: 19px;
+    text-wrap: pretty;
+    overflow-wrap: anywhere;
+  }
+  :global(.tps-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+
+  /* ── Copy buttons: two coarse-pointer tiers, matching the reference ─── */
+  :global(.tps-copy) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-mute);
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease;
+  }
+  :global(.tps-copy:hover) {
+    color: var(--color-brand-strong);
+    background: var(--color-hairline);
+  }
+  :global(.tps-copy:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  :global(.tps-copy--labeled) {
+    width: auto;
+    height: 26px;
+    gap: 6px;
+    padding: 0 10px;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-body);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  :global(.tps-copy--labeled:hover) {
+    color: var(--color-brand-strong);
+    background: var(--color-canvas-soft);
+  }
+  :global(.tps-copy--copied) {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+  @media (pointer: coarse) {
+    :global(.tps-copy) {
+      width: 44px;
+      height: 44px;
+    }
+    :global(.tps-copy--labeled) {
+      width: auto;
+      height: auto;
+      min-height: 44px;
+    }
+    .tps-chip {
+      min-height: 44px;
+    }
+    .tps-seg__btn {
+      min-height: 36px;
+    }
+  }
+</style>
+
+<script>
+  import { escapeHtml } from '../lib/escape-html';
+  import { copyTextToClipboard } from '../lib/clipboard';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  import { examples } from '../lib/terraform-plan-summarizer/examples';
+  import type {
+    PlanSummary,
+    PlanTotals,
+    ResourceChange,
+  } from '../lib/terraform-plan-summarizer/types';
+
+  type EngineModule = {
+    summarizePlan: (input: string) => PlanSummary;
+    toMarkdown: (summary: PlanSummary) => string;
+    formatTerraformTotals: (totals: PlanTotals) => string;
+  };
+
+  const ROOT_SEL = '.tps-pg';
+  const SLUG = 'terraform-plan-summarizer';
+  const DEBOUNCE_MS = 200;
+  const ERROR_HOLD_MS = 600;
+  const RESET_MS = 1800;
+
+  /**
+   * Rendered rows. The engine already caps parsing at 2,000 changes, but 2,000
+   * rows × a copy button each is what stalls the tab — the same lesson as
+   * MAX_OVERLAP_PAIRS in cidr-checker. Every cap here carries a visible note.
+   */
+  const MAX_RENDERED_ROWS = 200;
+  /** Module bands in "by module" grouping. */
+  const MAX_RENDERED_BANDS = 40;
+  /** `forces replacement` chips shown per row. */
+  const MAX_RENDERED_FORCES = 8;
+  /** Diagnostic rows in the notes block. */
+  const MAX_RENDERED_NOTES = 12;
+  /** Output-change rows. */
+  const MAX_RENDERED_OUTPUTS = 40;
+  /** Drift rows. */
+  const MAX_RENDERED_DRIFT = 20;
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.tpsWired === 'true') return;
+      root.dataset.tpsWired = 'true';
+      void init(root);
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  const ALERT_SVG =
+    '<svg class="tps-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const WARN_SVG =
+    '<svg class="tps-note__icon" width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  const INFO_SVG =
+    '<svg class="tps-note__icon" width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7.5"></circle><path d="M10 9v4.5"></path><path d="M10 6.4v.01"></path></svg>';
+  const OK_SVG =
+    '<svg class="tps-note__icon" width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7.5"></circle><path d="M6.6 10.3l2.4 2.4 4.4-5"></path></svg>';
+  const COPY_ICON_SVG =
+    '<svg class="tps-copy-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"/></svg>';
+  const CHECK_ICON_SVG =
+    '<svg class="tps-check-icon hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
+
+  /** Symbol + label + explanation. Colour never carries meaning on its own. */
+  const STAT_TILES = [
+    { key: 'create', cls: 'add', symbol: '+', label: 'add', sub: 'created outright' },
+    { key: 'update', cls: 'change', symbol: '~', label: 'change', sub: 'updated in place' },
+    { key: 'destroy', cls: 'destroy', symbol: '−', label: 'destroy', sub: 'destroyed outright' },
+    {
+      key: 'replace',
+      cls: 'replace',
+      symbol: '±',
+      label: 'replace',
+      sub: 'destroyed and recreated',
+    },
+  ] as const;
+
+  const ACTION_LABEL: Record<string, string> = {
+    create: 'create',
+    update: 'update',
+    delete: 'destroy',
+    replace: 'replace',
+    read: 'read',
+    import: 'import',
+    move: 'move',
+    'no-op': 'no change',
+    forget: 'forget',
+  };
+
+  const ACTION_BADGE_CLASS: Record<string, string> = {
+    create: 'tps-badge--add',
+    update: 'tps-badge--change',
+    delete: 'tps-badge--destroy',
+    replace: 'tps-badge--replace',
+  };
+
+  const RISK_CLASS_LABEL: Record<string, string> = {
+    'data-store': 'data store',
+    'egress-path': 'egress path',
+    'control-plane': 'control plane',
+    'crypto-key': 'encryption key',
+  };
+
+  /** Action bands, riskiest first — the default reading order. */
+  const ACTION_BANDS: { title: string; actions: string[] }[] = [
+    { title: 'Replacements', actions: ['replace'] },
+    { title: 'Destroys', actions: ['delete'] },
+    { title: 'Creates', actions: ['create'] },
+    { title: 'Updates', actions: ['update'] },
+    { title: 'Reads, imports, moves and forgets', actions: ['read', 'import', 'move', 'forget', 'no-op'] },
+  ];
+
+  function plural(n: number, one: string, many: string): string {
+    return n === 1 ? one : many;
+  }
+
+  async function init(root: HTMLElement): Promise<void> {
+    const input = el<HTMLTextAreaElement>(root, '#tps-input');
+    const chipsWrap = el<HTMLElement>(root, '#tps-chips');
+    const resultsBox = el<HTMLElement>(root, '#tps-results');
+    const summaryEl = el<HTMLElement>(root, '#tps-summary');
+    const mdBtn = el<HTMLButtonElement>(root, '#tps-copy-md');
+    const copyStatus = el<HTMLElement>(root, '#tps-copy-status');
+    const groupAction = el<HTMLButtonElement>(root, '#tps-group-action');
+    const groupModule = el<HTMLButtonElement>(root, '#tps-group-module');
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#tps-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#tps-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#tps-snap-delete');
+    if (
+      !input ||
+      !chipsWrap ||
+      !resultsBox ||
+      !summaryEl ||
+      !mdBtn ||
+      !copyStatus ||
+      !groupAction ||
+      !groupModule ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
+    )
+      return;
+
+    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>('.tps-chip'));
+
+    /* ------------------------------------------------------------------ */
+    /* Copy plumbing                                                      */
+    /* ------------------------------------------------------------------ */
+
+    // Payloads live in an array and are resolved by `data-copy-ref` at click
+    // time. NOTHING untrusted is ever written into an attribute, and that is a
+    // deliberate rule rather than an implementation detail:
+    //
+    //   1. A newline-joined list of 200 addresses does not round-trip through an
+    //      HTML attribute at all.
+    //   2. HTML attribute-value serialization escapes only `&`, `"` and U+00A0 —
+    //      NOT `<`. So a resource address like `aws_s3_bucket.<img src=x
+    //      onerror=alert(1)>` assigned to `data-copy` or echoed into an
+    //      `aria-label` reappears as literal `<img` when the container's
+    //      innerHTML is read back, even though `escapeHtml()` was applied on the
+    //      way in. It is inert — an attribute value is never parsed as markup —
+    //      but it is indistinguishable from a real escaping bug, so this file
+    //      keeps every attribute static and every untrusted value in TEXT
+    //      position, where `escapeHtml()` is genuinely sufficient.
+    //
+    // `data-copy` therefore stays present-but-empty: Layout.astro's analytics
+    // listener matches on the attribute's presence, not its value.
+    let payloads: string[] = [];
+    /** The Markdown report behind the header button (outside `#tps-results`). */
+    let markdown = '';
+
+    function payloadFor(btn: HTMLButtonElement): string {
+      const ref = btn.dataset.copyRef;
+      if (ref !== undefined) return payloads[Number(ref)] ?? '';
+      if (btn === mdBtn) return markdown;
+      return btn.dataset.copy ?? '';
+    }
+
+    function setCopyStatus(message: string, failed: boolean): void {
+      copyStatus!.textContent = message;
+      copyStatus!.classList.toggle('sr-only', !failed);
+      copyStatus!.classList.toggle('tps-copy-status--fail', failed);
+    }
+
+    function setCopied(btn: HTMLButtonElement, copied: boolean): void {
+      btn.classList.toggle('tps-copy--copied', copied);
+      btn.querySelector('.tps-copy-icon')?.classList.toggle('hidden', copied);
+      btn.querySelector('.tps-check-icon')?.classList.toggle('hidden', !copied);
+      const label = btn.querySelector<HTMLElement>('.tps-copy-label');
+      if (label) {
+        label.textContent = copied ? 'Copied' : (btn.dataset.copyLabel ?? 'Copy');
+      } else if (copied) {
+        btn.dataset.prevAriaLabel = btn.getAttribute('aria-label') ?? '';
+        btn.setAttribute('aria-label', 'Copied');
+      } else if (btn.dataset.prevAriaLabel) {
+        btn.setAttribute('aria-label', btn.dataset.prevAriaLabel);
+        delete btn.dataset.prevAriaLabel;
+      }
+    }
+
+    async function handleCopy(btn: HTMLButtonElement): Promise<void> {
+      const ok = await copyTextToClipboard(payloadFor(btn));
+      if (ok) {
+        setCopied(btn, true);
+        setCopyStatus('Copied to clipboard.', false);
+        window.clearTimeout(Number(btn.dataset.copyTimer));
+        btn.dataset.copyTimer = String(
+          window.setTimeout(() => {
+            setCopied(btn, false);
+            if (copyStatus!.textContent === 'Copied to clipboard.') setCopyStatus('', false);
+          }, RESET_MS),
+        );
+      } else {
+        setCopyStatus('Copy failed — select the value manually.', true);
+      }
+    }
+
+    /**
+     * An icon-only per-row copy button. `label` must be a STATIC string — never a
+     * resource address — for the reason in the comment above `payloads`.
+     */
+    function copyBtnHtml(label: string, payload: string): string {
+      const ref = payloads.push(payload) - 1;
+      return (
+        `<button class="tps-copy" type="button" data-copy="" data-copy-ref="${ref}" ` +
+        `aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">` +
+        COPY_ICON_SVG +
+        CHECK_ICON_SVG +
+        '</button>'
+      );
+    }
+
+    /** A labeled band button. `data-copy-all` puts it in the 36px tap tier. */
+    function copyAllBtnHtml(label: string, payload: string): string {
+      const ref = payloads.push(payload) - 1;
+      return (
+        '<button class="tps-copy tps-copy--labeled" type="button" data-copy-all data-copy="" ' +
+        `data-copy-ref="${ref}" data-copy-label="${escapeHtml(label)}">` +
+        COPY_ICON_SVG +
+        CHECK_ICON_SVG +
+        `<span class="tps-copy-label">${escapeHtml(label)}</span></button>`
+      );
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Rendering                                                          */
+    /* ------------------------------------------------------------------ */
+
+    function setSummary(text: string, isError: boolean): void {
+      summaryEl!.textContent = text;
+      summaryEl!.classList.toggle('text-error-deep', isError);
+      summaryEl!.classList.toggle('text-mute', !isError);
+    }
+
+    function renderEmpty(): void {
+      setSummary('', false);
+      payloads = [];
+      resultsBox!.innerHTML =
+        '<p class="tps-empty body-sm text-mute">Paste a plan to see adds, changes, destroys and ' +
+        'replacements counted separately, the replacement-forcing attributes named, and the ' +
+        'totals cross-checked against Terraform&rsquo;s own summary line.</p>';
+    }
+
+    function statsHtml(summary: PlanSummary, engine: EngineModule): string {
+      const tiles = STAT_TILES.map((tile) => {
+        const n = summary.counts[tile.key];
+        return (
+          `<div class="tps-stat tps-stat--${tile.cls}">` +
+          `<span class="tps-stat__n"><span class="tps-stat__sym" aria-hidden="true">${escapeHtml(tile.symbol)}</span>${n}</span>` +
+          `<span class="tps-stat__label">${escapeHtml(tile.label)}</span>` +
+          `<span class="tps-stat__sub">${escapeHtml(tile.sub)}</span></div>`
+        );
+      }).join('');
+
+      const extras: string[] = [];
+      if (summary.counts.read > 0) {
+        extras.push(
+          `${summary.counts.read} data ${plural(summary.counts.read, 'source', 'sources')} read during apply`,
+        );
+      }
+      if (summary.counts.import > 0) extras.push(`${summary.counts.import} imported`);
+      if (summary.counts.move > 0) extras.push(`${summary.counts.move} moved`);
+      if (summary.counts.forget > 0) {
+        extras.push(`${summary.counts.forget} removed from state but left in place`);
+      }
+      if (summary.counts.noop > 0) extras.push(`${summary.counts.noop} with no change`);
+
+      const tfLine =
+        `Terraform&rsquo;s own accounting counts each replacement once as an add <em>and</em> once ` +
+        `as a destroy: ${escapeHtml(engine.formatTerraformTotals(summary.totals))}.` +
+        (extras.length > 0 ? ` Outside those three: ${escapeHtml(extras.join(', '))}.` : '');
+
+      return `<div class="tps-stats">${tiles}</div><p class="tps-tf-line">${tfLine}</p>`;
+    }
+
+    function reconciliationHtml(summary: PlanSummary): string {
+      const status = summary.reconciliation.status;
+      const cls =
+        status === 'mismatch' ? 'tps-note--warning' : status === 'match' ? 'tps-note--ok' : '';
+      const icon = status === 'mismatch' ? WARN_SVG : status === 'match' ? OK_SVG : INFO_SVG;
+      const heading =
+        status === 'match'
+          ? 'Cross-check: reconciles'
+          : status === 'mismatch'
+            ? 'Cross-check: COUNT MISMATCH'
+            : 'Cross-check: no summary line to compare against';
+      const line =
+        summary.summaryLine !== null
+          ? `<span class="tps-row__note">Terraform printed: ${escapeHtml(summary.summaryLine)}</span>`
+          : '';
+      return (
+        '<div class="tps-block">' +
+        '<div class="tps-block__head"><span class="tps-block__title">Reconciliation</span>' +
+        (summary.summaryLine !== null
+          ? `<span class="tps-block__actions">${copyBtnHtml("Copy Terraform’s own summary line", summary.summaryLine)}</span>`
+          : '') +
+        '</div>' +
+        `<div class="tps-note ${cls}">${icon}<span><strong>${escapeHtml(heading)}</strong> ` +
+        `${escapeHtml(summary.reconciliation.message)}${line}</span></div>` +
+        '</div>'
+      );
+    }
+
+    function forcesHtml(change: ResourceChange): string {
+      if (change.replaceReasons.length === 0 && !change.replaceReasonsTruncated) return '';
+      const shown = change.replaceReasons.slice(0, MAX_RENDERED_FORCES);
+      const chipsHtml = shown
+        .map((attr) => `<span class="tps-force">${escapeHtml(attr)}</span>`)
+        .join('');
+      const hidden = change.replaceReasons.length - shown.length;
+      const more =
+        hidden > 0 || change.replaceReasonsTruncated
+          ? `<span class="tps-force">${hidden > 0 ? `and ${hidden} more` : 'and more, not listed'}</span>`
+          : '';
+      return (
+        '<span class="tps-row__note">forces replacement:</span>' +
+        `<span class="tps-forces">${chipsHtml}${more}</span>`
+      );
+    }
+
+    function rowHtml(change: ResourceChange, showModule: boolean): string {
+      const notes: string[] = [];
+      if (change.replaceOrder === 'destroy-create') {
+        notes.push('destroy then create — the resource does not exist in between');
+      } else if (change.replaceOrder === 'create-destroy') {
+        notes.push('create then destroy (create_before_destroy)');
+      }
+      if (change.tainted) notes.push('marked tainted');
+      if (change.imported) notes.push('imported into state');
+      if (change.movedFrom !== null) notes.push(`moved from ${change.movedFrom}`);
+      if (change.sensitive) notes.push('has attributes the plan marked sensitive');
+      if (change.actionReason !== null) notes.push(change.actionReason);
+      if (showModule && change.moduleChain.length > 0) {
+        notes.push(`in module ${change.moduleChain.join(' › ')}`);
+      }
+      if (change.provider !== null) notes.push(change.provider);
+
+      const badgeClass = ACTION_BADGE_CLASS[change.action] ?? '';
+      return (
+        '<div class="tps-row">' +
+        '<div class="tps-row__main">' +
+        `<span class="tps-row__addr">${escapeHtml(change.address)}</span>` +
+        (notes.length > 0
+          ? `<span class="tps-row__note">${escapeHtml(notes.join(' · '))}</span>`
+          : '') +
+        forcesHtml(change) +
+        '</div>' +
+        '<span class="tps-row__side">' +
+        `<span class="tps-badge ${badgeClass}">${escapeHtml(ACTION_LABEL[change.action] ?? change.action)}</span>` +
+        copyBtnHtml('Copy this resource address', change.address) +
+        '</span></div>'
+      );
+    }
+
+    interface Band {
+      title: string;
+      rows: ResourceChange[];
+    }
+
+    /**
+     * Deliberately short and count-bearing rather than descriptive: the band
+     * heading right next to it already says which addresses these are, and a
+     * `white-space: nowrap` label like "Copy reads, imports, moves and forgets
+     * addresses" is 310px wide, which overflows a 390px viewport.
+     */
+    function addressCopyLabel(n: number): string {
+      return n === 1 ? 'Copy the address' : `Copy the ${n} addresses`;
+    }
+
+    function bandsFor(summary: PlanSummary, grouping: 'action' | 'module'): Band[] {
+      if (grouping === 'action') {
+        return ACTION_BANDS.map((band) => ({
+          title: band.title,
+          rows: summary.changes.filter((change) => band.actions.includes(change.action)),
+        })).filter((band) => band.rows.length > 0);
+      }
+      const groups = new Map<string, ResourceChange[]>();
+      for (const change of summary.changes) {
+        const key = change.moduleChain.length === 0 ? '' : change.moduleChain.join('.');
+        const list = groups.get(key);
+        if (list) list.push(change);
+        else groups.set(key, [change]);
+      }
+      return Array.from(groups.entries()).map(([key, rows]) => ({
+        title: key === '' ? 'Root module' : `module ${key.split('.').join(' › ')}`,
+        rows,
+      }));
+    }
+
+    function bandsHtml(summary: PlanSummary, grouping: 'action' | 'module'): string {
+      const all = bandsFor(summary, grouping);
+      const bands = all.slice(0, MAX_RENDERED_BANDS);
+      let budget = MAX_RENDERED_ROWS;
+      let dropped = 0;
+      const html: string[] = [];
+
+      for (const band of bands) {
+        const shown = band.rows.slice(0, Math.max(0, budget));
+        dropped += band.rows.length - shown.length;
+        budget -= shown.length;
+        const addresses = band.rows.map((change) => change.address).join('\n');
+        html.push(
+          '<div class="tps-block">' +
+            '<div class="tps-block__head">' +
+            `<span class="tps-block__title">${escapeHtml(band.title)} · ${band.rows.length}</span>` +
+            `<span class="tps-block__actions">${copyAllBtnHtml(addressCopyLabel(band.rows.length), addresses)}</span>` +
+            '</div>' +
+            shown.map((change) => rowHtml(change, grouping === 'action')).join('') +
+            (shown.length < band.rows.length
+              ? `<p class="tps-none">Showing ${shown.length} of ${band.rows.length} rows in this group. The copy button above still copies every address.</p>`
+              : '') +
+            '</div>',
+        );
+      }
+
+      if (all.length > bands.length) {
+        html.push(
+          `<p class="tps-none">Showing the first ${bands.length} of ${all.length} groups. Copy the Markdown summary for the whole plan.</p>`,
+        );
+      } else if (dropped > 0) {
+        html.push(
+          `<p class="tps-none">${dropped} further ${plural(dropped, 'row was', 'rows were')} not rendered, to keep this page responsive.</p>`,
+        );
+      }
+      return html.join('');
+    }
+
+    function riskHtml(summary: PlanSummary): string {
+      if (summary.highRisk.length === 0) return '';
+      const shown = summary.highRisk.slice(0, MAX_RENDERED_ROWS);
+      const rows = shown
+        .map(
+          (change) =>
+            '<div class="tps-risk__row">' +
+            `<span class="tps-risk__addr">${escapeHtml(change.address)}` +
+            `<span class="tps-risk__why">${escapeHtml(change.risk!.reason)}</span></span>` +
+            '<span class="tps-row__side">' +
+            `<span class="tps-risk__class">${escapeHtml(RISK_CLASS_LABEL[change.risk!.klass] ?? change.risk!.klass)}</span>` +
+            copyBtnHtml('Copy this resource address', change.address) +
+            '</span></div>',
+        )
+        .join('');
+      const addresses = summary.highRisk.map((change) => change.address).join('\n');
+      const n = summary.highRisk.length;
+      return (
+        '<div class="tps-risk">' +
+        `<div class="tps-risk__head"><span>Read this first · ${n} high blast radius</span>` +
+        `<span class="tps-block__actions">${copyAllBtnHtml(addressCopyLabel(n), addresses)}</span></div>` +
+        `<p class="tps-risk__lead">${n} destructive ${plural(n, 'action', 'actions')} ` +
+        'in this plan hits a resource type that holds data, carries your egress path, or is a ' +
+        'cluster control plane. A type that is <em>not</em> listed here is unclassified, not ' +
+        'proven safe — nobody can enumerate every provider&rsquo;s stateful resources.</p>' +
+        rows +
+        '</div>'
+      );
+    }
+
+    function outputsHtml(summary: PlanSummary): string {
+      if (summary.outputChanges.length === 0) return '';
+      const shown = summary.outputChanges.slice(0, MAX_RENDERED_OUTPUTS);
+      const rows = shown
+        .map((output) => {
+          const badge =
+            output.action === 'create'
+              ? 'tps-badge--add'
+              : output.action === 'delete'
+                ? 'tps-badge--destroy'
+                : output.action === 'update'
+                  ? 'tps-badge--change'
+                  : '';
+          return (
+            '<div class="tps-row"><div class="tps-row__main">' +
+            `<span class="tps-row__addr">${escapeHtml(output.name)}</span>` +
+            (output.sensitive
+              ? '<span class="tps-row__note">marked sensitive — the value is not printed in the plan</span>'
+              : '') +
+            '</div><span class="tps-row__side">' +
+            `<span class="tps-badge ${badge}">${escapeHtml(output.action === 'delete' ? 'destroy' : output.action)}</span>` +
+            copyBtnHtml('Copy this output name', output.name) +
+            '</span></div>'
+          );
+        })
+        .join('');
+      return (
+        '<div class="tps-block"><div class="tps-block__head">' +
+        `<span class="tps-block__title">Output changes · ${summary.outputChanges.length}</span></div>` +
+        rows +
+        (shown.length < summary.outputChanges.length
+          ? `<p class="tps-none">Showing ${shown.length} of ${summary.outputChanges.length} outputs.</p>`
+          : '') +
+        '</div>'
+      );
+    }
+
+    function driftHtml(summary: PlanSummary): string {
+      if (summary.drift.length === 0) return '';
+      const shown = summary.drift.slice(0, MAX_RENDERED_DRIFT);
+      const rows = shown
+        .map(
+          (change) =>
+            '<div class="tps-row"><div class="tps-row__main">' +
+            `<span class="tps-row__addr">${escapeHtml(change.address)}</span></div>` +
+            '<span class="tps-row__side">' +
+            copyBtnHtml('Copy this resource address', change.address) +
+            '</span></div>',
+        )
+        .join('');
+      return (
+        '<div class="tps-block"><div class="tps-block__head">' +
+        `<span class="tps-block__title">Changed outside Terraform · ${summary.drift.length}</span></div>` +
+        '<p class="tps-none">Drift: Terraform found these already different from the last state it ' +
+        'recorded. They are NOT part of the counts above.</p>' +
+        rows +
+        (shown.length < summary.drift.length
+          ? `<p class="tps-none">Showing ${shown.length} of ${summary.drift.length}.</p>`
+          : '') +
+        '</div>'
+      );
+    }
+
+    function notesHtml(summary: PlanSummary): string {
+      const notes = summary.diagnostics.filter(
+        (diagnostic) => diagnostic.message !== summary.reconciliation.message,
+      );
+      if (notes.length === 0) return '';
+      const shown = notes.slice(0, MAX_RENDERED_NOTES);
+      const rows = shown
+        .map((diagnostic) => {
+          const icon =
+            diagnostic.severity === 'info'
+              ? INFO_SVG
+              : WARN_SVG;
+          return (
+            `<div class="tps-note tps-note--${escapeHtml(diagnostic.severity)}">${icon}` +
+            `<span>${escapeHtml(diagnostic.message)}</span></div>`
+          );
+        })
+        .join('');
+      return (
+        '<div class="tps-block"><div class="tps-block__head">' +
+        `<span class="tps-block__title">Notes · ${notes.length}</span></div>` +
+        rows +
+        (shown.length < notes.length
+          ? `<p class="tps-none">…and ${notes.length - shown.length} more, not shown.</p>`
+          : '') +
+        '</div>'
+      );
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Engine                                                             */
+    /* ------------------------------------------------------------------ */
+
+    let engine: EngineModule;
+    try {
+      engine = (await import('../lib/terraform-plan-summarizer/engine')) as unknown as EngineModule;
+    } catch (err) {
+      setSummary('', true);
+      resultsBox.innerHTML =
+        '<div class="tps-error" role="alert">' +
+        ALERT_SVG +
+        '<div><p class="tps-error__title">Summarizer unavailable</p>' +
+        '<p class="tps-error__detail">The plan engine failed to load. Reload the page to try ' +
+        'again — nothing you pasted was sent anywhere.</p></div></div>';
+      console.error('[TerraformPlanSummarizer] engine import failed:', err);
+      return;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* State machine: EMPTY | VALID | PENDING | INVALID                   */
+    /* ------------------------------------------------------------------ */
+
+    type State = 'empty' | 'valid' | 'pending' | 'invalid';
+    let state: State = 'empty';
+    /** Previous textarea value, so one `input` event's delta can be measured. */
+    let prevValue = input.value;
+    let evalTimer: number | undefined;
+    let errTimer: number | undefined;
+    let grouping: 'action' | 'module' = 'action';
+    /** The last valid summary, so the grouping toggle re-renders without reparsing. */
+    let lastSummary: PlanSummary | null = null;
+
+    function clearTimers(): void {
+      window.clearTimeout(evalTimer);
+      window.clearTimeout(errTimer);
+    }
+
+    function setErrorState(on: boolean): void {
+      input!.classList.toggle('tps-input--error', on);
+      if (on) {
+        input!.setAttribute('aria-invalid', 'true');
+        input!.setAttribute('aria-describedby', 'tps-input-hint tps-run-hint tps-error-detail');
+      } else {
+        input!.removeAttribute('aria-invalid');
+        input!.setAttribute('aria-describedby', 'tps-input-hint tps-run-hint');
+      }
+    }
+
+    function hideActions(): void {
+      mdBtn!.hidden = true;
+      markdown = '';
+    }
+
+    function setActiveChip(idx: number | null): void {
+      chips.forEach((chip) => {
+        chip.setAttribute(
+          'aria-pressed',
+          idx !== null && chip.dataset.exampleIdx === String(idx) ? 'true' : 'false',
+        );
+      });
+    }
+
+    function toEmpty(): void {
+      state = 'empty';
+      clearTimers();
+      lastSummary = null;
+      setErrorState(false);
+      hideActions();
+      renderEmpty();
+      setActiveChip(null);
+    }
+
+    /** The hard-error card: shown when nothing usable was found at all. */
+    function showError(summary: PlanSummary, isAlert: boolean): void {
+      state = 'invalid';
+      clearTimers();
+      lastSummary = null;
+      setErrorState(true);
+      hideActions();
+      payloads = [];
+      const worst =
+        summary.diagnostics.find((d) => d.severity === 'error') ??
+        summary.diagnostics.find((d) => d.severity === 'warning') ??
+        summary.diagnostics[0];
+      const others = summary.diagnostics.filter((d) => d !== worst);
+      setSummary('nothing to summarize', true);
+      resultsBox!.innerHTML =
+        `<div class="tps-error"${isAlert ? ' role="alert"' : ''}>` +
+        ALERT_SVG +
+        '<div><p class="tps-error__title">No plan to summarize yet</p>' +
+        `<p id="tps-error-detail" class="tps-error__detail">${escapeHtml(worst?.message ?? '')}</p>` +
+        '</div></div>' +
+        (others.length > 0
+          ? '<div class="tps-block"><div class="tps-block__head"><span class="tps-block__title">Also noticed</span></div>' +
+            others
+              .slice(0, MAX_RENDERED_NOTES)
+              .map(
+                (d) =>
+                  `<div class="tps-note tps-note--${escapeHtml(d.severity)}">${d.severity === 'info' ? INFO_SVG : WARN_SVG}<span>${escapeHtml(d.message)}</span></div>`,
+              )
+              .join('') +
+            '</div>'
+          : '');
+    }
+
+    function renderSummary(summary: PlanSummary): void {
+      payloads = [];
+      const body = summary.noChanges
+        ? '<div class="tps-block"><div class="tps-block__head"><span class="tps-block__title">No changes</span></div>' +
+          '<p class="tps-none">Terraform found nothing to do: your configuration and the real ' +
+          'infrastructure already agree. Nothing will be created, changed or destroyed.</p></div>'
+        : statsHtml(summary, engine) + riskHtml(summary) + bandsHtml(summary, grouping);
+
+      resultsBox!.innerHTML =
+        body +
+        reconciliationHtml(summary) +
+        outputsHtml(summary) +
+        driftHtml(summary) +
+        notesHtml(summary);
+
+      const statusBits = [
+        summary.format === 'json' ? 'show -json' : 'plan text',
+        summary.noChanges
+          ? 'no changes'
+          : `${summary.stats.changes} ${plural(summary.stats.changes, 'action', 'actions')}`,
+      ];
+      if (summary.highRisk.length > 0) statusBits.push(`${summary.highRisk.length} high risk`);
+      statusBits.push(
+        summary.reconciliation.status === 'match'
+          ? 'counts reconcile'
+          : summary.reconciliation.status === 'mismatch'
+            ? 'COUNT MISMATCH'
+            : 'no cross-check',
+      );
+      setSummary(statusBits.join(' · '), summary.reconciliation.status === 'mismatch');
+
+      markdown = engine.toMarkdown(summary);
+      mdBtn!.hidden = false;
+    }
+
+    function evaluate(source: 'type' | 'bulk' | 'commit' | 'seed'): void {
+      clearTimers();
+      const value = input!.value;
+      prevValue = value;
+      if (value.trim().length === 0) {
+        toEmpty();
+        return;
+      }
+
+      const summary = engine.summarizePlan(value);
+
+      if (summary.ok) {
+        state = 'valid';
+        setErrorState(false);
+        lastSummary = summary;
+        renderSummary(summary);
+        // Only a fully valid, user-initiated evaluation is allowed to persist.
+        // A seeded boot must never write, and neither must a partial paste:
+        // poisoning `oc-last-v1` makes the NEXT visit boot broken. There is no
+        // deep-link hash for this tool, so nothing else is written either.
+        if (source !== 'seed') recordToolLastInput(SLUG, value);
+        return;
+      }
+
+      if (source !== 'type') {
+        showError(summary, source === 'commit');
+        return;
+      }
+
+      // Mid-typing: hold the error. No red border, no error card — keep whatever
+      // is on screen until the person stops typing for ERROR_HOLD_MS.
+      const wasInvalid = state === 'invalid';
+      state = 'pending';
+      setErrorState(false);
+      hideActions();
+      setSummary('', false);
+      if (wasInvalid) {
+        payloads = [];
+        resultsBox!.innerHTML =
+          '<p class="tps-empty body-sm text-mute">Still typing — results appear once there is a ' +
+          'plan to read.</p>';
+      }
+      errTimer = window.setTimeout(() => showError(summary, false), ERROR_HOLD_MS);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Events                                                             */
+    /* ------------------------------------------------------------------ */
+
+    function setGrouping(next: 'action' | 'module'): void {
+      if (grouping === next) return;
+      grouping = next;
+      groupAction!.setAttribute('aria-checked', String(next === 'action'));
+      groupAction!.tabIndex = next === 'action' ? 0 : -1;
+      groupModule!.setAttribute('aria-checked', String(next === 'module'));
+      groupModule!.tabIndex = next === 'module' ? 0 : -1;
+      // Re-render from the summary already in hand: regrouping is a view change,
+      // not a new evaluation, so it must not re-persist the last input either.
+      if (lastSummary !== null) renderSummary(lastSummary);
+    }
+
+    root.addEventListener('click', (evt) => {
+      const target = evt.target as HTMLElement;
+
+      const chip = target.closest<HTMLButtonElement>('.tps-chip');
+      if (chip && chipsWrap!.contains(chip)) {
+        const idx = Number(chip.dataset.exampleIdx);
+        const example = examples[idx];
+        if (!example) return;
+        input!.value = example.input;
+        prevValue = example.input;
+        setActiveChip(idx);
+        evaluate('commit');
+        return;
+      }
+
+      const seg = target.closest<HTMLButtonElement>('.tps-seg__btn');
+      if (seg) {
+        setGrouping(seg.id === 'tps-group-module' ? 'module' : 'action');
+        return;
+      }
+
+      const copy = target.closest<HTMLButtonElement>('.tps-copy');
+      if (copy) void handleCopy(copy);
+    });
+
+    // Arrow keys move within a radiogroup, per the ARIA pattern.
+    root.addEventListener('keydown', (evt) => {
+      const seg = (evt.target as HTMLElement).closest<HTMLButtonElement>('.tps-seg__btn');
+      if (!seg) return;
+      if (evt.key !== 'ArrowLeft' && evt.key !== 'ArrowRight') return;
+      evt.preventDefault();
+      const next = grouping === 'action' ? 'module' : 'action';
+      setGrouping(next);
+      (next === 'module' ? groupModule! : groupAction!).focus();
+    });
+
+    input.addEventListener('input', (e) => {
+      clearTimers();
+      const value = input.value;
+      // Only GROWTH beyond one character is a paste. `Math.abs(delta) > 1` would
+      // treat a backspace over a selection as a paste, flash a red border
+      // mid-edit, and break the calm-error contract. Deletions and IME
+      // composition debounce like typing.
+      const grew = value.length - prevValue.length > 1;
+      const composing = (e as InputEvent).isComposing === true;
+      prevValue = value;
+      setActiveChip(null);
+      if (value.trim().length === 0) {
+        toEmpty();
+        return;
+      }
+      if (grew && !composing) {
+        evaluate('bulk');
+        return;
+      }
+      evalTimer = window.setTimeout(() => evaluate('type'), DEBOUNCE_MS);
+    });
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        evaluate('commit');
+        if (window.matchMedia?.('(pointer: coarse)').matches) input.blur();
+        return;
+      }
+      // Plain Enter must still insert the newline — a plan is multi-line. Flush
+      // on the next tick, once the textarea value includes it.
+      window.setTimeout(() => evaluate('commit'), 0);
+    });
+
+    input.addEventListener('blur', () => {
+      if (state === 'pending') evaluate('commit');
+    });
+
+    wireSnapshotUI({
+      slug: SLUG,
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: () => input!.value,
+      setValue: (value) => {
+        input!.value = value;
+        prevValue = value;
+        setActiveChip(null);
+        evaluate('commit');
+      },
+    });
+
+    /* ------------------------------------------------------------------ */
+    /* First load: typed value → restored last input → first example.     */
+    /* There is NO deep link for this tool (a plan is orders of magnitude  */
+    /* past the fragment cap), so nothing here reads or writes            */
+    /* location.hash — including an unknown key someone appends by hand.   */
+    /* ------------------------------------------------------------------ */
+
+    const restored = getRestoredLastInput(SLUG);
+    if (input.value.trim()) {
+      evaluate('seed');
+    } else if (restored) {
+      input.value = restored;
+      prevValue = restored;
+      evaluate('seed');
+    } else if (examples[0]) {
+      input.value = examples[0].input;
+      prevValue = examples[0].input;
+      setActiveChip(0);
+      evaluate('seed');
+    } else {
+      renderEmpty();
+    }
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

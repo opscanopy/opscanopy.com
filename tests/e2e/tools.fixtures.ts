@@ -262,6 +262,51 @@ export const TOOL_FIXTURES: ToolFixture[] = [
     inputSelector: '#cd-input',
     resultsSelector: '#cd-results',
   },
+  {
+    // Tool 10 — Terraform Plan Summarizer.
+    //
+    // `hashKey: null` on purpose and permanently: plans run 5,000–50,000 lines,
+    // so even the smallest useful one is an order of magnitude past the ~2000-char
+    // fragment cap. The playground omits `data-copy-link` entirely and never
+    // touches `location.hash`; its share affordance is "Copy summary as Markdown"
+    // (`data-copy-all`). J3 asserts both halves — no fragment is ever written, and
+    // an unknown `#s=` key is ignored rather than parsed as a payload.
+    //
+    // `seededResultString` is a resource ADDRESS from the boot-seeded first chip
+    // ("Web deploy"), not one of the stat-tile labels: the labels are static
+    // markup that would still be on screen after the input became invalid, so J4's
+    // "restore undoes the change" step would pass vacuously against them.
+    //
+    // `invalidInput` is the mistake people actually make — pasting
+    // `terraform show -json` of STATE instead of of a saved plan. It is 36
+    // characters, which matters because J2 types it one key at a time, and every
+    // prefix of it is also invalid, so the calm hold is what is being measured
+    // rather than an intermediate diagnostic. `calmErrorString` is pinned
+    // byte-for-byte by `src/lib/terraform-plan-summarizer/engine.test.ts`
+    // ("names the failure for each specific kind of not-a-plan input").
+    //
+    // `xssPayload` is a complete, VALID plan whose resource name is the markup —
+    // Terraform's own grammar allows it, so the engine parses the plan, the counts
+    // reconcile against the `Plan:` line, and the address is echoed into a result
+    // row. That row is the one place this tool renders untrusted text.
+    slug: 'terraform-plan-summarizer',
+    family: 'textarea',
+    hashKey: null,
+    seededResultString: 'aws_ecs_task_definition.web',
+    invalidInput: '{"format_version":"1.0","values":{}}',
+    calmErrorString:
+      'This is "terraform show -json" output for STATE, not for a plan: it has "values" but no "resource_changes". Run "terraform plan -out=tfplan", then "terraform show -json tfplan".',
+    xssPayload: `Terraform will perform the following actions:
+
+  # aws_s3_bucket.<img src=x onerror=alert(1)> will be created
+  + resource "aws_s3_bucket" "<img src=x onerror=alert(1)>" {
+      + bucket = "probe"
+    }
+
+Plan: 1 to add, 0 to change, 0 to destroy.`,
+    inputSelector: '#tps-input',
+    resultsSelector: '#tps-results',
+  },
 ];
 
 /** Fixtures for one family — used by the family-gated journey steps. */

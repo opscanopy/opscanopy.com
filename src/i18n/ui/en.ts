@@ -154,6 +154,12 @@ const en = {
   'category.Config': 'Config',
   'category.Docker': 'Docker',
   'category.Utilities': 'Utilities',
+  // Infrastructure as Code. The acronym is the industry term in every locale, so
+  // it is deliberately identical in all five dictionaries — but the KEY must
+  // exist in each one: `useTranslations` falls back dict → en → the raw key, so a
+  // missing entry renders the literal string "category.IaC" in the catalog filter
+  // chips and the MegaMenu, and `scripts/i18n-check.mjs` does not catch it.
+  'category.IaC': 'IaC',
   'category.all': 'All',
 
   // Tool catalog (/tools) — chrome shared by ToolCard + the catalog page

@@ -145,6 +145,8 @@ const ptBr: Partial<UiDict> = {
   'category.Config': 'Config',
   'category.Docker': 'Docker',
   'category.Utilities': 'Utilitários',
+  // "IaC" (Infrastructure as Code) é o termo técnico também em português.
+  'category.IaC': 'IaC',
   'category.all': 'Todas',
 
   // Tool catalog (/tools)

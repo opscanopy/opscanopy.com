@@ -740,6 +740,29 @@ export const tools: Tool[] = [
     ],
     accent: 'ship',
   },
+  {
+    slug: 'terraform-plan-summarizer',
+    name: 'Terraform Plan Summarizer',
+    tagline:
+      'Paste terraform plan output, get a summary of adds, changes, destroys and replacements.',
+    description:
+      'Read a 5,000-line plan in five seconds: adds, changes, destroys and replacements counted separately, the attributes that force a replacement named, and every destructive action on a database, NAT gateway or cluster control plane pulled to the top. Both plan formats, and the totals cross-checked against Terraform\'s own summary line — nothing leaves your browser.',
+    status: 'planned',
+    category: 'IaC',
+    keywords: [
+      'terraform plan summarizer',
+      'terraform plan visualizer',
+      'terraform plan output parser',
+      'terraform show -json plan viewer',
+      'forces replacement terraform',
+      'terraform blast radius checker',
+      'terraform plan reader no upload',
+      'what will terraform destroy',
+      'terraform plan -/+ meaning',
+      'opentofu plan summary',
+    ],
+    accent: 'ship',
+  },
 ];
 
 export const liveTools = tools.filter((t) => t.status === 'live');
@@ -790,6 +813,9 @@ export const categoryAccent: Record<string, string> = {
   Config: '#35786a',
   Docker: '#3b82b8',
   Utilities: '#7a6e52',
+  // Olive — the only unclaimed band left between the leaf brand (#4a8c3f) and
+  // the Utilities khaki (#7a6e52), so an IaC card is not mistaken for either.
+  IaC: '#667a33',
 };
 
 /* ─── Category landing pages ──────────────────────────────────────────────
@@ -864,4 +890,5 @@ export const categoryBlurb: Record<string, string> = {
   Docker: 'Convert, validate and reason about container configs — entirely in your browser.',
   Utilities:
     'Generate, convert and reshape identifiers, text and file modes — pure client-side.',
+  IaC: 'Read, validate and reason about infrastructure-as-code changes before you apply — entirely in your browser.',
 };
