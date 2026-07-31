@@ -212,6 +212,35 @@ describe('parser', () => {
     );
   });
 
+  // Regression: the smart-quote check ran on the WHOLE document before the
+  // lenient re-parse, so any parse failure in a file containing a curly
+  // apostrophe — ordinary in a title, a description or text-panel markdown —
+  // was refused as a typographic-quote problem and the recovery never ran.
+  it('4b. does not blame typographic quotes for a fault somewhere else', () => {
+    const withComment = lintDashboard(
+      '{\n // note\n "title":"Bob’s","schemaVersion":41,"panels":[]\n}',
+    );
+    expect(withComment.ok).toBe(true);
+    expect(withComment.parseNotes).toContain(
+      'Comments (// and /* */) were removed before parsing. JSON has no comments and ' +
+        'Grafana rejects them.',
+    );
+
+    const trailingComma = lintDashboard(
+      '{"title":"Bob’s board","schemaVersion":41,"panels":[],}',
+    );
+    expect(trailingComma.ok).toBe(true);
+    expect(trailingComma.parseNotes).toContain(
+      'Trailing commas were removed before parsing. Grafana rejects them.',
+    );
+
+    const truncated = lintDashboard('{"title":"l’API","schemaVersion":41,"panels":[{"type":"stat"');
+    expect(truncated.ok).toBe(false);
+    expect(truncated.error).toBe(
+      'Invalid JSON at line 1, column 61 — the JSON ends before it is complete.',
+    );
+  });
+
   it('5. unwraps a { dashboard: … } API response', () => {
     const result = lintDashboard(
       JSON.stringify({ meta: { slug: 'clean' }, dashboard: clean() }),
@@ -570,6 +599,41 @@ describe('rule: unused-variable', () => {
     });
     expect(ids(lint(dashboard))).toEqual([]);
   });
+
+  // Regression: `repeat` names its variable BARE, so the `$…` usage index never
+  // saw it and this rule told the reader to delete the variable that drives the
+  // repeat — while `repeat-undefined` was simultaneously treating `repeat` as a
+  // reference. The two rules disagreed.
+  it('counts a panel "repeat" as a use, in both the bare and the ${…} form', () => {
+    for (const repeat of ['server', '$server', '${server}']) {
+      const dashboard = mutated((d) => {
+        d.templating = {
+          list: [{ name: 'server', type: 'query', query: 'label_values(up, instance)' }],
+        };
+        firstPanel(d).repeat = repeat;
+      });
+      expect(ids(lint(dashboard)), repeat).toEqual([]);
+    }
+  });
+
+  // Regression: an adhoc filter variable is NEVER referenced by name — Grafana
+  // injects its filters into matching queries — so every dashboard using ad-hoc
+  // filters got "defined but never referenced … Delete it, or use it."
+  it('never reports an adhoc variable, which is referenced by name nowhere', () => {
+    const dashboard = mutated((d) => {
+      d.templating = {
+        list: [
+          {
+            name: 'filters',
+            type: 'adhoc',
+            datasource: { type: 'prometheus', uid: 'prom-main' },
+            filters: [],
+          },
+        ],
+      };
+    });
+    expect(ids(lint(dashboard))).toEqual([]);
+  });
 });
 
 describe('rule: legacy-var-syntax', () => {
@@ -850,6 +914,52 @@ describe('rule: time-range-absurd', () => {
       expect(ids(lint(mutated((d) => (d.time = time)))), JSON.stringify(time)).toEqual([]);
     }
   });
+
+  // Regression: `resolveTime` matched the `/unit` rounding suffix and then threw
+  // it away, so both bounds resolved to the same instant and EVERY rounded quick
+  // range in Grafana's own time picker — "Today", "Yesterday", "This week",
+  // "This month" — was reported as a zero-length range. Grafana floors `from`
+  // and ceils `to`, so these all have real width.
+  it('stays silent on Grafana’s rounded quick ranges, which are not zero-length', () => {
+    for (const time of [
+      { from: 'now/d', to: 'now/d' },
+      { from: 'now/d', to: 'now' },
+      { from: 'now-1d/d', to: 'now-1d/d' },
+      { from: 'now-2d/d', to: 'now-2d/d' },
+      { from: 'now-7d/d', to: 'now-7d/d' },
+      { from: 'now/w', to: 'now/w' },
+      { from: 'now/w', to: 'now' },
+      { from: 'now/M', to: 'now/M' },
+      { from: 'now/M', to: 'now' },
+      { from: 'now/y', to: 'now/y' },
+      { from: 'now/h', to: 'now/h' },
+      { from: 'now/Q', to: 'now/Q' },
+    ]) {
+      expect(ids(lint(mutated((d) => (d.time = time)))), JSON.stringify(time)).toEqual([]);
+    }
+  });
+
+  // Regression: the fiscal units Grafana parses fine (`fy`, `fQ`) were reported
+  // as "not a time Grafana can parse".
+  it('parses the fiscal rounding units instead of calling them unparseable', () => {
+    for (const time of [
+      { from: 'now/fy', to: 'now/fy' },
+      { from: 'now/fQ', to: 'now/fQ' },
+      { from: 'now-1y/fy', to: 'now-1y/fy' },
+    ]) {
+      expect(ids(lint(mutated((d) => (d.time = time)))), JSON.stringify(time)).toEqual([]);
+    }
+  });
+
+  it('still catches a genuinely backwards rounded range', () => {
+    const dashboard = mutated((d) => {
+      d.time = { from: 'now/d', to: 'now-1d/d' };
+    });
+    expect(one(lint(dashboard), 'time-range-absurd').message).toBe(
+      'The default time range runs backwards: "now/d" to "now-1d/d". Grafana shows an empty ' +
+        'dashboard.',
+    );
+  });
 });
 
 describe('rule: refresh-aggressive', () => {
@@ -1006,13 +1116,29 @@ describe('rule: panel-no-type', () => {
         'empty box.',
     );
     expect(d.hint).toBe(
-      'Add "type" — "timeseries", "stat", "table" and so on. Every panel Grafana exports has one.',
+      'Add "type" — "timeseries", "stat", "table" and so on. Library panels are the one ' +
+        'exception, and they are not reported.',
     );
   });
 
   it('fires on an empty or non-string type', () => {
     expect(all(lint(mutated((d) => (firstPanel(d).type = ''))), 'panel-no-type')).toHaveLength(1);
     expect(all(lint(mutated((d) => (firstPanel(d).type = 7))), 'panel-no-type')).toHaveLength(1);
+  });
+
+  // Regression: `panel-no-type` used to raise an ERROR on a library panel saved
+  // exactly the way Grafana saves one — {id, title, gridPos, libraryPanel} and
+  // NO type — telling the reader to add a key Grafana itself omits.
+  it('stays silent on a library panel, which Grafana saves without a type', () => {
+    const dashboard = mutated((d) => {
+      (d.panels as Json[]).push({
+        id: 3,
+        title: 'Shared latency',
+        gridPos: { h: 8, w: 24, x: 0, y: 8 },
+        libraryPanel: { uid: 'kx9', name: 'Shared latency' },
+      });
+    });
+    expect(ids(lint(dashboard))).toEqual([]);
   });
 });
 
@@ -1118,6 +1244,20 @@ describe('realistic fixtures (the example chips)', () => {
     expect(all(result, 'unresolved-ds-input')).toHaveLength(1);
     expect(all(result, 'undefined-variable')).toEqual([]);
     expect(all(result, 'no-uid')).toHaveLength(1);
+  });
+
+  // Regression: the summary strip counted a `${DS_…}` import placeholder that
+  // `__inputs` DECLARES as an "unresolved variable", so the headline said
+  // "0 defined, 1 unresolved" while no variable was unresolved at all — and the
+  // page's own reference table says `${DS_PROMETHEUS}` is not a variable.
+  it('does not count a declared ${DS_…} placeholder as an unresolved variable', () => {
+    const result = lintDashboard(examples[4].json);
+    expect(result.stats.varsDefined).toBe(0);
+    expect(result.stats.varsUsed).toBe(0);
+    expect(result.stats.varsUnresolved).toBe(0);
+    expect(summaryLine(result)).toBe(
+      '1 error, 1 warning — variables: 0 defined, schemaVersion 39',
+    );
   });
 });
 
