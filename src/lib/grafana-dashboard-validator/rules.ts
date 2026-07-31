@@ -343,7 +343,21 @@ const unusedVariable: Rule = {
   id: 'unused-variable',
   severity: 'info',
   run: (ctx, emit) => {
+    const repeated = new Set<string>();
+    for (const node of ctx.panels) {
+      const repeat = node.raw.repeat;
+      if (typeof repeat !== 'string') continue;
+      // `repeat` names its variable BARE. Normalised the same way
+      // `repeat-undefined` normalises it, so the two rules cannot disagree.
+      const name = repeat.trim().replace(/^\$\{?/, '').replace(/\}$/, '');
+      if (name !== '') repeated.add(name);
+    }
     for (const variable of ctx.variables) {
+      // An ad-hoc filter variable can never be referenced by name: Grafana
+      // injects its filters into every matching query automatically. "Never
+      // referenced" would be true and the advice to delete it would be wrong.
+      if (variable.type === 'adhoc') continue;
+      if (repeated.has(variable.name)) continue;
       // A variable referenced only from inside its OWN definition is not used:
       // that is a self-referencing query, not a consumer.
       const used = ctx.usages.some(
@@ -623,38 +637,129 @@ const repeatUndefined: Rule = {
 
 /* ── 17. time-range-absurd ───────────────────────────────────────────────── */
 
-const UNIT_SECONDS: Record<string, number> = {
-  s: 1,
-  m: 60,
-  h: 3600,
-  d: 86_400,
-  w: 604_800,
-  M: 2_592_000,
-  y: 31_536_000,
+const UNIT_MS: Record<string, number> = {
+  s: 1_000,
+  m: 60_000,
+  h: 3_600_000,
+  d: 86_400_000,
+  w: 604_800_000,
+  M: 2_592_000_000,
+  Q: 7_776_000_000,
+  y: 31_536_000_000,
 };
 
 /** 366 days: "longer than a year" is a claim we can make without rounding. */
 const LONG_RANGE_SECONDS = 366 * 86_400;
 
-const NOW_RE = /^now(?:([+-])(\d+)([smhdwMy]))?(?:\/[smhdwMy])?$/;
+/**
+ * Grafana's date-math grammar. The trailing `/unit` is a ROUNDING suffix, and
+ * the fiscal units `fy` (fiscal year) and `fQ` (fiscal quarter) are part of it —
+ * `now/fy` is a range Grafana's own time picker offers.
+ */
+const NOW_RE = /^now(?:([+-])(\d+)([smhdwMQy]))?(?:\/(fy|fQ|[smhdwMQy]))?$/;
+
+/**
+ * Apply Grafana's `/unit` rounding. Grafana floors the `from` bound to the start
+ * of the period and ceils the `to` bound to its END (documented behaviour), which
+ * is why "now/d" to "now/d" means "today", not one instant. Rounding in UTC is
+ * deliberate: the dashboard timezone is unknowable here and only the LENGTH of
+ * the range matters to this rule.
+ */
+function roundBound(ms: number, unit: string, bound: 'from' | 'to'): number {
+  const d = new Date(ms);
+  switch (unit) {
+    case 's':
+      d.setUTCMilliseconds(0);
+      break;
+    case 'm':
+      d.setUTCSeconds(0, 0);
+      break;
+    case 'h':
+      d.setUTCMinutes(0, 0, 0);
+      break;
+    case 'd':
+      d.setUTCHours(0, 0, 0, 0);
+      break;
+    case 'w': {
+      d.setUTCHours(0, 0, 0, 0);
+      // Grafana's week starts on Monday by default.
+      d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+      break;
+    }
+    case 'M':
+      d.setUTCHours(0, 0, 0, 0);
+      d.setUTCDate(1);
+      break;
+    case 'Q':
+    case 'fQ':
+      d.setUTCHours(0, 0, 0, 0);
+      d.setUTCDate(1);
+      d.setUTCMonth(Math.floor(d.getUTCMonth() / 3) * 3);
+      break;
+    case 'y':
+    case 'fy':
+      d.setUTCHours(0, 0, 0, 0);
+      d.setUTCMonth(0, 1);
+      break;
+    default:
+      return ms;
+  }
+  const floored = d.getTime();
+  if (bound === 'from') return floored;
+  // The end of the period: the start of the next one, minus a millisecond.
+  const next = new Date(floored);
+  switch (unit) {
+    case 's':
+      next.setUTCSeconds(next.getUTCSeconds() + 1);
+      break;
+    case 'm':
+      next.setUTCMinutes(next.getUTCMinutes() + 1);
+      break;
+    case 'h':
+      next.setUTCHours(next.getUTCHours() + 1);
+      break;
+    case 'd':
+      next.setUTCDate(next.getUTCDate() + 1);
+      break;
+    case 'w':
+      next.setUTCDate(next.getUTCDate() + 7);
+      break;
+    case 'M':
+      next.setUTCMonth(next.getUTCMonth() + 1);
+      break;
+    case 'Q':
+    case 'fQ':
+      next.setUTCMonth(next.getUTCMonth() + 3);
+      break;
+    default:
+      next.setUTCFullYear(next.getUTCFullYear() + 1);
+      break;
+  }
+  return next.getTime() - 1;
+}
 
 /**
  * Resolve a Grafana time expression to seconds on one shared axis, so relative
  * and absolute bounds can be compared with each other. `now` is a single
- * reference read once per call, never per bound.
+ * reference read once per call, never per bound. `bound` decides which way a
+ * `/unit` rounding suffix goes.
  */
-function resolveTime(value: unknown, nowSeconds: number): number | null {
+function resolveTime(value: unknown, nowMs: number, bound: 'from' | 'to'): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value / 1000;
   if (typeof value !== 'string') return null;
   const text = value.trim();
   if (text === '') return null;
   const relative = NOW_RE.exec(text);
   if (relative) {
-    if (!relative[1]) return nowSeconds;
-    const unit = UNIT_SECONDS[relative[3]];
-    if (unit === undefined) return null;
-    const offset = Number(relative[2]) * unit;
-    return relative[1] === '-' ? nowSeconds - offset : nowSeconds + offset;
+    let ms = nowMs;
+    if (relative[1]) {
+      const unit = UNIT_MS[relative[3]];
+      if (unit === undefined) return null;
+      const offset = Number(relative[2]) * unit;
+      ms = relative[1] === '-' ? ms - offset : ms + offset;
+    }
+    if (relative[4]) ms = roundBound(ms, relative[4], bound);
+    return ms / 1000;
   }
   if (/^-?\d+$/.test(text)) return Number(text) / 1000;
   const parsed = Date.parse(text);
@@ -674,9 +779,9 @@ const timeRangeAbsurd: Rule = {
     const { from, to } = time;
     if (from === undefined || to === undefined || from === null || to === null) return;
 
-    const nowSeconds = Date.now() / 1000;
-    const fromSeconds = resolveTime(from, nowSeconds);
-    const toSeconds = resolveTime(to, nowSeconds);
+    const nowMs = Date.now();
+    const fromSeconds = resolveTime(from, nowMs, 'from');
+    const toSeconds = resolveTime(to, nowMs, 'to');
     const fromLabel = timeText(from);
     const toLabel = timeText(to);
 
@@ -731,7 +836,7 @@ const refreshAggressive: Rule = {
     // An interval this linter cannot parse is left alone: guessing what
     // "1m30s" means would be guessing.
     if (!match) return;
-    const seconds = Number(match[1]) * UNIT_SECONDS[match[2]];
+    const seconds = (Number(match[1]) * UNIT_MS[match[2]]) / 1000;
     if (!Number.isFinite(seconds) || seconds >= MIN_REFRESH_SECONDS) return;
     emit({
       id: 'refresh-aggressive',
@@ -854,6 +959,10 @@ const panelNoType: Rule = {
   run: (ctx, emit) => {
     for (const node of ctx.panels) {
       if (node.isRow || node.type !== null) continue;
+      // Grafana's save model reduces a library panel to {id, title, gridPos,
+      // libraryPanel} — the type lives in the library, not in this file. Same
+      // guard `empty-targets` already carries.
+      if (isPlainObject(node.raw.libraryPanel)) continue;
       emit({
         id: 'panel-no-type',
         severity: 'error',
@@ -863,8 +972,8 @@ const panelNoType: Rule = {
           `The panel ${panelRef(node)} has no "type", so Grafana has nothing to render it with ` +
           'and draws an empty box.',
         hint:
-          'Add "type" — "timeseries", "stat", "table" and so on. Every panel Grafana exports has ' +
-          'one.',
+          'Add "type" — "timeseries", "stat", "table" and so on. Library panels are the one ' +
+          'exception, and they are not reported.',
       });
     }
   },

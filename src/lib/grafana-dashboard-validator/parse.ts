@@ -352,12 +352,12 @@ export function stripJsonExtras(text: string): StripResult {
   return { text: out.join(''), removedComments, removedTrailingCommas };
 }
 
-/** `“ ” ‘ ’` — the quotes a document or chat window substitutes for `"`. */
+/**
+ * `“ ” ‘ ’` — the quotes a document or chat window substitutes for `"`. Tested
+ * against the ONE character the JSON scan faults on, never against the whole
+ * document: a curly apostrophe inside a legal string value is not an error.
+ */
 const SMART_QUOTES = /[“”‘’]/;
-
-export function hasSmartQuotes(text: string): boolean {
-  return SMART_QUOTES.test(text);
-}
 
 /**
  * Grafana provisioning YAML, recognised textually. Conservative on purpose: the
@@ -420,16 +420,6 @@ export function parseDashboardText(input: string): ParseOutcome {
           'dashboard JSON itself — in Grafana it is under Dashboard settings → JSON Model.',
       };
     }
-    if (hasSmartQuotes(text)) {
-      return {
-        ok: false,
-        error:
-          'This text contains typographic quotes (“ ” ‘ ’) where JSON needs ' +
-          'plain double quotes — it was probably copied out of a document or a chat window. Copy ' +
-          'it again from a plain-text view, or from Grafana’s Dashboard settings → JSON Model.',
-      };
-    }
-
     const stripped = stripJsonExtras(text);
     if (stripped.removedComments || stripped.removedTrailingCommas) {
       const relaxed = tryParse(stripped.text);
@@ -455,6 +445,20 @@ export function parseDashboardText(input: string): ParseOutcome {
           error:
             'This is not valid JSON, and the exact position could not be identified. Compare it ' +
             'against Grafana’s Dashboard settings → JSON Model view.',
+        };
+      }
+      // Typographic quotes are only THIS file's problem when the parse actually
+      // trips over one. Checking the whole document first turned every
+      // recoverable file that merely contains a curly apostrophe — in a title,
+      // a description, text-panel markdown — into a hard refusal with the wrong
+      // instruction, and skipped the lenient re-parse entirely.
+      if (SMART_QUOTES.test(stripped.text.charAt(fault.index))) {
+        return {
+          ok: false,
+          error:
+            'This text contains typographic quotes (“ ” ‘ ’) where JSON needs ' +
+            'plain double quotes — it was probably copied out of a document or a chat window. Copy ' +
+            'it again from a plain-text view, or from Grafana’s Dashboard settings → JSON Model.',
         };
       }
       const at = lineColOf(stripped.text, fault.index);
@@ -847,9 +851,16 @@ export function buildContext(
 
   const definedNames = new Set(variables.map((v) => v.name));
 
+  const declaredInputs = new Set(inputNames);
   const usedNames = new Set<string>();
   for (const usage of usages) {
-    if (!isBuiltInVariable(usage.name)) usedNames.add(usage.name);
+    if (isBuiltInVariable(usage.name)) continue;
+    // A `${DS_…}` placeholder that `__inputs` DECLARES is resolved, and it is
+    // not a template variable either — counting it as an unresolved variable
+    // made the summary strip contradict both the diagnostics and the page's own
+    // reference table.
+    if (isDatasourceInputName(usage.name) && declaredInputs.has(usage.name)) continue;
+    usedNames.add(usage.name);
   }
   const unresolved = new Set<string>();
   for (const name of usedNames) {
