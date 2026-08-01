@@ -68,7 +68,18 @@ export default defineConfig({
   webServer: {
     command: `npm run preview -- --port ${PREVIEW_PORT}`,
     url: PREVIEW_ORIGIN,
-    reuseExistingServer: true,
+    // Do NOT reuse whatever happens to be on this port. Reuse cost this project
+    // hours across three separate incidents: once a leftover `astro preview`
+    // from the main checkout served the PREVIOUS build to a worktree's tests, and
+    // once a stray `astro dev` was adopted — a dev server renders from source
+    // rather than dist/, so pages that exist in the build 404'd and every journey
+    // failed with "#playground not found". Both times the suite looked like it
+    // had found real regressions and had actually tested the wrong thing.
+    //
+    // Starting our own server means a busy port is a loud, immediate error
+    // instead of a silent wrong answer. If you are iterating locally and want to
+    // keep a server warm, set OC_E2E_REUSE=1 deliberately.
+    reuseExistingServer: process.env.OC_E2E_REUSE === '1',
     timeout: 120_000,
   },
 });
