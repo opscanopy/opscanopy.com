@@ -138,7 +138,21 @@ import { UTILITIES_FIXTURES } from './fixtures/utilities';
  * Fixtures that have been RUN and are known to describe their tool correctly.
  * These are the gate: they must stay green, so a red run means a regression.
  */
-const VERIFIED: ToolFixture[] = [...ROLLOUT_FIXTURES];
+/**
+ * Pre-existing tools that have since been RUN down and came back fully green.
+ * Promoted out of CANDIDATES one at a time, by slug, as each is proven — the
+ * fixture itself stays in its batch module so there is a single home per tool.
+ */
+const PROMOTED_SLUGS = new Set([
+  // 13/13 across J1-J8, twice, with no flake. The only one of the six networking
+  // tools that already meets the whole UX contract.
+  'subnet-calculator',
+]);
+
+const VERIFIED: ToolFixture[] = [
+  ...ROLLOUT_FIXTURES,
+  ...NETWORKING_FIXTURES.filter((f) => PROMOTED_SLUGS.has(f.slug)),
+];
 
 /**
  * Authored but NOT yet verified against a real run.
@@ -160,7 +174,7 @@ const VERIFIED: ToolFixture[] = [...ROLLOUT_FIXTURES];
  * confirmed as genuine tool defects and filed.
  */
 const CANDIDATES: ToolFixture[] = [
-  ...NETWORKING_FIXTURES,
+  ...NETWORKING_FIXTURES.filter((f) => !PROMOTED_SLUGS.has(f.slug)),
   ...OBSERVABILITY_FIXTURES,
   ...CICD_FIXTURES,
   ...SECURITY_ENCODING_FIXTURES,

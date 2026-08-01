@@ -14,25 +14,66 @@
  * evaluation at all — there is no debounce, no error hold, and no
  * `aria-invalid` anywhere in any of the five components.
  *
- * The fixture values below are all VERIFIED against the built `dist/` through
- * `astro preview` (every `seededResultString` read out of the boot-seeded
- * results container; every `calmErrorString` read back out of the rendered
- * error card after forcing a run; every `xssPayload` confirmed to reach the
- * results as `&lt;img` with no raw `<img` anywhere in that container's
- * innerHTML). So a red journey here is a statement about the TOOL, not about
- * this table. In particular:
+ * PROVENANCE — 2026-08-01. This table was authored blind (the batch agent was
+ * killed by a spend limit before it ran a journey) and its header used to claim
+ * it had been verified. It had not been. It has now: the whole batch was run
+ * against the built `dist/` through `astro preview`, twice, with identical
+ * results — 12 passed / 58 failed of 70 — and every field below was
+ * additionally re-derived from the live pages:
+ *
+ *   - every `seededResultString` read out of the boot-seeded results container;
+ *   - every `calmErrorString` compared BYTE-FOR-BYTE against the rendered error
+ *     card after forcing a run (all five match exactly, curly quotes, backticks,
+ *     U+2014 dash and U+2026 ellipsis included);
+ *   - every `xssPayload` confirmed to reach the results as text, with `&lt;`
+ *     present and no raw `<img` anywhere in that container's innerHTML;
+ *   - every `hashKey`, `inputSelector` and `resultsSelector` confirmed live.
+ *
+ * NOTHING IN THE DATA BELOW WAS CHANGED, because nothing in it was wrong. All
+ * 58 failures are the tools, or are journey steps that cannot be expressed for
+ * an explicit-Run island. Do not weaken a journey, and do not repoint a selector
+ * at something that happens to be green, to make any of that disappear.
+ *
+ * WHAT THE RUN ACTUALLY FOUND (all confirmed, all reproducible):
  *
  *   - no tool has example CHIPS (`[role="group"][aria-label="Examples"]`) — all
- *     five use the `<select id="…-example">` the contract explicitly rejects;
- *   - no tool has `data-copy-all`, and only two have any `data-copy` at all;
- *   - no tool renders the pinned hint line;
- *   - nothing evaluates while typing, so J2's diagnostic step and J4's
- *     "move away from the saved state" step cannot be reached by typing;
+ *     five use the `<select id="…-example">` the contract explicitly rejects.
+ *     Kills J3/chip-2 (×5), J6 (×5) and J8's deep-link half.
+ *   - no tool has `data-copy-all`; loki / prt / amr have no `data-copy` at all;
+ *     `promql-explainer` has `data-copy` but NO sr-only `role="status"`
+ *     copy-status span. Kills J1 (×10) and J5/keyboard (×4).
+ *   - no tool renders the pinned hint line. Kills J8 (×5). The /de/ pages DO
+ *     boot the island and DO render the seeded result — J8 gets that far.
+ *   - nothing evaluates while typing, so the diagnostic never surfaces (J2 ×5),
+ *     the saved state can never be moved away from (J4 ×5), and the results
+ *     never re-render after the payload is entered (J7 ×5). J7's five reds are
+ *     FALSE NEGATIVES on escaping: escaping was verified by hand and is correct
+ *     in all five.
  *   - `prometheus-relabel-tester` and `alertmanager-route-tester` write their
- *     deep-link fragment on the BOOT SEED.
+ *     deep-link fragment on the BOOT SEED (J3 ×2). prt has no `userInitiated`
+ *     parameter at all and also records last-input on boot; amr HAS the gate but
+ *     the `replaceState` call sits outside it.
+ *   - axe fails on all five (J5 ×5): `aria-input-field-name` on every CodeMirror
+ *     `.cm-content` (the `aria-label` is on the host div, not the `role=textbox`
+ *     content DOM — the six contract-era CM tools fix this with
+ *     `EditorView.contentAttributes.of({'aria-label': …})`), plus `color-contrast`
+ *     on the dark instrument slab.
  *
- * Do not weaken a journey, and do not repoint a selector at something that
- * happens to be green, to make any of that disappear.
+ * TWO REDS THAT ARE NOT TOOL DEFECTS — do not "fix" the tool for these:
+ *
+ *   - J3's junk-hash step is inexpressible for four of the five. It builds the
+ *     fragment as `hashKey + encodeURIComponent(invalidInput)`, which only makes
+ *     a well-formed payload when the deep link is PLAINTEXT. Only
+ *     `promql-explainer` (`#q=`, via `createHashState('q')`) is — and it passes.
+ *     The other four base64url-encode a composite, so junk decodes to null and
+ *     they degrade to the example seed. Degrading to the seed is defensible;
+ *     the fixture table simply has no field to say so.
+ *   - J5's Escape step fails on prt + amr at its SECOND assertion, not its
+ *     first: Escape does blur the editor (assertion 1 passes). The following Tab
+ *     then lands in the island's other CodeMirror pane, and
+ *     `focusIsInCodeMirror` is true for ANY `.cm-editor` on the page. loki has
+ *     two editors too and passes only because its snapshot row sits between
+ *     them. The tab order is correct; the assertion assumes one editor.
  */
 import type { ToolFixture } from '../tools.fixtures';
 

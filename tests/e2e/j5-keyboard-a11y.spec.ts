@@ -81,7 +81,29 @@ test.describe('J5 keyboard + a11y', () => {
 
       // Enter commits immediately (no waiting out the debounce).
       await page.keyboard.press('Enter');
-      await expect(resultsOf(page, fixture)).not.toBeEmpty();
+      const results = resultsOf(page, fixture);
+      await expect(results).not.toBeEmpty();
+
+      // Wait for the results to STOP changing before resolving a copy control.
+      // `not.toBeEmpty()` is satisfied instantly by the render that was already on
+      // screen, but Enter also starts a debounce — and in a tool whose eval is
+      // async (hash-generator re-runs Web Crypto, rewriting #hash-results at
+      // ~+207ms) the container is replaced wholesale a moment later. Focusing
+      // before that lands puts focus on a button that is then destroyed, so
+      // `toBeFocused()` re-resolves against its replacement and fails on a tool
+      // that is behaving perfectly. Same stale-read class as the J7 and J3 bugs.
+      let previous = '';
+      await expect
+        .poll(
+          async () => {
+            const now = await results.innerHTML();
+            const settled = now === previous && now.length > 0;
+            previous = now;
+            return settled;
+          },
+          { message: 'results never stopped re-rendering after Enter', timeout: 7000 },
+        )
+        .toBe(true);
 
       // A copy control takes focus and Enter activates it, updating sr-only status.
       const copyRow = page.locator(SEL.copyRow).first();

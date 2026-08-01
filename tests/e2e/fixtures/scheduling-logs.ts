@@ -6,6 +6,20 @@
  * One module per batch, composed by ../tools.fixtures.ts. Field rules live in
  * that file's doc comment — read it first.
  *
+ * ── VERIFICATION STATUS — RUN 2026-08-01, TWICE, IDENTICAL ──────────────────
+ *
+ * 16 passed / 38 failed. Every field below has now been executed against the
+ * real build, and every remaining failure has been traced to a TOOL gap or to a
+ * journey the batch's shape cannot express — none to this table. One fixture
+ * correction was made (regex-log-tester `family`, see that entry).
+ *
+ * Independently re-derived from the engines by bundling them with esbuild and
+ * running them in node: the four `seededResultString`s, the four
+ * `calmErrorString`s, and the four `xssPayload` echoes. Independently confirmed
+ * in a live browser: the three `hashKey`s (`#cron=`, `#s=`, `#s=`) are the
+ * fragments the playgrounds really write on a user-initiated eval, and
+ * cron-to-systemd really writes none.
+ *
  * ── READ THIS BEFORE "FIXING" A FAILING JOURNEY IN THIS FILE ────────────────
  *
  * These four tools SHIP BEFORE the playground UX contract (CLAUDE.md,
@@ -20,11 +34,23 @@
  *                          "Copy as Markdown", never a copy-all;
  *   - the hint line      — "Results update as you type — press Enter to run
  *                          now." appears in none of the four components;
- *   - the ~600ms calm-error HOLD — each one renders the diagnostic straight off
- *                          its debounce (120 / 160 / 220 ms).
+ *   - the ~600ms calm-error HOLD — no component in this batch defines an
+ *                          ERROR_HOLD at all.
  *
  * Three of the four also have no sr-only `role="status"` copy-status span
- * (cron-to-systemd is the exception: `#cs-announce`).
+ * (cron-to-systemd is the exception: `#cs-announce`), and cron-expression-tester
+ * / k8s-resource-calculator never set `aria-invalid` on their inputs — they flag
+ * the field with a CSS class (`.cron-input--error`, `.k8s-text--error`) only.
+ * regex-log-tester is the one tool here that does set it.
+ *
+ * CORRECTION to an earlier draft of this header, and it matters for how three
+ * failures read: cron-to-systemd does NOT "render the diagnostic straight off
+ * its debounce". It has no debounce and no live evaluation whatsoever — it is
+ * driven by a `#cs-convert` BUTTON (⌘/Ctrl+Enter is the only key path). Typing
+ * into its editor changes nothing on screen, which is why J2, J4 and J7 fail
+ * there: all three type or `fill()` and then wait for a re-render that this tool
+ * never performs unaided. The live-eval debounces that DO exist are
+ * cron-expression-tester 120ms, regex-log-tester 160ms, k8s 220ms.
  *
  * Every one of those is a TOOL gap that the journeys are supposed to catch. The
  * fixture entries below are written to be as CORRECT as the tools allow, so the
@@ -139,10 +165,29 @@ export const SCHEDULING_LOGS_FIXTURES: ToolFixture[] = [
   {
     // ── Regex Log Tester ──────────────────────────────────────────────────
     //
-    // `family: 'cm'` because the island lazily imports `@codemirror/state` for
-    // its sample-log editor. But `inputSelector` points at the PATTERN FIELD
-    // (`#rx-pattern`), not at that editor, and the two facts are in tension —
-    // see the note at the bottom of this entry.
+    // `family: 'textarea'`, CORRECTED from `'cm'` on 2026-08-01 after the first
+    // real run. The island does lazily import `@codemirror/state` for its
+    // sample-log editor, so `'cm'` looked right — but `family` does not describe
+    // the island, it describes the element `inputSelector` names, and it is the
+    // ONLY thing that tells the journeys how to drive that element. Here
+    // `inputSelector` is `#rx-pattern`, a plain `<input>` (verified:
+    // `tagName === 'INPUT'`), so `'cm'` was internally inconsistent with this
+    // file's own field rule ("for cm/cm-wasm point inputSelector at the
+    // CodeMirror content DOM"). Two concrete consequences, both wrong:
+    //   - `readInputText` would call `.innerText()` on an `<input>` and read '';
+    //   - J5's family-gated "Escape releases the CodeMirror focus trap" clicked
+    //     `#rx-pattern` and then asserted focus was inside `.cm-editor`, which
+    //     can never be true. It failed on `clicking the editor should focus it`
+    //     — a red that said nothing about the tool.
+    // The binding it was trying to test is genuinely present and genuinely
+    // works: driving `#rx-editor .cm-content` directly in a browser gives focus
+    // in CM = true, and after Escape = false (source: keymap entry at
+    // RegexLogTesterPlayground.astro:1259). The coverage loss is real and is
+    // filed as a structural limit — one fixture cannot name two input surfaces.
+    // Confirmed safe: J5's axe scan drops `scrollable-region-focusable` for the
+    // CM families, and re-running the scan WITH that rule enabled on this page
+    // still reports the same two violations, so the family flip changes no other
+    // assertion.
     //
     // Pointing at the pattern field is what makes the two payloads below
     // meaningful. The sample log has NO grammar: no sample text is "invalid",
@@ -171,15 +216,23 @@ export const SCHEDULING_LOGS_FIXTURES: ToolFixture[] = [
     // V8 wording is used only as the echo VEHICLE here; nothing in this table
     // pins it.
     //
-    // KNOWN FIXTURE/HARNESS TENSION: J5's "Escape releases the CodeMirror focus
-    // trap" is gated on `family` but drives `inputSelector`, and on this island
-    // those are two different elements. The sample editor's keymap DOES carry
-    // the `Escape → contentDOM.blur()` binding, so the behaviour exists; the
-    // harness just cannot reach it through a one-input fixture. Do not "fix"
-    // this by moving `inputSelector` onto `.cm-content` — that would silently
-    // turn J2, J4 and J7 into vacuous passes.
+    // `hashKey: '#s='` is right — `engine.encodeState()` returns
+    // `'#s=' + base64UrlEncode(JSON.stringify({pattern,flags,text}))` and the
+    // playground `replaceState`s it on every valid user-initiated run (observed
+    // live). But note that the fragment is an OPAQUE ENVELOPE, not a raw
+    // payload, so J3's junk-hash step — which builds `hashKey +
+    // encodeURIComponent(invalidInput)` — produces `#s=(a%2B)%2B`, which is not
+    // decodable base64url JSON at all. `decodeState()` returns null and the boot
+    // seed runs. That assertion cannot be satisfied by any envelope-encoded tool
+    // and is filed as a structural limit; do NOT weaken `invalidInput` to chase
+    // it, because J2 needs `(a+)+` to stay a typed pattern.
+    //
+    // Do not "fix" the lost Escape coverage by moving `inputSelector` onto
+    // `.cm-content` and putting `family` back to `'cm'` — the sample log has no
+    // grammar, so J2's `invalidInput`, J3's junk hash and J7's payload would all
+    // become vacuous passes against a field that cannot reject anything.
     slug: 'regex-log-tester',
-    family: 'cm',
+    family: 'textarea',
     hashKey: '#s=',
     seededResultString: '198.51.100.22',
     invalidInput: '(a+)+',
@@ -205,7 +258,12 @@ export const SCHEDULING_LOGS_FIXTURES: ToolFixture[] = [
     //
     // `hashKey: '#s='` — `engine.encodeState()` writes
     // `'#s=' + base64UrlEncode(JSON.stringify({rows:[…]}))` and the playground
-    // replaceStates it on every valid user-initiated eval.
+    // replaceStates it on every valid user-initiated eval (observed live: the
+    // hash is empty after boot and becomes `#s=eyJyb3dzIjpb…` after picking
+    // example 2). Same OPAQUE-ENVELOPE caveat as regex-log-tester: J3's junk
+    // hash is `#s=banana`, `decodeState()` cannot decode it, returns null, and
+    // the boot seed renders — a structural limit of the journey, not a wrong
+    // `invalidInput`. `banana` must stay a typed CPU quantity for J2 and J4.
     //
     // `seededResultString` is the "Total memory request" row of the first
     // example (256Mi × 3 replicas), verified by running `calculate()`:

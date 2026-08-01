@@ -12,6 +12,36 @@
  * One module per batch, composed by ../tools.fixtures.ts. Field rules live in
  * ../tools.fixtures.ts — read that doc comment first.
  *
+ * ── VERIFIED 2026-08-01 (the run these fixtures were authored blind against) ──
+ *
+ * 78 journeys (6 tools × 13). 43 pass, 35 fail. NOT ONE failure was a fixture
+ * bug: every `slug`, `family`, `hashKey`, `seededResultString`, `invalidInput`,
+ * `calmErrorString`, `inputSelector` and `resultsSelector` below survived
+ * contact with a real run unchanged. The 35 failures split into contract
+ * violations in four playgrounds that predate the contract, plus three
+ * structural limits the journey shape cannot express. Per-tool tallies:
+ *
+ *   subnet-calculator      13/13  ✅ clean sweep
+ *   cidr-checker           12/13  J2 only (no calm-error hold, no aria-invalid)
+ *   ip-address-converter    7/13  J1×2 J2 J3 J6 J8
+ *   mac-address-formatter   4/13  J1×2 J2 J3 J5×2 J6 J7 J8
+ *   reverse-dns-ptr         4/13  J1×2 J2 J3 J5×2 J6 J7 J8
+ *   subnet-splitter         3/13  J1×2 J2 J3 J4 J5×2 J6 J7 J8
+ *
+ * THE HEADLINE FINDING — the calm-error hold exists in exactly one of six.
+ * `ERROR_HOLD_MS` appears only in SubnetCalculatorPlayground.astro (line 674).
+ * The other five render the diagnostic the instant their debounce fires, so J2
+ * measured the error surfacing at 394ms (cidr-checker, 220ms debounce), 259ms
+ * (ip-converter, 140ms), 146ms (mac, 140ms), 166ms (ptr, 140ms) and 355ms
+ * (splitter, 220ms) after the last keystroke — all inside the 500ms calm
+ * window, all far short of the contract's ~600ms hold. Crucially J2 reported
+ * `diagnostic: true` in every case, which is the run PROVING each
+ * `calmErrorString` below is byte-exact: the string the tool rendered is the
+ * string pinned here. The tools are wrong about WHEN, not about WHAT.
+ *
+ * Only ip-address-converter sets `aria-invalid` at all; cidr-checker, mac, ptr
+ * and splitter leave it unset even after the diagnostic is on screen.
+ *
  * ── What every entry here has in common ──────────────────────────────────────
  *
  * All six are `family: 'textarea'`: not one of them lazy-imports
@@ -69,6 +99,8 @@ export const NETWORKING_FIXTURES: ToolFixture[] = [
     // while the value ends in `[.:\s]` — so a slow keystroke burst degrades into
     // "no diagnostic yet" rather than into a DIFFERENT diagnostic, which is what
     // makes J2's calm window measurable here rather than accidental.
+    //
+    // VERIFIED: 13/13. The only tool in the batch that passes every journey.
     slug: 'subnet-calculator',
     family: 'textarea',
     hashKey: '#ip=',
@@ -108,6 +140,12 @@ export const NETWORKING_FIXTURES: ToolFixture[] = [
     // echoes the offending line through `escapeHtml(e.line)` into a
     // `cdc-line--bad` row — untrusted input reaching the output on the SUCCESS
     // path, which is a stronger probe than reaching it through an error card.
+    //
+    // VERIFIED: 12/13. J2 is the sole failure and it is the tool's, exactly as
+    // predicted above — the diagnostic (the pinned string, matched) surfaced
+    // 394ms after the last keystroke with `aria-invalid` still unset. The
+    // stronger-probe J7 payload works: it passes, so the success-path escaping
+    // really is proven here and not vacuously.
     slug: 'cidr-checker',
     family: 'textarea',
     hashKey: '#list=',
@@ -138,6 +176,15 @@ export const NETWORKING_FIXTURES: ToolFixture[] = [
     //
     // `invalidInput` and its diagnostic are pinned by `engine.test.ts` →
     // "targeted errors (exact strings)".
+    //
+    // VERIFIED: 7/13, and every failure is one of the two documented
+    // violations or a consequence of them. J3-chip2 and J6 die on
+    // `SEL.chips` counting 0 (the `<select>`); J8 dies on the missing hint
+    // line; J1 dies on `[data-copy-all]` not existing (its "Copy all" carries
+    // `data-copy` + `data-copy-label`, so the shared copy-all selector finds
+    // nothing). J2 is the batch-wide missing hold. Everything the tool DOES
+    // implement passes: J3 boot-seed, J3 junk-hash (so the `#ip=` READ path is
+    // confirmed), J4, all three J5s, J7.
     slug: 'ip-address-converter',
     family: 'textarea',
     hashKey: '#ip=',
@@ -179,6 +226,18 @@ export const NETWORKING_FIXTURES: ToolFixture[] = [
     // untrusted text — good for security, but it means J7's "the payload must
     // reach the output" precondition is structurally unreachable. Reported, not
     // worked around.
+    //
+    // VERIFIED: 4/13. Every prediction in this comment held. J7 confirmed the
+    // XSS-immunity claim empirically — the results read "Could not read that
+    // address / Not a valid 48-bit MAC address…", i.e. the constant, with the
+    // payload nowhere in the DOM. All five of J7's security assertions passed;
+    // only the echo PRECONDITION failed, so this is a structural limit, not a
+    // security gap. J1 got PAST `SEL.copyRow` (it matched `#mac-share`, exactly
+    // as predicted) and then died — together with both J5 failures — on
+    // `.sr-only[role="status"]` counting 0. J3-chip2, J6 and J8 are the
+    // `<select>` / no-hint-line pair. Note the `data-copy-value` divergence is
+    // NOT an analytics break: `Layout.astro`'s `isCopyControl` (line 144)
+    // matches `[data-copy-value]` too, so `result_copied` does fire.
     slug: 'mac-address-formatter',
     family: 'textarea',
     hashKey: '#mac=',
@@ -213,6 +272,18 @@ export const NETWORKING_FIXTURES: ToolFixture[] = [
     // this engine emits is rebuilt from the parsed BigInt (PTR name, zone, note,
     // `dig -x`), and the failure path is the constant above. Nothing untrusted
     // reaches the results container. Reported, not worked around.
+    //
+    // VERIFIED: 4/13. `hashKey: null` is confirmed correct — BOTH null-branch
+    // assertions passed, so the boot seed really does run with an unknown `#s=`
+    // key present and the tool really never writes a fragment. J7 confirmed the
+    // XSS-immunity claim: results read "Could not read that address / Enter an
+    // IP or IP/prefix…", the constant, with all security assertions green and
+    // only the echo precondition unmet. J1 and J5-keyboard both died EARLIER
+    // than the mac formatter did — `SEL.copyRow` matched ZERO nodes, because
+    // this playground has no `[data-copy]` attribute anywhere (its row buttons
+    // are `data-copy-value` only, and unlike mac it has no `#…-share` button
+    // carrying plain `data-copy`). J5-live-regions: `.sr-only[role="status"]`
+    // counts 0. J3-chip2, J6 and J8 are the `<select>` / no-hint-line pair.
     slug: 'reverse-dns-ptr',
     family: 'textarea',
     hashKey: null,
@@ -255,6 +326,33 @@ export const NETWORKING_FIXTURES: ToolFixture[] = [
     // the prefix-mismatch message. `999.0.0.0/8` keeps 26 > 8, so the engine is
     // reached and returns `ERR_PARENT`. Every prefix of it is slash-free and also
     // fails to the same constant.
+    //
+    // VERIFIED: 3/13 — the worst in the batch, and it turned up ONE failure
+    // this comment did not predict.
+    //
+    // J4 fails, and it cannot be made to pass by any choice of
+    // `seededResultString`. `wireSnapshotUI` is wired with
+    // `getValue: () => parentInput.value.trim()` and a `setValue` that assigns
+    // the parent and then WIPES the other two fields
+    // (`prefixInput.value = ''; allocatedInput.value = '';`, lines 731-738).
+    // So a snapshot stores 1 of the tool's 3 inputs and restoring one destroys
+    // the other 2. Restoring the seeded state re-renders as
+    // "Free space (minimal CIDRs) · 1 block · 10.0.0.0/24 · Allocations · None"
+    // — the whole /24 free, no split section, no allocations — which shares no
+    // substring with the seeded render (free 10.0.0.64/26 + 10.0.0.192/26,
+    // "Split into /26", two allocation rows; the literal "10.0.0.0/24" never
+    // appears in it). J4 needs one string present in BOTH renders and no such
+    // string exists. Left failing on purpose: see the findings note.
+    //
+    // J7 fails on the echo precondition exactly as reasoned above — results
+    // read "Nothing to split / Enter a valid parent CIDR…", and
+    // `src/lib/subnet-splitter/engine.ts` confirms `ERR_PARENT` (line 22) is
+    // the only string the parent path can produce. All security assertions
+    // passed. J1 and J5-keyboard die on `SEL.copyRow` matching zero nodes:
+    // this playground has NO copy control of any kind — not `data-copy`, not
+    // `data-copy-value`, not `data-copy-all`. J5-live-regions: no sr-only
+    // status. J3-chip2, J6, J8: `<select>` / no hint line. The `hashKey: null`
+    // claim is confirmed by both null-branch assertions passing.
     slug: 'subnet-splitter',
     family: 'textarea',
     hashKey: null,

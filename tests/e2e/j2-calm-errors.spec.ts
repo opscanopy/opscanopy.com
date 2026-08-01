@@ -51,12 +51,35 @@ test.describe('J2 calm errors', () => {
 
         const atEnd = await errorSignals(page, fixture);
         if (!isCalm(atEnd)) {
-          // The burst stalled past the hold — see this file's header. Discard.
+          if (attempt < MAX_ATTEMPTS) {
+            // The burst may simply have stalled past the hold — see this file's
+            // header. Discard and retry.
+            continue;
+          }
+          // Attempts exhausted. Do NOT report this as "the machine was too slow":
+          // a tool with NO hold at all reaches this branch every time, because any
+          // eval firing during the burst leaves its diagnostic up permanently, so
+          // isCalm() can never be true. Blaming the harness there hides a real
+          // contract violation behind an "unmeasurable" message — it misread a
+          // zero-hold tool as flaky infrastructure roughly half the time.
+          // Measure the truth instead: retype from empty and time the first error.
+          await typeInput(page, fixture, '', 0);
+          await page.waitForTimeout(CALM_WINDOW_MS);
+          await typeInput(page, fixture, fixture.invalidInput, KEY_DELAY_MS);
+          const t0 = Date.now();
+          let firstErrorAt: number | null = null;
+          while (Date.now() - t0 < CALM_WINDOW_MS && firstErrorAt === null) {
+            if (!isCalm(await errorSignals(page, fixture))) firstErrorAt = Date.now() - t0;
+            else await page.waitForTimeout(40);
+          }
           expect(
-            attempt,
-            `typing kept stalling past the calm hold, so the hold could never be ` +
-              `measured. Last state: ${JSON.stringify(atEnd)}`,
-          ).toBeLessThan(MAX_ATTEMPTS);
+            firstErrorAt,
+            firstErrorAt === null
+              ? `the calm window could not be measured after ${MAX_ATTEMPTS} attempts`
+              : `no calm-error hold: the error surfaced ${firstErrorAt}ms after the last ` +
+                `keystroke, but the contract holds it for ~${CALM_WINDOW_MS}ms. ` +
+                `This is a tool defect, not a slow machine.`,
+          ).toBeNull();
           continue;
         }
 
