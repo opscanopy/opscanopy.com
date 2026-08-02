@@ -28,6 +28,7 @@
 //      exactly this. A target that cannot express a canonical does not get prose.
 
 import { readFile, readdir, stat } from 'node:fs/promises';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -56,6 +57,46 @@ const ONLY_TARGET = flag('--target', null);
  */
 const MAX_PER_RUN = 3;
 const DEFAULT_PUBLISH_LIMIT = 2;
+
+/**
+ * Minimum hours since the target's most recent post before publishing again.
+ * 20 rather than 24 so "same time tomorrow" is never rejected by a few minutes,
+ * while a second session on the same day is.
+ */
+const MIN_GAP_HOURS = 20;
+const FORCE = args.includes('--force');
+
+/**
+ * Locally recorded time of the last successful publish, per target.
+ *
+ * The cadence guard cannot rely on the platform's own listing alone: dev.to's
+ * /api/articles lags publication by minutes to hours, so immediately after a run
+ * it still reports the PREVIOUS state. A guard reading only that would happily
+ * approve a second batch an hour later — which is exactly the burst it exists to
+ * prevent, and in testing it did precisely that.
+ *
+ * So the guard takes the LATER of what the platform reports and what we recorded
+ * ourselves. Gitignored; a missing file just means falling back to the remote view.
+ */
+const STATE_PATH = join(ROOT, '.syndicate-state.json');
+
+function readState() {
+  try {
+    return JSON.parse(readFileSync(STATE_PATH, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+function recordPublish(targetName) {
+  const state = readState();
+  state[targetName] = new Date().toISOString();
+  try {
+    writeFileSync(STATE_PATH, JSON.stringify(state, null, 2) + '\n', 'utf8');
+  } catch (err) {
+    console.warn(`   (could not record publish time: ${err.message})`);
+  }
+}
 const requested = Number(flag('--limit', '0'));
 const LIMIT = PUBLISH
   ? Math.min(requested || DEFAULT_PUBLISH_LIMIT, MAX_PER_RUN)
@@ -189,7 +230,13 @@ function foremTarget({ name, host, username }) {
         `https://${host}/api/articles?username=${encodeURIComponent(username)}&per_page=100`,
       );
       if (!res.ok) throw new Error(`${name}: list failed HTTP ${res.status}`);
-      return (await res.json()).map((a) => a.title);
+      const arr = await res.json();
+      // Stash timestamps for the cadence guard; the runner reads them separately.
+      this._published = arr.map((a) => a.published_at).filter(Boolean);
+      return arr.map((a) => a.title);
+    },
+    publishedTimestamps() {
+      return this._published ?? [];
     },
     async create(post, key) {
       const res = await fetch(`https://${host}/api/articles`, {
@@ -300,6 +347,7 @@ function blueskyTarget() {
       if (!process.env.BLUESKY_HANDLE) return [];
       await this.login();
       const seen = [];
+      const stamps = [];
       let cursor;
       for (let page = 0; page < 5; page++) {
         const u = new URL(`${HOST}/xrpc/app.bsky.feed.getAuthorFeed`);
@@ -312,11 +360,16 @@ function blueskyTarget() {
         for (const item of json.feed ?? []) {
           const ext = item.post?.record?.embed?.external?.uri;
           if (ext) seen.push(ext);
+          if (item.post?.record?.createdAt) stamps.push(item.post.record.createdAt);
         }
         cursor = json.cursor;
         if (!cursor) break;
       }
+      this._published = stamps;
       return seen;
+    },
+    publishedTimestamps() {
+      return this._published ?? [];
     },
 
     async create(post) {
@@ -400,6 +453,52 @@ for (const target of TARGETS) {
     continue;
   }
 
+  /**
+   * Cadence guard — refuses to publish too soon after the last post.
+   *
+   * The real spam signal is SHAPE, not volume. This account's history was 20 posts
+   * over 45 days — a healthy-looking 3.1/week — but spread across only FIVE active
+   * days: 9, then 2, then 1, 1, and 7. Long silences punctuated by bursts is what a
+   * bulk import looks like; a person writing looks like 2 posts on Tuesday and 2 on
+   * Friday. Averages hide that completely, so this checks recency directly.
+   *
+   * Bypassable with --force, which prints loudly, because a legitimate reason to
+   * override should still leave a trace in the log.
+   */
+  const stamps = (target.publishedTimestamps?.() ?? [])
+    .map((t) => Date.parse(t))
+    .filter((n) => Number.isFinite(n))
+    .sort((a, b) => b - a);
+
+  // Trust whichever source saw a post most recently — see STATE_PATH above for
+  // why the remote listing alone is not enough.
+  const localLast = Date.parse(readState()[target.name] ?? '');
+  if (Number.isFinite(localLast)) stamps.push(localLast);
+  stamps.sort((a, b) => b - a);
+
+  if (stamps.length) {
+    const hoursSince = (Date.now() - stamps[0]) / 3_600_000;
+    const inLast24 = stamps.filter((t) => Date.now() - t < 86_400_000).length;
+    const inLast7d = stamps.filter((t) => Date.now() - t < 7 * 86_400_000).length;
+    console.log(
+      `   last post ${hoursSince < 48 ? hoursSince.toFixed(1) + 'h ago' : Math.round(hoursSince / 24) + ' days ago'}` +
+        ` · ${inLast24} in last 24h · ${inLast7d} in last 7d`,
+    );
+
+    if (PUBLISH && hoursSince < MIN_GAP_HOURS && !FORCE) {
+      console.log(
+        `   BLOCKED: only ${hoursSince.toFixed(1)}h since the last post ` +
+          `(minimum ${MIN_GAP_HOURS}h).\n` +
+          `   Two sessions in one day is the burst pattern this guard exists to stop.\n` +
+          `   Come back tomorrow, or pass --force if you have a reason.\n`,
+      );
+      continue;
+    }
+    if (PUBLISH && hoursSince < MIN_GAP_HOURS && FORCE) {
+      console.log(`   --force: overriding the ${MIN_GAP_HOURS}h minimum gap.\n`);
+    }
+  }
+
   const batch = pending.slice(0, LIMIT);
   if (batch.length < pending.length) {
     console.log(`   --limit ${LIMIT}: doing ${batch.length}, leaving ${pending.length - batch.length}`);
@@ -421,6 +520,7 @@ for (const target of TARGETS) {
     try {
       const url = await target.create(post, key);
       console.log(`           LIVE: ${url}`);
+      recordPublish(target.name);
     } catch (err) {
       if (err.alreadyPublished) {
         console.log(`           SKIP: ${err.message}`);
