@@ -5,6 +5,7 @@ import {
   serializeLastInputStore,
   recordLastInput,
   getLastInput,
+  looksSecret,
   type LastInputStore,
 } from './last-input';
 
@@ -90,6 +91,57 @@ describe('recordLastInput', () => {
     expect(Object.keys(store.entries)).toHaveLength(12);
     expect(getLastInput(store, 'tool-0')).toBeNull();
     expect(getLastInput(store, 'tool-12')).toBe('v12');
+  });
+
+  it('is a no-op for secret-shaped input, whatever the slug', () => {
+    const key = '-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBg\n-----END PRIVATE KEY-----';
+    expect(recordLastInput(empty, 'certificate-decoder', key, '2026-07-19T10:00:00.000Z')).toEqual(empty);
+    expect(recordLastInput(empty, 'subnet-calculator', key, '2026-07-19T10:00:00.000Z')).toEqual(empty);
+  });
+
+  it('does not evict an existing entry when it refuses a secret', () => {
+    const store = recordLastInput(empty, 'subnet-calculator', '10.0.0.0/24', '2026-07-19T10:00:00.000Z');
+    const after = recordLastInput(store, 'subnet-calculator', 'ghp_16C7e42F292c6912E7710c838347Ae178B4a', '2026-07-19T10:05:00.000Z');
+    expect(after).toBe(store);
+    expect(getLastInput(after, 'subnet-calculator')).toBe('10.0.0.0/24');
+  });
+});
+
+describe('looksSecret', () => {
+  it('flags every PEM private-key variant', () => {
+    for (const label of ['PRIVATE KEY', 'RSA PRIVATE KEY', 'EC PRIVATE KEY', 'ENCRYPTED PRIVATE KEY', 'OPENSSH PRIVATE KEY']) {
+      expect(looksSecret(`-----BEGIN ${label}-----`)).toBe(true);
+    }
+  });
+
+  it('flags well-known credential prefixes', () => {
+    expect(looksSecret('token=ghp_16C7e42F292c6912E7710c838347Ae178B4a')).toBe(true);
+    expect(looksSecret('github_pat_11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyz012345')).toBe(true);
+    expect(looksSecret('AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE')).toBe(true);
+    expect(looksSecret('xoxb-2508095029-1548959030-abcdefabcdef')).toBe(true);
+    expect(looksSecret('sk-proj-abc123abc123abc123abc123')).toBe(true);
+    expect(looksSecret('glpat-ABCDEFGHIJKLMNOPQRST')).toBe(true);
+  });
+
+  it('flags a three-segment JWT', () => {
+    expect(
+      looksSecret('eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U'),
+    ).toBe(true);
+  });
+
+  it('flags credentials embedded in a URL', () => {
+    expect(looksSecret('DATABASE_URL=postgres://svc:hunter2@db.internal:5432/app')).toBe(true);
+  });
+
+  it('leaves ordinary tool input alone', () => {
+    // A certificate is not a secret — the cert decoder's whole job is reading these.
+    expect(looksSecret('-----BEGIN CERTIFICATE-----\nMIIBkTCB+wIJAK\n-----END CERTIFICATE-----')).toBe(false);
+    expect(looksSecret('-----BEGIN PUBLIC KEY-----')).toBe(false);
+    expect(looksSecret('10.0.0.0/24')).toBe(false);
+    expect(looksSecret('FROM node:22\nRUN npm ci')).toBe(false);
+    expect(looksSecret('0 2 * * *')).toBe(false);
+    expect(looksSecret('https://user@github.com/org/repo.git')).toBe(false); // user, no password
+    expect(looksSecret('{"replicas": 3, "image": "app:1.2.3"}')).toBe(false);
   });
 });
 

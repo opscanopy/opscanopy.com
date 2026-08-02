@@ -6,16 +6,53 @@
  * (the store is left as it was — a huge paste just doesn't get remembered,
  * it doesn't fail or truncate silently-wrong).
  *
- * Privacy-first by construction: this module is never imported by the four
- * HARD-excluded tools (jwt-decoder, hash-generator, base64-encoder-decoder,
- * env-example-checker) — see [[snapshots]] for their explicit-consent-only
- * "Save snapshot" alternative instead.
+ * Privacy-first by two independent mechanisms:
+ *
+ * 1. Tools whose input is ALWAYS secret-shaped never import this module at all
+ *    (jwt-decoder, hash-generator, base64-encoder-decoder, env-example-checker,
+ *    certificate-decoder) — see [[snapshots]] for their explicit-consent-only
+ *    "Save snapshot" alternative instead.
+ * 2. `looksSecret()` below refuses secret-shaped VALUES from every caller, so a
+ *    tool whose input is *usually* safe (a cert chain that happens to have a
+ *    private key pasted above it, a compose file with an inline token) cannot
+ *    write credentials to disk just because nobody thought to exclude it.
+ *
+ * (1) alone was the original design and it failed exactly as you'd expect: the
+ * exclusion list is a comment, so every tool added after it was written opted
+ * in by default.
  */
 
 export const LAST_INPUT_KEY = 'oc-last-v1';
 
 const MAX_SLUGS = 12;
 const MAX_VALUE_BYTES = 16 * 1024;
+
+/**
+ * High-precision patterns for "this value contains a credential". Precision
+ * over recall on purpose: a false positive only costs the user a retype, so
+ * these match issued-credential SHAPES (vendor prefixes, key blocks, URL
+ * userinfo) rather than guessing at entropy. A miss is caught by mechanism (1).
+ *
+ * `PRIVATE KEY` matches every PEM label variant (RSA/EC/ENCRYPTED/OPENSSH) and
+ * deliberately does NOT match `CERTIFICATE` or `PUBLIC KEY` — those are public
+ * by definition and are the certificate decoder's actual input.
+ */
+const SECRET_PATTERNS: readonly RegExp[] = [
+  /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----/,
+  /\bghp_[A-Za-z0-9]{20,}\b/, //                     GitHub PAT (classic)
+  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/, //             GitHub PAT (fine-grained)
+  /\bglpat-[A-Za-z0-9_-]{16,}\b/, //                 GitLab PAT
+  /\bAKIA[0-9A-Z]{16}\b/, //                         AWS access key id
+  /\bxox[abprs]-[A-Za-z0-9-]{10,}\b/, //             Slack tokens
+  /\bsk-[A-Za-z0-9_-]{16,}\b/, //                    OpenAI / Anthropic style
+  /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/, // JWT
+  /\b[a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:[^\s/@]+@/, //  credentials in a URL
+];
+
+/** True when `value` contains something that looks like an issued credential. */
+export function looksSecret(value: string): boolean {
+  return SECRET_PATTERNS.some((re) => re.test(value));
+}
 
 export interface LastInputEntry {
   value: string;
@@ -73,10 +110,11 @@ export function serializeLastInputStore(store: LastInputStore): string {
 }
 
 /**
- * Record `value` as the last input for `slug`. A value over MAX_VALUE_BYTES
- * is a no-op (store returned unchanged) — never written, never truncated.
- * When recording pushes distinct slugs past MAX_SLUGS, the least-recently-
- * touched slug (oldest `at`) is evicted.
+ * Record `value` as the last input for `slug`. A value over MAX_VALUE_BYTES,
+ * or one that `looksSecret()`, is a no-op (store returned unchanged) — never
+ * written, never truncated, and the slug's PREVIOUS value is left intact
+ * rather than cleared. When recording pushes distinct slugs past MAX_SLUGS,
+ * the least-recently-touched slug (oldest `at`) is evicted.
  */
 export function recordLastInput(
   store: LastInputStore,
@@ -86,6 +124,7 @@ export function recordLastInput(
 ): LastInputStore {
   if (!isSlug(slug)) return store;
   if (byteLength(value) > MAX_VALUE_BYTES) return store;
+  if (looksSecret(value)) return store;
 
   const withoutSlug = Object.fromEntries(
     Object.entries(store.entries).filter(([s]) => s !== slug),
