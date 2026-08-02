@@ -53,21 +53,22 @@ on a command intended as a preview. Dry-run first, read it, then re-run with
 | Date | dev.to | Bluesky | Notes |
 |---|---|---|---|
 | 2026-07-27 | **7** | 2 | Too many. See the near-miss above. |
-| 2026-07-31 | 0 | 2 | Normal. 4-day gap. dev.to key dead — see below. |
+| 2026-07-31 | 0 | 2 | Normal. 4-day gap. dev.to 401 (turned out to be a delay). |
+| 2026-08-02 | 2 | 0 | Normal. 6-day gap on dev.to. Key started working again. |
 
 ## Current state
 
-**dev.to — 20 published, 13 still queued** (blocked, see key note below)
+**dev.to — 22 published, 11 still queued**
 
 Syndicated on 2026-07-27: 7 Common .gitlab-ci.yml Mistakes · How to Convert a docker
 run Command · Why Isn't My Alert Reaching the Right Receiver · Why Did Prometheus
 Drop My Target
 
-Remaining queue (6 blog + 7 guides):
+Syndicated on 2026-08-02: docker run vs Docker Compose · How Alertmanager Routing Works
+
+Remaining queue (4 blog + 7 guides):
 
 ```
-docker run vs Docker Compose: A Practical Migration Guide
-How Alertmanager Routing Works: Matchers, continue, and the Route Tree
 Learn DevOps in 90 Days
 Prometheus relabel_configs Explained
 Unit Testing Loki Alert Rules
@@ -77,9 +78,33 @@ AWS for DevOps Engineers · Docker for DevOps · Docker Interview Prep
 Kubernetes for DevOps · Linux for DevOps · Networking for DevOps · DevOps Projects
 ```
 
-At 2 per session, roughly one session a day, the blog backlog clears in **3
-sessions**. The 7 guides should wait until after that — they are long-form (one is
-a 200-minute read) and posting them alongside would look like bulk dumping.
+At 2 per session the blog backlog clears in **2 more sessions**. The 7 guides should
+wait until after that — they are long-form (one is a 200-minute read) and posting
+them alongside would look like bulk dumping.
+
+## RESOLVED 2026-08-02 — it was a delay, not a restriction
+
+**The exact same key started working two days later.** Same SHA-256
+(`d5242dd10103c3eb`), untouched file, no action taken on the account — it simply
+began authenticating on 02 Aug.
+
+So the diagnosis below was **wrong**. dev.to did not restrict anything; a newly
+generated key took somewhere between one and two days to become active, far longer
+than the 20-second retry that was used to rule out "activation delay". Nothing was
+wrong with the account, and no email to support was needed.
+
+**The lesson is about the inference, not the key.** Every individual fact in the
+table below was correct, and the conclusion drawn from them still managed to be
+wrong: a plausible story (burst → restriction) was fitted to a coincidence in
+timing. When a platform behaves oddly, "wait a day and retry" belongs above
+"reason about why" — and a hypothesis that cannot be confirmed from outside should
+be labelled as such and left alone, not acted on.
+
+The cadence limits stay regardless. They were the right call for their own reasons;
+they just were not vindicated by this.
+
+<details>
+<summary>Original (incorrect) diagnosis, kept for the record</summary>
 
 **dev.to API access is not working — 401 as of 2026-07-31.** Publishing there is
 paused until this is resolved. Do NOT keep generating keys; two have already failed
@@ -111,13 +136,14 @@ reason the limits above are now enforced in code instead of documented as intent
 **Next step is human:** email **yo@dev.to** from the account address and ask whether
 API access has been restricted and what restores it.
 
+</details>
+
 > Separate diagnostic trap, still true: **curl returns false 401s on this machine**
 > for keys that Node's `fetch` accepts — verified by comparing SHA-256 of the identical
-> bytes each client sent. That is why an earlier working key was regenerated twice for
-> nothing. It does NOT explain the current failure: this 401 reproduces under `fetch`
-> AND under curl run directly by Pushkar.
+> bytes each client sent. That is why a working key was once regenerated twice for
+> nothing. Always confirm with `fetch` before concluding a key is bad.
 
-**Bluesky — 4 posted, 23 queued.** Healthy: 8 followers, following 50, so posts now
+**Bluesky — 4 posted, 23 queued.** Healthy: 11 followers, following 50, so posts now
 actually reach people. Lower risk than dev.to since these are link posts rather
 than full articles.
 
