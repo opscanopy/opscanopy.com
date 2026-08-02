@@ -52,6 +52,19 @@ export interface PagesContent {
       on: string;
       off: string;
     };
+    /** "Delete everything stored on this device" control on /privacy (see StoredDataPurge.astro). */
+    purge: {
+      /** Short heading above the button. */
+      heading: string;
+      /** Explains scope: inputs go, settings and progress stay. */
+      description: string;
+      /** Button label. */
+      button: string;
+      /** Shown when there is nothing to delete. */
+      empty: string;
+      /** Shown after a successful purge. */
+      done: string;
+    };
   };
 }
 
@@ -64,6 +77,14 @@ const en: PagesContent = {
       label: 'Allow analytics cookies',
       on: 'Analytics cookies are on. Uncheck the box to return to cookieless mode.',
       off: 'Currently cookieless — no analytics cookie is set unless you opt in.',
+    },
+    purge: {
+      heading: 'Erase what tools remembered',
+      description:
+        'Deletes the remembered inputs listed above (oc-last-v1, oc-snap-v1, oc-handoff-v1) from this browser. Your theme, language, analytics choice, and Mission 90 progress are kept.',
+      button: 'Delete remembered inputs',
+      empty: 'Nothing stored — no tool has remembered anything in this browser.',
+      done: 'Deleted. Nothing is stored in this browser now.',
     },
   },
 

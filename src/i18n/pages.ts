@@ -29,6 +29,7 @@ export function getPagesContent(lang: Locale): PagesContent {
     ui: {
       updatedLabel: p.ui?.updatedLabel ?? en.ui.updatedLabel,
       consent: p.ui?.consent ?? en.ui.consent,
+      purge: p.ui?.purge ?? en.ui.purge,
     },
   };
 }

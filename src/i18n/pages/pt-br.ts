@@ -10,6 +10,14 @@ const ptBr: Partial<PagesContent> = {
       on: 'Os cookies de análise estão ativados. Desmarque a caixa para voltar ao modo sem cookies.',
       off: 'Atualmente sem cookies — nenhum cookie de análise é definido sem o seu consentimento.',
     },
+    purge: {
+      heading: 'Apagar o que as ferramentas guardaram',
+      description:
+        'Remove deste navegador as entradas guardadas listadas acima (oc-last-v1, oc-snap-v1, oc-handoff-v1). Seu tema, seu idioma, sua escolha sobre análise e seu progresso no Mission 90 são mantidos.',
+      button: 'Apagar entradas guardadas',
+      empty: 'Nada guardado — nenhuma ferramenta guardou algo neste navegador.',
+      done: 'Apagado. Nada está guardado neste navegador agora.',
+    },
   },
 
   privacy: {

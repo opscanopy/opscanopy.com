@@ -10,6 +10,14 @@ const de: Partial<PagesContent> = {
       on: 'Analyse-Cookies sind aktiv. Deaktivieren Sie das Kästchen, um zum cookielosen Modus zurückzukehren.',
       off: 'Derzeit cookielos — ohne Ihre Zustimmung wird kein Analyse-Cookie gesetzt.',
     },
+    purge: {
+      heading: 'Gespeicherte Eingaben löschen',
+      description:
+        'Löscht die oben aufgeführten gemerkten Eingaben (oc-last-v1, oc-snap-v1, oc-handoff-v1) aus diesem Browser. Ihr Theme, Ihre Sprache, Ihre Analyse-Entscheidung und Ihr Mission-90-Fortschritt bleiben erhalten.',
+      button: 'Gemerkte Eingaben löschen',
+      empty: 'Nichts gespeichert — kein Tool hat sich in diesem Browser etwas gemerkt.',
+      done: 'Gelöscht. In diesem Browser ist jetzt nichts mehr gespeichert.',
+    },
   },
 
   privacy: {

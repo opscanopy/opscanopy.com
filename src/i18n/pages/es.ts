@@ -10,6 +10,14 @@ const es: Partial<PagesContent> = {
       on: 'Las cookies de analítica están activadas. Desmarca la casilla para volver al modo sin cookies.',
       off: 'Actualmente sin cookies: no se establece ninguna cookie de analítica salvo que actives esta opción.',
     },
+    purge: {
+      heading: 'Borrar lo que recordaron las herramientas',
+      description:
+        'Elimina de este navegador las entradas recordadas que se listan arriba (oc-last-v1, oc-snap-v1, oc-handoff-v1). Se conservan tu tema, tu idioma, tu decisión sobre la analítica y tu progreso de Mission 90.',
+      button: 'Borrar entradas recordadas',
+      empty: 'No hay nada guardado: ninguna herramienta ha recordado nada en este navegador.',
+      done: 'Borrado. Ahora no hay nada guardado en este navegador.',
+    },
   },
 
   privacy: {

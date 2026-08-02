@@ -20,6 +20,14 @@ const fr: Partial<PagesContent> = {
       on: 'Les cookies d’analyse sont activés. Décochez la case pour revenir au mode sans cookies.',
       off: 'Actuellement sans cookies — aucun cookie d’analyse n’est déposé sans votre accord.',
     },
+    purge: {
+      heading: 'Effacer ce que les outils ont mémorisé',
+      description:
+        'Supprime de ce navigateur les saisies mémorisées listées ci-dessus (oc-last-v1, oc-snap-v1, oc-handoff-v1). Votre thème, votre langue, votre choix concernant la mesure d’audience et votre progression Mission 90 sont conservés.',
+      button: 'Supprimer les saisies mémorisées',
+      empty: 'Rien n’est stocké — aucun outil n’a mémorisé quoi que ce soit dans ce navigateur.',
+      done: 'Supprimé. Plus rien n’est stocké dans ce navigateur.',
+    },
   },
 
   privacy: {
