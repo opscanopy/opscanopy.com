@@ -10,7 +10,7 @@
 
 import type { PagesContent } from './en';
 
-const UPDATED = '2026-07-18';
+const UPDATED = '2026-08-03';
 
 const fr: Partial<PagesContent> = {
   ui: {
@@ -34,7 +34,8 @@ const fr: Partial<PagesContent> = {
       {
         heading: 'En résumé',
         body: [
-          'Le texte, les fichiers et la configuration que vous collez dans n’importe quel outil OpsCanopy sont traités localement, à l’intérieur de votre propre onglet de navigateur. Ils ne nous sont jamais envoyés ni transmis à un tiers, et ils ne sont jamais conservés après la fermeture de l’onglet.',
+          'Le texte, les fichiers et la configuration que vous collez dans n’importe quel outil OpsCanopy sont traités localement, à l’intérieur de votre propre onglet de navigateur. Ils ne nous sont jamais envoyés ni transmis à un tiers.',
+          'Pour vous éviter de la ressaisir, la plupart des outils mémorisent votre dernière saisie sur votre propre appareil, dans le stockage local de votre navigateur : elle reste sur votre machine, et effacer les données du site la supprime. Les outils dont la saisie est habituellement un secret ne mémorisent rien, et sur tous les autres, une valeur qui ressemble à un identifiant est refusée avant d’être écrite. La liste complète de ce qui est stocké figure ci-dessous.',
           'Nous ne gérons pas de comptes utilisateurs, nous n’exigeons aucune inscription et nous ne disposons d’aucune base de données de votre activité.',
         ],
       },
@@ -64,8 +65,8 @@ const fr: Partial<PagesContent> = {
           'oc-roadmap-… (une clé par roadmap d’apprentissage) — les sujets que vous avez cochés sur cette roadmap.',
           'oc-guide-…-pos (une clé par guide) — votre dernière position de lecture dans ce guide.',
           'oc-tools-v1 — les outils que vous avez épinglés et les derniers que vous avez utilisés, afin que les sections « Reprenez où vous en étiez » et « Vos outils » puissent les afficher.',
-          'oc-last-v1 — la dernière saisie effectuée dans un outil, restaurée automatiquement la prochaine fois que vous ouvrez ce même outil. Jamais utilisé pour les quatre outils dont la saisie peut être un secret — Décodeur JWT, Générateur de hash, Encodeur/décodeur Base64 et le Vérificateur Env Example.',
-          'oc-snap-v1 — les instantanés que vous avez explicitement choisi de conserver via le bouton « Enregistrer un instantané », pour retrouver cette saisie exacte plus tard. Disponible sur chaque outil, y compris les quatre ci-dessus, puisqu\'en enregistrer un est votre propre action délibérée.',
+          'oc-last-v1 — la dernière saisie effectuée dans un outil, restaurée automatiquement la prochaine fois que vous ouvrez ce même outil. Jamais utilisé pour les cinq outils dont la saisie est habituellement un secret — Décodeur JWT, Générateur de hash, Encodeur/décodeur Base64, le Vérificateur Env Example et le Décodeur de certificats. Sur tous les autres outils, une valeur qui ressemble à un identifiant — un bloc de clé privée, un jeton d’API, un JWT ou un mot de passe dans une URL — est refusée avant d’être écrite : un secret collé à un endroit inattendu n’est donc pas conservé non plus.',
+          'oc-snap-v1 — les instantanés que vous avez explicitement choisi de conserver via le bouton « Enregistrer un instantané », pour retrouver cette saisie exacte plus tard. Disponible sur chaque outil, y compris les cinq ci-dessus, puisqu\'en enregistrer un est votre propre action délibérée.',
           'oc-handoff-v1 — un transfert unique lorsque vous suivez un lien comme « Décoder en tant que JWT » entre deux outils. Il ne vit que dans cet onglet (sessionStorage, pas localStorage) et est supprimé dès que l\'outil de destination le lit — jamais transporté dans l\'URL de la page, donc jamais présent dans votre historique de navigation.',
           'Effacer les données de sites de votre navigateur supprime tout cela. La progression Mission 90 peut survivre à un effacement grâce au fichier ou au code de sauvegarde du hub Mission 90.',
         ],

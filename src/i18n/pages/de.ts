@@ -1,6 +1,6 @@
 import type { PagesContent } from './en';
 
-const UPDATED = '2026-07-18';
+const UPDATED = '2026-08-03';
 
 const de: Partial<PagesContent> = {
   ui: {
@@ -24,7 +24,8 @@ const de: Partial<PagesContent> = {
       {
         heading: 'Die Kurzfassung',
         body: [
-          'Der Text, die Dateien und die Konfiguration, die Sie in ein OpsCanopy-Tool einfügen, werden lokal in Ihrem eigenen Browser-Tab verarbeitet. Sie werden niemals an uns oder an Dritte gesendet und nach dem Schließen des Tabs niemals gespeichert.',
+          'Der Text, die Dateien und die Konfiguration, die Sie in ein OpsCanopy-Tool einfügen, werden lokal in Ihrem eigenen Browser-Tab verarbeitet. Sie werden niemals an uns oder an Dritte gesendet.',
+          'Damit Sie nichts erneut eintippen müssen, merken sich die meisten Tools Ihre letzte Eingabe auf Ihrem eigenen Gerät, im lokalen Speicher Ihres Browsers — sie bleibt auf Ihrem Rechner, und das Löschen Ihrer Websitedaten entfernt sie. Tools, deren Eingabe üblicherweise ein Geheimnis ist, merken sich grundsätzlich nichts, und bei allen anderen Tools wird ein Wert, der wie ein Zugangsdatum aussieht, abgelehnt, bevor er geschrieben wird. Die vollständige Liste des Gespeicherten finden Sie weiter unten.',
           'Wir betreiben keine Benutzerkonten, wir verlangen keine Registrierung, und wir führen keine Datenbank über Ihre Aktivitäten.',
         ],
       },
@@ -54,8 +55,8 @@ const de: Partial<PagesContent> = {
           'oc-roadmap-… (ein Schlüssel pro Lern-Roadmap) — welche Themen Sie auf dieser Roadmap abgehakt haben.',
           'oc-guide-…-pos (ein Schlüssel pro Guide) — Ihre letzte Leseposition in diesem Guide.',
           'oc-tools-v1 — Tools, die Sie angeheftet haben, sowie die zuletzt verwendeten — damit die Bereiche „Schnellzugriff" und „Ihre Tools" sie anzeigen können.',
-          'oc-last-v1 — Ihre letzte Eingabe in einem Tool, die beim nächsten Öffnen desselben Tools automatisch wiederhergestellt wird. Nie bei den vier Tools, deren Eingabe ein Geheimnis sein könnte — JWT-Decoder, Hash-Generator, Base64-Encoder/Decoder und der Env-Beispiel-Checker.',
-          'oc-snap-v1 — Snapshots, die Sie über die Schaltfläche „Snapshot speichern" bewusst aufbewahrt haben, um später zu genau dieser Eingabe zurückzukehren. Verfügbar bei jedem Tool, auch den vier oben genannten, da das Speichern eine bewusste eigene Handlung ist.',
+          'oc-last-v1 — Ihre letzte Eingabe in einem Tool, die beim nächsten Öffnen desselben Tools automatisch wiederhergestellt wird. Nie bei den fünf Tools, deren Eingabe üblicherweise ein Geheimnis ist — JWT-Decoder, Hash-Generator, Base64-Encoder/Decoder, der Env-Beispiel-Checker und der Zertifikats-Decoder. Bei allen anderen Tools wird ein Wert, der wie ein Zugangsdatum aussieht — ein privater Schlüsselblock, ein API-Token, ein JWT oder ein Passwort in einer URL — abgelehnt, bevor er geschrieben wird. Ein Geheimnis, das an unerwarteter Stelle eingefügt wird, bleibt also trotzdem ungespeichert.',
+          'oc-snap-v1 — Snapshots, die Sie über die Schaltfläche „Snapshot speichern" bewusst aufbewahrt haben, um später zu genau dieser Eingabe zurückzukehren. Verfügbar bei jedem Tool, auch den fünf oben genannten, da das Speichern eine bewusste eigene Handlung ist.',
           'oc-handoff-v1 — eine einmalige Übergabe, wenn Sie einem Link wie „Als JWT decodieren" zwischen zwei Tools folgen. Sie existiert nur in diesem Tab (sessionStorage, nicht localStorage) und wird gelöscht, sobald das Ziel-Tool sie liest — nie in der Seiten-URL, damit sie nie in Ihrem Browserverlauf landet.',
           'Das Löschen der Websitedaten in Ihrem Browser entfernt all diese Einträge. Der Mission-90-Fortschritt kann ein Löschen mithilfe der Backup-Datei oder des Backup-Codes aus dem Mission-90-Hub überstehen.',
         ],

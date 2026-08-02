@@ -55,7 +55,7 @@ export interface PagesContent {
   };
 }
 
-const UPDATED = '2026-07-18';
+const UPDATED = '2026-08-03';
 
 const en: PagesContent = {
   ui: {
@@ -79,7 +79,8 @@ const en: PagesContent = {
       {
         heading: 'The short version',
         body: [
-          'The text, files, and configuration you paste into any OpsCanopy tool are processed locally, inside your own browser tab. They are never sent to us or to any third party, and they are never stored after you close the tab.',
+          'The text, files, and configuration you paste into any OpsCanopy tool are processed locally, inside your own browser tab. They are never sent to us or to any third party.',
+          'So that you do not have to retype it, most tools remember your most recent input on your own device, in your browser’s local storage — it stays on your machine, and clearing your site data removes it. Tools whose input is normally a secret never remember anything, and on every other tool a value that looks like a credential is refused before it is written. The full list of what is stored is below.',
           'We do not run user accounts, we do not require sign-up, and we have no database of your activity.',
         ],
       },
@@ -109,8 +110,8 @@ const en: PagesContent = {
           'oc-roadmap-… (one key per learning roadmap) — which topics you have checked off on that roadmap.',
           'oc-guide-…-pos (one key per guide) — your last reading position in that guide.',
           'oc-tools-v1 — tools you have pinned, and the last few you have used, so the "Jump back in" and "Your tools" shelves can show them.',
-          'oc-last-v1 — the last input you typed into a tool, restored automatically the next time you open that same tool. Never used on the four tools whose input may be a secret — JWT Decoder, Hash Generator, Base64 Encoder/Decoder, and the Env Example Checker.',
-          'oc-snap-v1 — snapshots you explicitly chose to keep with a "Save snapshot" button, so you can return to that exact input later. Available on every tool, including the four above, since saving one is your own deliberate action.',
+          'oc-last-v1 — the last input you typed into a tool, restored automatically the next time you open that same tool. Never used on the five tools whose input is normally a secret — JWT Decoder, Hash Generator, Base64 Encoder/Decoder, the Env Example Checker, and the Certificate Decoder. On every other tool, a value that looks like a credential — a private key block, an API token, a JWT, or a password inside a URL — is refused before it is written, so a secret pasted somewhere unexpected is still not kept.',
+          'oc-snap-v1 — snapshots you explicitly chose to keep with a "Save snapshot" button, so you can return to that exact input later. Available on every tool, including the five above, since saving one is your own deliberate action.',
           'oc-handoff-v1 — a one-time handoff when you follow a "Decode as JWT" or similar link between two tools. It lives in this tab only (sessionStorage, not localStorage) and is deleted the instant the destination tool reads it — never carried in the page URL, so it never ends up in your browsing history.',
           'Clearing your browser’s site data removes all of these. Mission 90 progress can survive a clear via the backup file or code from the Mission 90 hub.',
         ],

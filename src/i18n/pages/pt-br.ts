@@ -1,6 +1,6 @@
 import type { PagesContent } from './en';
 
-const UPDATED = '2026-07-18';
+const UPDATED = '2026-08-03';
 
 const ptBr: Partial<PagesContent> = {
   ui: {
@@ -24,7 +24,8 @@ const ptBr: Partial<PagesContent> = {
       {
         heading: 'A versão resumida',
         body: [
-          'O texto, os arquivos e a configuração que você cola em qualquer ferramenta do OpsCanopy são processados localmente, dentro da sua própria aba do navegador. Eles nunca são enviados para nós nem para terceiros, e nunca são armazenados depois que você fecha a aba.',
+          'O texto, os arquivos e a configuração que você cola em qualquer ferramenta do OpsCanopy são processados localmente, dentro da sua própria aba do navegador. Eles nunca são enviados para nós nem para terceiros.',
+          'Para que você não precise digitar tudo de novo, a maioria das ferramentas guarda a sua última entrada no seu próprio dispositivo, no armazenamento local do navegador — ela fica na sua máquina, e limpar os dados do site a remove. Ferramentas cuja entrada normalmente é um segredo não guardam nada, e em todas as outras qualquer valor que pareça uma credencial é recusado antes de ser gravado. A lista completa do que é armazenado está abaixo.',
           'Não temos contas de usuário, não exigimos cadastro e não mantemos nenhum banco de dados da sua atividade.',
         ],
       },
@@ -54,8 +55,8 @@ const ptBr: Partial<PagesContent> = {
           'oc-roadmap-… (uma chave por roadmap de aprendizado) — quais tópicos você marcou como concluídos nesse roadmap.',
           'oc-guide-…-pos (uma chave por guia) — sua última posição de leitura nesse guia.',
           'oc-tools-v1 — as ferramentas que você fixou e as últimas que usou, para que as seções "Continue de onde parou" e "Suas ferramentas" possam exibi-las.',
-          'oc-last-v1 — a última entrada que você digitou em uma ferramenta, restaurada automaticamente na próxima vez que você abrir essa mesma ferramenta. Nunca usado nas quatro ferramentas cuja entrada pode ser um segredo — Decodificador de JWT, Gerador de Hash, Codificador/Decodificador Base64 e o Verificador Env Example.',
-          'oc-snap-v1 — instantâneos que você escolheu explicitamente guardar com o botão "Salvar instantâneo", para voltar a essa entrada exata depois. Disponível em todas as ferramentas, incluindo as quatro acima, já que salvar um é uma ação deliberada sua.',
+          'oc-last-v1 — a última entrada que você digitou em uma ferramenta, restaurada automaticamente na próxima vez que você abrir essa mesma ferramenta. Nunca usado nas cinco ferramentas cuja entrada normalmente é um segredo — Decodificador de JWT, Gerador de Hash, Codificador/Decodificador Base64, o Verificador Env Example e o Decodificador de Certificados. Em todas as outras, um valor que pareça uma credencial — um bloco de chave privada, um token de API, um JWT ou uma senha dentro de uma URL — é recusado antes de ser gravado, então um segredo colado num lugar inesperado também não fica guardado.',
+          'oc-snap-v1 — instantâneos que você escolheu explicitamente guardar com o botão "Salvar instantâneo", para voltar a essa entrada exata depois. Disponível em todas as ferramentas, incluindo as cinco acima, já que salvar um é uma ação deliberada sua.',
           'oc-handoff-v1 — uma transferência única quando você segue um link como "Decodificar como JWT" entre duas ferramentas. Ela vive só nesta aba (sessionStorage, não localStorage) e é apagada assim que a ferramenta de destino a lê — nunca carregada na URL da página, então nunca fica no seu histórico de navegação.',
           'Limpar os dados do site no seu navegador remove tudo isso. O progresso do Mission 90 pode sobreviver a uma limpeza por meio do arquivo de backup ou do código do hub do Mission 90.',
         ],
