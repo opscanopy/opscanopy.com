@@ -52,6 +52,7 @@ const de: Partial<SiteContent> = {
       title: 'Rechtliches',
       links: [
         { href: '/privacy', label: 'Datenschutz' },
+        { href: '/security', label: 'Sicherheit' },
         { href: '/terms', label: 'Nutzungsbedingungen' },
       ],
     },

@@ -164,6 +164,61 @@ const es: Partial<PagesContent> = {
     ],
   },
 
+  security: {
+    metaTitle: 'Seguridad',
+    description:
+      'Cómo OpsCanopy está construido para que lo que pegas se quede en tu máquina: sin backend, una CSP basada en hashes y una vía publicada para reportar vulnerabilidades.',
+    eyebrow: 'Seguridad',
+    heading: 'Qué protege lo que pegas.',
+    lead: 'Todas las herramientas de aquí se ejecutan en tu propio navegador. Esta página explica qué te aporta eso realmente, qué no, y cómo comprobarlo tú mismo en lugar de creernos.',
+    updated: UPDATED,
+    sections: [
+      {
+        heading: 'La arquitectura ES la garantía',
+        body: [
+          'OpsCanopy es un sitio estático. No hay servidor que reciba tu entrada, ni base de datos, ni cuenta — así que «no registramos lo que pegas» no es una política que pudiéramos cambiar en silencio, es algo para lo que no tenemos ningún mecanismo.',
+          'Eso se aplica a nivel de plataforma, no solo se promete. La Content-Security-Policy fija `connect-src` en este origen más Google Analytics y nada más, así que la página no tiene permiso para enviar datos a ningún sitio que no hayamos listado. `frame-ancestors` es `none`, de modo que ningún otro sitio puede incrustar una herramienta y leerla. Las tipografías están alojadas por nosotros; no hay ningún CDN al que llamar.',
+          'Puedes verlo. Abre las herramientas de desarrollo de tu navegador, ve a la pestaña de red, pega algo en cualquier herramienta y pulsa el botón. La única petición de terceros es el script de Google Analytics — y sus eventos llevan solo la ruta de la página. Lo comprobamos específicamente: un valor de herramienta escrito en el fragmento de la URL no llega a la analítica, porque los fragmentos nunca se envían en una petición.',
+        ],
+      },
+      {
+        heading: 'Aquí no puede ejecutarse script inyectado',
+        body: [
+          'Cada herramienta construye sus resultados como HTML y los inyecta, que es exactamente la forma que se convierte en cross-site scripting cuando algo sale mal. Detrás hay dos cosas.',
+          'Primero, todo valor que llega a la página pasa por una única función de escapado — ninguna herramienta queda fuera. Segundo, el `script-src` de la CSP no contiene `unsafe-inline`: enumera un hash SHA-256 por cada script que produjo la compilación, así que un script que la compilación no produjo simplemente no se ejecuta, aunque alguien lograra escribirlo en la página. `object-src` es `none` y `base-uri` está fijado a este origen, lo que cierra las dos formas habituales de rodear una política de scripts.',
+        ],
+      },
+      {
+        heading: 'Qué guardamos en tu dispositivo — y qué nos negamos a guardar',
+        body: [
+          'Para que no tengas que volver a escribirla, la mayoría de las herramientas recuerdan tu última entrada en el almacenamiento local de tu navegador. Nunca sale de tu máquina, cada clave está documentada por su nombre en la página de privacidad, y allí hay un botón que borra todo.',
+          'Las herramientas cuya entrada suele ser un secreto — el decodificador de JWT, el generador de hash, el codificador Base64, el verificador de .env y el decodificador de certificados — no guardan nada en absoluto. En todas las demás, un valor que parezca una credencial (un bloque de clave privada, un token de API, un JWT, una contraseña dentro de una URL) se rechaza antes de poder escribirse, así que un secreto pegado donde no esperabas tampoco se guarda.',
+        ],
+      },
+      {
+        heading: 'De qué NO te protege esto',
+        body: [
+          'Una extensión de navegador con permiso para leer páginas puede leer lo que pegas aquí, igual que en cualquier otro sitio. También puede hacerlo cualquiera con acceso a tu máquina desbloqueada, o el malware que haya en ella. Ejecutarse en tu navegador nos quita a nosotros de la ecuación; no quita todo lo demás que ya está ahí.',
+          'Nada de aquí avala las cosas que pegas. Un certificado que esta herramienta considere válido puede seguir siendo un certificado en el que no deberías confiar, y un workflow que esta herramienta reporte como limpio puede seguir estando mal de formas que no comprueba — cada página de herramienta lista lo que deliberadamente no mira.',
+          'Y ten más cuidado con el hábito que con el sitio: si pegar secretos en una página web se vuelve rutina, el riesgo está en la siguiente página donde lo hagas.',
+        ],
+      },
+      {
+        heading: 'Reportar algo',
+        body: [
+          'Escribe a hello@opscanopy.com. Incluye la página, la entrada y qué viste. Tendrás respuesta en unos días, y crédito en el changelog cuando salga el arreglo, salvo que prefieras no aparecer.',
+          'El reporte más valioso es cualquier cosa que saque de la página la entrada pegada, o que haga que el sitio ejecute script que no distribuyó. La política completa — alcance, plazos, qué queda fuera — está en SECURITY.md en el repositorio, y de forma legible por máquina en /.well-known/security.txt.',
+        ],
+      },
+      {
+        heading: 'Compruébalo tú mismo',
+        body: [
+          'El sitio tiene licencia MIT y todo el repositorio es público, incluidos los motores de las herramientas y sus tests. Si alguna afirmación de esta página te importa, el código que la respalda se puede leer — y las cabeceras de seguridad son un único archivo que puedes inspeccionar en la pestaña de red de tu navegador.',
+        ],
+      },
+    ],
+  },
+
   terms: {
     metaTitle: 'Términos y condiciones',
     description:

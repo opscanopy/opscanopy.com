@@ -3,6 +3,10 @@ import type { UiDict } from './en';
 
 const es: Partial<UiDict> = {
   // Accessibility / skip link
+  // Trust caption under every tool's lead (ToolHero) — the claim belongs
+  // where the decision to paste is actually made, not only on /privacy.
+  'tool.trust': 'Se ejecuta en tu navegador: nada de lo que pegas sale de esta página.',
+  'tool.trustLink': 'Cómo lo demostramos',
   'a11y.skipToContent': 'Saltar al contenido',
   'a11y.homeLabel': '{name}, inicio',
   'a11y.openMenu': 'Abrir menú',

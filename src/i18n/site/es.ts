@@ -51,6 +51,7 @@ const es: Partial<SiteContent> = {
       title: 'Legal',
       links: [
         { href: '/privacy', label: 'Privacidad' },
+        { href: '/security', label: 'Seguridad' },
         { href: '/terms', label: 'Términos' },
       ],
     },

@@ -164,6 +164,61 @@ const de: Partial<PagesContent> = {
     ],
   },
 
+  security: {
+    metaTitle: 'Sicherheit',
+    description:
+      'Wie OpsCanopy dafür sorgt, dass Eingefügtes auf Ihrem Rechner bleibt: kein Backend, eine hash-basierte CSP und ein veröffentlichter Meldeweg für Schwachstellen.',
+    eyebrow: 'Sicherheit',
+    heading: 'Was das schützt, was Sie einfügen.',
+    lead: 'Jedes Tool hier läuft in Ihrem eigenen Browser. Diese Seite erklärt, was Ihnen das tatsächlich bringt, was nicht, und wie Sie all das selbst überprüfen können, statt uns zu glauben.',
+    updated: UPDATED,
+    sections: [
+      {
+        heading: 'Die Architektur IST die Garantie',
+        body: [
+          'OpsCanopy ist eine statische Website. Es gibt keinen Server, der Ihre Eingaben empfängt, keine Datenbank und kein Konto — „wir protokollieren nicht, was Sie einfügen“ ist also keine Richtlinie, die wir stillschweigend ändern könnten, sondern etwas, wofür wir keinen Mechanismus haben.',
+          'Das wird auf Plattformebene erzwungen, nicht nur versprochen. Die Content-Security-Policy setzt `connect-src` auf diesen Ursprung plus Google Analytics und nichts anderes — die Seite darf also keine Daten irgendwohin senden, was wir nicht aufgeführt haben. `frame-ancestors` steht auf `none`, sodass keine andere Website ein Tool einbetten und mitlesen kann. Schriftarten hosten wir selbst; es gibt kein CDN, das kontaktiert wird.',
+          'Sie können das beobachten. Öffnen Sie die Entwicklertools Ihres Browsers, wechseln Sie auf den Netzwerk-Tab, fügen Sie etwas in ein Tool ein und drücken Sie die Schaltfläche. Die einzige Drittanbieter-Anfrage ist das Google-Analytics-Skript — und seine Ereignisse enthalten nur den Seitenpfad. Wir haben das eigens geprüft: ein Tool-Wert, der ins URL-Fragment geschrieben wird, erreicht Analytics nicht, denn Fragmente werden in einer Anfrage niemals mitgesendet.',
+        ],
+      },
+      {
+        heading: 'Eingeschleustes Skript kann hier nicht laufen',
+        body: [
+          'Jedes Tool baut seine Ergebnisse als HTML und fügt sie ein — genau die Form, die zu Cross-Site-Scripting wird, wenn etwas schiefgeht. Zwei Dinge stehen dahinter.',
+          'Erstens läuft jeder Wert, der die Seite erreicht, durch eine einzige Escaping-Funktion — kein Tool ist davon ausgenommen. Zweitens enthält `script-src` in der CSP kein `unsafe-inline`: dort steht ein SHA-256-Hash für jedes Skript, das der Build erzeugt hat. Ein Skript, das der Build nicht erzeugt hat, wird also gar nicht ausgeführt, selbst wenn es jemand in die Seite schreiben könnte. `object-src` ist `none` und `base-uri` auf diesen Ursprung festgelegt, was die zwei üblichen Wege um eine Skript-Richtlinie herum schließt.',
+        ],
+      },
+      {
+        heading: 'Was wir auf Ihrem Gerät speichern — und was wir verweigern',
+        body: [
+          'Damit Sie nichts erneut eintippen müssen, merken sich die meisten Tools Ihre letzte Eingabe im lokalen Speicher Ihres Browsers. Sie verlässt Ihren Rechner nie, jeder Schlüssel ist auf der Datenschutzseite namentlich dokumentiert, und dort gibt es eine Schaltfläche, die alles davon löscht.',
+          'Tools, deren Eingabe üblicherweise ein Geheimnis ist — JWT-Decoder, Hash-Generator, Base64-Encoder, Env-Beispiel-Checker und Zertifikats-Decoder — speichern grundsätzlich nichts. Bei allen anderen Tools wird ein Wert, der wie ein Zugangsdatum aussieht (ein privater Schlüsselblock, ein API-Token, ein JWT, ein Passwort in einer URL), abgelehnt, bevor er geschrieben werden kann. Ein Geheimnis, das an unerwarteter Stelle eingefügt wird, bleibt also trotzdem ungespeichert.',
+        ],
+      },
+      {
+        heading: 'Wovor das NICHT schützt',
+        body: [
+          'Eine Browser-Erweiterung mit Leseberechtigung für Seiten kann mitlesen, was Sie hier einfügen — genau wie auf jeder anderen Website. Ebenso jeder mit Zugriff auf Ihren entsperrten Rechner oder Schadsoftware darauf. Dass alles in Ihrem Browser läuft, nimmt uns aus dem Bild; es entfernt nicht alles andere, was ohnehin schon da ist.',
+          'Nichts hier bürgt für die Dinge, die Sie einfügen. Ein Zertifikat, das dieses Tool für gültig erklärt, kann immer noch ein Zertifikat sein, dem Sie nicht vertrauen sollten, und ein Workflow, den dieses Tool als sauber meldet, kann trotzdem auf Weisen falsch sein, die es nicht prüft — jede Tool-Seite listet auf, was sie bewusst nicht ansieht.',
+          'Und achten Sie eher auf die Gewohnheit als auf die Website: wenn das Einfügen von Geheimnissen in eine Webseite zur Routine wird, liegt das Risiko in der nächsten Seite, auf der Sie es tun.',
+        ],
+      },
+      {
+        heading: 'Etwas melden',
+        body: [
+          'Schreiben Sie an hello@opscanopy.com. Nennen Sie die Seite, die Eingabe und was Sie gesehen haben. Sie erhalten innerhalb weniger Tage eine Antwort und eine Nennung im Changelog, sobald ein Fix ausgeliefert wird — es sei denn, Sie möchten nicht genannt werden.',
+          'Die wertvollste Meldung ist alles, was eingefügte Eingaben von der Seite herausbekommt oder die Website Skript ausführen lässt, das sie nicht ausgeliefert hat. Die vollständige Richtlinie — Geltungsbereich, Fristen, was nicht dazugehört — steht in SECURITY.md im Repository und maschinenlesbar unter /.well-known/security.txt.',
+        ],
+      },
+      {
+        heading: 'Prüfen Sie es selbst',
+        body: [
+          'Die Website steht unter MIT-Lizenz und das gesamte Repository ist öffentlich, einschließlich der Tool-Engines und ihrer Tests. Wenn eine Aussage auf dieser Seite für Sie wichtig ist, ist der Code dahinter lesbar — und die Security-Header sind eine einzige Datei, die Sie im Netzwerk-Tab Ihres Browsers einsehen können.',
+        ],
+      },
+    ],
+  },
+
   terms: {
     metaTitle: 'Allgemeine Geschäftsbedingungen',
     description:

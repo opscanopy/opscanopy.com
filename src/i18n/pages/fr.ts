@@ -174,6 +174,61 @@ const fr: Partial<PagesContent> = {
     ],
   },
 
+  security: {
+    metaTitle: 'Sécurité',
+    description:
+      'Comment OpsCanopy est conçu pour que ce que vous collez reste sur votre machine : aucun backend, une CSP fondée sur des hachages et une voie publiée pour signaler une vulnérabilité.',
+    eyebrow: 'Sécurité',
+    heading: 'Ce qui protège ce que vous collez.',
+    lead: 'Chaque outil ici s’exécute dans votre propre navigateur. Cette page explique ce que cela vous apporte réellement, ce que cela n’apporte pas, et comment le vérifier vous-même plutôt que de nous croire.',
+    updated: UPDATED,
+    sections: [
+      {
+        heading: 'L’architecture EST la garantie',
+        body: [
+          'OpsCanopy est un site statique. Aucun serveur ne reçoit vos données, il n’y a ni base de données ni compte — « nous ne journalisons pas ce que vous collez » n’est donc pas une politique que nous pourrions changer discrètement, c’est une chose que nous n’avons aucun moyen de faire.',
+          'C’est imposé au niveau de la plateforme, pas seulement promis. La Content-Security-Policy fixe `connect-src` à cette origine plus Google Analytics et rien d’autre : la page n’a donc pas le droit d’envoyer de données ailleurs que là où nous l’avons listé. `frame-ancestors` vaut `none`, si bien qu’aucun autre site ne peut intégrer un outil et le lire. Les polices sont hébergées par nous ; il n’y a aucun CDN à appeler.',
+          'Vous pouvez l’observer. Ouvrez les outils de développement de votre navigateur, allez dans l’onglet réseau, collez quelque chose dans un outil et appuyez sur le bouton. La seule requête tierce est le script Google Analytics — et ses événements ne transportent que le chemin de la page. Nous l’avons vérifié spécifiquement : une valeur d’outil écrite dans le fragment d’URL n’atteint pas la mesure d’audience, car les fragments ne sont jamais envoyés dans une requête.',
+        ],
+      },
+      {
+        heading: 'Un script injecté ne peut pas s’exécuter ici',
+        body: [
+          'Chaque outil construit ses résultats en HTML puis les injecte — exactement la forme qui devient une faille de cross-site scripting quand elle tourne mal. Deux choses tiennent derrière.',
+          'D’abord, toute valeur qui atteint la page passe par une seule fonction d’échappement — aucun outil n’en est dispensé. Ensuite, le `script-src` de la CSP ne contient pas `unsafe-inline` : il énumère une empreinte SHA-256 pour chaque script produit par la compilation, de sorte qu’un script que la compilation n’a pas produit ne s’exécute tout simplement pas, même si quelqu’un parvenait à l’écrire dans la page. `object-src` vaut `none` et `base-uri` est verrouillé sur cette origine, ce qui ferme les deux contournements habituels d’une politique de scripts.',
+        ],
+      },
+      {
+        heading: 'Ce que nous stockons sur votre appareil — et ce que nous refusons',
+        body: [
+          'Pour vous éviter de la ressaisir, la plupart des outils mémorisent votre dernière saisie dans le stockage local de votre navigateur. Elle ne quitte jamais votre machine, chaque clé est documentée nommément sur la page de confidentialité, et un bouton y efface l’ensemble.',
+          'Les outils dont la saisie est habituellement un secret — décodeur JWT, générateur de hash, encodeur Base64, vérificateur .env et décodeur de certificats — ne stockent absolument rien. Sur tous les autres, une valeur qui ressemble à un identifiant (un bloc de clé privée, un jeton d’API, un JWT, un mot de passe dans une URL) est refusée avant d’être écrite : un secret collé à un endroit inattendu n’est donc pas conservé non plus.',
+        ],
+      },
+      {
+        heading: 'Ce contre quoi cela ne vous protège PAS',
+        body: [
+          'Une extension de navigateur autorisée à lire les pages peut lire ce que vous collez ici, exactement comme sur n’importe quel site. De même pour quiconque a accès à votre machine déverrouillée, ou pour un logiciel malveillant installé dessus. S’exécuter dans votre navigateur nous retire du tableau ; cela ne retire pas tout le reste qui s’y trouve déjà.',
+          'Rien ici ne se porte garant de ce que vous collez. Un certificat que cet outil déclare valide peut rester un certificat auquel vous ne devriez pas faire confiance, et un workflow que cet outil signale comme propre peut rester faux d’une manière qu’il ne vérifie pas — chaque page d’outil liste ce qu’elle ne regarde délibérément pas.',
+          'Et méfiez-vous de l’habitude plus que du site : si coller des secrets dans une page web devient une routine, le risque se trouve dans la page suivante où vous le ferez.',
+        ],
+      },
+      {
+        heading: 'Signaler quelque chose',
+        body: [
+          'Écrivez à hello@opscanopy.com. Indiquez la page, la saisie et ce que vous avez constaté. Vous aurez une réponse en quelques jours, et une mention dans le changelog lorsqu’un correctif est livré, sauf si vous préférez ne pas être nommé.',
+          'Le signalement le plus précieux est tout ce qui fait sortir de la page une donnée collée, ou qui fait exécuter au site un script qu’il n’a pas livré. La politique complète — périmètre, délais, ce qui est hors périmètre — figure dans SECURITY.md dans le dépôt, et de façon lisible par une machine sur /.well-known/security.txt.',
+        ],
+      },
+      {
+        heading: 'Vérifiez par vous-même',
+        body: [
+          'Le site est sous licence MIT et l’intégralité du dépôt est publique, y compris les moteurs des outils et leurs tests. Si une affirmation de cette page compte pour vous, le code qui la sous-tend est lisible — et les en-têtes de sécurité tiennent dans un seul fichier que vous pouvez inspecter dans l’onglet réseau de votre navigateur.',
+        ],
+      },
+    ],
+  },
+
   terms: {
     metaTitle: 'Conditions générales',
     description:

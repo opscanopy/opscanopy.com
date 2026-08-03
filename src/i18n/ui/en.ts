@@ -13,6 +13,10 @@
 
 const en = {
   // Accessibility / skip link
+  // Trust caption under every tool's lead (ToolHero) — the claim belongs
+  // where the decision to paste is actually made, not only on /privacy.
+  'tool.trust': 'Runs in your browser — nothing you paste leaves this page.',
+  'tool.trustLink': 'How we prove that',
   'a11y.skipToContent': 'Skip to content',
   'a11y.homeLabel': '{name}, home',
   'a11y.openMenu': 'Open menu',

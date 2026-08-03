@@ -52,6 +52,7 @@ const fr: Partial<SiteContent> = {
       title: 'Mentions légales',
       links: [
         { href: '/privacy', label: 'Confidentialité' },
+        { href: '/security', label: 'Sécurité' },
         { href: '/terms', label: 'Conditions d’utilisation' },
       ],
     },

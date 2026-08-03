@@ -83,6 +83,7 @@ const en: SiteContent = {
       title: 'Legal',
       links: [
         { href: '/privacy', label: 'Privacy' },
+        { href: '/security', label: 'Security' },
         { href: '/terms', label: 'Terms' },
       ],
     },

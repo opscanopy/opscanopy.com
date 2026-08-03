@@ -42,6 +42,7 @@ export interface PagesContent {
   privacy: PageDoc;
   about: PageDoc;
   terms: PageDoc;
+  security: PageDoc;
   contact: PageDoc;
   /** Shared chrome strings for the info-page template. */
   ui: {
@@ -230,6 +231,61 @@ const en: PagesContent = {
       { label: 'OpsCanopy on GitHub', href: 'https://github.com/opscanopy/opscanopy.com', external: true },
       { label: 'Report an issue', href: 'https://github.com/opscanopy/opscanopy.com/issues', external: true },
       { label: 'Verify the AI', href: '/verify-ai/' },
+    ],
+  },
+
+  security: {
+    metaTitle: 'Security',
+    description:
+      'How OpsCanopy is built to keep what you paste on your machine: no backend, a hash-based CSP, and a published way to report a vulnerability.',
+    eyebrow: 'Security',
+    heading: 'What protects the things you paste.',
+    lead: 'Every tool here runs in your own browser. This page explains what that actually buys you, what it does not, and how to check any of it yourself rather than taking our word for it.',
+    updated: UPDATED,
+    sections: [
+      {
+        heading: 'The architecture IS the guarantee',
+        body: [
+          'OpsCanopy is a static site. There is no server that receives your input, no database, and no account — so "we do not log what you paste" is not a policy we could quietly change, it is a thing we have no mechanism to do.',
+          'That is enforced at the platform level, not just promised. The Content-Security-Policy sets `connect-src` to this origin plus Google Analytics and nothing else, so the page is not permitted to send data anywhere we have not listed. `frame-ancestors` is `none`, so no other site can embed a tool and read it. Fonts are self-hosted; there is no CDN to phone.',
+          'You can watch this. Open your browser devtools, switch to the network tab, paste something into any tool, and press the button. The only third-party request is the Google Analytics script — and its events carry the page path only. We checked that specifically: a tool value written into the URL fragment does not reach analytics, because fragments are never sent in a request.',
+        ],
+      },
+      {
+        heading: 'Injected script cannot run here',
+        body: [
+          'Every tool builds its results as HTML and injects them, which is exactly the shape that becomes cross-site scripting when it goes wrong. Two things stand behind it.',
+          'First, every value that reaches the page passes through one escaping helper — there is no tool that opts out. Second, the CSP `script-src` contains no `unsafe-inline`: it lists a SHA-256 hash for each script the build produced, so a script the build did not produce simply does not execute, even if something managed to write it into the page. `object-src` is `none` and `base-uri` is locked to this origin, which closes the two common ways around a script policy.',
+        ],
+      },
+      {
+        heading: 'What we store on your device — and what we refuse to',
+        body: [
+          'To save you retyping, most tools remember your most recent input in your browser’s local storage. It never leaves your machine, every key is documented by name on the privacy page, and there is a button there that erases all of it.',
+          'Tools whose input is normally a secret — the JWT decoder, hash generator, Base64 encoder, .env checker and certificate decoder — never store anything at all. On every other tool, a value that looks like a credential (a private-key block, an API token, a JWT, a password inside a URL) is refused before it can be written, so a secret pasted somewhere unexpected is still not kept.',
+        ],
+      },
+      {
+        heading: 'What this does NOT protect you from',
+        body: [
+          'A browser extension with permission to read pages can read what you paste here, exactly as it can on any site. So can anyone with access to your unlocked machine, or malware on it. Running in your browser removes us from the picture; it does not remove everything else that is already there.',
+          'Nothing here vouches for the things you paste. A certificate this tool says is valid can still be a certificate you should not trust, and a workflow this tool reports as clean can still be wrong in ways it does not check — each tool page lists what it deliberately does not look at.',
+          'And be careful about the habit rather than the site: if pasting secrets into a web page becomes routine, the risk is the next page you do it on.',
+        ],
+      },
+      {
+        heading: 'Reporting something',
+        body: [
+          'Email hello@opscanopy.com. Include the page, the input, and what you saw. You will get a reply within a few days, and credit in the changelog when a fix ships unless you would rather not be named.',
+          'The most valuable report is anything that gets pasted input off the page, or makes the site run script it did not ship. The full policy — scope, timelines, what is out of scope — is in SECURITY.md in the repository, and machine-readably at /.well-known/security.txt.',
+        ],
+      },
+      {
+        heading: 'Check it yourself',
+        body: [
+          'The site is MIT-licensed and the whole repository is public, including the tool engines and their tests. If a claim on this page matters to you, the code behind it is readable, and the security headers are a single file you can inspect in your browser’s network tab.',
+        ],
+      },
     ],
   },
 

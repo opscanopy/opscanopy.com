@@ -52,6 +52,7 @@ const ptBr: Partial<SiteContent> = {
       title: 'Legal',
       links: [
         { href: '/privacy', label: 'Privacidade' },
+        { href: '/security', label: 'Segurança' },
         { href: '/terms', label: 'Termos' },
       ],
     },

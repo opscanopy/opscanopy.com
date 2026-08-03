@@ -25,6 +25,7 @@ export function getPagesContent(lang: Locale): PagesContent {
     privacy: p.privacy ?? en.privacy,
     about: p.about ?? en.about,
     terms: p.terms ?? en.terms,
+    security: p.security ?? en.security,
     contact: p.contact ?? en.contact,
     ui: {
       updatedLabel: p.ui?.updatedLabel ?? en.ui.updatedLabel,
