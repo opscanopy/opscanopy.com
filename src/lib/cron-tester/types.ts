@@ -37,6 +37,13 @@ export interface CronResult {
   fields: CronFields;
   /** Upcoming fire times as readable strings (absolute + relative hint). */
   nextRuns: string[];
+  /**
+   * The IANA zone `nextRuns` was computed and rendered in — the caller's
+   * requested zone, or the runtime's own when none was given. Always display
+   * it: a next-run time without its zone is the "printed as fact" bug this
+   * field exists to prevent.
+   */
+  timeZone: string;
 }
 
 /** The five raw cron sub-expressions, exactly as written by the user. */

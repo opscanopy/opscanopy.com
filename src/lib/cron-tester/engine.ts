@@ -4,8 +4,13 @@
  * Pure TypeScript, deterministic, browser-safe. The two public entry points —
  * `explain()` and `nextRuns()` — NEVER throw on user input; malformed input is
  * reported via `{ valid: false, error }` (explain) or an empty array
- * (nextRuns). All times are computed in the host's LOCAL timezone, which is the
- * intuitive reading for an interactive "when does this next fire?" tool.
+ * (nextRuns). Times are computed in an EXPLICIT IANA timezone: callers may
+ * pass one via the trailing CronTimeOptions, and it defaults to the runtime's
+ * own zone — the long-standing behaviour and the intuitive reading for an
+ * interactive "when does this next fire?" tool. The resolved zone comes back
+ * on CronResult.timeZone so the UI can label it: a crontab actually fires on
+ * the HOST's wall clock, so an unlabelled next-run time computed in the
+ * visitor's laptop zone is a guess presented as fact.
  *
  * Supported syntax:
  *   - Standard 5-field cron:  minute hour day-of-month month day-of-week
@@ -25,6 +30,56 @@
  */
 
 import type { CronResult, CronFields } from './types';
+import { isValidTimeZone, zoneClock, type WallTime, type ZoneClock } from './wall-clock';
+
+/** Optional trailing argument on every public entry point. */
+export interface CronTimeOptions {
+  /**
+   * IANA zone the schedule is evaluated in, e.g. 'UTC' or 'America/New_York'.
+   * Defaults to the runtime's own zone — the long-standing behaviour, now
+   * resolved explicitly so callers can display which zone produced an answer
+   * instead of presenting a laptop-local time as fact.
+   */
+  timeZone?: string;
+}
+
+/**
+ * The runtime's zone, or 'UTC' if the platform will not tell us.
+ * Memoized: matchesAt resolves the zone on every call and verify.ts calls it
+ * up to ~2.6M times in one scan, so constructing a DateTimeFormat here to ask
+ * the same unchanging question dominated the whole search.
+ */
+let runtimeZoneMemo: string | null = null;
+function runtimeTimeZone(): string {
+  if (runtimeZoneMemo === null) {
+    try {
+      runtimeZoneMemo = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    } catch {
+      runtimeZoneMemo = 'UTC';
+    }
+  }
+  return runtimeZoneMemo;
+}
+
+/** Resolve the requested zone, or null when it is not one this runtime knows. */
+function resolveZone(opts?: CronTimeOptions): string | null {
+  const tz = opts?.timeZone;
+  if (tz === undefined) return runtimeTimeZone();
+  return isValidTimeZone(tz) ? tz : null;
+}
+
+// matchesAt is called one instant at a time in a tight external loop (see
+// verify.ts), so its clock — and the day-offset cache inside it — must
+// survive across calls or the cache never gets a second hit.
+let lastClock: ZoneClock | null = null;
+function clockFor(timeZone: string): ZoneClock {
+  if (lastClock === null || lastClock.timeZone !== timeZone) lastClock = zoneClock(timeZone);
+  return lastClock;
+}
+
+function unknownZoneError(opts?: CronTimeOptions): string {
+  return `Unknown timezone “${opts?.timeZone}”. Use an IANA name such as UTC or America/New_York.`;
+}
 
 /* ------------------------------------------------------------------------- *
  * Field model
@@ -500,18 +555,18 @@ function describe(p: ParsedCron): string {
  * ------------------------------------------------------------------------- */
 
 /**
- * Does a given local Date satisfy the parsed schedule (at minute resolution)?
+ * Does a wall-clock reading satisfy the parsed schedule (at minute resolution)?
  * Honors the Vixie-cron OR rule between day-of-month and day-of-week.
  */
-function matches(p: ParsedCron, d: Date): boolean {
-  if (!p.minute.set.has(d.getMinutes())) return false;
-  if (!p.hour.set.has(d.getHours())) return false;
-  if (!p.month.set.has(d.getMonth() + 1)) return false;
+function matches(p: ParsedCron, w: WallTime): boolean {
+  if (!p.minute.set.has(w.minute)) return false;
+  if (!p.hour.set.has(w.hour)) return false;
+  if (!p.month.set.has(w.month)) return false;
 
   const domRestricted = !p.dayOfMonth.isWildcard;
   const dowRestricted = !p.dayOfWeek.isWildcard;
-  const domHit = p.dayOfMonth.set.has(d.getDate());
-  const dowHit = p.dayOfWeek.set.has(d.getDay());
+  const domHit = p.dayOfMonth.set.has(w.day);
+  const dowHit = p.dayOfWeek.set.has(w.weekday);
 
   if (domRestricted && dowRestricted) {
     // OR semantics: either field matching is enough.
@@ -524,28 +579,43 @@ function matches(p: ParsedCron, d: Date): boolean {
 
 /**
  * Compute the next `count` fire times at or after `from` (exclusive of the
- * starting minute). Returns Date objects in local time. Capped at a generous
- * search horizon so a never-firing expression terminates cleanly rather than
- * looping forever.
+ * starting minute), matching against the wall clock of `timeZone`.
+ *
+ * The walk steps UTC minutes rather than calling Date#setMinutes, which is
+ * what makes DST correct: setMinutes(+1) walks LOCAL minutes, so a
+ * spring-forward silently swallowed the missing hour and `0 2 * * *` returned
+ * no run at all that day. Stepping instants and reading the wall clock per
+ * candidate means a nonexistent wall time is simply never produced, and a
+ * repeated one is deduped below.
+ *
+ * Capped at a generous horizon so a never-firing expression terminates.
  */
-function computeNextDates(p: ParsedCron, count: number, from: Date): Date[] {
+function computeNextDates(p: ParsedCron, count: number, from: Date, timeZone: string): Date[] {
   const out: Date[] = [];
+  const clock = zoneClock(timeZone);
 
   // Start at the next whole minute strictly after `from`.
-  const cursor = new Date(from.getTime());
-  cursor.setSeconds(0, 0);
-  cursor.setMinutes(cursor.getMinutes() + 1);
+  let epochMs = Math.floor(from.getTime() / 60000) * 60000 + 60000;
 
   // Search up to ~5 years of minutes — comfortably covers Feb-29-only rules.
   const MAX_ITERATIONS = 5 * 366 * 24 * 60;
   let iterations = 0;
 
+  // On a fall-back the same wall minute occurs twice. Cron fires once, so keep
+  // the first instant and skip an identical consecutive wall reading.
+  let lastFiredKey = '';
+
   while (out.length < count && iterations < MAX_ITERATIONS) {
     iterations++;
-    if (matches(p, cursor)) {
-      out.push(new Date(cursor.getTime()));
+    const w = clock.at(epochMs);
+    if (matches(p, w)) {
+      const key = `${w.year}-${w.month}-${w.day}T${w.hour}:${w.minute}`;
+      if (key !== lastFiredKey) {
+        lastFiredKey = key;
+        out.push(new Date(epochMs));
+      }
     }
-    cursor.setMinutes(cursor.getMinutes() + 1);
+    epochMs += 60000;
   }
 
   return out;
@@ -564,10 +634,14 @@ const ABS_FORMAT_OPTS: Intl.DateTimeFormatOptions = {
   minute: '2-digit',
 };
 
-/** Format an absolute local timestamp like "Mon, Jun 8 2026, 09:00". */
-function formatAbsolute(d: Date): string {
+/**
+ * Format an absolute timestamp like "Mon, Jun 8 2026, 09:00" in `timeZone`.
+ * Rendering in a different zone than the one we matched in would print correct
+ * instants at the wrong wall times — the same class of bug, one layer later.
+ */
+function formatAbsolute(d: Date, timeZone: string): string {
   try {
-    return new Intl.DateTimeFormat(undefined, ABS_FORMAT_OPTS).format(d);
+    return new Intl.DateTimeFormat(undefined, { ...ABS_FORMAT_OPTS, timeZone }).format(d);
   } catch {
     // Defensive fallback if Intl is unavailable for any reason.
     return d.toString();
@@ -604,8 +678,8 @@ function formatRelative(d: Date, from: Date): string {
 }
 
 /** Render one fire time as "absolute · relative". */
-function formatRun(d: Date, from: Date): string {
-  return `${formatAbsolute(d)} · ${formatRelative(d, from)}`;
+function formatRun(d: Date, from: Date, timeZone: string): string {
+  return `${formatAbsolute(d, timeZone)} · ${formatRelative(d, from)}`;
 }
 
 /* ------------------------------------------------------------------------- *
@@ -642,13 +716,27 @@ function clampCount(count?: number): number {
  * per-field sub-expressions, and the next few fire times. Never throws — bad
  * input returns `{ valid: false, error, … }` with safe placeholder fields.
  */
-export function explain(expr: string): CronResult {
+export function explain(expr: string, opts?: CronTimeOptions): CronResult {
   const raw = typeof expr === 'string' ? expr : '';
   const outcome = parse(raw);
+  const zone = resolveZone(opts);
 
   // Echo the raw fields for display. For macros / errors we surface the
   // original tokens where sensible, falling back to placeholders.
   const fields = rawFieldsOf(raw, outcome);
+
+  // An unknown zone is a user input error like any other, reported the same
+  // way rather than thrown — this engine's contract is that it never throws.
+  if (zone === null) {
+    return {
+      valid: false,
+      error: unknownZoneError(opts),
+      description: '',
+      fields,
+      nextRuns: [],
+      timeZone: runtimeTimeZone(),
+    };
+  }
 
   if (outcome.error) {
     return {
@@ -657,6 +745,7 @@ export function explain(expr: string): CronResult {
       description: '',
       fields,
       nextRuns: [],
+      timeZone: zone,
     };
   }
 
@@ -667,13 +756,14 @@ export function explain(expr: string): CronResult {
         'At system startup (@reboot). This runs once when the scheduler boots, so it has no recurring fire times.',
       fields,
       nextRuns: [],
+      timeZone: zone,
     };
   }
 
   const parsed = outcome.parsed!;
   const from = new Date();
-  const dates = computeNextDates(parsed, 5, from);
-  const nextRuns = dates.map((d) => formatRun(d, from));
+  const dates = computeNextDates(parsed, 5, from, zone);
+  const nextRuns = dates.map((d) => formatRun(d, from, zone));
 
   return {
     valid: true,
@@ -683,6 +773,7 @@ export function explain(expr: string): CronResult {
       nextRuns.length > 0
         ? nextRuns
         : ['This expression has no upcoming fire times within the next 5 years.'],
+    timeZone: zone,
   };
 }
 
@@ -702,7 +793,9 @@ let lastMatchesAtOutcome: ParseOutcome | null = null;
  * invalid expressions and `@reboot` (which has no schedulable times).
  * Additive export for the Verify-the-AI engine — never throws.
  */
-export function matchesAt(expr: string, at: Date): boolean {
+export function matchesAt(expr: string, at: Date, opts?: CronTimeOptions): boolean {
+  const zone = resolveZone(opts);
+  if (zone === null) return false;
   const e = typeof expr === 'string' ? expr : '';
   let outcome: ParseOutcome;
   if (lastMatchesAtExpr === e && lastMatchesAtOutcome) {
@@ -713,7 +806,7 @@ export function matchesAt(expr: string, at: Date): boolean {
     lastMatchesAtOutcome = outcome;
   }
   if (outcome.error || outcome.isReboot || !outcome.parsed) return false;
-  return matches(outcome.parsed, at);
+  return matches(outcome.parsed, clockFor(zone).at(at.getTime()));
 }
 
 /**
@@ -721,14 +814,21 @@ export function matchesAt(expr: string, at: Date): boolean {
  * a reference ISO timestamp instead of "now". Returns readable strings; an
  * empty array on invalid input or for `@reboot`. Never throws.
  */
-export function nextRuns(expr: string, count = 5, fromIso?: string): string[] {
+export function nextRuns(
+  expr: string,
+  count = 5,
+  fromIso?: string,
+  opts?: CronTimeOptions,
+): string[] {
+  const zone = resolveZone(opts);
+  if (zone === null) return [];
   const outcome = parse(typeof expr === 'string' ? expr : '');
   if (outcome.error || outcome.isReboot || !outcome.parsed) return [];
 
   const from = resolveFrom(fromIso);
   const n = clampCount(count);
-  const dates = computeNextDates(outcome.parsed, n, from);
-  return dates.map((d) => formatRun(d, from));
+  const dates = computeNextDates(outcome.parsed, n, from, zone);
+  return dates.map((d) => formatRun(d, from, zone));
 }
 
 /**
@@ -736,13 +836,20 @@ export function nextRuns(expr: string, count = 5, fromIso?: string): string[] {
  * display-formatted strings — for chaining the first next run into
  * Timestamp Converter's `#t=` deep link. Additive export; never throws.
  */
-export function nextRunEpochSeconds(expr: string, count = 5, fromIso?: string): number[] {
+export function nextRunEpochSeconds(
+  expr: string,
+  count = 5,
+  fromIso?: string,
+  opts?: CronTimeOptions,
+): number[] {
+  const zone = resolveZone(opts);
+  if (zone === null) return [];
   const outcome = parse(typeof expr === 'string' ? expr : '');
   if (outcome.error || outcome.isReboot || !outcome.parsed) return [];
 
   const from = resolveFrom(fromIso);
   const n = clampCount(count);
-  const dates = computeNextDates(outcome.parsed, n, from);
+  const dates = computeNextDates(outcome.parsed, n, from, zone);
   return dates.map((d) => Math.floor(d.getTime() / 1000));
 }
 

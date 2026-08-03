@@ -126,3 +126,64 @@ export function zoneOffsetMinutes(epochMs: number, timeZone: string): number {
   // nearest minute so those never leak into the offset.
   return Math.round((asUtc - Math.floor(epochMs / 60000) * 60000) / 60000);
 }
+
+/* ── Fast path ───────────────────────────────────────────────────────────────
+ * The cron search walks minute by minute — up to ~2.6M candidates for a
+ * never-firing expression, and the Verify-the-AI engine runs its own
+ * independent scan on top. One formatToParts per candidate makes both
+ * unusably slow.
+ *
+ * A zone's offset is constant for all but two days a year, and on those two it
+ * changes exactly once. So: cache the offset per UTC day, and when a day's
+ * first and last minute agree, derive the whole day's wall times with pure
+ * arithmetic. Transition days fall back to the exact Intl path, so correctness
+ * is unchanged — only the ~1830 uniform days per 5-year horizon get cheap.
+ * ------------------------------------------------------------------------- */
+
+const DAY_MS = 86_400_000;
+
+/** Wall time of an instant given a known fixed offset. Pure arithmetic. */
+function wallFromOffset(epochMs: number, offsetMinutes: number): WallTime {
+  const shifted = new Date(epochMs + offsetMinutes * 60_000);
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+    hour: shifted.getUTCHours(),
+    minute: shifted.getUTCMinutes(),
+    weekday: shifted.getUTCDay(),
+  };
+}
+
+/** Reads wall times in one zone, reusing a per-UTC-day offset when it is safe. */
+export interface ZoneClock {
+  at(epochMs: number): WallTime;
+  readonly timeZone: string;
+}
+
+/**
+ * A reader for `timeZone`. Callers that walk many instants should create one
+ * and reuse it; the day cache lives on the instance.
+ */
+export function zoneClock(timeZone: string): ZoneClock {
+  let cachedDay = Number.NaN;
+  let cachedOffset = 0;
+  let uniformDay = false;
+
+  return {
+    timeZone,
+    at(epochMs: number): WallTime {
+      const day = Math.floor(epochMs / DAY_MS);
+      if (day !== cachedDay) {
+        cachedDay = day;
+        const start = day * DAY_MS;
+        const first = zoneOffsetMinutes(start, timeZone);
+        const last = zoneOffsetMinutes(start + DAY_MS - 60_000, timeZone);
+        uniformDay = first === last;
+        cachedOffset = first;
+      }
+      // A transition day gets the exact path — never guess across the seam.
+      return uniformDay ? wallFromOffset(epochMs, cachedOffset) : wallClock(epochMs, timeZone);
+    },
+  };
+}
