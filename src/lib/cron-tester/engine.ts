@@ -615,8 +615,16 @@ function computeNextDates(p: ParsedCron, count: number, from: Date, timeZone: st
     // walk, which engine.test.ts asserts against an independent oracle.
     // Without this a never-firing expression walks all ~2.6M minutes.
     if (!dateCouldMatch(p, w)) {
-      // Nothing this calendar day can match: jump to 00:00 of the next day.
-      epochMs += (24 * 60 - (w.hour * 60 + w.minute)) * 60000;
+      // Nothing this calendar day can match: jump toward the next local
+      // midnight. A DST day is NOT 1440 minutes — 23 or 25 hours usually, and
+      // Antarctica/Troll shifts by a full two — so adding the wall-minutes to
+      // midnight as real time can overshoot the boundary and skip the target
+      // day's first hour, losing a real run. Landing SHORT is always safe (the
+      // loop just re-evaluates), so hold back the largest real transition, and
+      // never advance less than to the next hour boundary, which is uniform
+      // across every offset.
+      const toMidnight = 24 * 60 - (w.hour * 60 + w.minute);
+      epochMs += Math.max(60 - w.minute, toMidnight - DST_MARGIN_MIN) * 60000;
       continue;
     }
     if (!p.hour.set.has(w.hour)) {
@@ -638,6 +646,14 @@ function computeNextDates(p: ParsedCron, count: number, from: Date, timeZone: st
 
   return out;
 }
+
+/**
+ * Largest real DST shift in the IANA database, in minutes (Antarctica/Troll
+ * moves two hours; almost everywhere else is 60, Lord Howe 30). The day jump
+ * stops this far short of the computed midnight so it can never overshoot the
+ * boundary on a shortened day.
+ */
+const DST_MARGIN_MIN = 120;
 
 /**
  * Could ANY minute of this calendar date match? Exactly the month/day half of

@@ -149,9 +149,15 @@ describe('next-run search — day/hour jumping', () => {
   const from = '2026-01-01T00:00:00.000Z';
 
   it('a never-firing expression answers fast', () => {
+    // ~30-50ms typical, against ~512ms for the old exhaustive minute walk. The
+    // bound is 150ms rather than the measured figure: the day jump deliberately
+    // stops short of midnight near a possible DST transition (see
+    // DST_MARGIN_MIN), which costs a few extra hops per skipped day, and a
+    // tight bound would make this flaky on a loaded machine. What matters is
+    // that it stays well inside the playground's 150ms debounce.
     const t0 = performance.now();
     expect(nextRunEpochSeconds('0 0 30 2 *', 1, from, { timeZone: 'UTC' })).toEqual([]);
-    expect(performance.now() - t0).toBeLessThan(50);
+    expect(performance.now() - t0).toBeLessThan(150);
   });
 
   it('a sparse but real expression is still found years out', () => {
@@ -223,3 +229,41 @@ function exhaustiveWalk(expr: string, count: number, fromIso: string, timeZone: 
   }
   return out;
 }
+
+describe('day-jump across a DST boundary — regression', () => {
+  // The day jump advances by the wall-minutes remaining until midnight. A
+  // spring-forward day is only 23 hours, so treating those as real minutes
+  // overshot the boundary and skipped the target day's 00:00-00:59 — it
+  // returned the run a YEAR later. Every earlier DST test used a wildcard day
+  // field, so the day jump never fired and none of them caught it.
+  const tz = 'America/New_York';
+
+  it('finds a 00:30 run on the day after spring-forward', () => {
+    const want = Math.floor(Date.parse('2026-03-09T04:30:00Z') / 1000); // 00:30 EDT
+    expect(matchesAt('30 0 9 3 *', new Date(want * 1000), { timeZone: tz })).toBe(true);
+    expect(nextRunEpochSeconds('30 0 9 3 *', 1, '2026-03-07T12:00:00Z', { timeZone: tz })[0]).toBe(
+      want,
+    );
+  });
+
+  it('finds a 00:30 run on the day after fall-back', () => {
+    const want = Math.floor(Date.parse('2026-11-02T05:30:00Z') / 1000); // 00:30 EST
+    expect(matchesAt('30 0 2 11 *', new Date(want * 1000), { timeZone: tz })).toBe(true);
+    expect(nextRunEpochSeconds('30 0 2 11 *', 1, '2026-10-31T12:00:00Z', { timeZone: tz })[0]).toBe(
+      want,
+    );
+  });
+
+  it('day-restricted expressions agree with the exhaustive walk across both transitions', () => {
+    // The gap in the earlier equivalence test: these RESTRICT the day fields, so
+    // the day jump actually fires while crossing a transition.
+    for (const from of ['2026-03-01T00:00:00.000Z', '2026-10-25T00:00:00.000Z']) {
+      for (const expr of ['30 0 * * 1', '0 0 9,10 * *', '45 0 1,15 * *', '30 0 * 3,11 0']) {
+        expect(
+          nextRunEpochSeconds(expr, 4, from, { timeZone: tz }),
+          `mismatch for ${expr} from ${from}`,
+        ).toEqual(exhaustiveWalk(expr, 4, from, tz));
+      }
+    }
+  });
+});
