@@ -144,3 +144,82 @@ describe('timezone — explicit, selectable, reported', () => {
     expect(new Date(r * 1000).toISOString()).toBe('2026-03-07T18:30:00.000Z');
   });
 });
+
+describe('next-run search — day/hour jumping', () => {
+  const from = '2026-01-01T00:00:00.000Z';
+
+  it('a never-firing expression answers fast', () => {
+    const t0 = performance.now();
+    expect(nextRunEpochSeconds('0 0 30 2 *', 1, from, { timeZone: 'UTC' })).toEqual([]);
+    expect(performance.now() - t0).toBeLessThan(50);
+  });
+
+  it('a sparse but real expression is still found years out', () => {
+    expect(nextRunEpochSeconds('0 0 29 2 *', 1, from, { timeZone: 'UTC' })[0]).toBe(
+      Math.floor(Date.parse('2028-02-29T00:00:00Z') / 1000),
+    );
+  });
+
+  it('jumping never skips a run — agrees with an exhaustive minute walk', () => {
+    // The invariant: a jump may only skip candidates the field test would have
+    // rejected anyway. These expressions between them exercise every jump path
+    // — month-restricted, day-of-month, the day-of-month/day-of-week OR rule,
+    // hour-restricted, and a dense minute field.
+    for (const expr of [
+      '15 3 1,15 * 1', // OR rule: 1st, 15th, AND every Monday
+      '0 0 29 2 *', //    leap day only
+      '*/7 */5 * * *', //  step fields
+      '30 4 1 1 *', //     one minute a year
+      '0 0 * * 0', //      Sundays
+      '* * * * *', //      every minute
+    ]) {
+      const jumped = nextRunEpochSeconds(expr, 8, from, { timeZone: 'America/New_York' });
+      const walked = exhaustiveWalk(expr, 8, from, 'America/New_York');
+      expect(jumped, `mismatch for ${expr}`).toEqual(walked);
+    }
+  });
+
+  it('jumping is DST-safe — it cannot tunnel over a transition', () => {
+    // Around both 2026 US transitions, jumped and walked must still agree.
+    for (const f of ['2026-03-07T00:00:00.000Z', '2026-10-31T00:00:00.000Z']) {
+      for (const expr of ['0 2 * * *', '30 1 * * *', '0 * * * *']) {
+        expect(
+          nextRunEpochSeconds(expr, 6, f, { timeZone: 'America/New_York' }),
+          `mismatch for ${expr} from ${f}`,
+        ).toEqual(exhaustiveWalk(expr, 6, f, 'America/New_York'));
+      }
+    }
+  });
+});
+
+/**
+ * Reference implementation: brute-force minute-by-minute over the public
+ * matchesAt(), independent of the engine's internal search. Deliberately slow.
+ */
+function exhaustiveWalk(expr: string, count: number, fromIso: string, timeZone: string): number[] {
+  const out: number[] = [];
+  let ms = Math.floor(Date.parse(fromIso) / 60000) * 60000 + 60000;
+  // Must match the engine's own horizon exactly. A shorter one makes a
+  // once-a-year expression find fewer runs and reports a false mismatch.
+  const limit = 5 * 366 * 24 * 60;
+  let lastKey = '';
+  for (let i = 0; i < limit && out.length < count; i++, ms += 60000) {
+    if (matchesAt(expr, new Date(ms), { timeZone })) {
+      // Same fall-back dedupe the engine applies.
+      const key = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        hourCycle: 'h23',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(ms);
+      if (key !== lastKey) {
+        lastKey = key;
+        out.push(Math.floor(ms / 1000));
+      }
+    }
+  }
+  return out;
+}

@@ -597,17 +597,35 @@ function computeNextDates(p: ParsedCron, count: number, from: Date, timeZone: st
   // Start at the next whole minute strictly after `from`.
   let epochMs = Math.floor(from.getTime() / 60000) * 60000 + 60000;
 
-  // Search up to ~5 years of minutes — comfortably covers Feb-29-only rules.
-  const MAX_ITERATIONS = 5 * 366 * 24 * 60;
-  let iterations = 0;
+  // Search ~5 years — comfortably covers Feb-29-only rules. This MUST be a
+  // deadline on the instant, not a loop-pass counter: the jumps below can
+  // advance a whole day per pass, so a pass counter silently became a
+  // ~7000-year horizon and returned "next runs" from the 90th century.
+  const deadline = epochMs + 5 * 366 * 24 * 60 * 60_000;
 
   // On a fall-back the same wall minute occurs twice. Cron fires once, so keep
   // the first instant and skip an identical consecutive wall reading.
   let lastFiredKey = '';
 
-  while (out.length < count && iterations < MAX_ITERATIONS) {
-    iterations++;
+  while (out.length < count && epochMs < deadline) {
     const w = clock.at(epochMs);
+
+    // Field-aware jumping. The invariant: only ever skip candidates the field
+    // test would reject anyway — so the answer is identical to a plain minute
+    // walk, which engine.test.ts asserts against an independent oracle.
+    // Without this a never-firing expression walks all ~2.6M minutes.
+    if (!dateCouldMatch(p, w)) {
+      // Nothing this calendar day can match: jump to 00:00 of the next day.
+      epochMs += (24 * 60 - (w.hour * 60 + w.minute)) * 60000;
+      continue;
+    }
+    if (!p.hour.set.has(w.hour)) {
+      // Right day, wrong hour: jump to the top of the next hour. Minutes are
+      // uniform across every offset, so this cannot tunnel over a DST seam.
+      epochMs += (60 - w.minute) * 60000;
+      continue;
+    }
+
     if (matches(p, w)) {
       const key = `${w.year}-${w.month}-${w.day}T${w.hour}:${w.minute}`;
       if (key !== lastFiredKey) {
@@ -619,6 +637,25 @@ function computeNextDates(p: ParsedCron, count: number, from: Date, timeZone: st
   }
 
   return out;
+}
+
+/**
+ * Could ANY minute of this calendar date match? Exactly the month/day half of
+ * `matches`, including the Vixie-cron OR rule — kept here rather than inlined
+ * so the two cannot drift apart and let the day jump skip a real run.
+ */
+function dateCouldMatch(p: ParsedCron, w: WallTime): boolean {
+  if (!p.month.set.has(w.month)) return false;
+
+  const domRestricted = !p.dayOfMonth.isWildcard;
+  const dowRestricted = !p.dayOfWeek.isWildcard;
+  const domHit = p.dayOfMonth.set.has(w.day);
+  const dowHit = p.dayOfWeek.set.has(w.weekday);
+
+  if (domRestricted && dowRestricted) return domHit || dowHit;
+  if (domRestricted) return domHit;
+  if (dowRestricted) return dowHit;
+  return true;
 }
 
 /* ------------------------------------------------------------------------- *
