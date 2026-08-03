@@ -124,3 +124,27 @@ describe('parseCidr — the prefix gets the same leading-zero strictness as the 
     expect(parseCidr('2001:db8::/128')).not.toBeNull();
   });
 });
+
+describe('ipv6Compress — RFC 5952 §5 dotted form for IPv4-mapped addresses', () => {
+  it('renders ::ffff:0:0/96 addresses with a dotted tail', () => {
+    expect(ipv6Compress(parseIPv6('::ffff:192.168.1.1')!)).toBe('::ffff:192.168.1.1');
+    expect(ipv6Compress(parseIPv6('::ffff:0.0.0.0')!)).toBe('::ffff:0.0.0.0');
+    expect(ipv6Compress(parseIPv6('::ffff:255.255.255.255')!)).toBe('::ffff:255.255.255.255');
+  });
+
+  it('leaves every other address in hex', () => {
+    // ::/96 "IPv4-compatible" is deprecated (RFC 4291 §2.5.5.1) — do NOT extend
+    // the dotted form to it, or ::c0a8:101 starts rendering as ::192.168.1.1.
+    expect(ipv6Compress(parseIPv6('::192.168.1.1')!)).toBe('::c0a8:101');
+    expect(ipv6Compress(parseIPv6('::1')!)).toBe('::1');
+    expect(ipv6Compress(parseIPv6('64:ff9b::192.0.2.33')!)).toBe('64:ff9b::c000:221');
+  });
+
+  it('regression pins: compression rules are untouched', () => {
+    expect(ipv6Compress(parseIPv6('::')!)).toBe('::');
+    // RFC 5952 §4.2.3 — first of two equal-length runs wins.
+    expect(ipv6Compress(parseIPv6('0:0:1:0:0:1:0:0')!)).toBe('::1:0:0:1:0:0');
+    // §4.2.2 — a single zero group is never shortened to '::'.
+    expect(ipv6Compress(parseIPv6('2001:db8:0:1:1:1:1:1')!)).toBe('2001:db8:0:1:1:1:1:1');
+  });
+});

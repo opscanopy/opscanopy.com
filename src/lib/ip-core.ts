@@ -135,6 +135,13 @@ export function ipv6Expand(v: bigint): string {
 
 /** 128-bit value → RFC 5952 compressed IPv6 (longest zero run → "::"). */
 export function ipv6Compress(v: bigint): string {
+  // RFC 5952 §5: an IPv4-mapped address SHOULD keep its dotted tail, so a
+  // dual-stack target list reads ::ffff:192.168.1.1 here and everywhere else in
+  // the operator's stack, not ::ffff:c0a8:101. Deliberately scoped to the mapped
+  // prefix only — the ::/96 "IPv4-compatible" form is deprecated (RFC 4291
+  // §2.5.5.1) and must keep rendering as hex.
+  if ((v >> 32n) === 0xffffn) return `::ffff:${ipv4ToString(v & 0xffffffffn)}`;
+
   const g = ipv6Groups(v).map((x) => x.toString(16));
   let bestStart = -1;
   let bestLen = 0;
