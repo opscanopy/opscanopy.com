@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { parseIPv4, ipv4ToString, parseCidr, parseIPv6, ipv6Compress, relate, classifyIPv4, classifyIPv6 } from './ip-core';
+import { parseIPv4, ipv4ToString, parseCidr, parseIPv6, ipv6Compress, relate, classifyIPv4, classifyIPv6,
+  ipv6Expand, ipv6Groups, rangeToCidrs, maskForPrefix, fullMask, detectVersion,
+  parseAddr, formatAddr, networkAddr, lastAddr, cidrRange, addrCount, classify,
+  ipv4ToBinary, BITS } from './ip-core';
 
 /**
  * ip-core is shared by all six networking tools, so its parsing decisions set
@@ -204,5 +207,164 @@ describe('classifyIPv6 — transition ranges', () => {
     expect(c('2001:db8::1')).toBe('Documentation (2001:db8::/32)');
     expect(c('::ffff:192.168.1.1')).toBe('IPv4-mapped (::ffff:0:0/96)');
     expect(c('2001:4860:4860::8888')).toBe('Global unicast (2000::/3)');
+  });
+});
+
+/* ── Coverage backfill ───────────────────────────────────────────────────────
+ * Before this block the file imported three symbols. parseIPv6, ipv6Compress,
+ * relate and rangeToCidrs had no direct tests at all — the tool suites reached
+ * them only through happy paths, which is precisely how '1.2.3.4::' survived.
+ * Every exported symbol is exercised here.
+ * ------------------------------------------------------------------------- */
+
+describe('parseIPv6 — grammar', () => {
+  const good = [
+    '::', '::1', 'fe80::1', '2001:db8::8a2e:370:7334',
+    '2001:0db8:0000:0000:0000:0000:0000:0001', '::ffff:192.168.1.1',
+    'ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff',
+  ];
+  const bad = [
+    '', ':::', '1::2::3', '2001:db8', '12345::', 'g::1',
+    '1:2:3:4:5:6:7:8:9', '1:2:3:4:5:6:7', '::ffff:192.168.1.256',
+    'fe80::1%eth0', // zone IDs are the converter's job, not the parser's
+    ':1', '1:', '1.2.3.4',
+  ];
+  it.each(good)('accepts %s', (s) => expect(parseIPv6(s)).not.toBeNull());
+  it.each(bad)('rejects %s', (s) => expect(parseIPv6(s)).toBeNull());
+
+  it("'::' must stand for at least one zero group", () => {
+    expect(parseIPv6('1:2:3:4::5:6:7:8')).toBeNull();
+  });
+});
+
+describe('ipv6Expand / ipv6Groups round-trip through parseIPv6', () => {
+  it('expand produces the canonical 8-group form', () => {
+    expect(ipv6Expand(parseIPv6('::1')!)).toBe('0000:0000:0000:0000:0000:0000:0000:0001');
+    expect(ipv6Expand(parseIPv6('2001:db8::1')!)).toBe('2001:0db8:0000:0000:0000:0000:0000:0001');
+  });
+
+  it('compress → parse round-trips every form', () => {
+    for (const s of ['::', '::1', 'fe80::', '2001:db8::1:0:0:1', '::ffff:10.0.0.1']) {
+      const v = parseIPv6(s)!;
+      expect(parseIPv6(ipv6Compress(v))).toBe(v);
+      expect(parseIPv6(ipv6Expand(v))).toBe(v);
+    }
+  });
+
+  it('ipv6Groups yields eight 16-bit numbers, most significant first', () => {
+    expect(ipv6Groups(parseIPv6('2001:db8::1')!)).toEqual([0x2001, 0x0db8, 0, 0, 0, 0, 0, 1]);
+  });
+});
+
+describe('maskForPrefix / fullMask', () => {
+  it.each([
+    [0, 0x00000000n],
+    [8, 0xff000000n],
+    [24, 0xffffff00n],
+    [31, 0xfffffffen],
+    [32, 0xffffffffn],
+  ])('IPv4 /%i', (p, m) => expect(maskForPrefix(4, p)).toBe(m));
+
+  it('IPv6 edges', () => {
+    expect(maskForPrefix(6, 0)).toBe(0n);
+    expect(maskForPrefix(6, 128)).toBe((1n << 128n) - 1n);
+  });
+
+  it('fullMask matches the widest prefix', () => {
+    expect(fullMask(4)).toBe(maskForPrefix(4, 32));
+    expect(fullMask(6)).toBe(maskForPrefix(6, 128));
+  });
+});
+
+describe('rangeToCidrs — minimal cover', () => {
+  const strs = (cs: { version: 4 | 6; addr: bigint; prefix: number }[]) =>
+    cs.map((c) => `${formatAddr(c.version, c.addr)}/${c.prefix}`);
+
+  it('the whole IPv4 space is exactly one /0', () => {
+    expect(strs(rangeToCidrs(0n, (1n << 32n) - 1n, 4))).toEqual(['0.0.0.0/0']);
+  });
+
+  it('an unaligned range decomposes minimally', () => {
+    expect(strs(rangeToCidrs(parseIPv4('10.0.0.1')!, parseIPv4('10.0.0.6')!, 4))).toEqual([
+      '10.0.0.1/32',
+      '10.0.0.2/31',
+      '10.0.0.4/31',
+      '10.0.0.6/32',
+    ]);
+  });
+
+  it('a single address is one host route', () => {
+    expect(strs(rangeToCidrs(parseIPv4('10.0.0.5')!, parseIPv4('10.0.0.5')!, 4))).toEqual([
+      '10.0.0.5/32',
+    ]);
+  });
+
+  it('an aligned block collapses to one CIDR', () => {
+    expect(strs(rangeToCidrs(parseIPv4('10.0.1.0')!, parseIPv4('10.0.1.255')!, 4))).toEqual([
+      '10.0.1.0/24',
+    ]);
+  });
+
+  it('works in IPv6 too', () => {
+    expect(strs(rangeToCidrs(parseIPv6('2001:db8::')!, parseIPv6('2001:db8::ff')!, 6))).toEqual([
+      '2001:db8::/120',
+    ]);
+  });
+});
+
+describe('Cidr helpers', () => {
+  const c = (s: string) => parseCidr(s)!;
+
+  it('networkAddr masks host bits; the parsed addr keeps them', () => {
+    expect(formatAddr(4, networkAddr(c('10.0.0.5/24')))).toBe('10.0.0.0');
+    expect(formatAddr(4, c('10.0.0.5/24').addr)).toBe('10.0.0.5');
+  });
+
+  it('lastAddr and cidrRange agree', () => {
+    expect(formatAddr(4, lastAddr(c('10.0.0.0/24')))).toBe('10.0.0.255');
+    const [s, e] = cidrRange(c('10.0.0.0/24'));
+    expect(formatAddr(4, s)).toBe('10.0.0.0');
+    expect(formatAddr(4, e)).toBe('10.0.0.255');
+  });
+
+  it('addrCount counts the block, including network and broadcast', () => {
+    expect(addrCount(c('10.0.0.0/24'))).toBe(256n);
+    expect(addrCount(c('10.0.0.0/31'))).toBe(2n);
+    expect(addrCount(c('10.0.0.0/32'))).toBe(1n);
+    expect(addrCount(c('2001:db8::/64'))).toBe(1n << 64n);
+  });
+
+  it('a bare address is a host route', () => {
+    expect(c('10.0.0.1').prefix).toBe(32);
+    expect(c('2001:db8::1').prefix).toBe(128);
+  });
+});
+
+describe('detectVersion / parseAddr / formatAddr / classify', () => {
+  it('detectVersion', () => {
+    expect(detectVersion('10.0.0.1')).toBe(4);
+    expect(detectVersion('2001:db8::1')).toBe(6);
+    expect(detectVersion('not an address')).toBeNull();
+  });
+
+  it('parseAddr and formatAddr round-trip both families', () => {
+    expect(formatAddr(4, parseAddr(4, '10.0.0.1')!)).toBe('10.0.0.1');
+    expect(formatAddr(6, parseAddr(6, '2001:db8::1')!)).toBe('2001:db8::1');
+    expect(parseAddr(4, '2001:db8::1')).toBeNull();
+  });
+
+  it('classify dispatches to the per-family classifier', () => {
+    expect(classify(4, parseIPv4('10.0.0.1')!)).toBe(classifyIPv4(parseIPv4('10.0.0.1')!));
+    expect(classify(6, parseIPv6('::1')!)).toBe(classifyIPv6(parseIPv6('::1')!));
+  });
+});
+
+describe('ipv4ToBinary / BITS', () => {
+  it('renders dotted binary', () => {
+    expect(ipv4ToBinary(parseIPv4('255.0.0.1')!)).toBe('11111111.00000000.00000000.00000001');
+  });
+  it('BITS is the family width', () => {
+    expect(BITS[4]).toBe(32);
+    expect(BITS[6]).toBe(128);
   });
 });
