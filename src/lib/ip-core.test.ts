@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseIPv4, ipv4ToString, parseCidr } from './ip-core';
+import { parseIPv4, ipv4ToString, parseCidr, parseIPv6, ipv6Compress } from './ip-core';
 
 /**
  * ip-core is shared by all six networking tools, so its parsing decisions set
@@ -46,5 +46,36 @@ describe('parseIPv4 — leading zeros are rejected, not reinterpreted', () => {
   it('rejects a padded octet inside a CIDR too', () => {
     expect(parseCidr('010.0.0.0/24')).toBeNull();
     expect(parseCidr('10.0.0.0/24')).not.toBeNull();
+  });
+});
+
+describe('parseIPv6 — an embedded IPv4 may only terminate the address', () => {
+  // RFC 4291 §2.2.3 allows a dotted quad ONLY as the final element. The parser
+  // split on '::' and enforced "last segment" per HALF, so a dotted quad at the
+  // end of the HEAD half slipped through: '1.2.3.4::' parsed as 102:304:: — a
+  // completely different, valid-looking address. Both net.isIP() and the WHATWG
+  // URL parser reject that input, and the cidr-checker would have folded the
+  // silently-substituted block into a merged range and offered it via Copy all.
+  it('rejects a dotted quad in the head half of a :: address', () => {
+    expect(parseIPv6('1.2.3.4::')).toBeNull();
+    expect(parseIPv6('1.2.3.4::5')).toBeNull();
+    expect(parseIPv6('1:2:3.4.5.6::')).toBeNull();
+  });
+
+  it('rejects a dotted quad mid-address when there is no ::', () => {
+    expect(parseIPv6('2001:db8:1.2.3.4:0:0:0:0')).toBeNull();
+  });
+
+  it('still accepts a dotted quad as the true tail', () => {
+    expect(parseIPv6('::ffff:192.168.1.1')).not.toBeNull();
+    expect(parseIPv6('64:ff9b::192.0.2.33')).not.toBeNull(); // NAT64, tail of the tail half
+    expect(parseIPv6('2001:db8:0:0:0:0:1.2.3.4')).not.toBeNull(); // no ::, quad is final
+    expect(parseIPv6('::1.2.3.4')).not.toBeNull(); // empty head half
+  });
+
+  it('the accepted forms still resolve to the right address', () => {
+    expect(ipv6Compress(parseIPv6('::ffff:192.168.1.1')!)).toBe(
+      ipv6Compress(parseIPv6('::ffff:c0a8:101')!),
+    );
   });
 });

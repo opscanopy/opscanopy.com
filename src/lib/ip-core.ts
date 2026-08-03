@@ -73,14 +73,19 @@ export function parseIPv6(input: string): bigint | null {
 
   // Expand a colon-separated half into 16-bit hextet strings; supports a
   // trailing embedded IPv4 (e.g. ::ffff:192.168.1.1) only in the final segment.
-  const groupsOf = (str: string): string[] | null => {
+  // `allowEmbedded` is false for the half BEFORE '::'. Without it, the
+  // "must be last" test below only means "last segment of this half", so
+  // `1.2.3.4::` passed and silently became 102:304:: — a different, entirely
+  // valid-looking address that then flowed into merged ranges and Copy all.
+  const groupsOf = (str: string, allowEmbedded: boolean): string[] | null => {
     if (str === '') return [];
     const segs = str.split(':');
     const out: string[] = [];
     for (let i = 0; i < segs.length; i++) {
       const seg = segs[i];
       if (seg.includes('.')) {
-        if (i !== segs.length - 1) return null; // embedded IPv4 must be last
+        // RFC 4291 §2.2.3 — a dotted quad may only terminate the ADDRESS.
+        if (!allowEmbedded || i !== segs.length - 1) return null;
         const v4 = parseIPv4(seg);
         if (v4 === null) return null;
         out.push(((v4 >> 16n) & 0xffffn).toString(16));
@@ -95,12 +100,14 @@ export function parseIPv6(input: string): bigint | null {
 
   let groups: string[];
   if (halves.length === 1) {
-    const g = groupsOf(halves[0]);
+    const g = groupsOf(halves[0], true);
     if (g === null || g.length !== 8) return null;
     groups = g;
   } else {
-    const head = groupsOf(halves[0]);
-    const tail = groupsOf(halves[1]);
+    // Only the tail half ends the address. (An empty head — '::1.2.3.4' —
+    // returns [] before the flag is consulted, so that form still parses.)
+    const head = groupsOf(halves[0], false);
+    const tail = groupsOf(halves[1], true);
     if (head === null || tail === null) return null;
     const missing = 8 - head.length - tail.length;
     if (missing < 1) return null; // '::' must stand for at least one zero group
