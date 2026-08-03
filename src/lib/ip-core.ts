@@ -264,7 +264,20 @@ export function classifyIPv4(v: bigint): string {
   if (o1 === 100 && o2 >= 64 && o2 <= 127) return 'Carrier-grade NAT (RFC 6598)';
   if (o1 === 127) return 'Loopback (127.0.0.0/8)';
   if (o1 === 169 && o2 === 254) return 'Link-local / APIPA (169.254.0.0/16)';
+  // RFC 5737 documentation nets. Reporting these as "public" is exactly
+  // backwards: their whole purpose is that they are NOT routable.
+  if (o1 === 192 && o2 === 0 && Number((v >> 8n) & 0xffn) === 2)
+    return 'Documentation — TEST-NET-1 (192.0.2.0/24, RFC 5737)';
+  if (o1 === 198 && o2 === 51 && Number((v >> 8n) & 0xffn) === 100)
+    return 'Documentation — TEST-NET-2 (198.51.100.0/24, RFC 5737)';
+  if (o1 === 203 && o2 === 0 && Number((v >> 8n) & 0xffn) === 113)
+    return 'Documentation — TEST-NET-3 (203.0.113.0/24, RFC 5737)';
+  if (o1 === 198 && (o2 === 18 || o2 === 19)) return 'Benchmarking (198.18.0.0/15, RFC 2544)';
+  if (o1 === 192 && o2 === 88 && Number((v >> 8n) & 0xffn) === 99)
+    return 'Deprecated 6to4 relay anycast (192.88.99.0/24, RFC 7526)';
   if (o1 >= 224 && o1 <= 239) return 'Multicast (224.0.0.0/4)';
+  // Must precede the 240/4 bucket, which would otherwise swallow it.
+  if (v === 0xffffffffn) return 'Limited broadcast (255.255.255.255)';
   if (o1 >= 240) return 'Reserved (240.0.0.0/4)';
   return 'Public / global unicast';
 }
@@ -278,6 +291,9 @@ export function classifyIPv6(v: bigint): string {
   if ((v >> 121n) === 0x7en) return 'Unique local — ULA (fc00::/7)';
   if ((v >> 96n) === 0x20010db8n) return 'Documentation (2001:db8::/32)';
   if ((v >> 32n) === 0xffffn) return 'IPv4-mapped (::ffff:0:0/96)';
+  if ((v >> 96n) === 0x64ff9bn) return 'NAT64 well-known prefix (64:ff9b::/96, RFC 6052)';
+  // 2002::/16 sits inside 2000::/3, so this must precede the global-unicast test.
+  if ((v >> 112n) === 0x2002n) return '6to4 (2002::/16, RFC 3056)';
   if ((v >> 125n) === 0x1n) return 'Global unicast (2000::/3)';
   return 'Reserved / special-purpose';
 }

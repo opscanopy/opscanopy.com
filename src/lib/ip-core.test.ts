@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseIPv4, ipv4ToString, parseCidr, parseIPv6, ipv6Compress, relate } from './ip-core';
+import { parseIPv4, ipv4ToString, parseCidr, parseIPv6, ipv6Compress, relate, classifyIPv4, classifyIPv6 } from './ip-core';
 
 /**
  * ip-core is shared by all six networking tools, so its parsing decisions set
@@ -146,5 +146,63 @@ describe('ipv6Compress — RFC 5952 §5 dotted form for IPv4-mapped addresses', 
     expect(ipv6Compress(parseIPv6('0:0:1:0:0:1:0:0')!)).toBe('::1:0:0:1:0:0');
     // §4.2.2 — a single zero group is never shortened to '::'.
     expect(ipv6Compress(parseIPv6('2001:db8:0:1:1:1:1:1')!)).toBe('2001:db8:0:1:1:1:1:1');
+  });
+});
+
+describe('classifyIPv4 — special-purpose ranges are not "public"', () => {
+  const c = (s: string) => classifyIPv4(parseIPv4(s)!);
+
+  it('labels the documentation nets (RFC 5737)', () => {
+    // Calling 203.0.113.0/24 "Public / global unicast" is exactly backwards for
+    // a range whose entire purpose is that it is NOT routable.
+    for (const a of ['192.0.2.1', '198.51.100.4', '203.0.113.9']) {
+      expect(c(a)).toMatch(/Documentation/);
+    }
+    expect(c('192.0.2.1')).toContain('RFC 5737');
+  });
+
+  it('labels benchmarking and the deprecated 6to4 relay', () => {
+    expect(c('198.18.0.1')).toMatch(/Benchmarking/);
+    expect(c('198.19.255.255')).toMatch(/Benchmarking/); // /15 spans both
+    expect(c('192.88.99.1')).toMatch(/6to4/);
+  });
+
+  it('limited broadcast beats the 240/4 reserved bucket', () => {
+    expect(c('255.255.255.255')).toMatch(/broadcast/i);
+    expect(c('240.0.0.1')).toBe('Reserved (240.0.0.0/4)'); // still reserved
+  });
+
+  it('leaves every existing verdict alone', () => {
+    expect(c('10.0.0.1')).toBe('Private (RFC 1918)');
+    expect(c('172.16.0.1')).toBe('Private (RFC 1918)');
+    expect(c('192.168.1.1')).toBe('Private (RFC 1918)');
+    expect(c('127.0.0.1')).toBe('Loopback (127.0.0.0/8)');
+    expect(c('169.254.1.1')).toBe('Link-local / APIPA (169.254.0.0/16)');
+    expect(c('100.64.0.1')).toBe('Carrier-grade NAT (RFC 6598)');
+    expect(c('224.0.0.1')).toBe('Multicast (224.0.0.0/4)');
+    expect(c('0.0.0.0')).toBe('This network (0.0.0.0/8)');
+    expect(c('8.8.8.8')).toBe('Public / global unicast');
+    expect(c('198.17.255.255')).toBe('Public / global unicast'); // just below 198.18/15
+    expect(c('198.20.0.0')).toBe('Public / global unicast'); // just above
+  });
+});
+
+describe('classifyIPv6 — transition ranges', () => {
+  const c = (s: string) => classifyIPv6(parseIPv6(s)!);
+
+  it('labels NAT64 and 6to4', () => {
+    expect(c('64:ff9b::1')).toMatch(/NAT64/);
+    expect(c('2002:c000:204::1')).toMatch(/6to4/);
+  });
+
+  it('leaves every existing verdict alone', () => {
+    expect(c('::')).toBe('Unspecified (::)');
+    expect(c('::1')).toBe('Loopback (::1)');
+    expect(c('ff02::1')).toBe('Multicast (ff00::/8)');
+    expect(c('fe80::1')).toBe('Link-local (fe80::/10)');
+    expect(c('fd00::1')).toBe('Unique local — ULA (fc00::/7)');
+    expect(c('2001:db8::1')).toBe('Documentation (2001:db8::/32)');
+    expect(c('::ffff:192.168.1.1')).toBe('IPv4-mapped (::ffff:0:0/96)');
+    expect(c('2001:4860:4860::8888')).toBe('Global unicast (2000::/3)');
   });
 });
