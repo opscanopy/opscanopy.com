@@ -605,3 +605,123 @@ describe('job-needs-cycle', () => {
     expect(ids(r)).not.toContain('job-needs-cycle');
   });
 });
+
+/* ────────────────────────────────────────────────────────────────────────── *
+ *  Reusable-workflow jobs — previously skipped entirely (`if (isReusable)
+ *  return;`), including the secrets: inherit × pull_request_target exfil path.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+describe('reusable-workflow jobs', () => {
+  const SHA = '8f4b7f84864484a7bf31766abe9204da3cbe65b3';
+
+  it('flags a mutable ref on the called workflow', () => {
+    const r = validate(
+      wf([...HEAD_READ, 'on: push', 'jobs:', '  deploy:', '    uses: org/repo/.github/workflows/deploy.yml@main']),
+    );
+    const f = byId(r, 'reusable-unpinned-ref');
+    expect(f).toHaveLength(1);
+    expect(f[0].severity).toBe('warning');
+    expect(f[0].title).toContain('@main');
+  });
+
+  it('accepts a SHA-pinned ref and a same-repo local path', () => {
+    for (const uses of [`org/repo/.github/workflows/deploy.yml@${SHA}`, './.github/workflows/deploy.yml']) {
+      const r = validate(wf([...HEAD_READ, 'on: push', 'jobs:', '  deploy:', `    uses: ${uses}`]));
+      expect(ids(r), uses).not.toContain('reusable-unpinned-ref');
+    }
+  });
+
+  it('treats secrets: inherit under pull_request_target as an error', () => {
+    const r = validate(
+      wf([
+        ...HEAD_READ,
+        'on: pull_request_target',
+        'jobs:',
+        '  ci:',
+        `    uses: org/repo/.github/workflows/ci.yml@${SHA}`,
+        '    secrets: inherit',
+      ]),
+    );
+    const f = byId(r, 'reusable-secrets-inherit-prt');
+    expect(f).toHaveLength(1);
+    expect(f[0].severity).toBe('error');
+  });
+
+  it('treats secrets: inherit under a normal trigger as a milder nudge', () => {
+    const r = validate(
+      wf([
+        ...HEAD_READ,
+        'on: push',
+        'jobs:',
+        '  ci:',
+        `    uses: org/repo/.github/workflows/ci.yml@${SHA}`,
+        '    secrets: inherit',
+      ]),
+    );
+    expect(ids(r)).not.toContain('reusable-secrets-inherit-prt');
+    const f = byId(r, 'reusable-secrets-inherit');
+    expect(f).toHaveLength(1);
+    expect(f[0].severity).toBe('info');
+  });
+
+  it('rejects a malformed with:/secrets: shape', () => {
+    const r = validate(
+      wf([...HEAD_READ, 'on: push', 'jobs:', '  ci:', `    uses: org/repo/.github/workflows/ci.yml@${SHA}`, '    with: [not, a, map]']),
+    );
+    expect(ids(r)).toContain('reusable-with-shape');
+  });
+
+  it('rejects keys GitHub forbids on a reusable-call job', () => {
+    const r = validate(
+      wf([
+        ...HEAD_READ,
+        'on: push',
+        'jobs:',
+        '  ci:',
+        `    uses: org/repo/.github/workflows/ci.yml@${SHA}`,
+        '    steps:',
+        '      - run: echo nope',
+      ]),
+    );
+    const f = byId(r, 'reusable-forbidden-keys');
+    expect(f).toHaveLength(1);
+    expect(f[0].title).toContain('steps');
+  });
+
+  it('allows the keys GitHub does permit alongside uses:', () => {
+    const r = validate(
+      wf([
+        ...HEAD_READ,
+        'on: push',
+        'jobs:',
+        '  first:',
+        '    runs-on: ubuntu-latest',
+        '    steps: [{run: echo hi}]',
+        '  ci:',
+        `    uses: org/repo/.github/workflows/ci.yml@${SHA}`,
+        '    needs: first',
+        '    if: success()',
+        '    permissions:',
+        '      contents: read',
+      ]),
+    );
+    expect(ids(r)).not.toContain('reusable-forbidden-keys');
+  });
+
+  it('still applies the cycle check to reusable-call jobs', () => {
+    const r = validate(
+      wf([
+        ...HEAD_READ,
+        'on: push',
+        'jobs:',
+        '  a:',
+        `    uses: org/repo/.github/workflows/a.yml@${SHA}`,
+        '    needs: b',
+        '  b:',
+        `    uses: org/repo/.github/workflows/b.yml@${SHA}`,
+        '    needs: a',
+      ]),
+    );
+    expect(ids(r)).toContain('job-needs-cycle');
+  });
+});

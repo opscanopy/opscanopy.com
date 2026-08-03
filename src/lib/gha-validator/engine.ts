@@ -453,10 +453,127 @@ function runStructuralChecks(
   }
 
   const jobIds = new Set(jobs.map((j) => j.id));
+  const triggers = collectTriggers(wf.on);
   for (const job of jobs) {
-    checkJob(job, lines, jobIds, add);
+    checkJob(job, lines, jobIds, triggers, add);
   }
   checkNeedsCycles(jobs, lines, jobIds, add);
+}
+
+/** A 40-char hex commit SHA is the only immutable ref GitHub accepts. */
+function isImmutableRef(ref: string): boolean {
+  return /^[0-9a-f]{40}$/i.test(ref);
+}
+
+/**
+ * Checks for a job that CALLS a reusable workflow (`uses:` at job level rather
+ * than step level). These were skipped wholesale, which mattered most for
+ * `secrets: inherit`: under `pull_request_target` it hands every repository
+ * secret to a workflow whose contents a fork can influence.
+ */
+function checkReusableJob(
+  jobId: string,
+  job: WorkflowJob,
+  lines: string[],
+  jobLine: number | undefined,
+  triggers: Set<string>,
+  add: (f: Finding) => void,
+): void {
+  const uses = asString(job.uses).trim();
+  const usesLine = findJobChildLine(lines, jobLine, 'uses') ?? jobLine;
+
+  // (1) Ref pinning. A local `./…` path is versioned with the calling repo, so
+  // there is no third-party ref to pin.
+  if (!uses.startsWith('./')) {
+    const at = uses.lastIndexOf('@');
+    const ref = at === -1 ? '' : uses.slice(at + 1).trim();
+    if (ref === '') {
+      add({
+        id: 'reusable-missing-ref',
+        severity: 'error',
+        title: `Job “${jobId}” calls a reusable workflow with no \`@ref\`.`,
+        detail:
+          'A cross-repository `uses:` must name a ref — GitHub cannot resolve the workflow without one.',
+        line: usesLine,
+        remediation: 'Append `@<full-40-char-commit-SHA>` to the workflow path.',
+      });
+    } else if (!isImmutableRef(ref)) {
+      add({
+        id: 'reusable-unpinned-ref',
+        severity: 'warning',
+        title: `Job “${jobId}” calls a reusable workflow pinned to “@${ref}”, which can move.`,
+        detail:
+          'A branch or tag ref can be repointed at different code by whoever controls that repository. The called workflow runs with your repository’s token, so a moved ref is a supply-chain foothold.',
+        line: usesLine,
+        remediation: `Pin to a full 40-character commit SHA, e.g. \`${uses.slice(0, at)}@8f4b7f84864484a7bf31766abe9204da3cbe65b3\`, and let Dependabot bump it.`,
+      });
+    }
+  }
+
+  // (2) secrets: inherit. Severity depends entirely on the trigger.
+  const secrets = (job as { secrets?: unknown }).secrets;
+  const inherits = typeof secrets === 'string' && secrets.trim() === 'inherit';
+  const fromForkInput = triggers.has('pull_request_target') || triggers.has('workflow_run');
+  if (inherits && fromForkInput) {
+    add({
+      id: 'reusable-secrets-inherit-prt',
+      severity: 'error',
+      title: `Job “${jobId}” passes \`secrets: inherit\` on a fork-influenced trigger.`,
+      detail:
+        '`pull_request_target` and `workflow_run` run with the base repository’s privileged token and full secret access, against input a fork controls. `secrets: inherit` forwards EVERY repository secret to the called workflow, so anything that can influence what that workflow does can exfiltrate all of them.',
+      line: findJobChildLine(lines, jobLine, 'secrets') ?? usesLine,
+      remediation:
+        'Pass only the specific secrets the callee needs — `secrets:\\n  NPM_TOKEN: ${{ secrets.NPM_TOKEN }}` — or move the job to a `pull_request` trigger, which has no secret access from forks.',
+    });
+  } else if (inherits) {
+    add({
+      id: 'reusable-secrets-inherit',
+      severity: 'info',
+      title: `Job “${jobId}” passes \`secrets: inherit\`.`,
+      detail:
+        'The called workflow receives every secret this repository has, not just the ones it uses. That is usually more than it needs.',
+      line: findJobChildLine(lines, jobLine, 'secrets') ?? usesLine,
+      remediation: 'List the individual secrets the called workflow actually reads.',
+    });
+  }
+
+  // (3) Shapes. `with:` must be a map; `secrets:` a map or the literal inherit.
+  if (job['with' as keyof WorkflowJob] !== undefined && !isRecord((job as { with?: unknown }).with)) {
+    add({
+      id: 'reusable-with-shape',
+      severity: 'error',
+      title: `Job “${jobId}” has a \`with:\` that is not a mapping.`,
+      detail: '`with:` passes named inputs to the called workflow, so it must be a key/value map.',
+      line: findJobChildLine(lines, jobLine, 'with') ?? usesLine,
+      remediation: 'Write `with:` as `input-name: value` pairs.',
+    });
+  }
+  if (secrets !== undefined && secrets !== null && !inherits && !isRecord(secrets)) {
+    add({
+      id: 'reusable-secrets-shape',
+      severity: 'error',
+      title: `Job “${jobId}” has a \`secrets:\` that is neither a mapping nor \`inherit\`.`,
+      detail: '`secrets:` must be a key/value map, or the single word `inherit`.',
+      line: findJobChildLine(lines, jobLine, 'secrets') ?? usesLine,
+      remediation: 'Write `secrets:` as `SECRET_NAME: ${{ secrets.SECRET_NAME }}` pairs.',
+    });
+  }
+
+  // (4) Keys GitHub forbids alongside a job-level `uses:`. `needs`, `if`,
+  // `permissions`, `strategy` and `concurrency` ARE allowed — do not flag them.
+  const FORBIDDEN = ['steps', 'runs-on', 'container', 'services', 'environment', 'env', 'defaults'];
+  const present = FORBIDDEN.filter((k) => (job as Record<string, unknown>)[k] !== undefined);
+  if (present.length > 0) {
+    add({
+      id: 'reusable-forbidden-keys',
+      severity: 'error',
+      title: `Job “${jobId}” uses a reusable workflow but also sets \`${present.join('`, `')}\`.`,
+      detail:
+        'A job that calls a reusable workflow delegates execution entirely. GitHub rejects the workflow if it also carries run-level keys.',
+      line: usesLine,
+      remediation: `Remove \`${present.join('`, `')}\` from this job — set them inside the called workflow instead.`,
+    });
+  }
 }
 
 /**
@@ -543,6 +660,7 @@ function checkJob(
   entry: JobEntry,
   lines: string[],
   jobIds: Set<string>,
+  triggers: Set<string>,
   add: (f: Finding) => void,
 ): void {
   const { id: jobId, raw: rawJob, line: jobLine, stepLines } = entry;
@@ -593,8 +711,13 @@ function checkJob(
     });
   }
 
-  // Reusable-workflow jobs do not contain steps; only validate steps otherwise.
-  if (isReusable) return;
+  // Reusable-workflow jobs have no steps, but they are NOT unvalidatable: the
+  // ref still needs pinning and `secrets: inherit` under pull_request_target is
+  // a live credential-exfiltration path. This used to be a bare early return.
+  if (isReusable) {
+    checkReusableJob(jobId, job, lines, jobLine, triggers, add);
+    return;
+  }
 
   if (job.steps === undefined || job.steps === null) {
     add({
