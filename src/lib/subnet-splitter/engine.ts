@@ -68,7 +68,15 @@ export function split(parent: string, allocated: string, newPrefix: number | nul
       allocations.push({ cidr: norm, ok: false, note: 'outside parent' });
       continue;
     }
-    allocations.push({ cidr: norm, ok: true });
+    // A block WIDER than the parent clamps to 100% used and renders as a clean
+    // green allocation — mathematically right, but almost always a typo, so say
+    // so rather than let it read as a successful entry.
+    const swallowsParent = as <= parentStart && ae >= parentEnd && c.prefix < parentNet.prefix;
+    allocations.push(
+      swallowsParent
+        ? { cidr: norm, ok: true, note: 'covers the entire parent — check this is not a typo' }
+        : { cidr: norm, ok: true },
+    );
     // Clamp to the parent so a straddling block still counts only its in-parent part.
     const cs = as < parentStart ? parentStart : as;
     const ce = ae > parentEnd ? parentEnd : ae;
@@ -124,6 +132,26 @@ export function split(parent: string, allocated: string, newPrefix: number | nul
   // ── Equal-size split into newPrefix ───────────────────────────────────────
   let splitSection: SplitResult['split'] = null;
   let nextFree: string | null = null;
+
+  // A requested-but-impossible split must SAY so. This used to be one boolean:
+  // fail any clause and the section was left null while valid stayed true, so
+  // the UI rendered a normal result with the requested section simply missing.
+  // `newPrefix === null` is the honest "no split asked for" case and stays valid.
+  if (newPrefix !== null) {
+    if (typeof newPrefix !== 'number' || !Number.isInteger(newPrefix)) {
+      return fail('The split prefix must be a whole number, like 26.');
+    }
+    if (newPrefix > BITS[version]) {
+      return fail(
+        `A split prefix of /${newPrefix} is deeper than an IPv${version} address allows — the maximum is /${BITS[version]}.`,
+      );
+    }
+    if (newPrefix <= parentNet.prefix) {
+      return fail(
+        `A split prefix of /${newPrefix} is not smaller than the /${parentNet.prefix} parent — splitting needs a longer prefix, so try /${parentNet.prefix + 1} or more.`,
+      );
+    }
+  }
 
   if (
     typeof newPrefix === 'number' &&

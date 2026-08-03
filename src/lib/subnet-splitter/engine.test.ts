@@ -93,3 +93,67 @@ describe('split — address counts are not understated', () => {
     expect(r.stats.total).toBe('256');
   });
 });
+
+describe('an impossible split request is an error, never a silently absent section', () => {
+  // The gate was a single boolean condition: if newPrefix failed ANY part of it
+  // the split section was just left null while valid stayed true, so the UI
+  // rendered a normal-looking result with the requested section simply missing.
+  // The playground's own guard only read /(\d+)$/ off the parent, so it caught
+  // none of the three cases below.
+  it('rejects a prefix deeper than the address family allows', () => {
+    const r = split('10.0.0.0/24', '', 33);
+    expect(r.valid).toBe(false);
+    expect(r.error).toMatch(/\/32/);
+    const r6 = split('2001:db8::/64', '', 129);
+    expect(r6.valid).toBe(false);
+    expect(r6.error).toMatch(/\/128/);
+  });
+
+  it('rejects a prefix that is not smaller than the parent — including a slashless parent', () => {
+    // '10.0.0.0' is a bare address, i.e. /32; /24 is a BIGGER block than the parent.
+    const bare = split('10.0.0.0', '', 24);
+    expect(bare.valid).toBe(false);
+    expect(bare.error).toMatch(/parent/i);
+
+    const equal = split('10.0.0.0/24', '', 24);
+    expect(equal.valid).toBe(false);
+  });
+
+  it('rejects a non-numeric prefix instead of coercing it to NaN', () => {
+    const r = split('10.0.0.0/24', '', Number('x'));
+    expect(r.valid).toBe(false);
+    expect(r.error).toMatch(/whole number/i);
+  });
+
+  it('every error names the prefix, so the playground highlights the right field', () => {
+    // SubnetSplitterPlayground marks the prefix input when /prefix|split/i
+    // matches the message, and the parent input otherwise.
+    for (const n of [33, 24, Number('x')]) {
+      expect(split('10.0.0.0/24', '', n).error ?? '').toMatch(/prefix|split/i);
+    }
+  });
+
+  it('leaves valid requests and the no-split case exactly as they were', () => {
+    const ok = split('10.0.0.0/24', '', 26);
+    expect(ok.valid).toBe(true);
+    expect(ok.split).not.toBeNull();
+
+    const none = split('10.0.0.0/24', '', null);
+    expect(none.valid).toBe(true);
+    expect(none.split).toBeNull();
+  });
+});
+
+describe('an allocation covering the whole parent is flagged, not silently green', () => {
+  it('notes a block larger than the parent', () => {
+    const r = split('10.0.0.0/24', '10.0.0.0/16', 26);
+    const a = r.allocated[0];
+    expect(a.ok).toBe(true); // still counted — the clamping is correct
+    expect(a.note ?? '').toMatch(/entire parent/i);
+  });
+
+  it('an exactly-parent-sized allocation is normal, not flagged', () => {
+    const r = split('10.0.0.0/24', '10.0.0.0/24', 26);
+    expect(r.allocated[0].note ?? '').not.toMatch(/entire parent/i);
+  });
+});
