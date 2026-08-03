@@ -231,7 +231,7 @@ function indexJobs(wf: Workflow, lines: string[]): JobEntry[] {
  * derived server-side, nor github.token.)
  */
 const UNTRUSTED_CONTEXT_RE =
-  /\$\{\{\s*(?:github\.event\.(?:issue|pull_request|comment|review|discussion|head_commit)?\.?(?:title|body|head_ref|label\.name|user\.login|description|message)|github\.head_ref|github\.event\.pull_request\.head\.ref|github\.event\.pull_request\.head\.label|github\.event\.commits|github\.event\.pages)\b[^}]*\}\}/i;
+  /\$\{\{\s*(?:github\.event\.(?:issue|pull_request|comment|review|discussion|head_commit)?\.?(?:title|body|head_ref|label\.name|user\.login|description|message)|github\.head_ref|github\.event\.pull_request\.head\.ref|github\.event\.pull_request\.head\.label|github\.event\.pull_request\.head\.repo\.full_name|github\.event\.commits|github\.event\.pages|github\.event\.client_payload(?:\.[\w.]+)?|github\.event\.inputs\.[\w-]+|github\.event\.workflow_run\.head_branch)\b[^}]*\}\}/i;
 
 /** Any `${{ ... }}` GitHub expression, used to scope the injection scan to run blocks. */
 const ANY_EXPRESSION_RE = /\$\{\{[^}]*\}\}/;
@@ -978,7 +978,7 @@ function runSecurityChecks(
 
   checkPwnRequest(usesPullRequestTarget, jobs, lines, add);
   checkScriptInjection(wf, lines, add);
-  checkUnpinnedActions(lines, add);
+  checkUnpinnedActions(jobs, lines, add);
   checkPermissions(wf, lines, add);
   checkPipeToShell(lines, add);
   checkSecretsInPullRequest(usesPullRequest || usesPullRequestTarget, lines, add);
@@ -1143,37 +1143,63 @@ function checkScriptInjection(
  * First-party `actions/*` and `github/*` are lower risk (info, not warning) but
  * the same advice applies.
  */
-function checkUnpinnedActions(lines: string[], add: (f: Finding) => void): void {
-  for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(/uses:\s*['"]?([^'"#\s]+)['"]?/i);
-    if (!m) continue;
-    const ref = m[1].trim();
+function checkUnpinnedActions(
+  jobs: JobEntry[],
+  lines: string[],
+  add: (f: Finding) => void,
+): void {
+  // Walk the PARSED steps, not the raw lines. A text scan cannot tell a real
+  // `uses:` from the same word inside a `run: |` heredoc or behind a `#` — the
+  // hazard this engine documents for the `ref:` scan and then fell into here.
+  // Comments do not survive parsing, and a heredoc is just a string value.
+  for (const entry of jobs) {
+    if (!isRecord(entry.raw)) continue;
+    const job = entry.raw as WorkflowJob;
+    // A job-level `uses:` is a reusable-workflow call — checkReusableJob owns
+    // its ref pinning, so reporting it here too would double up.
+    if (asString(job.uses).trim() !== '') continue;
+    const steps = job.steps;
+    if (!Array.isArray(steps)) continue;
 
-    // Skip local actions (`./path`) and Docker refs (`docker://…`) — different
-    // pinning rules; SHA pinning does not apply.
-    if (ref.startsWith('./') || ref.startsWith('docker://')) continue;
+    for (let si = 0; si < steps.length; si++) {
+      const step = steps[si];
+      if (!isRecord(step)) continue;
+      const ref = asString((step as WorkflowStep).uses).trim();
+      if (ref === '') continue;
 
-    const refMatch = ref.match(USES_REF_RE);
-    if (!refMatch) continue; // not an owner/repo@ref form (e.g. reusable local)
+      // Skip local actions (`./path`) and Docker refs (`docker://…`) — different
+      // pinning rules; SHA pinning does not apply.
+      if (ref.startsWith('./') || ref.startsWith('docker://')) continue;
 
-    const owner = refMatch[1];
-    const after = refMatch[3].trim();
-    // Some uses include a subpath: owner/repo/path@ref — `owner` is still index 1.
-    if (FULL_SHA_RE.test(after)) continue; // already pinned to a commit SHA ✓
+      const refMatch = ref.match(USES_REF_RE);
+      if (!refMatch) continue; // not an owner/repo@ref form
 
-    const firstParty = /^(actions|github)$/i.test(owner);
-    add({
-      id: firstParty ? 'unpinned-first-party-action' : 'unpinned-action',
-      severity: firstParty ? 'info' : 'warning',
-      title: firstParty
-        ? `First-party action “${ref}” is pinned to a tag, not a SHA.`
-        : `Third-party action “${ref}” is not pinned to a commit SHA.`,
-      detail: firstParty
-        ? 'This action is maintained by GitHub, so the risk is lower, but tags and branches are still mutable. Pinning to a full commit SHA guarantees the exact code you reviewed runs every time.'
-        : 'This action is referenced by a mutable tag or branch (e.g. `@v4` or `@main`). The maintainer — or anyone who compromises the action — can repoint it to malicious code that runs with your workflow’s token and secrets.',
-      line: i + 1,
-      remediation: `Pin to a full 40-character commit SHA, e.g. \`uses: ${owner}/…@<sha>\`, and add a comment with the human-readable version. Tools like Dependabot can keep the SHA up to date.`,
-    });
+      const owner = refMatch[1];
+      const after = refMatch[3].trim();
+      // Some uses include a subpath: owner/repo/path@ref — `owner` is still index 1.
+      if (FULL_SHA_RE.test(after)) continue; // already pinned to a commit SHA ✓
+
+      // Anchor on this step's own indexed line, falling back to a scoped text
+      // search and then the job header.
+      const line =
+        entry.stepLines[si] ??
+        findLine(lines, (l) => l.includes(ref) && /uses\s*:/.test(l), entry.line) ??
+        entry.line;
+
+      const firstParty = /^(actions|github)$/i.test(owner);
+      add({
+        id: firstParty ? 'unpinned-first-party-action' : 'unpinned-action',
+        severity: firstParty ? 'info' : 'warning',
+        title: firstParty
+          ? `First-party action “${ref}” is pinned to a tag, not a SHA.`
+          : `Third-party action “${ref}” is not pinned to a commit SHA.`,
+        detail: firstParty
+          ? 'This action is maintained by GitHub, so the risk is lower, but tags and branches are still mutable. Pinning to a full commit SHA guarantees the exact code you reviewed runs every time.'
+          : 'This action is referenced by a mutable tag or branch (e.g. `@v4` or `@main`). The maintainer — or anyone who compromises the action — can repoint it to malicious code that runs with your workflow’s token and secrets.',
+        line,
+        remediation: `Pin to a full 40-character commit SHA, e.g. \`uses: ${owner}/…@<sha>\`, and add a comment with the human-readable version. Tools like Dependabot can keep the SHA up to date.`,
+      });
+    }
   }
 }
 

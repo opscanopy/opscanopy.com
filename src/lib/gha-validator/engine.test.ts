@@ -986,3 +986,114 @@ describe('permissions depth', () => {
     expect(ids(r)).not.toContain('permissions-missing');
   });
 });
+
+/* ────────────────────────────────────────────────────────────────────────── *
+ *  unpinned-uses precision. The scan walked RAW LINES, so `uses:` text inside
+ *  a run: heredoc or a comment was flagged as a real action — the exact
+ *  mistake the engine documents (and avoids) for the ref: scan.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+describe('unpinned-uses precision', () => {
+  const unpinned = (r: ValidateResult): string[] =>
+    ids(r).filter((i) => i === 'unpinned-action' || i === 'unpinned-first-party-action');
+
+  it('does NOT flag uses: text inside a run: heredoc', () => {
+    const r = validate(
+      wf([
+        ...HEAD_READ,
+        'on: push',
+        'jobs:',
+        '  docs:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - run: |',
+        "          cat <<'EOF' > example.yml",
+        '          uses: actions/checkout@main',
+        '          EOF',
+      ]),
+    );
+    expect(unpinned(r)).toEqual([]);
+  });
+
+  it('does NOT flag a commented-out uses:', () => {
+    const r = validate(
+      wf([
+        ...HEAD_READ,
+        'on: push',
+        'jobs:',
+        '  b:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      # - uses: actions/checkout@main',
+        '      - run: echo hi',
+      ]),
+    );
+    expect(unpinned(r)).toEqual([]);
+  });
+
+  it('still flags a real mutable ref, on the right line', () => {
+    const r = validate(
+      wf([
+        ...HEAD_READ,
+        'on: push',
+        'jobs:',
+        '  b:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - uses: some-org/some-action@v4',
+      ]),
+    );
+    const f = byId(r, 'unpinned-action');
+    expect(f).toHaveLength(1);
+    // HEAD_READ(2) + on(3) + jobs(4) + b(5) + runs-on(6) + steps(7) + uses(8).
+    expect(f[0].line).toBe(8);
+  });
+
+  it('still treats first-party actions as info, not warning', () => {
+    const r = validate(
+      wf([...HEAD_READ, 'on: push', 'jobs:', '  b:', '    runs-on: ubuntu-latest', '    steps:', '      - uses: actions/checkout@v4']),
+    );
+    const f = byId(r, 'unpinned-first-party-action');
+    expect(f).toHaveLength(1);
+    expect(f[0].severity).toBe('info');
+  });
+
+  it('leaves local and docker refs alone', () => {
+    for (const uses of ['./local-action', 'docker://alpine:3.20']) {
+      const r = validate(
+        wf([...HEAD_READ, 'on: push', 'jobs:', '  b:', '    runs-on: ubuntu-latest', '    steps:', `      - uses: ${uses}`]),
+      );
+      expect(unpinned(r), uses).toEqual([]);
+    }
+  });
+
+  it('does not double-report the job-level uses: that 04c owns', () => {
+    const r = validate(
+      wf([...HEAD_READ, 'on: push', 'jobs:', '  ci:', '    uses: org/repo/.github/workflows/ci.yml@main']),
+    );
+    expect(unpinned(r)).toEqual([]);
+    expect(ids(r)).toContain('reusable-unpinned-ref');
+  });
+});
+
+describe('untrusted contexts — expanded list', () => {
+  it.each([
+    ['github.event.client_payload.ref', 'repository_dispatch'],
+    ['github.event.inputs.name', 'workflow_dispatch'],
+    ['github.event.workflow_run.head_branch', 'workflow_run'],
+    ['github.event.pull_request.head.repo.full_name', 'pull_request'],
+  ])('flags %s interpolated into a run: block', (ctx, trigger) => {
+    const r = validate(
+      wf([
+        ...HEAD_READ,
+        `on: ${trigger}`,
+        'jobs:',
+        '  b:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        `      - run: echo "\${{ ${ctx} }}"`,
+      ]),
+    );
+    expect(r.findings.some((f) => /inject/i.test(f.id)), ctx).toBe(true);
+  });
+});
