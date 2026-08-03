@@ -11,8 +11,10 @@
  *
  * Runtime contract (built by sibling agents — imported lazily in the script):
  *   ../lib/cron-tester/engine →
- *     explain(expr: string): CronResult
- *     nextRuns(expr: string, count?: number, fromIso?: string): string[]
+ *     explain(expr, opts?): CronResult
+ *     nextRuns(expr, count?, fromIso?, opts?): string[]
+ *     nextRunEpochSeconds(expr, count?, fromIso?, opts?): number[]
+ *     where opts is { timeZone?: string }
  *   ../lib/cron-tester/types →
  *     type CronResult = {
  *       valid: boolean
@@ -20,9 +22,15 @@
  *       description: string
  *       fields: { minute; hour; dayOfMonth; month; dayOfWeek }
  *       nextRuns: string[]
+ *       timeZone: string   // the zone the runs were computed in
  *     }
+ *
  *   ../lib/cron-tester/examples →
  *     examples: { id: string; label: string; expr: string }[]
+ *
+ * Timezone: a crontab fires on the wall clock of the HOST it runs on, not the
+ * visitor's laptop. The zone is a chip row, defaults to the browser's (named,
+ * not implied), persists in localStorage, and is printed next to every run.
  *
  * Results are injected at runtime; every injected selector is styled with
  * :global(...) and injected SVGs carry explicit width/height. Headlines stay
@@ -37,24 +45,14 @@
       class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-end sm:justify-between sm:px-5"
     >
       <div class="flex min-w-0 flex-col gap-1">
-        <label class="eyebrow shrink-0" for="cron-example">Example</label>
-        <div class="cron-select-wrap relative min-w-0">
-          <select id="cron-example" class="cron-select code-mono" autocomplete="off">
-            {/* Options injected by the hydration script from `examples`. */}
-            <option value="">Loading examples…</option>
-          </select>
-          <svg
-            class="cron-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M4 6l4 4 4-4"></path>
-          </svg>
+        <span class="eyebrow shrink-0" id="cron-examples-label">Example</span>
+        <div
+          id="cron-chips"
+          class="cron-chips"
+          role="group"
+          aria-labelledby="cron-examples-label"
+        >
+          {/* Chips injected by the hydration script from `examples`. */}
         </div>
       </div>
 
@@ -145,6 +143,36 @@
         Five fields — minute, hour, day of month, month, day of week. Macros like
         <span class="code-mono">@daily</span> are supported too.
       </p>
+      <p class="cron-hint caption text-mute">
+        Results update as you type — press Enter to run now.
+      </p>
+
+      {/* ── Timezone ──────────────────────────────────────────────────────
+          A crontab fires on the wall clock of the HOST it runs on, which is
+          rarely the visitor's laptop. The zone is explicit and switchable so a
+          next-run time is never shown without saying which clock it is on. */}
+      <div class="cron-tz mt-3">
+        <span class="eyebrow" id="cron-tz-label">Timezone</span>
+        <div
+          id="cron-tz-chips"
+          class="cron-chips mt-1"
+          role="group"
+          aria-labelledby="cron-tz-label"
+        >
+          {/* Chips injected at boot — the browser zone's name is read at runtime. */}
+        </div>
+        <input
+          id="cron-tz-custom"
+          class="cron-tz-input code-mono mt-2"
+          list="cron-tz-list"
+          type="text"
+          spellcheck="false"
+          autocomplete="off"
+          placeholder="Or type an IANA zone, e.g. Europe/Berlin"
+          aria-label="Custom IANA timezone"
+        />
+        <datalist id="cron-tz-list"></datalist>
+      </div>
       <div class="cron-snap-row mt-3 flex flex-wrap items-center gap-2">
         <button id="cron-snap-save" type="button" class="cron-snap-btn">Save snapshot</button>
         <select id="cron-snap-select" class="cron-snap-select" aria-label="Load a saved snapshot" disabled>
@@ -159,7 +187,25 @@
       <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <span class="flex items-center gap-2">
           <span class="eyebrow">Result</span>
-          <button id="cron-share" type="button" class="cron-share-btn" data-copy="" hidden>
+          <button id="cron-copy-all" type="button" class="cron-share-btn" data-copy-all="" hidden>
+            <svg
+              class="cron-share-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M5.5 5.5h8v8h-8z"></path>
+              <path d="M10.5 5.5v-3h-8v8h3"></path>
+            </svg>
+            <span class="cron-copy-all-label">Copy all</span>
+          </button>
+          <button id="cron-share" type="button" class="cron-share-btn" data-copy-link="" hidden>
             <svg
               class="cron-share-icon"
               width="13"
@@ -212,6 +258,10 @@
           description and the next run times here.
         </p>
       </div>
+
+      {/* Sole announcement channel for copy outcomes — the results container
+          above is deliberately NOT a live region. */}
+      <span id="cron-copy-status" class="sr-only" role="status"></span>
     </div>
   </div>
 </section>
@@ -222,6 +272,54 @@
   /* Tap targets opt into fast-tap + no double-tap-zoom on touch. */
   .cron-tap {
     touch-action: manipulation;
+  }
+
+  /* ── Example + timezone picker chips ─────────────────────────────────────
+     These reuse the .cron-chip / .cron-chips look already defined further down
+     for the cross-tool <a> link chips — the same design-system chip, so styling
+     it twice would only let the two drift. Added here is just what a <button>
+     needs that an <a> does not, plus the pressed state and a focus ring. */
+  :global(button.cron-chip) {
+    border: none;
+    cursor: pointer;
+    font: inherit;
+  }
+  :global(.cron-chip[aria-pressed='true']) {
+    background: var(--color-brand-soft);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+  }
+  :global(.cron-chip:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+
+  .cron-tz-input {
+    width: 100%;
+    max-width: 320px;
+    height: 32px;
+    padding: 0 10px;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 12px;
+  }
+  .cron-tz-input:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+
+  /* The zone each run time is measured in — muted, always present. */
+  :global(.cron-tz-note) {
+    color: var(--color-mute);
+    font-size: 12px;
+  }
+  /* DST advisory: amber annotation ink, matching the Field Manual system. */
+  :global(.cron-dst-note) {
+    margin-top: 8px;
+    color: var(--color-accent-ink);
+    font-size: 12px;
+    line-height: 1.5;
   }
 
   /* The example picker: a 6px-radius in-app form control (form-input-sm scale). */
@@ -304,6 +402,12 @@
     }
     .cron-step-btn {
       min-width: 44px;
+    }
+    :global(.cron-chip) {
+      min-height: 44px;
+    }
+    .cron-tz-input {
+      height: 44px;
     }
   }
   .cron-count-input {
@@ -703,6 +807,9 @@
 
 <script>
   import { escapeHtml } from '../lib/escape-html';
+  // Static: it is a few hundred bytes of Intl wrapper, and the DST advisory
+  // needs it on the very first render, before any lazy chunk resolves.
+  import { zoneOffsetMinutes } from '../lib/cron-tester/wall-clock';
   import { createHashState, buildHashValue } from '../lib/hash-state';
   import { copyTextToClipboard } from '../lib/clipboard';
   import { buildMarkdownBlock } from '../lib/share-md';
@@ -722,19 +829,35 @@
     description: string;
     fields: CronFields;
     nextRuns: string[];
+    /** The zone the engine actually evaluated and rendered in. Always shown. */
+    timeZone: string;
   };
   type Example = { id: string; label: string; expr: string };
+  /** Trailing options accepted by every engine entry point. */
+  type CronTimeOptions = { timeZone?: string };
   type EngineModule = {
-    explain: (expr: string) => CronResult;
-    nextRuns: (expr: string, count?: number, fromIso?: string) => string[];
-    nextRunEpochSeconds: (expr: string, count?: number, fromIso?: string) => number[];
+    explain: (expr: string, opts?: CronTimeOptions) => CronResult;
+    nextRuns: (
+      expr: string,
+      count?: number,
+      fromIso?: string,
+      opts?: CronTimeOptions,
+    ) => string[];
+    nextRunEpochSeconds: (
+      expr: string,
+      count?: number,
+      fromIso?: string,
+      opts?: CronTimeOptions,
+    ) => number[];
   };
 
   const ROOT_SEL = '.cron-pg';
   const DEFAULT_COUNT = 5;
   const MIN_COUNT = 1;
   const MAX_COUNT = 20;
-  const DEBOUNCE_MS = 120;
+  const DEBOUNCE_MS = 150;
+  /** Hold a parse error until typing settles — no red border mid-compose. */
+  const ERROR_HOLD_MS = 600;
 
   /** Boot every (so far un-hydrated) playground instance on the page. */
   function boot(): void {
@@ -819,7 +942,26 @@
     return `<div class="cron-fields">${cells}</div>`;
   }
 
-  function runsHtml(runs: string[]): string {
+  /**
+   * Does a DST transition sit within a day either side of any listed run? The
+   * offset changing across that window is the signal — no tzdata needed.
+   */
+  function nearTransition(runEpochs: number[], timeZone: string): boolean {
+    const DAY = 86_400_000;
+    for (const sec of runEpochs) {
+      const ms = sec * 1000;
+      try {
+        if (zoneOffsetMinutes(ms - DAY, timeZone) !== zoneOffsetMinutes(ms + DAY, timeZone)) {
+          return true;
+        }
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  function runsHtml(runs: string[], timeZone: string, dstNearby: boolean): string {
     if (runs.length === 0) {
       return (
         '<div class="cron-runs"><div class="cron-runs__head">' +
@@ -829,6 +971,16 @@
         '<span class="cron-run__time">No upcoming runs found.</span></li></ul></div>'
       );
     }
+    // The zone is stated once, next to the times it applies to. An unlabelled
+    // run time is the whole defect this tool had.
+    const zoneNote =
+      `<p class="cron-tz-note">Times shown in ${escapeHtml(timeZone)}.</p>`;
+    const dstNote = dstNearby
+      ? '<p class="cron-dst-note">This zone changes offset near one of these runs. ' +
+        'A wall time that does not exist is skipped; one that occurs twice runs on its ' +
+        'first occurrence. Check your host’s cron implementation for jobs near a ' +
+        'DST boundary — they do not all agree.</p>'
+      : '';
     const items = runs
       .map(
         (run, i) =>
@@ -841,7 +993,10 @@
       '<div class="cron-runs"><div class="cron-runs__head">' +
       CLOCK_SVG +
       `<span class="cron-runs__head-text">Next ${runs.length === 1 ? 'run' : `${runs.length} runs`}</span></div>` +
-      `<ul class="cron-runs__list">${items}</ul></div>`
+      `<ul class="cron-runs__list">${items}</ul>` +
+      zoneNote +
+      dstNote +
+      '</div>'
     );
   }
 
@@ -869,7 +1024,8 @@
     result: CronResult,
     runs: string[],
     expr: string,
-    firstRunEpoch: number | undefined
+    firstRunEpoch: number | undefined,
+    dstNearby: boolean
   ): void {
     summary.textContent = 'Valid';
     summary.classList.remove('text-error');
@@ -890,7 +1046,7 @@
       `<p class="cron-desc__text">${escapeHtml(desc)}</p>` +
       fieldsHtml(fields) +
       '</div>' +
-      runsHtml(runs) +
+      runsHtml(runs, result.timeZone ?? '', dstNearby) +
       chainsHtml(expr, firstRunEpoch);
   }
 
@@ -901,7 +1057,12 @@
     const countInput = el<HTMLInputElement>(root, '#cron-count');
     const decBtn = el<HTMLButtonElement>(root, '#cron-count-dec');
     const incBtn = el<HTMLButtonElement>(root, '#cron-count-inc');
-    const exampleSel = el<HTMLSelectElement>(root, '#cron-example');
+    const chipsWrap = el<HTMLElement>(root, '#cron-chips');
+    const tzChipsWrap = el<HTMLElement>(root, '#cron-tz-chips');
+    const tzCustom = el<HTMLInputElement>(root, '#cron-tz-custom');
+    const tzList = el<HTMLDataListElement>(root, '#cron-tz-list');
+    const copyAllBtn = el<HTMLButtonElement>(root, '#cron-copy-all');
+    const copyStatus = el<HTMLElement>(root, '#cron-copy-status');
     const resultsBox = el<HTMLElement>(root, '#cron-results');
     const summaryEl = el<HTMLElement>(root, '#cron-summary');
     const shareBtn = el<HTMLButtonElement>(root, '#cron-share');
@@ -915,7 +1076,9 @@
       !countInput ||
       !decBtn ||
       !incBtn ||
-      !exampleSel ||
+      !chipsWrap ||
+      !tzChipsWrap ||
+      !copyAllBtn ||
       !resultsBox ||
       !summaryEl ||
       !shareBtn ||
@@ -950,19 +1113,114 @@
       return;
     }
 
-    // Populate the example picker (with a leading "Custom" sentinel).
-    exampleSel.innerHTML = '';
-    const customOpt = document.createElement('option');
-    customOpt.value = '-1';
-    customOpt.textContent = examples.length ? 'Custom expression' : 'No examples';
-    exampleSel.appendChild(customOpt);
+    // Example chips — the UX contract's picker, not a <select>.
+    chipsWrap.innerHTML = '';
     examples.forEach((ex, i) => {
-      const opt = document.createElement('option');
-      opt.value = String(i);
-      opt.textContent = ex.label;
-      exampleSel.appendChild(opt);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'cron-chip';
+      btn.dataset.exampleIdx = String(i);
+      btn.setAttribute('aria-pressed', 'false');
+      btn.textContent = ex.label;
+      chipsWrap!.appendChild(btn);
     });
-    if (!examples.length) exampleSel.disabled = true;
+
+    function setActiveChip(idx: number | null): void {
+      chipsWrap!.querySelectorAll<HTMLButtonElement>('.cron-chip').forEach((b) => {
+        b.setAttribute(
+          'aria-pressed',
+          idx !== null && b.dataset.exampleIdx === String(idx) ? 'true' : 'false',
+        );
+      });
+    }
+
+    /* ── Timezone ────────────────────────────────────────────────────────
+       The browser zone is offered BY NAME rather than as an unlabelled
+       default, so picking it is a decision instead of an accident. */
+    const browserZone = (() => {
+      try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+      } catch {
+        return 'UTC';
+      }
+    })();
+    const TZ_PRESETS: { label: string; zone: string }[] = [
+      { label: 'UTC', zone: 'UTC' },
+      { label: `Browser (${browserZone})`, zone: browserZone },
+      { label: 'US East', zone: 'America/New_York' },
+      { label: 'Europe', zone: 'Europe/Berlin' },
+    ].filter((t, i, all) => all.findIndex((x) => x.zone === t.zone) === i);
+
+    const TZ_PREF_KEY = 'oc-cron-tz';
+    let activeZone = readZonePref() ?? browserZone;
+
+    function readZonePref(): string | null {
+      try {
+        return localStorage.getItem(TZ_PREF_KEY);
+      } catch {
+        return null;
+      }
+    }
+    function writeZonePref(zone: string): void {
+      try {
+        localStorage.setItem(TZ_PREF_KEY, zone);
+      } catch {
+        /* storage blocked — the choice just won't persist */
+      }
+    }
+
+    tzChipsWrap.innerHTML = '';
+    TZ_PRESETS.forEach((t) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'cron-chip';
+      btn.dataset.zone = t.zone;
+      btn.setAttribute('aria-pressed', 'false');
+      btn.textContent = t.label;
+      tzChipsWrap!.appendChild(btn);
+    });
+
+    function syncZoneUi(): void {
+      tzChipsWrap!.querySelectorAll<HTMLButtonElement>('.cron-chip').forEach((b) => {
+        b.setAttribute('aria-pressed', b.dataset.zone === activeZone ? 'true' : 'false');
+      });
+      // Only mirror into the box when the zone is not one of the chips.
+      if (tzCustom && TZ_PRESETS.every((t) => t.zone !== activeZone)) {
+        tzCustom.value = activeZone;
+      }
+    }
+
+    // Offer every zone the runtime knows, where the API exists.
+    if (tzList && typeof Intl.supportedValuesOf === 'function') {
+      try {
+        for (const z of Intl.supportedValuesOf('timeZone')) {
+          const o = document.createElement('option');
+          o.value = z;
+          tzList.appendChild(o);
+        }
+      } catch {
+        /* older runtime — the preset chips still work */
+      }
+    }
+    syncZoneUi();
+
+    tzChipsWrap.addEventListener('click', (e) => {
+      const chip = (e.target as HTMLElement | null)?.closest<HTMLButtonElement>('.cron-chip');
+      if (!chip || !chip.dataset.zone) return;
+      activeZone = chip.dataset.zone;
+      writeZonePref(activeZone);
+      syncZoneUi();
+      evaluate();
+    });
+
+    tzCustom?.addEventListener('change', () => {
+      const v = tzCustom.value.trim();
+      if (v === '') return;
+      activeZone = v;
+      writeZonePref(activeZone);
+      syncZoneUi();
+      evaluate();
+    });
 
     /** Read the desired next-run count, clamped to range. */
     function getCount(): number {
@@ -971,8 +1229,9 @@
 
     function hideShare(): void {
       shareBtn!.hidden = true;
-      shareBtn!.dataset.copy = '';
+      shareBtn!.dataset.copyLink = '';
       mdBtn!.hidden = true;
+      copyAllBtn!.hidden = true;
     }
 
     /** Re-evaluate the current expression and re-render the results panel. */
@@ -988,7 +1247,7 @@
 
       let result: CronResult | null = null;
       try {
-        result = engine.explain(expr);
+        result = engine.explain(expr, { timeZone: activeZone });
       } catch (err) {
         const msg =
           err instanceof Error ? err.message : 'Unexpected error while parsing the expression.';
@@ -1017,7 +1276,9 @@
       // back to whatever the explain() result already carried.
       let runs: string[] = [];
       try {
-        const fromEngine = engine.nextRuns(expr, getCount());
+        const fromEngine = engine.nextRuns(expr, getCount(), undefined, {
+          timeZone: activeZone,
+        });
         runs = Array.isArray(fromEngine)
           ? fromEngine.filter((r): r is string => typeof r === 'string')
           : [];
@@ -1034,14 +1295,28 @@
 
       let firstRunEpoch: number | undefined;
       try {
-        firstRunEpoch = engine.nextRunEpochSeconds(expr, 1)[0];
+        firstRunEpoch = engine.nextRunEpochSeconds(expr, 1, undefined, {
+          timeZone: activeZone,
+        })[0];
       } catch {
         firstRunEpoch = undefined;
       }
 
-      renderResult(resultsBox!, summaryEl!, result, runs, expr, firstRunEpoch);
+      // Collect the run instants once so the DST check does not re-derive them.
+      let runEpochs: number[] = [];
+      try {
+        runEpochs = engine.nextRunEpochSeconds(expr, getCount(), undefined, {
+          timeZone: activeZone,
+        });
+      } catch {
+        runEpochs = [];
+      }
+      const dstNearby = nearTransition(runEpochs, result.timeZone ?? activeZone);
+
+      renderResult(resultsBox!, summaryEl!, result, runs, expr, firstRunEpoch, dstNearby);
       shareBtn!.hidden = false;
-      shareBtn!.dataset.copy = location.origin + location.pathname + location.search + hashState.build(expr);
+      shareBtn!.dataset.copyLink =
+        location.origin + location.pathname + location.search + hashState.build(expr);
       if (userInitiated) hashState.write(expr);
       if (userInitiated) recordToolLastInput('cron-expression-tester', expr);
 
@@ -1049,14 +1324,48 @@
       mdBtn!.dataset.copy = buildMarkdownBlock('Cron Expression Tester', [
         { label: 'Expression', value: expr },
         { label: 'Description', value: result.description ?? '' },
+        { label: 'Timezone', value: result.timeZone ?? activeZone },
         { label: 'Next run', value: runs[0] ?? '' },
       ]);
+
+      // Copy all carries the zone with the times. A pasted bare timestamp is
+      // exactly how a timezone mistake propagates into someone else's runbook.
+      copyAllBtn!.hidden = false;
+      copyAllBtn!.dataset.copyAll = [
+        expr,
+        result.description ?? '',
+        `Times shown in ${result.timeZone ?? activeZone}`,
+        ...runs,
+      ].join('\n');
     }
+
+    /** Announce a copy outcome in the one sr-only live region. */
+    function announceCopy(ok: boolean, what: string): void {
+      if (!copyStatus) return;
+      copyStatus.textContent = ok ? `${what} copied to clipboard` : `Could not copy ${what}`;
+    }
+
+    let copyAllTimer: number | undefined;
+    copyAllBtn.addEventListener('click', () => {
+      void copyTextToClipboard(copyAllBtn.dataset.copyAll ?? '').then((ok) => {
+        announceCopy(ok, 'All results');
+        if (!ok) return;
+        copyAllBtn.classList.add('cron-share-btn--copied');
+        const label = copyAllBtn.querySelector('.cron-copy-all-label');
+        if (label) label.textContent = 'Copied';
+        window.clearTimeout(copyAllTimer);
+        copyAllTimer = window.setTimeout(() => {
+          copyAllBtn.classList.remove('cron-share-btn--copied');
+          if (label) label.textContent = 'Copy all';
+        }, 1500);
+      });
+    });
 
     let shareCopyTimer: number | undefined;
     shareBtn.addEventListener('click', () => {
-      const text = shareBtn.dataset.copy ?? '';
+      const text = shareBtn.dataset.copyLink ?? '';
       void copyTextToClipboard(text).then((ok) => {
+        announceCopy(ok, 'Link');
         if (!ok) return;
         shareBtn.classList.add('cron-share-btn--copied');
         const label = shareBtn.querySelector('.cron-share-label');
@@ -1073,6 +1382,7 @@
     mdBtn.addEventListener('click', () => {
       const text = mdBtn.dataset.copy ?? '';
       void copyTextToClipboard(text).then((ok) => {
+        announceCopy(ok, 'Markdown');
         if (!ok) return;
         mdBtn.classList.add('cron-share-btn--copied');
         const label = mdBtn.querySelector('.cron-md-label');
@@ -1094,15 +1404,27 @@
 
     // Editing the expression means we're no longer on a named example.
     exprInput.addEventListener('input', () => {
-      if (exampleSel.value !== '-1') exampleSel.value = '-1';
+      setActiveChip(null);
       scheduleEvaluate();
     });
 
-    // Choosing an example loads its expression and evaluates immediately.
-    exampleSel.addEventListener('change', () => {
-      const idx = Number(exampleSel.value);
+    // Enter flushes the pending debounce and evaluates now.
+    exprInput.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      window.clearTimeout(timer);
+      evaluate();
+      if (e.ctrlKey || e.metaKey) exprInput.blur();
+    });
+
+    // Choosing an example chip loads its expression and evaluates immediately.
+    chipsWrap.addEventListener('click', (e) => {
+      const chip = (e.target as HTMLElement | null)?.closest<HTMLButtonElement>('.cron-chip');
+      if (!chip || !chipsWrap!.contains(chip)) return;
+      const idx = Number(chip.dataset.exampleIdx);
       if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
       exprInput.value = examples[idx].expr;
+      setActiveChip(idx);
       window.clearTimeout(timer);
       evaluate();
     });
@@ -1143,7 +1465,7 @@
       getValue: () => exprInput!.value.trim(),
       setValue: (value) => {
         exprInput!.value = value;
-        exampleSel!.value = '-1';
+        setActiveChip(null);
         window.clearTimeout(timer);
         evaluate();
       },
@@ -1157,17 +1479,17 @@
     const restored = getRestoredLastInput('cron-expression-tester');
     if (hashValue) {
       exprInput.value = hashValue;
-      exampleSel.value = '-1';
+      setActiveChip(null);
       evaluate(false);
     } else if (restored) {
       exprInput.value = restored;
-      exampleSel.value = '-1';
+      setActiveChip(null);
       evaluate(false);
     } else {
       const seed = examples[0];
       if (seed) {
         exprInput.value = seed.expr;
-        exampleSel.value = '0';
+        setActiveChip(0);
         evaluate(false);
       } else {
         renderEmpty(resultsBox, summaryEl);
