@@ -64,7 +64,6 @@ export function GET(): Response {
     '# excluding them here just saves crawl budget on a 445-URL site.',
     'Disallow: /search',
     'Disallow: /*/search',
-    'Disallow: /alertlint-wasm-demo',
     'Disallow: /offline',
     '',
     '# ── AI assistants: explicitly welcome ──────────────────────────────────',
