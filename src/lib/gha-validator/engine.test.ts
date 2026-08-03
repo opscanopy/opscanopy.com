@@ -852,3 +852,137 @@ describe('strategy.matrix', () => {
     expect(ids(r).filter((i) => i.startsWith('matrix-') || i.startsWith('strategy-'))).toEqual([]);
   });
 });
+
+/* ────────────────────────────────────────────────────────────────────────── *
+ *  permissions — isWriteAll() only ever matched the literal string, and one
+ *  declaring job silenced the nudge for every other job in the file.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+describe('permissions depth', () => {
+  const SHA = '8f4b7f84864484a7bf31766abe9204da3cbe65b3';
+
+  it('flags enumerated write-everything the same as write-all', () => {
+    const r = validate(
+      wf([
+        'on: push',
+        'permissions:',
+        '  contents: write',
+        '  id-token: write',
+        '  packages: write',
+        '  actions: write',
+        'jobs:',
+        '  b:',
+        '    runs-on: ubuntu-latest',
+        '    steps: [{run: echo hi}]',
+      ]),
+    );
+    const f = byId(r, 'permissions-broad-write');
+    expect(f).toHaveLength(1);
+    expect(f[0].severity).toBe('warning');
+    expect(f[0].title).toMatch(/4 write/);
+  });
+
+  it('leaves one or two write scopes alone', () => {
+    const r = validate(
+      wf([
+        'on: push',
+        'permissions:',
+        '  contents: read',
+        '  id-token: write',
+        'jobs:',
+        '  b:',
+        '    runs-on: ubuntu-latest',
+        '    steps: [{run: echo hi}]',
+      ]),
+    );
+    expect(ids(r)).not.toContain('permissions-broad-write');
+  });
+
+  it('flags an unknown scope name and suggests the nearest real one', () => {
+    const r = validate(
+      wf(['on: push', 'permissions:', '  content: read', 'jobs:', '  b:', '    runs-on: ubuntu-latest', '    steps: [{run: echo hi}]']),
+    );
+    const f = byId(r, 'permissions-unknown-scope');
+    expect(f).toHaveLength(1);
+    expect(f[0].severity).toBe('error');
+    expect(f[0].remediation).toContain('contents');
+  });
+
+  it('flags an illegal scope VALUE', () => {
+    const r = validate(
+      wf(['on: push', 'permissions:', '  contents: readonly', 'jobs:', '  b:', '    runs-on: ubuntu-latest', '    steps: [{run: echo hi}]']),
+    );
+    expect(ids(r)).toContain('permissions-unknown-scope');
+  });
+
+  it('accepts every real scope name and value', () => {
+    const r = validate(
+      wf([
+        'on: push',
+        'permissions:',
+        '  contents: read',
+        '  pull-requests: write',
+        '  security-events: none',
+        '  id-token: write',
+        'jobs:',
+        '  b:',
+        '    runs-on: ubuntu-latest',
+        '    steps: [{run: echo hi}]',
+      ]),
+    );
+    expect(ids(r)).not.toContain('permissions-unknown-scope');
+  });
+
+  it('one declaring job no longer silences the nudge for the others', () => {
+    const r = validate(
+      wf([
+        'on: push',
+        'jobs:',
+        '  quiet:',
+        '    permissions: {}',
+        '    runs-on: ubuntu-latest',
+        '    steps: [{run: echo a}]',
+        '  loud:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        `      - uses: actions/checkout@${SHA}`,
+      ]),
+    );
+    const f = byId(r, 'job-missing-permissions');
+    expect(f).toHaveLength(1);
+    expect(f[0].title).toContain('loud');
+  });
+
+  it('does not nag a pure-echo job that never touches the token', () => {
+    const r = validate(
+      wf([
+        'on: push',
+        'jobs:',
+        '  quiet:',
+        '    permissions: {}',
+        '    runs-on: ubuntu-latest',
+        '    steps: [{run: echo a}]',
+        '  echoer:',
+        '    runs-on: ubuntu-latest',
+        '    steps: [{run: echo just text}]',
+      ]),
+    );
+    expect(ids(r)).not.toContain('job-missing-permissions');
+  });
+
+  it('stays quiet when a top-level permissions block covers every job', () => {
+    const r = validate(
+      wf([
+        ...HEAD_READ,
+        'on: push',
+        'jobs:',
+        '  a:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        `      - uses: actions/checkout@${SHA}`,
+      ]),
+    );
+    expect(ids(r)).not.toContain('job-missing-permissions');
+    expect(ids(r)).not.toContain('permissions-missing');
+  });
+});

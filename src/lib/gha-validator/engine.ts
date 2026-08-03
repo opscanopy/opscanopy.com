@@ -1251,6 +1251,166 @@ function checkPermissions(
       }
     }
   }
+
+  // Enumerated scopes: names, values, and "write-all with extra steps".
+  checkPermissionsMap(topPerms, 'the workflow', lines, 1, add);
+  if (isRecord(wf.jobs)) {
+    for (const [jobId, job] of Object.entries(wf.jobs as Record<string, unknown>)) {
+      if (!isRecord(job)) continue;
+      checkPermissionsMap(
+        (job as WorkflowJob).permissions,
+        `job “${jobId}”`,
+        lines,
+        findLine(lines, (l) => new RegExp(`^\\s*${escapeRegExp(jobId)}\\s*:`).test(l)),
+        add,
+      );
+    }
+  }
+
+  // Partial coverage. The block above only nudges when NO job declares
+  // permissions, so a single `permissions: {}` job used to buy silence for
+  // every other job in the file. Name the jobs that are actually uncovered.
+  const topDeclared = topPerms !== undefined && topPerms !== null;
+  if (!topDeclared && isRecord(wf.jobs)) {
+    const entries = Object.entries(wf.jobs as Record<string, unknown>);
+    const someDeclare = entries.some(
+      ([, j]) => isRecord(j) && (j as WorkflowJob).permissions !== undefined,
+    );
+    if (someDeclare) {
+      for (const [jobId, job] of entries) {
+        if (!isRecord(job) || (job as WorkflowJob).permissions !== undefined) continue;
+        // Only nudge jobs that actually use the token — a pure-echo job
+        // inherits a scope it never reads, and nagging about it is noise.
+        if (!usesToken(job)) continue;
+        add({
+          id: 'job-missing-permissions',
+          severity: 'info',
+          title: `Job “${jobId}” has no \`permissions:\` while other jobs in this file do.`,
+          detail:
+            'With no top-level `permissions:` block, this job falls back to the repository default — which is often broader than the jobs that DID declare their own. Mixed coverage like this is usually an oversight rather than a decision.',
+          line: findLine(lines, (l) => new RegExp(`^\\s*${escapeRegExp(jobId)}\\s*:`).test(l)),
+          remediation:
+            'Give this job its own `permissions:` block, or add a top-level `permissions: { contents: read }` so every job starts from least privilege.',
+        });
+      }
+    }
+  }
+}
+
+/** Every scope name GitHub accepts under `permissions:` (verified 2026-08). */
+const PERMISSION_SCOPES = [
+  'actions',
+  'attestations',
+  'checks',
+  'contents',
+  'deployments',
+  'discussions',
+  'id-token',
+  'issues',
+  'models',
+  'packages',
+  'pages',
+  'pull-requests',
+  'repository-projects',
+  'security-events',
+  'statuses',
+] as const;
+
+const PERMISSION_VALUES = new Set(['read', 'write', 'none']);
+
+/** Enumerated write scopes at or above this count read as write-all. */
+const BROAD_WRITE_THRESHOLD = 3;
+
+/** Nearest valid scope to a typo, by prefix overlap then length similarity. */
+function nearestScope(name: string): string | undefined {
+  const lower = name.toLowerCase();
+  let best: string | undefined;
+  let bestScore = 0;
+  for (const scope of PERMISSION_SCOPES) {
+    let common = 0;
+    while (common < lower.length && common < scope.length && lower[common] === scope[common]) {
+      common += 1;
+    }
+    // Require a real prefix overlap so unrelated names get no suggestion.
+    const score = common - Math.abs(scope.length - lower.length) * 0.1;
+    if (common >= 3 && score > bestScore) {
+      bestScore = score;
+      best = scope;
+    }
+  }
+  return best;
+}
+
+/**
+ * Validate one `permissions:` mapping — scope names, scope values, and the
+ * enumerated-write-everything case. `isWriteAll` only ever matched the literal
+ * string `write-all`, so the shape people actually ship (four or five scopes
+ * each set to `write`) was invisible.
+ */
+function checkPermissionsMap(
+  perms: unknown,
+  where: string,
+  lines: string[],
+  line: number | undefined,
+  add: (f: Finding) => void,
+): void {
+  if (!isRecord(perms)) return;
+
+  let writeCount = 0;
+  for (const [scope, value] of Object.entries(perms)) {
+    const known = (PERMISSION_SCOPES as readonly string[]).includes(scope);
+    if (!known) {
+      const suggestion = nearestScope(scope);
+      add({
+        id: 'permissions-unknown-scope',
+        severity: 'error',
+        title: `“${scope}” is not a GitHub Actions permission scope.`,
+        detail: `GitHub rejects a workflow with an unrecognised key under \`permissions:\`, so ${where} will not run at all.`,
+        line: findLine(lines, (l) => new RegExp(`^\\s*${escapeRegExp(scope)}\\s*:`).test(l), line),
+        remediation: suggestion
+          ? `Did you mean \`${suggestion}\`?`
+          : `Valid scopes are: ${PERMISSION_SCOPES.join(', ')}.`,
+      });
+      continue;
+    }
+    if (typeof value !== 'string' || !PERMISSION_VALUES.has(value.trim().toLowerCase())) {
+      add({
+        id: 'permissions-unknown-scope',
+        severity: 'error',
+        title: `\`${scope}: ${String(value)}\` is not a valid permission level.`,
+        detail: 'Each scope must be `read`, `write`, or `none`.',
+        line: findLine(lines, (l) => new RegExp(`^\\s*${escapeRegExp(scope)}\\s*:`).test(l), line),
+        remediation: `Set \`${scope}:\` to read, write, or none.`,
+      });
+      continue;
+    }
+    if (value.trim().toLowerCase() === 'write') writeCount += 1;
+  }
+
+  if (writeCount >= BROAD_WRITE_THRESHOLD) {
+    add({
+      id: 'permissions-broad-write',
+      severity: 'warning',
+      title: `${writeCount} write scopes granted to ${where} — that is write-all with extra steps.`,
+      detail:
+        'Granting most scopes write access gives a compromised step or action nearly the same reach as `write-all`, while looking deliberate.',
+      line,
+      remediation:
+        'Keep only what the job provably uses. The common legitimate pairs are `contents: write` for a release and `id-token: write` for OIDC — very few jobs need more than two.',
+    });
+  }
+}
+
+/** Does this job plausibly use the GITHUB_TOKEN? Drives the coverage nudge. */
+function usesToken(job: unknown): boolean {
+  if (!isRecord(job)) return false;
+  const steps = (job as WorkflowJob).steps;
+  if (Array.isArray(steps)) {
+    for (const step of steps) {
+      if (isRecord(step) && asString((step as WorkflowStep).uses).trim() !== '') return true;
+    }
+  }
+  return /secrets\.GITHUB_TOKEN|github\.token/i.test(JSON.stringify(job));
 }
 
 /* (e) ─ `curl … | bash` / `wget … | sh` in run steps ─────────────────────────
