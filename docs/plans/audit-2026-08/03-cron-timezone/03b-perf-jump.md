@@ -10,26 +10,33 @@
 - Modify: `src/lib/cron-tester/engine.ts` (the walk, `:527-556` post-03a shape)
 - Test: `src/lib/cron-tester/engine.test.ts`
 
+**API note:** `computeNextDates` is private (engine.ts:531) and `parse` is not
+exported — see 03a's verified API table. Tests drive `nextRunEpochSeconds`.
+
 - [ ] **Step 1: Failing tests**
 
 ```ts
-describe('computeNextDates — jump performance', () => {
-  const from = new Date(Date.UTC(2026, 0, 1));
+import { nextRunEpochSeconds } from './engine';
+const from = '2026-01-01T00:00:00.000Z';
+
+describe('next-run jump performance', () => {
   it('never-fires (Feb 30) answers fast', () => {
     const t0 = performance.now();
-    const runs = computeNextDates(parse('0 0 30 2 *'), { from, count: 1, timeZone: 'UTC' });
-    expect(runs).toHaveLength(0);
+    expect(nextRunEpochSeconds('0 0 30 2 *', 1, from)).toEqual([]);
     expect(performance.now() - t0).toBeLessThan(50);
   });
-  it('sparse-but-real (Feb 29) is found across years', () => {
-    const runs = computeNextDates(parse('0 0 29 2 *'), { from, count: 1, timeZone: 'UTC' });
-    expect(runs[0].toISOString()).toBe('2028-02-29T00:00:00.000Z');
+
+  it('sparse-but-real (Feb 29) is still found across years', () => {
+    expect(nextRunEpochSeconds('0 0 29 2 *', 1, from)[0])
+      .toBe(Math.floor(Date.parse('2028-02-29T00:00:00Z') / 1000));
   });
-  it('jumping never skips a valid run — dense expression equivalence', () => {
-    // The jump path and a plain minute walk must agree; pin 10 runs of a
-    // multi-field expression that exercises day/weekday OR-semantics:
-    const runs = computeNextDates(parse('15 3 1,15 * 1'), { from, count: 10, timeZone: 'America/New_York' });
-    expect(runs).toMatchSnapshot(); // then verify the snapshot by hand against crontab.guru before accepting
+
+  it('jumping never skips a valid run — day/weekday OR-semantics preserved', () => {
+    // Cron ORs day-of-month with day-of-week when BOTH are restricted, so this
+    // fires on the 1st, the 15th, AND every Monday. Pin 10 runs and check the
+    // list by hand against crontab.guru before accepting the snapshot.
+    expect(nextRunEpochSeconds('15 3 1,15 * 1', 10, from, { timeZone: 'America/New_York' }))
+      .toMatchSnapshot();
   });
 });
 ```

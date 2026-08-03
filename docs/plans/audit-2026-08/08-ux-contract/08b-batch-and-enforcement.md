@@ -15,6 +15,14 @@
 
 ### Task 2: the contract-lint script
 
+> **Quote-style trap — read before writing a single grep.** Validating this plan,
+> a `key: 'Escape'` grep reported 18/19 CM playgrounds compliant and produced a
+> false finding: `GitlabCiValidatorPlayground.astro:1036` binds the same thing
+> with **double** quotes (`key: "Escape"`). It really is 19/19. Every marker
+> below must be matched quote-agnostically (`key:\s*['"]Escape['"]`), and the
+> same applies to attribute matching where Astro may emit either form. A lint
+> that reports false positives gets muted, which is worse than no lint.
+
 - [ ] **Step 1:** Create `scripts/lint-playground-contract.mjs`, same skeleton as `inject-cm-modulepreload.mjs` (discover fresh, `fail()` loudly, explain in the header what rot it prevents). Checks per `src/components/*Playground.astro`:
   - no `<select id="*-example"` (regex `/<select[^>]+id="[a-z0-9-]*example/`);
   - hint line present **byte-exact** OR file listed in `LEGACY` (see Step 2);

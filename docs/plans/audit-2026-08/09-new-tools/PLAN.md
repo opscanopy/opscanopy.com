@@ -6,6 +6,24 @@
 
 **Architecture:** Each child is a complete tool: `src/lib/<slug>/engine.ts` + tests, `src/components/<Name>Playground.astro` (ported from `CidrCheckerPlayground.astro`), `src/pages/<slug>.astro` + 4 locale copies, `src/data/tools.ts` registration, E2E fixture in the appropriate batch module. New tools must be born compliant — the contract-lint (08b) and fixture promotion apply from the first commit.
 
+## Registration checklist — the four-file pattern is NOT the whole surface
+
+Verified 2026-08-03. CLAUDE.md documents the four files plus `tools.ts`; these
+additional touch points are real and two of them bite silently or loudly:
+
+| Touch point | What happens if you skip it |
+|---|---|
+| `scripts/gen-tool-meta.mjs` → `TOOL_PATHS` (explicit slug → `{lib, component}` map, ~line 30) | **`npm run build` fails loudly** at `:104-110` — "N live tool(s) have no TOOL_PATHS entry". Deliberate; the map exists because naming isn't 1:1 (`cve-ignore-converter` → `cve-ignore` / `CveConverterPlayground.astro`). Add the entry in the same commit as the registry entry. |
+| `npm run gen:og` | **Silent.** `scripts/gen-og-images.mjs:142` iterates `liveTools`, but `gen:og` is **not** in `prebuild`/`build`/`postbuild` — it is manual. A new tool ships with no OG card until someone runs it. Run it and commit `public/tools-og/<slug>.png`. |
+| `npm run predeploy` → `check-no-placeholder.mjs` | Blocks `npm run deploy` if any `[PLACEHOLDER` sentinel reached `dist/`. Only matters if you draft page copy with the sentinel. |
+| Locale pages ×4 + `src/i18n/…` strings | Missing locale page = 404 from that locale's catalog. |
+| E2E fixture batch module under `tests/e2e/fixtures/` | Tool ships ungated (see 08's root-cause finding). |
+
+**Also verified:** a new `ui.*` i18n block must be added to the field-by-field
+merge in `src/i18n/pages.ts` (`getPagesContent`) or it is `undefined` in every
+locale regardless of the locale files — this exact trap cost a build failure
+during plan 01. Any plan here that adds shared UI strings inherits it.
+
 **Feasibility (all three: 100% client-side, zero backend):** secret scanner = regex + entropy; YAML diff = tree walk over the existing js-yaml parse; latency budget = arithmetic.
 
 ## Children (independent; ship order = ranked value)

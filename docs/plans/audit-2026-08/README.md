@@ -28,6 +28,32 @@ engineer with zero context — start at the parent, take children in order.
 
 Effort: S ≈ half a day · M ≈ 1–3 days · L ≈ a week+ (children shippable separately).
 
+## Validation status
+
+Plan 01 was implemented 2026-08-03 (commits `946014d`…`3882fd4`). Executing it
+exposed two plan defects, so plans 02–12 were then validated against the code
+before any further work:
+
+- **124 `file:line` citations resolve**; zero dangling paths, zero line numbers past EOF.
+- **Plan 02's bugs re-executed** — all seven reproduce with the exact outputs now pasted into `02-ip-core-correctness/PLAN.md`.
+- **Plan 08's compliance table re-derived independently** — 17/18/18/15/39/30 across 39 playgrounds, 19 CodeMirror: every number confirmed.
+- **Plans 04, 05, 07, 12 spot-checked** at their load-bearing lines: all confirmed.
+
+Corrections applied:
+
+| Plan | Defect found | Fix |
+|---|---|---|
+| 03 | Assumed an exported `parse()` and `computeNextDates(expr, opts)`. Both wrong: `computeNextDates` is **private** and positional (`engine.ts:531`), `parse` is not exported, and `formatRun` is a **second** browser-local site the plan missed entirely. | 03a now carries a verified API table; all tests drive the four real exports. |
+| 06 | Did not state `calculate`'s real arity. | Pinned: `calculate(input: string)` at `engine.ts:229`; trailing-optional `opts` is source-compatible. |
+| 09 | Treated the four-file pattern as the whole registration surface. | Added the real checklist — `gen-tool-meta.mjs` `TOOL_PATHS` (**fails the build**), `npm run gen:og` (**silent miss**, not in the build chain), `predeploy` placeholder gate. |
+| 08b | Would have shipped a lint with quote-sensitive greps. | Added the trap note: a `'Escape'` grep falsely reports 18/19 because `GitlabCiValidatorPlayground.astro:1036` uses double quotes. It is 19/19. |
+| 02 | Claims were audit-sourced, not re-run. | Re-executed; verbatim outputs and the confirmed API surface pasted in. |
+
+**Two lessons that apply to every remaining plan** — both cost real time in 01:
+
+1. **Read the signature before writing the test.** `recordToolLastInput` lives in `wire.ts`, not `last-input.ts`; the pure choke point was `recordLastInput`. Grep `^export` in the target module first.
+2. **Look for explicit registration maps.** `getPagesContent` merges `ui.*` field-by-field, so a new block is `undefined` in all five locales until it is listed there — the build caught it, but only after the work was done. `gen-tool-meta.mjs`'s `TOOL_PATHS` is the same shape.
+
 ## Ground rules for every plan
 
 - Four-file pattern per `CLAUDE.md` (engine / engine.test / Playground / page).

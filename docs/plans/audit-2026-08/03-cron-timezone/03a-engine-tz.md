@@ -2,11 +2,37 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development or superpowers:executing-plans. Checkbox steps.
 
-**Goal:** `computeNextDates(expr, opts)` takes `{ timeZone: string, from?: Date, count?: number }`, walks UTC instants, and matches cron fields against the **wall clock in that zone** via a cached `Intl.DateTimeFormat`. Default zone: `'UTC'` — never silently browser-local.
+**Goal:** The four exported cron functions accept an optional IANA `timeZone`, match cron fields against the **wall clock in that zone** via a cached `Intl.DateTimeFormat`, and default to `'UTC'` — never silently browser-local.
+
+## Verified API surface (read 2026-08-03 — do not re-guess)
+
+`src/lib/cron-tester/engine.ts` exports exactly four functions:
+
+| Export | Line | Signature |
+|---|---|---|
+| `explain` | 645 | `(expr: string) => CronResult` (`CronResult` in `./types:29`) |
+| `matchesAt` | 705 | `(expr: string, at: Date) => boolean` |
+| `nextRuns` | 724 | `(expr: string, count = 5, fromIso?: string) => string[]` |
+| `nextRunEpochSeconds` | 739 | `(expr: string, count = 5, fromIso?: string) => number[]` |
+
+Internal, **not exported** — tests cannot import these:
+
+- `parse(expr) => ParseOutcome { error, isReboot, parsed }`
+- `matches(p: ParsedCron, d: Date): boolean` — **line 506**; the browser-local reads are `:507-509` (`d.getMinutes()`, `d.getHours()`, `d.getMonth()`), plus `d.getDate()`/`d.getDay()` just below
+- `computeNextDates(p: ParsedCron, count: number, from: Date): Date[]` — **line 531**, positional args
+- `MAX_ITERATIONS = 5 * 366 * 24 * 60` — **line 540**
+- `formatRun(d, from)`, `resolveFrom(fromIso)`, `clampCount(count)`
+
+**Consequences for this plan** (an earlier draft got all three wrong):
+1. There is no exported `parse()`. Every test goes through the four public functions.
+2. `computeNextDates` is private and positional — the `timeZone` option is added to the *public* signatures and threaded down, not bolted onto `computeNextDates(expr, opts)`.
+3. **`formatRun(d, from)` renders the display string and is browser-local too.** Fixing only `matches()` gives correct instants rendered in the wrong zone. Both sites must change.
+
+Also note `nextRunEpochSeconds` feeds the Timestamp Converter `#t=` deep link — epoch seconds are zone-independent, so that chain stays correct for free, but re-verify it after the change.
 
 **Files:**
 - Create: `src/lib/cron-tester/wall-clock.ts` (zone math, reusable)
-- Modify: `src/lib/cron-tester/engine.ts:508-556` (field matching + walk)
+- Modify: `src/lib/cron-tester/engine.ts` — `matches` (506), `computeNextDates` (531), `formatRun`, and the four public signatures
 - Test: `src/lib/cron-tester/wall-clock.test.ts`, extend `src/lib/cron-tester/engine.test.ts`
 
 ### Task 1: wall-clock reader
@@ -96,46 +122,78 @@ export function zoneOffsetMinutes(epochMs: number, timeZone: string): number {
 
 ### Task 2: engine walks UTC, matches wall clock
 
-- [ ] **Step 1: Failing tests** (extend `engine.test.ts`; match the suite's existing call style):
+Tests go through `nextRunEpochSeconds` — it is exported, returns zone-independent
+instants (so assertions are unambiguous), and exercises the same
+`parse → computeNextDates` path as `nextRuns`/`explain`.
+
+- [ ] **Step 1: Failing tests** (extend `engine.test.ts`; match the suite's existing import/call style):
 
 ```ts
-describe('computeNextDates — timezone', () => {
-  const from = new Date(Date.UTC(2026, 2, 7, 12, 0)); // Sat before US spring-forward
+import { nextRunEpochSeconds, nextRuns, matchesAt } from './engine';
+
+const at = (iso: string) => Math.floor(Date.parse(iso) / 1000);
+
+describe('timezone-aware next runs', () => {
+  const from = '2026-03-07T12:00:00.000Z'; // Sat before US spring-forward
+
   it('defaults to UTC, not browser-local', () => {
-    const [next] = computeNextDates(parse('0 2 * * *'), { from, count: 1 });
-    expect(next.toISOString()).toBe('2026-03-08T02:00:00.000Z');
+    expect(nextRunEpochSeconds('0 2 * * *', 1, from)[0]).toBe(at('2026-03-08T02:00:00Z'));
   });
-  it('spring-forward: 0 2 * * * has no run on the gap day in New York', () => {
-    const runs = computeNextDates(parse('0 2 * * *'), { from, count: 2, timeZone: 'America/New_York' });
-    // 02:00 EST would be 07:00Z; on Mar 8 the 2am wall hour does not exist → first run is Mar 9
-    expect(runs[0].toISOString()).toBe('2026-03-09T06:00:00.000Z'); // 02:00 EDT
+
+  it('spring-forward: 02:00 does not exist on the gap day in New York', () => {
+    // 02:00 EST would be 07:00Z, but that wall hour is skipped on 2026-03-08,
+    // so the next run is 02:00 EDT on the 9th = 06:00Z.
+    expect(nextRunEpochSeconds('0 2 * * *', 1, from, { timeZone: 'America/New_York' })[0])
+      .toBe(at('2026-03-09T06:00:00Z'));
   });
-  it('fall-back: 30 1 * * * fires once, on the first occurrence', () => {
-    const f = new Date(Date.UTC(2026, 10, 1, 0, 0)); // 2026-11-01, US fall-back
-    const runs = computeNextDates(parse('30 1 * * *'), { from: f, count: 1, timeZone: 'America/New_York' });
-    expect(runs[0].toISOString()).toBe('2026-11-01T05:30:00.000Z'); // 01:30 EDT, not the 06:30Z repeat
+
+  it('fall-back: a repeated wall time fires once, on its first occurrence', () => {
+    const f = '2026-11-01T00:00:00.000Z';
+    const runs = nextRunEpochSeconds('30 1 * * *', 2, f, { timeZone: 'America/New_York' });
+    expect(runs[0]).toBe(at('2026-11-01T05:30:00Z')); // 01:30 EDT
+    expect(runs[1]).not.toBe(at('2026-11-01T06:30:00Z')); // not the 01:30 EST repeat
   });
-  it('half-hour zone', () => {
-    const [next] = computeNextDates(parse('0 9 * * *'), { from, count: 1, timeZone: 'Asia/Kolkata' });
-    expect(next.toISOString()).toBe('2026-03-08T03:30:00.000Z'); // 09:00 IST
+
+  it('half-hour offset zone', () => {
+    expect(nextRunEpochSeconds('0 9 * * *', 1, from, { timeZone: 'Asia/Kolkata' })[0])
+      .toBe(at('2026-03-08T03:30:00Z')); // 09:00 IST
   });
-  it('unknown zone is a diagnostic, not a throw', () => {
-    expect(() => computeNextDates(parse('* * * * *'), { from, timeZone: 'Mars/Olympus' })).not.toThrow();
-    // shape: read how the engine reports errors today and return the same shape
-    // with message 'Unknown timezone "Mars/Olympus"…'
+
+  it('nextRuns renders the wall time of the chosen zone, not the browser', () => {
+    const [s] = nextRuns('0 9 * * *', 1, from, { timeZone: 'Asia/Kolkata' });
+    expect(s).toMatch(/09:00/);
+  });
+
+  it('matchesAt honours the zone', () => {
+    expect(matchesAt('0 9 * * *', new Date('2026-03-08T03:30:00Z'), { timeZone: 'Asia/Kolkata' })).toBe(true);
+    expect(matchesAt('0 9 * * *', new Date('2026-03-08T09:00:00Z'), { timeZone: 'Asia/Kolkata' })).toBe(false);
+  });
+
+  it('an unknown zone never throws — returns empty like every other bad input', () => {
+    expect(() => nextRunEpochSeconds('* * * * *', 1, from, { timeZone: 'Mars/Olympus' })).not.toThrow();
+    expect(nextRunEpochSeconds('* * * * *', 1, from, { timeZone: 'Mars/Olympus' })).toEqual([]);
+  });
+
+  it('existing 3-arg calls are unchanged (back-compat)', () => {
+    expect(nextRunEpochSeconds('0 2 * * *', 1, from)).toHaveLength(1);
+    expect(matchesAt('* * * * *', new Date(from))).toBe(true);
   });
 });
 ```
 
-Adapt `parse(...)`/result shapes to the engine's real API (read `engine.ts` exports first). If `computeNextDates` currently returns `Date`s, keep that — a `Date` is an instant; only *matching* changes.
+`explain(expr)` gains the same optional trailing `opts` — add one assertion that its
+`nextRuns` field reflects the zone, matching whatever field name `CronResult`
+(`src/lib/cron-tester/types.ts:29`) actually uses.
 
-- [ ] **Step 2:** Run — FAIL (no `timeZone` option).
+- [ ] **Step 2:** Run — FAIL (no `opts` parameter exists).
 
-- [ ] **Step 3: Implement.** In `engine.ts`:
-  1. Change the field-match site (`:508-511`) from `d.getMinutes()`/etc. to a `WallTime` parameter: `matches(fields, w: WallTime)` reading `w.minute/w.hour/w.day/w.month/w.weekday`.
-  2. Change the walk (`:527-556`) to iterate **UTC minutes** (`epochMs += 60000`) and call `wallClock(epochMs, timeZone)` per candidate. Fall-back dedupe falls out naturally: each UTC instant is visited once, so a repeated wall time fires on its first UTC occurrence and the second occurrence *also matches* — dedupe by tracking the last **matched wall-time tuple** and skipping an identical consecutive match: `if (sameWall(lastFired, w)) continue;`.
-  3. Signature: `computeNextDates(parsed, opts: { from?: Date; count?: number; timeZone?: string })`, default `timeZone: 'UTC'`. Wrap the first `wallClock` call in try/catch → unknown-zone diagnostic in the engine's existing error shape.
-  4. **Perf note:** per-minute `formatToParts` is ~2–5 µs; the common case (next 5 runs of a sane expression) stays fast, but this makes never-fires *worse* — 03b fixes the horizon and MUST land before this ships to the playground. Gate: land 03a + 03b in the same deploy.
+- [ ] **Step 3: Implement** in `engine.ts`:
+  1. `export interface CronTimeOptions { timeZone?: string }`. Add `opts?: CronTimeOptions` as the **last** parameter of all four exports (`explain(expr, opts?)`, `matchesAt(expr, at, opts?)`, `nextRuns(expr, count?, fromIso?, opts?)`, `nextRunEpochSeconds(expr, count?, fromIso?, opts?)`). Trailing-optional keeps every existing call site working — the back-compat test above pins that.
+  2. `matches(p, d)` at **506** becomes `matches(p, w: WallTime)`; replace the five `d.getX()` reads with `w.minute/w.hour/w.month/w.day/w.weekday`. Keep the day-of-month/day-of-week OR semantics below it exactly as they are.
+  3. `computeNextDates(p, count, from)` at **531** becomes `computeNextDates(p, count, from, timeZone)`: iterate **UTC minutes** (`epochMs += 60_000`) and call `wallClock(epochMs, timeZone)` per candidate. Fall-back dedupe: track the last matched wall tuple and skip an identical consecutive match, so a repeated wall time fires once.
+  4. `formatRun(d, from)` must render in `timeZone` — pass it through and use an `Intl.DateTimeFormat` with that `timeZone`, or it will print correct instants in the wrong zone.
+  5. Unknown zone: `wallClock` throws `RangeError`. Catch it at each public entry point and return the module's existing empty-result shape (`[]` for the two run functions, `false` for `matchesAt`, the `error` field for `explain`) — this engine's contract is "never throws".
+  6. **Perf gate:** per-candidate `formatToParts` is ~2–5 µs, which makes the never-fires walk *worse*, not better. 03b MUST land before this reaches the playground — ship 03a and 03b in the same deploy.
 
-- [ ] **Step 4:** Tests pass; `npm run test` green.
+- [ ] **Step 4:** Tests pass; `npm run test` green (the existing `verify.test.ts` also exercises this engine — check it).
 - [ ] **Step 5: Commit** — `git commit -m "feat(cron-tester): timezone-aware next runs — UTC default, wall-clock matching, DST skip/first-occurrence policy"`

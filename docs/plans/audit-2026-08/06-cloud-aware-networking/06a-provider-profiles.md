@@ -86,7 +86,11 @@ export const PROVIDERS: Record<Provider, ProviderProfile> = {
 **Files:**
 - Modify: `src/lib/subnet-calculator/engine.ts` (usable-host site at `:250-273`, warnings assembly), `engine.test.ts`
 
-- [ ] **Step 1: Failing tests** — `calculate('10.0.1.0/24', {provider: 'aws'})` → result carries `usableHosts: 251n` (or the engine's display equivalent), a `reservedNote`, and empty warnings; `calculate('10.0.0.0/30', {provider: 'aws'})` → warning naming /28; no-provider calls byte-identical to today (pin one full existing result as a regression snapshot **before** touching the engine).
+**Verified signature (2026-08-03):** `export function calculate(input: string): SubnetResult` —
+`engine.ts:229`, **one parameter**. Adding a trailing optional `opts` is therefore
+source-compatible with every existing caller; the back-compat test below pins that.
+
+- [ ] **Step 1: Failing tests** — `calculate('10.0.1.0/24', {provider: 'aws'})` → result carries `usableHosts: 251n` (or the engine's display equivalent), a `reservedNote`, and empty warnings; `calculate('10.0.0.0/30', {provider: 'aws'})` → warning naming /28; **one-arg calls byte-identical to today** — pin a full existing `calculate('10.0.1.0/24')` result as a regression snapshot *before* touching the engine.
 - [ ] **Step 2:** Implement: optional second param `{provider?: Provider}` defaulting `'generic'`; route the usable-host computation through `usableHosts()`; append `subnetWarnings()` to the existing warnings channel. The /31 + /32 special-case captions at `:260-273` remain the generic path.
 - [ ] **Step 3:** Tests pass; suite green.
 - [ ] **Step 4: Commit** — `git commit -m "feat(subnet-calculator): optional cloud-provider mode — adjusted usable hosts + provider warnings"`

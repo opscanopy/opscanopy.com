@@ -8,7 +8,40 @@
 
 **Tech Stack:** Pure TS, BigInt, Vitest. No deps.
 
-**Verified evidence (all confirmed by execution during the audit):**
+**API surface, re-verified 2026-08-03 — every signature this plan's test code uses is correct as written:**
+`parseIPv6(string): bigint|null` · `ipv6Compress(bigint): string` · `ipv6Expand(bigint): string` ·
+`relate(a: Cidr, b: Cidr): CidrRelation` · `maskForPrefix(version, prefix): bigint` ·
+`rangeToCidrs(start, end, version): Cidr[]` · `classifyIPv4(bigint): string` / `classifyIPv6(bigint): string` ·
+`Cidr { version, addr, prefix }` · `BITS: Record<IpVersion, number>` · all exported.
+`CidrRelation` includes `'overlaps'`. There is also a `classify(version, v)` façade at `ip-core.ts:269` —
+02c must keep it consistent with the two per-family classifiers it dispatches to.
+
+**Verified evidence — re-executed 2026-08-03, every claim reproduced with the exact output below:**
+
+```
+parseIPv6('1.2.3.4::')            -> 102:304::          (should be null)
+parseIPv6('1.2.3.4::5')           -> 102:304::5         (should be null)
+parseIPv6('::ffff:1.2.3.4')       -> ::ffff:102:304     (valid; display wrong, see 02c)
+parseIPv6('64:ff9b::1.2.3.4')     -> 64:ff9b::102:304   (valid tail — must keep working)
+relate(10.0.0.0/8, ::/0)          -> within             (should be disjoint)
+parseCidr('10.0.0.0/024')         -> prefix=24          (should be null)
+ipv6Compress(::ffff:192.168.1.1)  -> ::ffff:c0a8:101    (RFC 5952 §5 wants ::ffff:192.168.1.1)
+classifyIPv4('192.0.2.1')         -> Public / global unicast   (TEST-NET-1)
+classifyIPv4('203.0.113.9')       -> Public / global unicast   (TEST-NET-3)
+classifyIPv4('198.18.0.1')        -> Public / global unicast   (benchmarking)
+classifyIPv4('192.88.99.1')       -> Public / global unicast   (deprecated 6to4 relay)
+classifyIPv4('255.255.255.255')   -> Reserved (240.0.0.0/4)    (limited broadcast)
+classifyIPv6('64:ff9b::1')        -> Reserved / special-purpose (NAT64)
+classifyIPv6('2002:c000:204::1')  -> Global unicast (2000::/3)  (6to4)
+split('10.0.0.0/24','',33)        -> valid=true split=absent error=undefined
+split('10.0.0.0','',24)           -> valid=true split=absent error=undefined
+split('10.0.0.0/24','',NaN)       -> valid=true split=absent error=undefined
+```
+
+Note the splitter results carry **no `error` property at all** today (not `error: null`), and
+`split(parent, allocations, newPrefix)` is the correct call shape for 02e.
+
+**Original audit evidence, per finding:**
 
 - `ip-core.ts:83` — "embedded IPv4 must be last" is enforced per-*half*, not per-address: `1.2.3.4::` parses and silently becomes `102:304::`; flows into cidr-checker aggregates and subnet-calculator results with no warning. Node's `net.isIP('1.2.3.4::')` → `0`.
 - `ip-core.ts:311-319` — `relate()` compares bare BigInts across families: `relate(10.0.0.0/8, ::/0)` → `'within'`. Latent (cidr-checker pre-buckets by family) but a landmine for the next caller.
