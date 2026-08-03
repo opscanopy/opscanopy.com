@@ -207,7 +207,10 @@ export function parseCidr(input: string): Cidr | null {
   if (prefixStr === null) {
     prefix = max;
   } else {
-    if (!/^\d{1,3}$/.test(prefixStr)) return null;
+    // No leading zeros, matching the octet policy documented at the top of this
+    // module: '/024' and '010.0.0.0' are the same lexical ambiguity, and this
+    // function used to reject one while accepting the other.
+    if (!/^(0|[1-9]\d{0,2})$/.test(prefixStr)) return null;
     prefix = Number(prefixStr);
     if (prefix > max) return null;
   }
@@ -312,10 +315,15 @@ export function rangeToCidrs(start: bigint, end: bigint, version: IpVersion): Ci
   return out;
 }
 
-/** Relationship between two CIDRs of the same version. */
+/** Relationship between two CIDRs. Cross-version pairs are always 'disjoint'. */
 export type CidrRelation = 'equal' | 'contains' | 'within' | 'overlaps' | 'disjoint';
 
 export function relate(a: Cidr, b: Cidr): CidrRelation {
+  // Without this, the two address families share one number line: every IPv4
+  // block reads as 'within' ::/0, and 10.0.0.0/8 vs ::a00:0/104 reads 'equal'.
+  // Callers today bucket by family first, so this is a latent hazard rather
+  // than a live bug — closed here so it cannot become one.
+  if (a.version !== b.version) return 'disjoint';
   const [as, ae] = cidrRange(a);
   const [bs, be] = cidrRange(b);
   if (as === bs && ae === be) return 'equal';

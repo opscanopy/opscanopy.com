@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseIPv4, ipv4ToString, parseCidr, parseIPv6, ipv6Compress } from './ip-core';
+import { parseIPv4, ipv4ToString, parseCidr, parseIPv6, ipv6Compress, relate } from './ip-core';
 
 /**
  * ip-core is shared by all six networking tools, so its parsing decisions set
@@ -77,5 +77,50 @@ describe('parseIPv6 — an embedded IPv4 may only terminate the address', () => 
     expect(ipv6Compress(parseIPv6('::ffff:192.168.1.1')!)).toBe(
       ipv6Compress(parseIPv6('::ffff:c0a8:101')!),
     );
+  });
+});
+
+describe('relate — address families are never compared as bare integers', () => {
+  // relate() unpacked both CIDRs to [start, end] BigInts and compared them with
+  // no version check, so the IPv4 and IPv6 number lines were treated as one.
+  // Not reachable through today's UI (cidr-checker buckets by family first),
+  // but the next caller that forgets to pre-bucket gets silent false
+  // containment — the worst possible failure for a membership tool.
+  const r = (a: string, b: string) => relate(parseCidr(a)!, parseCidr(b)!);
+
+  it('every IPv4 block is disjoint from ::/0, both directions', () => {
+    expect(r('10.0.0.0/8', '::/0')).toBe('disjoint');
+    expect(r('::/0', '10.0.0.0/8')).toBe('disjoint');
+  });
+
+  it('numerically identical ranges in different families are not equal', () => {
+    // 10.0.0.0/8 and ::a00:0/104 occupy the same integer range.
+    expect(r('10.0.0.0/8', '::a00:0/104')).toBe('disjoint');
+  });
+
+  it('same-family relations are unchanged', () => {
+    expect(r('10.0.0.0/8', '10.0.0.0/8')).toBe('equal');
+    expect(r('10.1.0.0/16', '10.0.0.0/8')).toBe('within');
+    expect(r('10.0.0.0/8', '10.1.0.0/16')).toBe('contains');
+    expect(r('10.0.0.0/25', '10.0.0.128/25')).toBe('disjoint');
+    expect(r('2001:db8::/32', '2001:db8:1::/48')).toBe('contains');
+  });
+});
+
+describe('parseCidr — the prefix gets the same leading-zero strictness as the octets', () => {
+  // parseCidr rejected '010.0.0.0/24' (octal ambiguity) while accepting
+  // '10.0.0.0/024' — the same lexical form, opposite treatment, one function.
+  it('rejects a zero-padded prefix', () => {
+    expect(parseCidr('10.0.0.0/024')).toBeNull();
+    expect(parseCidr('10.0.0.0/00')).toBeNull();
+    expect(parseCidr('2001:db8::/064')).toBeNull();
+  });
+
+  it('keeps /0 and every unpadded prefix', () => {
+    expect(parseCidr('0.0.0.0/0')).not.toBeNull();
+    expect(parseCidr('10.0.0.0/8')).not.toBeNull();
+    expect(parseCidr('10.0.0.0/24')).not.toBeNull();
+    expect(parseCidr('10.0.0.0/32')).not.toBeNull();
+    expect(parseCidr('2001:db8::/128')).not.toBeNull();
   });
 });
