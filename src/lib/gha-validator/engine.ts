@@ -456,6 +456,87 @@ function runStructuralChecks(
   for (const job of jobs) {
     checkJob(job, lines, jobIds, add);
   }
+  checkNeedsCycles(jobs, lines, jobIds, add);
+}
+
+/**
+ * Detect cycles in the `needs:` graph. GitHub rejects a workflow whose job
+ * graph contains one, so NOTHING in the file runs — but a per-job membership
+ * check (which is all this engine had) sees every edge as valid and passes it.
+ *
+ * Iterative three-colour DFS: the job graph comes from untrusted YAML, so a
+ * pathological file must not blow the call stack. One finding per distinct
+ * cycle, not per member.
+ */
+function checkNeedsCycles(
+  jobs: JobEntry[],
+  lines: string[],
+  jobIds: Set<string>,
+  add: (f: Finding) => void,
+): void {
+  const graph = new Map<string, string[]>();
+  const lineOf = new Map<string, number | undefined>();
+  for (const job of jobs) {
+    lineOf.set(job.id, job.line);
+    const deps = isRecord(job.raw) ? toStringList(job.raw.needs) : [];
+    // Edges to jobs that do not exist are already reported as
+    // `job-needs-unknown`; following them here would turn one typo into two
+    // findings, and they cannot form a cycle anyway.
+    graph.set(
+      job.id,
+      deps.filter((d) => jobIds.has(d)),
+    );
+  }
+
+  const WHITE = 0;
+  const GREY = 1;
+  const BLACK = 2;
+  const colour = new Map<string, number>();
+  const reported = new Set<string>();
+
+  for (const start of graph.keys()) {
+    if ((colour.get(start) ?? WHITE) !== WHITE) continue;
+    const stack: { id: string; next: number }[] = [{ id: start, next: 0 }];
+    const path: string[] = [start];
+    colour.set(start, GREY);
+
+    while (stack.length > 0) {
+      const top = stack[stack.length - 1];
+      const deps = graph.get(top.id) ?? [];
+      if (top.next < deps.length) {
+        const dep = deps[top.next];
+        top.next += 1;
+        const c = colour.get(dep) ?? WHITE;
+        if (c === GREY) {
+          // Back edge: everything from `dep` onward on the current path is the cycle.
+          const cycle = [...path.slice(path.indexOf(dep)), dep];
+          // Rotations of one cycle are the same cycle — key on the sorted set.
+          const key = [...new Set(cycle)].sort().join('|');
+          if (!reported.has(key)) {
+            reported.add(key);
+            add({
+              id: 'job-needs-cycle',
+              severity: 'error',
+              title: `Jobs depend on each other in a loop: ${cycle.join(' → ')}.`,
+              detail:
+                'GitHub rejects a workflow whose `needs:` graph contains a cycle. The whole file is invalid, so no job in it runs — not just the ones in the loop.',
+              line:
+                findJobChildLine(lines, lineOf.get(cycle[0]), 'needs') ?? lineOf.get(cycle[0]),
+              remediation: `Break the loop: one of these jobs must not need the other. If they genuinely need to share data, have both depend on a third job instead.`,
+            });
+          }
+        } else if (c === WHITE) {
+          colour.set(dep, GREY);
+          path.push(dep);
+          stack.push({ id: dep, next: 0 });
+        }
+      } else {
+        colour.set(top.id, BLACK);
+        path.pop();
+        stack.pop();
+      }
+    }
+  }
 }
 
 function checkJob(

@@ -491,3 +491,117 @@ describe('security rules', () => {
     expect(ids(validate(yaml))).toContain('pipe-to-shell');
   });
 });
+
+/* ────────────────────────────────────────────────────────────────────────── *
+ *  needs: cycles — GitHub rejects the whole file, so nothing runs at all.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+describe('job-needs-cycle', () => {
+  it('flags a two-job cycle as an error naming the path', () => {
+    const r = validate(
+      wf([
+        ...HEAD_READ,
+        'on: push',
+        'jobs:',
+        '  a:',
+        '    needs: b',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - run: echo a',
+        '  b:',
+        '    needs: a',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - run: echo b',
+      ]),
+    );
+    const f = byId(r, 'job-needs-cycle');
+    expect(f).toHaveLength(1);
+    expect(f[0].severity).toBe('error');
+    expect(f[0].title).toMatch(/a → b → a|b → a → b/);
+  });
+
+  it('flags a self-loop', () => {
+    const r = validate(
+      wf([
+        ...HEAD_READ,
+        'on: push',
+        'jobs:',
+        '  a:',
+        '    needs: a',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - run: echo a',
+      ]),
+    );
+    expect(ids(r)).toContain('job-needs-cycle');
+  });
+
+  it('flags a three-job cycle exactly once, not once per member', () => {
+    const r = validate(
+      wf([
+        ...HEAD_READ,
+        'on: push',
+        'jobs:',
+        '  a:',
+        '    needs: c',
+        '    runs-on: ubuntu-latest',
+        '    steps: [{run: echo a}]',
+        '  b:',
+        '    needs: a',
+        '    runs-on: ubuntu-latest',
+        '    steps: [{run: echo b}]',
+        '  c:',
+        '    needs: b',
+        '    runs-on: ubuntu-latest',
+        '    steps: [{run: echo c}]',
+      ]),
+    );
+    expect(byId(r, 'job-needs-cycle')).toHaveLength(1);
+  });
+
+  it('does NOT flag a diamond — shared dependencies are not a cycle', () => {
+    const r = validate(
+      wf([
+        ...HEAD_READ,
+        'on: push',
+        'jobs:',
+        '  a:',
+        '    runs-on: ubuntu-latest',
+        '    steps: [{run: echo a}]',
+        '  b:',
+        '    needs: a',
+        '    runs-on: ubuntu-latest',
+        '    steps: [{run: echo b}]',
+        '  c:',
+        '    needs: a',
+        '    runs-on: ubuntu-latest',
+        '    steps: [{run: echo c}]',
+        '  d:',
+        '    needs: [b, c]',
+        '    runs-on: ubuntu-latest',
+        '    steps: [{run: echo d}]',
+      ]),
+    );
+    expect(ids(r)).not.toContain('job-needs-cycle');
+  });
+
+  it('does not double-report when a dep is also unknown', () => {
+    // job-needs-unknown already covers the missing id; the cycle walk must
+    // ignore edges to jobs that do not exist rather than inventing a second
+    // finding about the same typo.
+    const r = validate(
+      wf([
+        ...HEAD_READ,
+        'on: push',
+        'jobs:',
+        '  a:',
+        '    needs: nope',
+        '    runs-on: ubuntu-latest',
+        '    steps: [{run: echo a}]',
+      ]),
+    );
+    expect(ids(r)).toContain('job-needs-unknown');
+    expect(ids(r)).not.toContain('job-needs-cycle');
+  });
+});
