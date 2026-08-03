@@ -725,3 +725,130 @@ describe('reusable-workflow jobs', () => {
     expect(ids(r)).toContain('job-needs-cycle');
   });
 });
+
+/* ────────────────────────────────────────────────────────────────────────── *
+ *  strategy.matrix — the most common workflow shape on a real CI fleet, and
+ *  the engine had no opinion about it whatsoever.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+describe('strategy.matrix', () => {
+  const job = (body: string[]): string =>
+    wf([...HEAD_READ, 'on: push', 'jobs:', '  test:', '    runs-on: ubuntu-latest', ...body]);
+
+  it('flags a matrix var referenced but never declared', () => {
+    const r = validate(
+      job([
+        '    strategy:',
+        '      matrix:',
+        '        node: [20, 22]',
+        '    steps:',
+        '      - run: echo "${{ matrix.node }} on ${{ matrix.os }}"',
+      ]),
+    );
+    const f = byId(r, 'matrix-var-undeclared');
+    expect(f).toHaveLength(1);
+    expect(f[0].severity).toBe('warning');
+    expect(f[0].title).toContain('matrix.os');
+  });
+
+  it('counts vars contributed by include:', () => {
+    const r = validate(
+      job([
+        '    strategy:',
+        '      matrix:',
+        '        node: [20]',
+        '        include:',
+        '          - node: 20',
+        '            experimental: true',
+        '    steps:',
+        '      - run: echo "${{ matrix.experimental }}"',
+      ]),
+    );
+    expect(ids(r)).not.toContain('matrix-var-undeclared');
+  });
+
+  it('does not flag runs-on referencing a declared var', () => {
+    const r = wf([
+      ...HEAD_READ,
+      'on: push',
+      'jobs:',
+      '  test:',
+      '    runs-on: ${{ matrix.os }}',
+      '    strategy:',
+      '      matrix:',
+      '        os: [ubuntu-latest, macos-latest]',
+      '    steps:',
+      '      - run: echo hi',
+    ]);
+    expect(ids(validate(r))).not.toContain('matrix-var-undeclared');
+  });
+
+  it('rejects include/exclude that are not lists of maps', () => {
+    const r = validate(
+      job(['    strategy:', '      matrix:', '        node: [20]', '        exclude:', '          node: 20', '    steps: [{run: echo hi}]']),
+    );
+    expect(ids(r)).toContain('matrix-include-exclude-shape');
+  });
+
+  it('rejects a non-boolean fail-fast and a non-integer max-parallel', () => {
+    const r = validate(
+      job([
+        '    strategy:',
+        '      fail-fast: "yes"',
+        '      max-parallel: two',
+        '      matrix:',
+        '        node: [20]',
+        '    steps: [{run: echo hi}]',
+      ]),
+    );
+    expect(ids(r)).toContain('strategy-fail-fast-type');
+    expect(ids(r)).toContain('strategy-max-parallel-type');
+  });
+
+  it('accepts a real boolean fail-fast and integer max-parallel', () => {
+    const r = validate(
+      job([
+        '    strategy:',
+        '      fail-fast: false',
+        '      max-parallel: 2',
+        '      matrix:',
+        '        node: [20]',
+        '    steps: [{run: echo hi}]',
+      ]),
+    );
+    expect(ids(r)).not.toContain('strategy-fail-fast-type');
+    expect(ids(r)).not.toContain('strategy-max-parallel-type');
+  });
+
+  it('flags an empty matrix', () => {
+    const r = validate(job(['    strategy:', '      matrix: {}', '    steps: [{run: echo hi}]']));
+    expect(ids(r)).toContain('matrix-empty');
+  });
+
+  it('reports a fromJSON matrix as unverifiable rather than guessing', () => {
+    const r = validate(
+      wf([
+        ...HEAD_READ,
+        'on: push',
+        'jobs:',
+        '  plan:',
+        '    runs-on: ubuntu-latest',
+        '    steps: [{run: echo plan}]',
+        '  test:',
+        '    needs: plan',
+        '    runs-on: ubuntu-latest',
+        '    strategy:',
+        '      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}',
+        '    steps:',
+        '      - run: echo "${{ matrix.anything }}"',
+      ]),
+    );
+    expect(ids(r)).toContain('matrix-dynamic-unchecked');
+    expect(ids(r)).not.toContain('matrix-var-undeclared');
+  });
+
+  it('says nothing about a job with no strategy at all', () => {
+    const r = validate(job(['    steps: [{run: echo hi}]']));
+    expect(ids(r).filter((i) => i.startsWith('matrix-') || i.startsWith('strategy-'))).toEqual([]);
+  });
+});

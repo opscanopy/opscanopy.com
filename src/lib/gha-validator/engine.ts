@@ -460,6 +460,155 @@ function runStructuralChecks(
   checkNeedsCycles(jobs, lines, jobIds, add);
 }
 
+/**
+ * Validate `strategy:` — matrix builds are the most common shape on a real CI
+ * fleet and the engine had no opinion about them at all.
+ *
+ * Scope is deliberately narrow: no combination expansion, no cross-product size
+ * warnings. Just the five mistakes that produce a silently-wrong build.
+ */
+function checkStrategy(
+  jobId: string,
+  job: WorkflowJob,
+  lines: string[],
+  jobLine: number | undefined,
+  add: (f: Finding) => void,
+): void {
+  const strategy = (job as { strategy?: unknown }).strategy;
+  if (strategy === undefined || strategy === null) return;
+  const strategyLine = findJobChildLine(lines, jobLine, 'strategy') ?? jobLine;
+
+  if (!isRecord(strategy)) {
+    add({
+      id: 'strategy-shape',
+      severity: 'error',
+      title: `Job “${jobId}” has a \`strategy:\` that is not a mapping.`,
+      detail: '`strategy:` holds `matrix:`, `fail-fast:` and `max-parallel:` keys.',
+      line: strategyLine,
+      remediation: 'Write `strategy:` as an object containing `matrix:`.',
+    });
+    return;
+  }
+
+  // fail-fast / max-parallel types. YAML quotes make "yes" a STRING, which
+  // GitHub type-errors on — and which reads as correct to a human skimming it.
+  if (strategy['fail-fast'] !== undefined && typeof strategy['fail-fast'] !== 'boolean') {
+    add({
+      id: 'strategy-fail-fast-type',
+      severity: 'error',
+      title: `Job “${jobId}” has a non-boolean \`fail-fast\`.`,
+      detail:
+        '`fail-fast` must be `true` or `false`. A quoted "true"/"yes" is a string, which GitHub rejects.',
+      line: findJobChildLine(lines, strategyLine, 'fail-fast') ?? strategyLine,
+      remediation: 'Write `fail-fast: false` without quotes.',
+    });
+  }
+  const maxParallel = strategy['max-parallel'];
+  if (
+    maxParallel !== undefined &&
+    (typeof maxParallel !== 'number' || !Number.isInteger(maxParallel) || maxParallel < 1)
+  ) {
+    add({
+      id: 'strategy-max-parallel-type',
+      severity: 'error',
+      title: `Job “${jobId}” has a \`max-parallel\` that is not a positive whole number.`,
+      detail: '`max-parallel` caps how many matrix jobs run at once, so it must be an integer ≥ 1.',
+      line: findJobChildLine(lines, strategyLine, 'max-parallel') ?? strategyLine,
+      remediation: 'Write `max-parallel: 4` (unquoted).',
+    });
+  }
+
+  const matrix = strategy.matrix;
+  if (matrix === undefined || matrix === null) return;
+  const matrixLine = findJobChildLine(lines, strategyLine, 'matrix') ?? strategyLine;
+
+  // A computed matrix is opaque to static analysis. Say so once, and suppress
+  // the undeclared-var check rather than emit a wall of false positives.
+  if (typeof matrix === 'string' && matrix.includes('${{')) {
+    add({
+      id: 'matrix-dynamic-unchecked',
+      severity: 'info',
+      title: `Job “${jobId}” builds its matrix at runtime.`,
+      detail:
+        'The matrix comes from an expression (typically `fromJSON` of a previous job’s output), so this validator cannot see which keys it will have and does not check `matrix.*` references in this job.',
+      line: matrixLine,
+      remediation:
+        'Nothing to fix — just be aware the matrix variables in this job are unchecked here.',
+    });
+    return;
+  }
+
+  if (!isRecord(matrix)) {
+    add({
+      id: 'matrix-shape',
+      severity: 'error',
+      title: `Job “${jobId}” has a \`matrix:\` that is not a mapping.`,
+      detail: '`matrix:` maps each variable name to the list of values it takes.',
+      line: matrixLine,
+      remediation: 'Write `matrix:` as `var-name: [value, value]` pairs.',
+    });
+    return;
+  }
+
+  // include/exclude must be lists of maps. A bare map is the common slip and
+  // GitHub rejects it.
+  const declared = new Set<string>();
+  for (const [key, value] of Object.entries(matrix)) {
+    if (key === 'include' || key === 'exclude') {
+      if (!Array.isArray(value) || !value.every((v) => isRecord(v))) {
+        add({
+          id: 'matrix-include-exclude-shape',
+          severity: 'error',
+          title: `Job “${jobId}” has a \`${key}:\` that is not a list of mappings.`,
+          detail: `\`${key}:\` under a matrix is a SEQUENCE of combinations, each one an object of variable/value pairs.`,
+          line: findJobChildLine(lines, matrixLine, key) ?? matrixLine,
+          remediation: `Write it as \`${key}:\` followed by \`- var: value\` items.`,
+        });
+        continue;
+      }
+      // include may introduce variables that appear nowhere else.
+      if (key === 'include') {
+        for (const combo of value) {
+          for (const k of Object.keys(combo as Record<string, unknown>)) declared.add(k);
+        }
+      }
+      continue;
+    }
+    declared.add(key);
+  }
+
+  if (declared.size === 0) {
+    add({
+      id: 'matrix-empty',
+      severity: 'error',
+      title: `Job “${jobId}” has a \`matrix:\` with no variables.`,
+      detail: 'An empty matrix produces no jobs, so this job never runs.',
+      line: matrixLine,
+      remediation: 'Declare at least one `var-name: [values]` entry, or drop `strategy:`.',
+    });
+    return;
+  }
+
+  // Every matrix.<name> the job mentions must be declared, or it expands to an
+  // empty string at runtime — the classic "why is my runs-on blank".
+  const referenced = new Set<string>();
+  for (const m of JSON.stringify(job).matchAll(/matrix\.([A-Za-z_][A-Za-z0-9_-]*)/g)) {
+    referenced.add(m[1]);
+  }
+  const missing = [...referenced].filter((n) => !declared.has(n)).sort();
+  for (const name of missing) {
+    add({
+      id: 'matrix-var-undeclared',
+      severity: 'warning',
+      title: `Job “${jobId}” uses \`matrix.${name}\`, which its matrix does not declare.`,
+      detail:
+        'An undeclared matrix variable expands to an empty string rather than failing, so the job runs with a blank value — a blank `runs-on:` or a command missing an argument.',
+      line: matrixLine,
+      remediation: `Declare \`${name}:\` under \`matrix:\` (or under an \`include:\` entry), or correct the reference. Declared here: ${[...declared].sort().join(', ')}.`,
+    });
+  }
+}
+
 /** A 40-char hex commit SHA is the only immutable ref GitHub accepts. */
 function isImmutableRef(ref: string): boolean {
   return /^[0-9a-f]{40}$/i.test(ref);
@@ -710,6 +859,10 @@ function checkJob(
       }, or remove the dependency.`,
     });
   }
+
+  // `strategy:` is legal on BOTH runner jobs and reusable-workflow calls, so it
+  // is checked before the reusable branch returns.
+  checkStrategy(jobId, job, lines, jobLine, add);
 
   // Reusable-workflow jobs have no steps, but they are NOT unvalidatable: the
   // ref still needs pinning and `secrets: inherit` under pull_request_target is
