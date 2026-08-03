@@ -155,7 +155,17 @@ async function main() {
   // Sorted so the emitted header is byte-stable across builds; an unstable
   // header would churn the deploy diff for no reason.
   const sorted = [...hashes].sort();
-  writeFileSync(HEADERS, headers.replaceAll(MARKER, sorted.join(' ')), 'utf8');
+  // replace(), not replaceAll(): exactly one marker is expected, and a second
+  // occurrence (e.g. a comment that names it) would otherwise get a copy of
+  // every hash inlined into it.
+  const occurrences = headers.split(MARKER).length - 1;
+  if (occurrences !== 1) {
+    fail(
+      `expected exactly 1 ${MARKER} in ${HEADERS}, found ${occurrences}. Reword any comment that names the ` +
+        'marker literally — only the policy line should carry it.',
+    );
+  }
+  writeFileSync(HEADERS, headers.replace(MARKER, sorted.join(' ')), 'utf8');
 
   console.log(
     `OK: injected ${sorted.length} CSP script hash(es) into dist/_headers (scanned ${pages.length} page(s)).`,
