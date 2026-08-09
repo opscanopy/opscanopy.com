@@ -67,11 +67,11 @@ Drop My Target
 
 Syndicated on 2026-08-02: docker run vs Docker Compose · How Alertmanager Routing Works
 
-Remaining queue (4 blog + 7 guides):
+Syndicated on 2026-08-09: Learn DevOps in 90 Days · Prometheus relabel_configs Explained
+
+Remaining queue (2 blog + 7 guides):
 
 ```
-Learn DevOps in 90 Days
-Prometheus relabel_configs Explained
 Unit Testing Loki Alert Rules
 How to Validate .gitlab-ci.yml Before You Push
 --- guides (long-form, hold until the blog backlog clears) ---
@@ -79,9 +79,10 @@ AWS for DevOps Engineers · Docker for DevOps · Docker Interview Prep
 Kubernetes for DevOps · Linux for DevOps · Networking for DevOps · DevOps Projects
 ```
 
-At 2 per session the blog backlog clears in **2 more sessions**. The 7 guides should
-wait until after that — they are long-form (one is a 200-minute read) and posting
-them alongside would look like bulk dumping.
+**One more session clears the blog backlog.** The 7 guides then need a slower pace
+than 2-per-session — they are long-form (one is a 200-minute read), and seven of
+them in four sessions would read as a dump even at the normal cadence. One per
+session is the right rhythm for those.
 
 ## RESOLVED 2026-08-02 — it was a delay, not a restriction
 
