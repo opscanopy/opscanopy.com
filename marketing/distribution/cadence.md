@@ -55,10 +55,11 @@ on a command intended as a preview. Dry-run first, read it, then re-run with
 | 2026-07-27 | **7** | 2 | Too many. See the near-miss above. |
 | 2026-07-31 | 0 | 2 | Normal. 4-day gap. dev.to 401 (turned out to be a delay). |
 | 2026-08-02 | 2 | 0 | Normal. 6-day gap on dev.to. Key started working again. |
+| 2026-08-09 | 2 | 1 | Normal. 7-day dev.to gap, 8-day Bluesky gap. Tests page promoted. |
 
 ## Current state
 
-**dev.to — 22 published, 11 still queued**
+**dev.to — 23 published, 9 still queued**
 
 Syndicated on 2026-07-27: 7 Common .gitlab-ci.yml Mistakes · How to Convert a docker
 run Command · Why Isn't My Alert Reaching the Right Receiver · Why Did Prometheus
@@ -143,7 +144,7 @@ API access has been restricted and what restores it.
 > bytes each client sent. That is why a working key was once regenerated twice for
 > nothing. Always confirm with `fetch` before concluding a key is bad.
 
-**Bluesky — 4 posted, 23 queued.** Healthy: 11 followers, following 50, so posts now
+**Bluesky — 5 posted, 23 queued.** Healthy: 11 followers, following 50, so posts now
 actually reach people. Lower risk than dev.to since these are link posts rather
 than full articles.
 
