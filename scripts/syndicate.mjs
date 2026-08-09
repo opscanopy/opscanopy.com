@@ -35,6 +35,33 @@ import { fileURLToPath } from 'node:url';
 const SITE = 'https://opscanopy.com';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
+/**
+ * Load credentials from .env if the environment does not already supply them.
+ *
+ * Keys previously lived in the agent session's temp scratchpad, which Windows
+ * purges — they vanished between sessions and had to be re-pasted each time.
+ * `.env` is already gitignored (alongside .env.production) and sits next to the
+ * project, so it survives.
+ *
+ * Real environment variables always win, which keeps CI working unchanged: the
+ * workflow injects secrets and never has a .env to read.
+ */
+(function loadEnvFile() {
+  let raw;
+  try {
+    raw = readFileSync(join(ROOT, '.env'), 'utf8');
+  } catch {
+    return; // no .env is normal in CI
+  }
+  for (const line of raw.split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/);
+    if (!m) continue;
+    const key = m[1];
+    const value = m[2].trim().replace(/^["']|["']$/g, '');
+    if (value && !process.env[key]) process.env[key] = value;
+  }
+})();
+
 const args = process.argv.slice(2);
 const PUBLISH = args.includes('--publish');
 const flag = (name, fallback) => {
@@ -42,6 +69,15 @@ const flag = (name, fallback) => {
   return i !== -1 && args[i + 1] ? args[i + 1] : fallback;
 };
 const ONLY_TARGET = flag('--target', null);
+
+/**
+ * Promote one specific piece by slug, jumping the queue.
+ *
+ * The queue is ordered blog → tests → guides, so a newly shipped page sits behind
+ * twenty older posts and would not surface for weeks. When there is a reason to
+ * push something now (a page just launched), this posts exactly that.
+ */
+const ONLY_SLUG = flag('--only', null);
 
 /**
  * Publishing is capped, deliberately and by default.
@@ -183,6 +219,44 @@ async function loadPosts() {
       canonical: `${SITE}/blog/${slug}/`,
       body: absolutise(parsed.body),
     });
+  }
+
+  /**
+   * Practice-test CATEGORY hub pages (e.g. /tests/aws-devops-professional/).
+   *
+   * Only the category hubs, never the individual test-taking pages: those are
+   * noindex and excluded from the sitemap, so linking to them from an external
+   * platform would point people at a page search engines are told to ignore.
+   *
+   * Parsed from src/data/tests.ts with a regex rather than imported, because this
+   * script is plain Node and the registry is TypeScript with a build-time
+   * validation block that would need the whole toolchain to execute.
+   */
+  try {
+    const src = await readFile(join(ROOT, 'src/data/tests.ts'), 'utf8');
+    const block = src.slice(
+      src.indexOf('export const categories'),
+      src.indexOf('export const tests'),
+    );
+    for (const m of block.matchAll(
+      /slug:\s*'([a-z0-9-]+)'[\s\S]*?name:\s*'([^']*)'[\s\S]*?description:\s*\n?\s*'([^']*)'[\s\S]*?status:\s*'(live|draft)'/g,
+    )) {
+      const [, slug, name, description, status] = m;
+      if (status !== 'live') continue;
+      out.push({
+        slug,
+        kind: 'test',
+        title: name,
+        description,
+        tags: ['aws', 'devops', 'certification', 'career'],
+        canonical: `${SITE}/tests/${slug}/`,
+        // No prose body — a hub page is a link target, not an article. Article
+        // targets skip these; link targets (Bluesky) post the card.
+        body: '',
+      });
+    }
+  } catch {
+    // Registry missing or restructured — skip rather than fail the whole run.
   }
 
   const guidesRoot = join(ROOT, 'src/content/guides');
@@ -441,7 +515,28 @@ for (const target of TARGETS) {
   const byUrl = target.dedupeBy === 'canonical';
   const published = await target.listPublished();
   const live = new Set(byUrl ? published.map((u) => u.replace(/\/$/, '')) : published.map(normalize));
-  const pending = posts.filter((p) =>
+
+  // Body-less entries (practice-test hub pages) are link targets only. Posting
+  // one to an article platform would publish an empty article, so those targets
+  // filter them out; link-broadcast targets keep them.
+  let eligible = byUrl ? posts : posts.filter((p) => p.body.trim().length > 0);
+
+  if (ONLY_SLUG) {
+    const match = eligible.filter((p) => p.slug === ONLY_SLUG);
+    if (!match.length) {
+      const bodyless = posts.find((p) => p.slug === ONLY_SLUG && !p.body.trim());
+      console.log(
+        `   --only ${ONLY_SLUG}: ` +
+          (bodyless
+            ? 'that piece has no article body, so it can only go to a link target.'
+            : 'no piece with that slug.'),
+      );
+      continue;
+    }
+    eligible = match;
+  }
+
+  const pending = eligible.filter((p) =>
     byUrl ? !live.has(p.canonical.replace(/\/$/, '')) : !alreadyPublished(p.title, live),
   );
 
