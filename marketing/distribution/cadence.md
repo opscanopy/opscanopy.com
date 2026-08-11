@@ -56,10 +56,11 @@ on a command intended as a preview. Dry-run first, read it, then re-run with
 | 2026-07-31 | 0 | 2 | Normal. 4-day gap. dev.to 401 (turned out to be a delay). |
 | 2026-08-02 | 2 | 0 | Normal. 6-day gap on dev.to. Key started working again. |
 | 2026-08-09 | 2 | 1 | Normal. 7-day dev.to gap, 8-day Bluesky gap. Tests page promoted. |
+| 2026-08-11 | 2 | 2 | Normal. 2-day gap both. **Blog backlog cleared** — guides next, 1/session. |
 
 ## Current state
 
-**dev.to — 23 published, 9 still queued**
+**dev.to — 25 published, 7 still queued (all long-form guides)**
 
 Syndicated on 2026-07-27: 7 Common .gitlab-ci.yml Mistakes · How to Convert a docker
 run Command · Why Isn't My Alert Reaching the Right Receiver · Why Did Prometheus
@@ -69,20 +70,24 @@ Syndicated on 2026-08-02: docker run vs Docker Compose · How Alertmanager Routi
 
 Syndicated on 2026-08-09: Learn DevOps in 90 Days · Prometheus relabel_configs Explained
 
-Remaining queue (2 blog + 7 guides):
+Syndicated on 2026-08-11: Unit Testing Loki Alert Rules · How to Validate .gitlab-ci.yml
+
+Remaining queue (7 guides, no blog posts left):
 
 ```
-Unit Testing Loki Alert Rules
-How to Validate .gitlab-ci.yml Before You Push
---- guides (long-form, hold until the blog backlog clears) ---
 AWS for DevOps Engineers · Docker for DevOps · Docker Interview Prep
 Kubernetes for DevOps · Linux for DevOps · Networking for DevOps · DevOps Projects
 ```
 
-**One more session clears the blog backlog.** The 7 guides then need a slower pace
-than 2-per-session — they are long-form (one is a 200-minute read), and seven of
-them in four sessions would read as a dump even at the normal cadence. One per
-session is the right rhythm for those.
+**The blog backlog is cleared as of 2026-08-11.** All 20 blog posts are syndicated.
+
+**The 7 guides need a slower pace: ONE per session, not two.** They are long-form —
+`linux-for-devops` alone is a 200-minute read — and seven of them landing across
+four sessions would read as a dump even at a cadence that is fine for shorter posts.
+At one per session that is seven sessions, which is the right rhythm.
+
+Practical note for the next run: pass `--limit 1` for dev.to. The script's default of
+2 is correct for blog posts and too fast for these.
 
 ## RESOLVED 2026-08-02 — it was a delay, not a restriction
 
@@ -145,7 +150,7 @@ API access has been restricted and what restores it.
 > bytes each client sent. That is why a working key was once regenerated twice for
 > nothing. Always confirm with `fetch` before concluding a key is bad.
 
-**Bluesky — 5 posted, 23 queued.** Healthy: 11 followers, following 50, so posts now
+**Bluesky — 7 posted, 21 queued.** Healthy: 21 followers, following 50, so posts now
 actually reach people. Lower risk than dev.to since these are link posts rather
 than full articles.
 
