@@ -57,10 +57,11 @@ on a command intended as a preview. Dry-run first, read it, then re-run with
 | 2026-08-02 | 2 | 0 | Normal. 6-day gap on dev.to. Key started working again. |
 | 2026-08-09 | 2 | 1 | Normal. 7-day dev.to gap, 8-day Bluesky gap. Tests page promoted. |
 | 2026-08-11 | 2 | 2 | Normal. 2-day gap both. **Blog backlog cleared** — guides next, 1/session. |
+| 2026-08-15 | 1 | 2 | Normal. 4-day gap both. First guide (43-min read). |
 
 ## Current state
 
-**dev.to — 25 published, 7 still queued (all long-form guides)**
+**dev.to — 26 published, 6 still queued (all long-form guides)**
 
 Syndicated on 2026-07-27: 7 Common .gitlab-ci.yml Mistakes · How to Convert a docker
 run Command · Why Isn't My Alert Reaching the Right Receiver · Why Did Prometheus
@@ -72,22 +73,24 @@ Syndicated on 2026-08-09: Learn DevOps in 90 Days · Prometheus relabel_configs 
 
 Syndicated on 2026-08-11: Unit Testing Loki Alert Rules · How to Validate .gitlab-ci.yml
 
-Remaining queue (7 guides, no blog posts left):
+Syndicated on 2026-08-15: AWS for DevOps Engineers (guide 1 of 7)
+
+Remaining queue (6 guides, no blog posts left):
 
 ```
-AWS for DevOps Engineers · Docker for DevOps · Docker Interview Prep
-Kubernetes for DevOps · Linux for DevOps · Networking for DevOps · DevOps Projects
+Docker for DevOps · Docker Interview Prep · Kubernetes for DevOps
+Linux for DevOps · Networking for DevOps · DevOps Projects
 ```
 
 **The blog backlog is cleared as of 2026-08-11.** All 20 blog posts are syndicated.
 
-**The 7 guides need a slower pace: ONE per session, not two.** They are long-form —
-`linux-for-devops` alone is a 200-minute read — and seven of them landing across
-four sessions would read as a dump even at a cadence that is fine for shorter posts.
-At one per session that is seven sessions, which is the right rhythm.
+**The guides go ONE per session, not two.** Confirmed by the first one: *AWS for
+DevOps Engineers* published at **10,554 words / 43-minute read / 52 headings**. Two
+of those in a session is not a cadence, it is a dump — and `linux-for-devops` is
+larger still. Six left means six more sessions, which is the right rhythm.
 
-Practical note for the next run: pass `--limit 1` for dev.to. The script's default of
-2 is correct for blog posts and too fast for these.
+Practical note for every guide run: pass `--limit 1` for dev.to explicitly. The
+script's default of 2 is correct for blog posts and too fast for these.
 
 ## RESOLVED 2026-08-02 — it was a delay, not a restriction
 
@@ -150,7 +153,7 @@ API access has been restricted and what restores it.
 > bytes each client sent. That is why a working key was once regenerated twice for
 > nothing. Always confirm with `fetch` before concluding a key is bad.
 
-**Bluesky — 7 posted, 21 queued.** Healthy: 21 followers, following 50, so posts now
+**Bluesky — 9 posted, 19 queued.** Healthy: 21 followers, following 50, so posts now
 actually reach people. Lower risk than dev.to since these are link posts rather
 than full articles.
 
@@ -159,15 +162,17 @@ than full articles.
 Say **"push"** and I will:
 
 1. Dry-run and show exactly what would go out
-2. Publish 2, no more
+2. Publish **1 dev.to guide + 2 Bluesky links** — while guides are the queue.
+   (It was 2 dev.to articles while blog posts remained; that phase ended 11 Aug.)
 3. Verify each: canonical points home, no relative paths, article resolves
 4. Report and stop
 
 Locally, if you ever want to do it yourself:
 
 ```bash
-npm run syndicate                                    # preview everything
-npm run syndicate -- --target devto --limit 2 --publish
+npm run syndicate                                     # preview everything
+npm run syndicate -- --target devto   --limit 1 --publish   # guides: ONE
+npm run syndicate -- --target bluesky --limit 2 --publish
 ```
 
 ## Signals to watch
