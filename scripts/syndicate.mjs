@@ -291,8 +291,15 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * dev.to / Forem. `canonical_url` is a documented first-class field here —
  * cross-posting with a canonical is an intended product feature, not a hack.
  *
- * Subforems (zeroday.forem.com, core.forem.com) run the same Rails app and accept
- * the SAME api-key, so they are the same adapter with a different host.
+ * DO NOT add Forem "subforems" (zeroday.forem.com, core.forem.com) as extra hosts.
+ * They authenticate with the same api-key, which makes them look like free extra
+ * audiences, but their API 301-redirects straight to dev.to:
+ *
+ *   zeroday.forem.com/api/articles -> 301 -> dev.to/api/articles
+ *
+ * One shared article pool, not separate publications. Posting to a subforem host
+ * would just create another dev.to article — a duplicate, and a wasted slot
+ * against the cadence limits. Checked 2026-08-15.
  */
 function foremTarget({ name, host, username }) {
   return {
