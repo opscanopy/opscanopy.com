@@ -103,16 +103,26 @@ const MIN_GAP_HOURS = 20;
 const FORCE = args.includes('--force');
 
 /**
- * Locally recorded time of the last successful publish, per target.
+ * Local record of what has been published, per target: the last publish time and
+ * every slug sent. Gitignored.
  *
- * The cadence guard cannot rely on the platform's own listing alone: dev.to's
- * /api/articles lags publication by minutes to hours, so immediately after a run
- * it still reports the PREVIOUS state. A guard reading only that would happily
- * approve a second batch an hour later — which is exactly the burst it exists to
- * prevent, and in testing it did precisely that.
+ * Both fields exist because dev.to's /api/articles CANNOT be trusted for either
+ * question, and for a worse reason than lag. Measured 2026-08-16, seconds apart
+ * against the identical URL:
  *
- * So the guard takes the LATER of what the platform reports and what we recorded
- * ourselves. Gitignored; a missing file just means falling back to the remote view.
+ *   one call  -> 27 articles, yesterday's guide present
+ *   six calls -> 26 articles, yesterday's guide absent
+ *
+ * It is eventually-consistent across cache nodes, so a given request may or may
+ * not see a recent article. That breaks dedupe (the guide was queued for a second
+ * posting) and it breaks the cadence guard (which once read "last post 6 days ago"
+ * minutes after publishing, and approved another batch).
+ *
+ * So both take the union of what the platform reports and what we recorded
+ * ourselves. A missing file degrades to the remote view rather than failing.
+ *
+ * Shape: { target: { lastPublish: ISO, slugs: [...] } }. The older
+ * { target: ISO } form is still read, so an existing file keeps working.
  */
 const STATE_PATH = join(ROOT, '.syndicate-state.json');
 
@@ -124,13 +134,25 @@ function readState() {
   }
 }
 
-function recordPublish(targetName) {
+/** Normalise either state shape to { lastPublish, slugs }. */
+function targetState(name) {
+  const raw = readState()[name];
+  if (!raw) return { lastPublish: null, slugs: [] };
+  if (typeof raw === 'string') return { lastPublish: raw, slugs: [] };
+  return { lastPublish: raw.lastPublish ?? null, slugs: raw.slugs ?? [] };
+}
+
+function recordPublish(targetName, slug) {
   const state = readState();
-  state[targetName] = new Date().toISOString();
+  const prev = targetState(targetName);
+  state[targetName] = {
+    lastPublish: new Date().toISOString(),
+    slugs: [...new Set([...prev.slugs, slug])].filter(Boolean),
+  };
   try {
     writeFileSync(STATE_PATH, JSON.stringify(state, null, 2) + '\n', 'utf8');
   } catch (err) {
-    console.warn(`   (could not record publish time: ${err.message})`);
+    console.warn(`   (could not record publish: ${err.message})`);
   }
 }
 const requested = Number(flag('--limit', '0'));
@@ -306,10 +328,26 @@ function foremTarget({ name, host, username }) {
     name,
     key: () => process.env.DEVTO_API_KEY,
     keyName: 'DEVTO_API_KEY',
+    /**
+     * Use the AUTHENTICATED endpoint, not the public one.
+     *
+     * `/api/articles?username=` is eventually-consistent across cache nodes and
+     * routinely omits recent posts. Measured 2026-08-16 against the identical URL
+     * seconds apart: one call returned 27 articles including the newest, six
+     * returned 26 without it. That caused a guide published the previous day to be
+     * queued for a second posting.
+     *
+     * `/api/articles/me/all` with the api-key returned 28 items including the
+     * newest on three consecutive calls. It is the same data the account owner
+     * sees, so there is no cache tier in front of it — and it also surfaces
+     * unpublished drafts, which the public listing cannot.
+     */
     async listPublished() {
-      const res = await fetch(
-        `https://${host}/api/articles?username=${encodeURIComponent(username)}&per_page=100`,
-      );
+      const key = process.env.DEVTO_API_KEY;
+      if (!key) throw new Error(`${name}: DEVTO_API_KEY required to list articles`);
+      const res = await fetch(`https://${host}/api/articles/me/all?per_page=1000`, {
+        headers: { 'api-key': key },
+      });
       if (!res.ok) throw new Error(`${name}: list failed HTTP ${res.status}`);
       const arr = await res.json();
       // Stash timestamps for the cadence guard; the runner reads them separately.
@@ -436,7 +474,21 @@ function blueskyTarget() {
         u.searchParams.set('limit', '100');
         if (cursor) u.searchParams.set('cursor', cursor);
         const res = await fetch(u, { headers: { Authorization: `Bearer ${jwt}` } });
-        if (!res.ok) break;
+        if (!res.ok) {
+          // Failing the FIRST page must abort, not return an empty list.
+          // Bluesky returned 502 on this endpoint during testing, and a silent
+          // empty result makes every post look unpublished — with --publish that
+          // is a re-post of things already live. Later pages failing is a partial
+          // read, which is safe here because it only shrinks the "already
+          // published" set for OLDER items we are not about to post anyway.
+          if (page === 0) {
+            throw new Error(
+              `bluesky: getAuthorFeed HTTP ${res.status} — refusing to treat an ` +
+                'unreadable feed as "nothing published yet"',
+            );
+          }
+          break;
+        }
         const json = await res.json();
         for (const item of json.feed ?? []) {
           const ext = item.post?.record?.embed?.external?.uri;
@@ -520,7 +572,22 @@ for (const target of TARGETS) {
   // Link-broadcast targets dedupe on the canonical URL they embedded, which is
   // exact and needs no fuzziness.
   const byUrl = target.dedupeBy === 'canonical';
-  const published = await target.listPublished();
+
+  // A target that cannot tell us what it already has is a target we must not
+  // publish to — without that list every piece looks unpublished. Skip it and
+  // carry on with the others rather than crashing the whole run: one platform
+  // being down should not stop the other from posting.
+  let published;
+  try {
+    published = await target.listPublished();
+  } catch (err) {
+    console.log(`── ${target.name} ──`);
+    console.log(`   SKIPPED: ${err.message}`);
+    console.log('   Cannot verify what is already published, so nothing is sent.\n');
+    failed++;
+    continue;
+  }
+
   const live = new Set(byUrl ? published.map((u) => u.replace(/\/$/, '')) : published.map(normalize));
 
   // Body-less entries (practice-test hub pages) are link targets only. Posting
@@ -543,9 +610,14 @@ for (const target of TARGETS) {
     eligible = match;
   }
 
-  const pending = eligible.filter((p) =>
-    byUrl ? !live.has(p.canonical.replace(/\/$/, '')) : !alreadyPublished(p.title, live),
-  );
+  // Union the remote view with our own record — the remote listing is
+  // eventually-consistent and routinely omits recent posts (see STATE_PATH).
+  const localSlugs = new Set(targetState(target.name).slugs);
+
+  const pending = eligible.filter((p) => {
+    if (localSlugs.has(p.slug)) return false;
+    return byUrl ? !live.has(p.canonical.replace(/\/$/, '')) : !alreadyPublished(p.title, live);
+  });
 
   console.log(`── ${target.name} ──`);
   console.log(`   ${live.size} already published · ${pending.length} to syndicate`);
@@ -574,7 +646,7 @@ for (const target of TARGETS) {
 
   // Trust whichever source saw a post most recently — see STATE_PATH above for
   // why the remote listing alone is not enough.
-  const localLast = Date.parse(readState()[target.name] ?? '');
+  const localLast = Date.parse(targetState(target.name).lastPublish ?? '');
   if (Number.isFinite(localLast)) stamps.push(localLast);
   stamps.sort((a, b) => b - a);
 
@@ -622,7 +694,7 @@ for (const target of TARGETS) {
     try {
       const url = await target.create(post, key);
       console.log(`           LIVE: ${url}`);
-      recordPublish(target.name);
+      recordPublish(target.name, post.slug);
     } catch (err) {
       if (err.alreadyPublished) {
         console.log(`           SKIP: ${err.message}`);

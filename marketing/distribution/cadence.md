@@ -58,10 +58,11 @@ on a command intended as a preview. Dry-run first, read it, then re-run with
 | 2026-08-09 | 2 | 1 | Normal. 7-day dev.to gap, 8-day Bluesky gap. Tests page promoted. |
 | 2026-08-11 | 2 | 2 | Normal. 2-day gap both. **Blog backlog cleared** — guides next, 1/session. |
 | 2026-08-15 | 1 | 2 | Normal. 4-day gap both. First guide (43-min read). |
+| 2026-08-16 | 1 | 0 | Guide 2. Bluesky skipped — their feed API was 502 all session. |
 
 ## Current state
 
-**dev.to — 26 published, 6 still queued (all long-form guides)**
+**dev.to — 28 published, 5 still queued (all long-form guides)**
 
 Syndicated on 2026-07-27: 7 Common .gitlab-ci.yml Mistakes · How to Convert a docker
 run Command · Why Isn't My Alert Reaching the Right Receiver · Why Did Prometheus
@@ -75,11 +76,13 @@ Syndicated on 2026-08-11: Unit Testing Loki Alert Rules · How to Validate .gitl
 
 Syndicated on 2026-08-15: AWS for DevOps Engineers (guide 1 of 7)
 
-Remaining queue (6 guides, no blog posts left):
+Syndicated on 2026-08-16: Docker for DevOps (guide 2 of 7) — 49,329 words, 182-min read
+
+Remaining queue (5 guides, no blog posts left):
 
 ```
-Docker for DevOps · Docker Interview Prep · Kubernetes for DevOps
-Linux for DevOps · Networking for DevOps · DevOps Projects
+Docker Interview Prep · Kubernetes for DevOps · Linux for DevOps
+Networking for DevOps · DevOps Projects
 ```
 
 **The blog backlog is cleared as of 2026-08-11.** All 20 blog posts are syndicated.
