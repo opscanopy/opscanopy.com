@@ -87,10 +87,15 @@ Networking for DevOps · DevOps Projects
 
 **The blog backlog is cleared as of 2026-08-11.** All 20 blog posts are syndicated.
 
-**The guides go ONE per session, not two.** Confirmed by the first one: *AWS for
-DevOps Engineers* published at **10,554 words / 43-minute read / 52 headings**. Two
-of those in a session is not a cadence, it is a dump — and `linux-for-devops` is
-larger still. Six left means six more sessions, which is the right rhythm.
+**The guides go ONE per session, not two**, and the sizes settle any argument:
+
+| Guide | Words | Read |
+|---|---|---|
+| AWS for DevOps Engineers | 10,554 | 43 min |
+| Docker for DevOps | **49,329** | **182 min** |
+
+A three-hour read is not something you publish two of in a sitting. Five left means
+five more sessions.
 
 Practical note for every guide run: pass `--limit 1` for dev.to explicitly. The
 script's default of 2 is correct for blog posts and too fast for these.
@@ -151,10 +156,24 @@ API access has been restricted and what restores it.
 
 </details>
 
-> Separate diagnostic trap, still true: **curl returns false 401s on this machine**
-> for keys that Node's `fetch` accepts — verified by comparing SHA-256 of the identical
-> bytes each client sent. That is why a working key was once regenerated twice for
-> nothing. Always confirm with `fetch` before concluding a key is bad.
+## Diagnostic traps — read before debugging anything here
+
+**curl returns false 401s on this machine** for keys that Node's `fetch` accepts —
+verified by comparing SHA-256 of the identical bytes each client sent. That is why a
+working key was once regenerated twice for nothing. Always confirm with `fetch`.
+
+**dev.to's PUBLIC listing is eventually-consistent — never trust it.**
+`/api/articles?username=` gave 27 articles including the newest on one call and 26
+without it on the next six, same URL, seconds apart (2026-08-16). Use
+`/api/articles/me/all` with the api-key: three consecutive calls agreed, and it
+shows drafts too. The syndicator now does.
+
+**A dev.to 500 can still create the article.** On 2026-08-16 a publish returned HTTP
+500; the public listing and a direct slug fetch both said the article did not exist,
+so a retry looked safe. It had in fact been created, under a different slug than the
+response implied, and only Forem's canonical-uniqueness guard prevented a duplicate.
+After any failed publish, check `/api/articles/me/all` before retrying — not the
+public listing, and not a guessed slug.
 
 **Bluesky — 9 posted, 19 queued.** Healthy: 21 followers, following 50, so posts now
 actually reach people. Lower risk than dev.to since these are link posts rather
