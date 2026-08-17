@@ -96,9 +96,10 @@ DevOps Projects
 |---|---|---|
 | AWS for DevOps Engineers | 10,554 | 43 min |
 | Docker for DevOps | **49,329** | **182 min** |
+| Docker Interview Prep | — | 41 min |
 
-A three-hour read is not something you publish two of in a sitting. Five left means
-four more sessions.
+A three-hour read is not something you publish two of in a sitting. **Four left,
+four more sessions.**
 
 Practical note for every guide run: pass `--limit 1` for dev.to explicitly. The
 script's default of 2 is correct for blog posts and too fast for these.
