@@ -10,10 +10,28 @@ npm run build        # production build → dist/ (postbuild auto-runs Pagefind 
 npm run preview      # preview the production build
 npm run test         # run all engine tests once (vitest run)
 npm run test:watch   # watch mode
+npm run check         # astro check (types across .astro + .ts) — see the note below
 npm run deploy       # wrangler deploy — publishes dist/ to Cloudflare Static Assets
 ```
 
 Deploys are direct via wrangler (`wrangler.jsonc`, no Worker script — assets only). Pushing to GitHub does **not** deploy; always `npm run build` before `npm run deploy`. `npm run build` triggers the npm `postbuild` hook (`pagefind --site dist`), which writes the site-search index to `dist/pagefind/` — shipped by the same wrangler deploy and consumed at runtime by `/search`. Never invoke `astro build` bare when the output will be served (it skips the hook and `/search` shows its "index missing" state). On this machine run vitest from PowerShell with a capital-drive path (`C:/…`) — a lowercase `c:/` cwd breaks Vitest 4 collection.
+
+**TypeScript must stay on 6.x.** `@astrojs/check` caps its peer range at
+`^5.0.0 || ^6.0.0` (still true at its latest, 0.9.10), so a TypeScript 7 bump makes
+`npm ci` fail peer resolution and takes every CI workflow down with it. Dependabot
+merged that bump on 2026-08-03 and Deploy plus SEO report stayed red until 19 Aug —
+**the failure is invisible locally, because an already-installed `node_modules` keeps
+working**. TS majors are now in `.github/dependabot.yml`'s ignore list. When a
+dependency change looks harmless, verify it with `npm ci`, not with a build.
+(`npm ci --dry-run` is not a safe probe — npm deletes `node_modules` before
+resolving, so a "dry" run still wipes the tree.)
+
+**`npm run check` reports ~128 pre-existing errors** and is deliberately NOT a CI
+gate yet. They are almost entirely DOM null-safety inside playground `<script>`
+blocks (`'runBtn' is possibly 'null'`) plus missing `js-yaml` types. Worth clearing,
+but clearing it is its own task — until then, run it before shipping engine changes:
+vite strips types without checking them, so `npm run build` passing proves nothing
+about types.
 
 Run a single test file:
 ```bash
