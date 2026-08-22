@@ -64,7 +64,7 @@ on a command intended as a preview. Dry-run first, read it, then re-run with
 
 ## Current state
 
-**dev.to — 30 published, 3 still queued (all long-form guides)**
+**dev.to — 29 published, 3 still queued (all long-form guides)**
 
 Syndicated on 2026-07-27: 7 Common .gitlab-ci.yml Mistakes · How to Convert a docker
 run Command · Why Isn't My Alert Reaching the Right Receiver · Why Did Prometheus
@@ -161,6 +161,42 @@ reason the limits above are now enforced in code instead of documented as intent
 API access has been restricted and what restores it.
 
 </details>
+
+## RESOLVED 2026-08-22 — the CVE duplicate, and why it existed
+
+`unifying-cve-ignore-files` had two published dev.to articles. Resolved by
+unpublishing **`...-4m57`** (id 3890110) and keeping **`...-4i0m`** (id 3890176).
+
+The pair is a textbook case of the "a dev.to 500 can still create the article" trap
+below, and the metadata says so plainly:
+
+| | `-4m57` (unpublished) | `-4i0m` (kept) |
+|---|---|---|
+| published | 08:13:24 | 08:26:39 (13 min later) |
+| canonical_url | **itself** | opscanopy.com/blog/unifying-cve-ignore-files/ |
+| reactions / views | 0 / 74 | 1 / 31 |
+
+`-4m57` is the orphan of a first POST that looked like it failed: it never got a
+canonical, so it declared itself the original and competed with the site. `-4i0m` is
+the deliberate retry, with the canonical set correctly. Kept the correctly-canonical
+one even though the orphan had more lifetime views — 74 views is not an asset, and a
+self-canonical duplicate is the exact harm this whole effort exists to remove.
+
+Audit is now clean: **24 canonical · 0 need fixing · 5 no local match**, and the
+unpublished URL 404s.
+
+Two notes for next time:
+
+- **Verify an unpublish against `/api/articles/me/all`, not the PUT response.** The
+  `PUT published:false` returned HTTP 200 with `published: undefined` in the body.
+  The authoritative endpoint confirmed `published=false`.
+- **`scripts/devto-sync.mjs` still lists from the PUBLIC endpoint** (`?username=`),
+  which the trap section below says never to trust. `syndicate.mjs` was migrated to
+  `/api/articles/me/all`; devto-sync was not. So a "0 need fixing" result from it is
+  only as good as a listing known to drop the newest article. Worth switching to the
+  authenticated endpoint when a key is present, falling back to public when not —
+  but note that coupling the audit to the key means a missing secret would start
+  failing the job, which it currently does not.
 
 ## Diagnostic traps — read before debugging anything here
 
