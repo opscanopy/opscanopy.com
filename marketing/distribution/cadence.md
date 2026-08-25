@@ -61,10 +61,11 @@ on a command intended as a preview. Dry-run first, read it, then re-run with
 | 2026-08-16 | 1 | 0 | Guide 2. Bluesky skipped — their feed API was 502 all session. |
 | 2026-08-17 | 1 | 2 | Guide 3. Bluesky feed recovered. 24h gap. |
 | 2026-08-19 | 1 | 2 | Guide 4. 2-day gap both. |
+| 2026-08-25 | 1 | 2 | Guide 5 (Linux). 6-day gap both. **dev.to returned HTTP 500 and published anyway** — second occurrence, see the trap below. |
 
 ## Current state
 
-**dev.to — 29 published, 3 still queued (all long-form guides)**
+**dev.to — 30 published, 2 still queued (all long-form guides)**
 
 Syndicated on 2026-07-27: 7 Common .gitlab-ci.yml Mistakes · How to Convert a docker
 run Command · Why Isn't My Alert Reaching the Right Receiver · Why Did Prometheus
@@ -84,10 +85,12 @@ Syndicated on 2026-08-17: Docker Interview Prep (guide 3 of 7) — 41-min read
 
 Syndicated on 2026-08-19: Kubernetes for DevOps (guide 4 of 7) — 36-min read
 
-Remaining queue (3 guides, no blog posts left):
+Syndicated on 2026-08-25: Linux for DevOps (guide 5 of 7) — 40,331 words, 144-min read
+
+Remaining queue (2 guides, no blog posts left):
 
 ```
-Linux for DevOps · Networking for DevOps · DevOps Projects
+Networking for DevOps · DevOps Projects
 ```
 
 **The blog backlog is cleared as of 2026-08-11.** All 20 blog posts are syndicated.
@@ -100,8 +103,9 @@ Linux for DevOps · Networking for DevOps · DevOps Projects
 | Docker for DevOps | **49,329** | **182 min** |
 | Docker Interview Prep | — | 41 min |
 | Kubernetes for DevOps | — | 36 min |
+| Linux for DevOps | 40,331 | **144 min** |
 
-A three-hour read is not something you publish two of in a sitting. **Three left, three more sessions.**
+A three-hour read is not something you publish two of in a sitting. **Two left, two more sessions.**
 
 Practical note for every guide run: pass `--limit 1` for dev.to explicitly. The
 script's default of 2 is correct for blog posts and too fast for these.
@@ -210,14 +214,28 @@ without it on the next six, same URL, seconds apart (2026-08-16). Use
 `/api/articles/me/all` with the api-key: three consecutive calls agreed, and it
 shows drafts too. The syndicator now does.
 
-**A dev.to 500 can still create the article.** On 2026-08-16 a publish returned HTTP
+**A dev.to 500 can still create the article — this has now happened TWICE.** On 2026-08-16 a publish returned HTTP
 500; the public listing and a direct slug fetch both said the article did not exist,
 so a retry looked safe. It had in fact been created, under a different slug than the
 response implied, and only Forem's canonical-uniqueness guard prevented a duplicate.
 After any failed publish, check `/api/articles/me/all` before retrying — not the
 public listing, and not a guessed slug.
 
-**Bluesky — 13 posted, 15 queued.** Healthy: 23 followers, following 50, so posts now
+It recurred on 2026-08-25 publishing the Linux guide: `FAILED: HTTP 500`, and the
+article was live under `linux-for-devops-engineers-5616` (id 4486744) with the
+canonical already correct. Checking `/me/all` first is what stopped a retry from
+manufacturing the same duplicate that had just been cleaned up three days earlier.
+
+**A 500 also leaves `.syndicate-state.json` unwritten**, because the script records
+state only on success. That matters: the cadence guard sums the state file and the
+live listing, so a stale state file plus a lagging listing could report "6 days ago"
+on a day something was already published, and wave through a second post. After a
+500 that turns out to have published, patch the state file by hand — set
+`devto.lastPublish` to the article's `created_at` and append its slug. (Side effect:
+the counter then double-counts that one article across both sources, so it reads one
+higher for 24h. It errs toward holding back, which is the safe direction.)
+
+**Bluesky — 15 posted, 13 queued.** Healthy: 23 followers, following 50, so posts now
 actually reach people. Lower risk than dev.to since these are link posts rather
 than full articles.
 
