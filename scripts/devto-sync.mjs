@@ -7,7 +7,8 @@
 // copy must canonicalise to the opscanopy URL.
 //
 // WHAT IT DOES
-//   1. Fetches every published article for DEVTO_USERNAME (public API, no key needed).
+//   1. Fetches every published article — via the authenticated listing when DEVTO_API_KEY
+//      is set, falling back to the public one (eventually consistent) when it is not.
 //   2. Matches each one to a local post in src/content/blog/en/ by frontmatter title.
 //   3. Reports the current vs. correct canonical_url.
 //   4. With --apply, PUTs the corrected canonical_url (requires DEVTO_API_KEY).
@@ -71,14 +72,49 @@ for (const file of await readdir(blogDir)) {
 }
 
 // --- Fetch dev.to articles --------------------------------------------------------------
-const res = await fetch(
-  `https://dev.to/api/articles?username=${encodeURIComponent(USERNAME)}&per_page=100`,
-);
-// Throw rather than process.exit() — see the note at the bottom of this file.
-if (!res.ok) {
-  throw new Error(`Failed to list articles for @${USERNAME} — HTTP ${res.status}`);
+// Prefer the AUTHENTICATED listing. The public `?username=` endpoint is eventually
+// consistent: on 2026-08-16 it returned 27 articles including the newest on one call and 26
+// without it on the next six, same URL, seconds apart (marketing/distribution/cadence.md).
+// An audit built on a listing that silently drops the newest article happily reports
+// "0 need fixing" for an article it never saw — a clean result that means nothing.
+//
+// Falling back rather than failing is deliberate. This runs unattended on a weekly cron, and
+// making a drift *check* die because a credential is absent or stale trades a useful degraded
+// result for a red job. The warning is loud and the report states which listing it used, so a
+// clean audit is never silently mistaken for an authoritative one.
+async function listArticles() {
+  if (API_KEY) {
+    try {
+      const res = await fetch('https://dev.to/api/articles/me/all?per_page=1000', {
+        headers: { 'api-key': API_KEY },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const all = await res.json();
+      // /me/all returns drafts too, which the public endpoint never does. Without this filter
+      // an article unpublished to resolve a duplicate reappears as a live duplicate.
+      return { articles: all.filter((a) => a.published), source: 'authenticated' };
+    } catch (err) {
+      console.warn(`WARNING: authenticated listing failed (${err.message}) — falling back to`);
+      console.warn('         the public one. Check DEVTO_API_KEY; results may be stale.');
+      console.warn('');
+    }
+  } else {
+    console.warn('WARNING: DEVTO_API_KEY is not set — using the public listing, which is');
+    console.warn('         eventually consistent. A clean result here is not conclusive.');
+    console.warn('');
+  }
+
+  // Throw rather than process.exit() — see the note at the bottom of this file.
+  const res = await fetch(
+    `https://dev.to/api/articles?username=${encodeURIComponent(USERNAME)}&per_page=100`,
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to list articles for @${USERNAME} — HTTP ${res.status}`);
+  }
+  return { articles: await res.json(), source: 'public, eventually consistent' };
 }
-const articles = await res.json();
+
+const { articles, source: listingSource } = await listArticles();
 
 // --- Match ------------------------------------------------------------------------------
 /**
@@ -140,7 +176,9 @@ const fix = plan.filter((p) => p.needsFix);
 const ok = plan.filter((p) => !p.needsFix && !p.unmatched);
 const unmatched = plan.filter((p) => p.unmatched);
 
-console.log(`\ndev.to canonical audit — @${USERNAME} (${articles.length} published)\n`);
+console.log(
+  `\ndev.to canonical audit — @${USERNAME} (${articles.length} published, ${listingSource} listing)\n`,
+);
 
 for (const p of plan) {
   const flag = p.needsFix ? 'FIX ' : p.unmatched ? 'SKIP' : 'OK  ';
