@@ -16,11 +16,17 @@
  * script can never go stale the way CLAUDE.md's old "9 tools" count did as
  * more playgrounds adopted CodeMirror.
  *
- * CodeMirror-chunk identification: Vite/Rollup names every `@codemirror/*`
- * package's own bundle `index.<hash>.js` (their npm entry file's basename),
- * while each playground's first-party `engine`/`examples` modules keep their
- * own source basename — so filtering a playground's dynamic imports to
- * `index.*` cleanly isolates the CodeMirror set with no hash hardcoding.
+ * CodeMirror-chunk identification: a chunk is CodeMirror if MORE THAN ONE
+ * playground dynamically imports it. Vendor code is shared by construction —
+ * the CodeMirror core chunks are pulled in by all 19 playgrounds — while each
+ * playground's first-party `engine`/`examples` chunks are imported by exactly
+ * one. Measured on a real build: 6 shared chunks, 43 single-use, a clean split.
+ *
+ * This used to filter on the `index.<hash>.js` basename Rollup gave each
+ * `@codemirror/*` package entry. Astro 7 resolves those packages to `dist/`
+ * instead, renaming every chunk to `dist.<hash>.js`, and the script found
+ * 0/19 playgrounds. Sharing is a property of the dependency graph rather than
+ * of Rollup's naming, so it does not break the next time naming changes.
  * Cross-checked against a literal "cm-editor" string search (CodeMirror's
  * own editor-root CSS class) as a second, independent signal that the
  * classification is still correct.
@@ -38,7 +44,9 @@ const ASTRO_DIR = join(DIST, '_astro');
 const COMPONENTS_DIR = join(ROOT, 'src', 'components');
 
 const SCRIPT_SRC_RE = /<script[^>]*type="module"[^>]*src="([^"]+)"/g;
-const IMPORT_RE = /import\("\.\/([^"]+)"\)/g;
+// Vite has emitted this call with double quotes (Astro 6) and with backticks
+// (Astro 7); accept any of the three quote styles rather than betting on one.
+const IMPORT_RE = /import\(\s*[`'"]\.\/([^`'"]+)[`'"]\s*\)/g;
 
 /** Playground component basenames (no .astro) that import @codemirror/state
  *  in their frontmatter — discovered fresh every run, never hardcoded. */
@@ -78,13 +86,24 @@ function main() {
 
   // One CodeMirror chunk set per playground (shared across every locale that
   // uses it — same compiled script, same vendor deps).
-  const cmChunksByPlayground = new Map();
+  const importsByPlayground = new Map();
   for (const name of playgrounds) {
     const scriptChunk = allChunkFiles.find((f) => f.startsWith(`${name}.astro_astro_type_script`));
     if (!scriptChunk) continue;
     const content = readFileSync(join(ASTRO_DIR, scriptChunk), 'utf-8');
-    const imports = [...content.matchAll(IMPORT_RE)].map((m) => m[1]);
-    const cmChunks = imports.filter((i) => i.startsWith('index.'));
+    importsByPlayground.set(name, [...new Set([...content.matchAll(IMPORT_RE)].map((m) => m[1]))]);
+  }
+
+  // Shared by more than one playground => vendor (CodeMirror). Imported by
+  // exactly one => that playground's own engine/examples chunk.
+  const useCount = new Map();
+  for (const imports of importsByPlayground.values()) {
+    for (const chunk of imports) useCount.set(chunk, (useCount.get(chunk) ?? 0) + 1);
+  }
+
+  const cmChunksByPlayground = new Map();
+  for (const [name, imports] of importsByPlayground) {
+    const cmChunks = imports.filter((i) => (useCount.get(i) ?? 0) > 1);
     if (cmChunks.length > 0) cmChunksByPlayground.set(name, cmChunks);
   }
 
