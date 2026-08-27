@@ -57,7 +57,14 @@ npx vitest run src/lib/hash-generator/engine.test.ts
 
 ## Architecture
 
-**OpsCanopy** is a fully static Astro v6 site. Every tool runs 100% client-side — there is no server, no API, no backend. Astro v6 + Tailwind v4 + no framework (plain `<script>` modules).
+**OpsCanopy** is a fully static Astro v7 site. Every tool runs 100% client-side — there is no server, no API, no backend. Astro v7 + Tailwind v4 + no framework (plain `<script>` modules).
+
+Astro 7 keeps the legacy `unified` Markdown pipeline only because
+`@astrojs/markdown-remark` is an explicit dependency — v7 made "Sätteri" the default
+processor and stopped installing unified, which is what `markdown.remarkPlugins` /
+`rehypePlugins` in `astro.config.mjs` run on. Removing that package breaks the build
+outright (a hard error, not a warning). Migrating `remarkCallouts`/`rehypeChapters`
+to Sätteri is a separate, unforced piece of work.
 
 ### Adding a tool — the four-file pattern
 

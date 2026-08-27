@@ -1,57 +1,59 @@
-# Tracked: Astro 6 → 7 upgrade
+# Astro 6 → 7 upgrade — DONE 2026-08-27
 
-**Status:** not started. Opened 2026-08-22.
+Landed on 6.4.8 → **7.2.9**. `npm ci`, 3652 tests, `npm run check` (0 errors) and the
+build all pass, and `npm audit --omit=dev` reports **0 vulnerabilities**, so
+`deploy.yml`'s audit gate is back to `--audit-level=high` blocking — the narrowing
+from 2026-08-22 is reverted, as intended.
 
-## Why this exists
+## What actually broke
 
-`npm audit` reports a high-severity advisory against `astro` with a vulnerable range
-of `<=7.0.9`. We are on **6.4.8**, and there is no patched 6.x — the range covers the
-whole 6 line, so clearing it means **6.4.8 → 7.2.4**, a major.
+Only two things, both caught by the gates rather than by reading release notes.
 
-Astro *does* ship 6.x patches (6.4.4 → 6.4.8 was applied on 2026-08-22 and fixed
-other things), which makes this easy to misread. It does not lift the advisory:
-6.4.8 is still inside `<=7.0.9`.
+**1. Markdown plugins are no longer wired to `unified`.** Astro 7 makes "Sätteri" the
+default Markdown processor and stops installing `@astrojs/markdown-remark`, which is
+what `markdown.remarkPlugins` / `rehypePlugins` run on. Astro 6 warned about this;
+Astro 7 makes it a hard config error. Fixed by installing `@astrojs/markdown-remark`
+explicitly, which keeps `remarkCallouts` and `rehypeChapters` running on the pipeline
+they were written for and keeps rendering byte-identical.
 
-## Why it is not urgent
+**Do not drop that dependency.** Porting the two plugins to Sätteri is separate work
+with no forcing function behind it.
 
-The advisories it would clear are not reachable by a visitor to opscanopy.com:
+**2. `scripts/inject-cm-modulepreload.mjs` found 0/19 playgrounds.** Two changes at
+once: Vite now emits dynamic imports with backticks (``import(`./x.js`)``) where the
+script's regex only accepted double quotes, and CodeMirror packages resolve to
+`dist/` rather than their package root, renaming every vendor chunk from
+`index.<hash>.js` to `dist.<hash>.js` — the exact prefix the script filtered on.
 
-| Advisory | Why it does not apply here |
-|---|---|
-| XSS via unescaped spread-prop attribute names | Requires attacker-controlled attribute names at render time. All props come from authored content and `src/data/*`. |
-| XSS via `transition:*` directive values on hydrated islands | Same — directive values are authored, never user input. |
-| Host-header SSRF in prerendered error page fetch | Needs a server to receive a Host header. The site is fully static on Cloudflare assets; there is no origin. |
+Rather than swap one hardcoded basename for another, chunk classification is now
+**"imported by more than one playground"**. Vendor code is shared by construction;
+a playground's own `engine`/`examples` chunks are not. Measured on the real build:
+6 shared chunks, 43 single-use — a clean split that does not depend on Rollup's
+naming, so the next rename will not break it.
 
-The site ships **no server code and no untrusted build input**, so these are
-build-time concerns on a build nobody else can feed. That is the basis on which
-`deploy.yml`'s audit gate was narrowed to criticals-block / highs-report on
-2026-08-22 — see the comment in that file.
+## What did NOT break
 
-**The narrowing is the temporary part, not the upgrade.** When this lands, put the
-gate back to `--audit-level=high` blocking.
+Checked because the pre-upgrade notes called each one out as a risk:
 
-## What the upgrade has to cover
+- **512 pages**, 68 per locale, unchanged
+- **hreflang/canonical byte-identical** to the live Astro 6 page (`de`, `en`, `es`,
+  `fr`, `pt-BR`, `x-default` — note the capital `BR`)
+- **11 CSP inline-script hashes**, same count, so `inject-csp-hashes.mjs` still
+  covers the full inline set
+- **Pagefind**: 5 language sub-indexes, 490 pages; `/search` returns 46 hits for
+  "subnet"
+- **jq-wasm**: still hashed into `dist/_astro/jq.<hash>.wasm` and same-origin; the
+  UI badge reads `jq 1.8.2` off the loaded binary
+- **`getStaticPaths`** across the mission90 registry↔collection pairing
+- 17 pages loaded with **zero console/page errors**, and `/tools` search
+  (39 → 3 → 39) and A–Z sort still work
 
-Not a version bump — verify all of it before merging:
+## Notes for next time
 
-- `astro.config.mjs` — the sitemap integration, i18n routing, the `/search` and
-  `/tests` exclusions
-- **5 locales** (`en` unprefixed + `de`, `es`, `fr`, `pt-br`) — routing and
-  `hreflang`/canonical output, per CLAUDE.md's all-locales rule
-- **19 CodeMirror playgrounds** — `scripts/inject-cm-modulepreload.mjs` greps build
-  output for vendor chunks; Astro 7 may rename or re-split them
-- `scripts/inject-csp-hashes.mjs` — currently finds 11 inline scripts. A changed
-  inline-script set silently breaks CSP, and the marker guard only catches a
-  *missing* postbuild, not a wrong hash list
-- `jq-wasm` — the `import('jq-wasm/jq.wasm?url')` asset pin must still hash into
-  `dist/_astro/` and stay same-origin under the CSP
-- Pagefind postbuild + per-locale sub-indexes, and the trailing-slash guard
-- `mission90Days` content collection + `getStaticPaths` registry↔collection checks
+`wrangler` came along to 4.127.0, which declares `miniflare 5.x-alpha` as its own
+dependency. That is Cloudflare's pin, not npm improvising — it is dev-only, outside
+the `--omit=dev` gate, and `wrangler --version` runs clean.
 
-## Gates
-
-Do it on a branch. `npm ci` clean, 3652 tests green, `npm run build` exit 0 (check
-the real exit code — a piped build reports the pipe's status, which has masked a
-failed build here before), then `npx wrangler versions upload` and check a preview
-before promoting. Also re-run `npm run check` and confirm the ~128 pre-existing
-errors have not grown.
+On Windows, `npm ci` can fail `EPERM: unlink lightningcss.win32-x64-msvc.node` when a
+dev/preview server still holds the native module. Kill node first; it cannot happen on
+CI's Linux runner.
