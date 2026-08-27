@@ -28,7 +28,13 @@ function toHex(bytes: ArrayBuffer | Uint8Array): string {
 }
 
 /** SubtleCrypto digest -> lowercase hex. `algo` is a SubtleCrypto name. */
-async function subtleHex(algo: 'SHA-1' | 'SHA-256' | 'SHA-512', data: Uint8Array): Promise<string> {
+async function subtleHex(
+  algo: 'SHA-1' | 'SHA-256' | 'SHA-512',
+  // Uint8Array is generic as of TypeScript 6. Pinning the backing store to
+  // ArrayBuffer is what SubtleCrypto's BufferSource requires — the default
+  // ArrayBufferLike also admits SharedArrayBuffer, which it does not accept.
+  data: Uint8Array<ArrayBuffer>,
+): Promise<string> {
   const buf = await globalThis.crypto.subtle.digest(algo, data);
   return toHex(buf);
 }

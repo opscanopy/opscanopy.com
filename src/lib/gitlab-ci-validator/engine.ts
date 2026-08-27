@@ -46,28 +46,6 @@
  * └──────────────────────────────────────────────────────────────────────────┘
  */
 
-// js-yaml v4 ships ESM but no bundled type declarations, and @types/js-yaml is
-// not a project dependency. Declare the tiny surface we use so the project
-// type-checks under strict mode without adding a dependency.
-declare module 'js-yaml' {
-  export function load(input: string, options?: unknown): unknown;
-  /** A js-yaml schema. `extend` returns a NEW schema with extra tag types. */
-  export interface YamlSchema {
-    extend(types: unknown): YamlSchema;
-  }
-  /** A custom YAML tag type (tag name + kind/resolve/construct options). */
-  export class Type {
-    constructor(tag: string, options?: unknown);
-  }
-  export const DEFAULT_SCHEMA: YamlSchema;
-  const _default: {
-    load: typeof load;
-    Type: typeof Type;
-    DEFAULT_SCHEMA: YamlSchema;
-  };
-  export default _default;
-}
-
 import yaml from 'js-yaml';
 import type { Finding, Severity, ValidateResult } from './types';
 

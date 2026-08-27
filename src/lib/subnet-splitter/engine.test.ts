@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { split } from './engine';
+import type { SplitResult, SplitStats } from './types';
+
+/**
+ * `stats` is optional on SplitResult because an invalid parent yields none. Every
+ * call below passes a valid parent, so assert rather than thread `?.` through the
+ * expectations — a missing stats block is a real failure, not something to skip.
+ */
+function statsOf(r: SplitResult): SplitStats {
+  if (!r.stats) throw new Error('split() returned no stats for a valid parent');
+  return r.stats;
+}
 
 /**
  * Regression suite for the subnet splitter.
@@ -77,20 +88,21 @@ describe('split — the subnet total is the real total, not the capped list leng
 describe('split — address counts are not understated', () => {
   it('does not report 2^96 minus one as half its size', () => {
     const r = split('2001:db8::/32', '2001:db8::1/128', null);
+    const stats = statsOf(r);
     // floorLog2 used to render this as "≈2^95" — a systematic 2x understatement
     // for every count that is not an exact power of two.
-    expect(r.stats.free).not.toBe('≈2^95');
-    expect(r.stats.free).toBe('≈2^96');
+    expect(stats.free).not.toBe('≈2^95');
+    expect(stats.free).toBe('≈2^96');
   });
 
   it('renders an exact power of two without the approximation marker', () => {
     const r = split('2001:db8::/32', '', null);
-    expect(r.stats.total).toBe('2^96');
+    expect(statsOf(r).total).toBe('2^96');
   });
 
   it('keeps small counts as exact decimals', () => {
     const r = split('10.0.0.0/24', '', null);
-    expect(r.stats.total).toBe('256');
+    expect(statsOf(r).total).toBe('256');
   });
 });
 

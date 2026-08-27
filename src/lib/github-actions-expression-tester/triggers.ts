@@ -14,14 +14,6 @@
  * Never throws — a YAML parse failure comes back via SimulateResult.error.
  */
 
-// js-yaml v4 ships ESM but no bundled type declarations, and @types/js-yaml is
-// not a project dependency. Declare the tiny surface we use (mirrors gha-validator).
-declare module 'js-yaml' {
-  export function load(input: string, options?: unknown): unknown;
-  const _default: { load: typeof load };
-  export default _default;
-}
-
 import yaml from 'js-yaml';
 import type {
   EvalContext,

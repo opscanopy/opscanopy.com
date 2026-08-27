@@ -28,11 +28,6 @@
  * `const _default` or a differently-typed `DEFAULT_SCHEMA` would not).
  * `loadAll`/`dump` default to DEFAULT_SCHEMA, so nothing needs the schema value.
  */
-declare module 'js-yaml' {
-  export function loadAll(input: string, iterator?: null, options?: unknown): unknown[];
-  export function dump(input: unknown, options?: unknown): string;
-}
-
 import { dump, loadAll } from 'js-yaml';
 import { base64UrlDecode, base64UrlEncode } from '../codec';
 import {

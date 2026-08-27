@@ -45,16 +45,6 @@
  * └──────────────────────────────────────────────────────────────────────────┘
  */
 
-// js-yaml v4 ships ESM but no bundled type declarations, and @types/js-yaml is
-// not a project dependency. Declare the tiny surface we use so the project
-// type-checks under strict mode without adding a dependency. (Same approach as
-// the gha-validator engine, so YAML parsing stays consistent across tools.)
-declare module 'js-yaml' {
-  export function load(input: string, options?: unknown): unknown;
-  const _default: { load: typeof load };
-  export default _default;
-}
-
 import yaml from 'js-yaml';
 import type {
   ChangeKind,

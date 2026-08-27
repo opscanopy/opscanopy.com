@@ -26,12 +26,29 @@ dependency change looks harmless, verify it with `npm ci`, not with a build.
 (`npm ci --dry-run` is not a safe probe — npm deletes `node_modules` before
 resolving, so a "dry" run still wipes the tree.)
 
-**`npm run check` reports ~128 pre-existing errors** and is deliberately NOT a CI
-gate yet. They are almost entirely DOM null-safety inside playground `<script>`
-blocks (`'runBtn' is possibly 'null'`) plus missing `js-yaml` types. Worth clearing,
-but clearing it is its own task — until then, run it before shipping engine changes:
+**`npm run check` must stay at zero errors — it is a CI gate** (`deploy.yml`), added
+once the 128 pre-existing errors were cleared on 2026-08-27. Run it before shipping:
 vite strips types without checking them, so `npm run build` passing proves nothing
-about types.
+about types, which is exactly how a return-shape mismatch reached production in the
+GHA expression tester.
+
+Two patterns account for most of what it used to flag, worth knowing before you
+reintroduce them:
+
+- **Narrowing dies inside hoisted `function` declarations.** `const btn = el(...)`
+  guarded by an early `return` is still `T | null` inside a nested
+  `function run() {}`, because TypeScript cannot prove the hoisted function is not
+  called before the guard. An arrow function assigned to a `const` keeps the
+  narrowing; a `function` declaration does not. The playgrounds restate the guard
+  inside the function rather than reach for `!`.
+- **`var` never narrows across a closure** — it is reassignable, so TypeScript
+  discards the narrowing. `ToolsCatalog.astro` used `var` throughout and accounted
+  for 22 errors on its own.
+
+Playground types must be imported from the engine (`import type`, erased at build,
+so it does not affect code-splitting) rather than hand-mirrored in the `<script>`.
+A hand-copied `SplitSection` in the subnet-splitter had silently lost `total`,
+which the render code reads.
 
 Run a single test file:
 ```bash

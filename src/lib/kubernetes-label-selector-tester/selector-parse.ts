@@ -38,10 +38,6 @@
  * `json-yaml-converter`; identical signatures merge as overloads, so declaring
  * `loadAll` the same way here is safe. Nothing else is declared.
  */
-declare module 'js-yaml' {
-  export function loadAll(input: string, iterator?: null, options?: unknown): unknown[];
-}
-
 import { loadAll } from 'js-yaml';
 import type {
   Diagnostic,

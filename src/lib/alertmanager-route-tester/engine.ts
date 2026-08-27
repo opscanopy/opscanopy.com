@@ -37,16 +37,6 @@
  * Reference: https://prometheus.io/docs/alerting/latest/configuration/#route
  */
 
-// js-yaml v4 ships ESM but no bundled type declarations, and @types/js-yaml is
-// not a project dependency. Declare the tiny surface we use so the project
-// type-checks under strict mode without adding a dependency. (Mirrors the
-// gha-validator engine so YAML handling is consistent across tools.)
-declare module 'js-yaml' {
-  export function load(input: string, options?: unknown): unknown;
-  const _default: { load: typeof load };
-  export default _default;
-}
-
 import yaml from 'js-yaml';
 import { checkRegexSafety, MAX_REGEX_TEXT } from '../regex-safety';
 import type {
