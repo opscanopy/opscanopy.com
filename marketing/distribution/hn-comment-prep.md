@@ -48,7 +48,7 @@ already links it.
 >
 > The engine is `src/lib/github-actions-expression-tester/`. The bit worth looking
 > at is `conformance.ts`: a versioned corpus of fixtures that pins the semantics,
-> asserted by 72 tests. Changing engine behaviour means adding a fixture and
+> asserted by 90 tests. Changing engine behaviour means adding a fixture and
 > bumping the version, so the corpus is the spec rather than the code being the
 > spec. If you think a coercion is wrong, that's the file to open — and a PR
 > adding a failing fixture is the most useful bug report I could get.
@@ -59,7 +59,7 @@ Do **not** get defensive, and do **not** repeat the absolute version of the CSP
 claim. The real header is:
 
 ```
-connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com
+connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com https://cloudflareinsights.com
 ```
 
 > Fair, and you're right that it's in the header — I'd rather say it plainly than
@@ -68,8 +68,8 @@ connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com
 > GA is there for pageviews, behind Consent Mode v2 set to denied by default, so
 > nothing is sent unless you opt in. What it never sees is tool input: the engines
 > are pure client-side functions and there's no code path that posts what you
-> paste. The CSP allows exactly two destinations — the origin and GA — so there's
-> nowhere for a token to go even by accident.
+> paste. The CSP allows the origin, three Google hosts and Cloudflare Web
+> Analytics — so there's nowhere for a token to go even by accident.
 >
 > I've gone back and forth on dropping GA entirely. If it bothers people it's an
 > easy thing to cut.

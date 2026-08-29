@@ -70,7 +70,7 @@ It evaluates ${{ }} using GitHub's coercion rules rather than JavaScript's, and
 flags the always-true `if:` shape from actions/runner#1173 — where
 `if: ${{ github.event_name }} == 'push'` substitutes to a non-empty string and
 therefore runs on every event. The page loads with that exact case pre-evaluated.
-The semantics are pinned to a versioned conformance corpus with 72 tests, so
+The semantics are pinned to a versioned conformance corpus with 90 tests, so
 behaviour is testable rather than best-effort. A second tab simulates which jobs
 run for a push, PR or tag against a real workflow.
 
@@ -146,7 +146,7 @@ links** — URLs go only in the dedicated fields.
 **Short description:**
 
 ```
-29 free DevOps utilities that run entirely in your browser — CI validators, PromQL
+39 free DevOps utilities that run entirely in your browser — CI validators, PromQL
 and LogQL explainers, subnet and CIDR calculators, cron tools and a JWT decoder.
 No signup, nothing uploaded.
 ```

@@ -27,8 +27,8 @@ paste a real-world rule using an unsupported feature, get an error, and the
 thread would be about what the tool can't do.
 
 The GitHub Actions Expression Tester has no such gap. It is complete for its
-domain, has **72 passing tests against a versioned conformance corpus**
-(`gha-2024.11`), and the bug it catches — `actions/runner#1173` — is one almost
+domain, has **90 passing tests against a versioned conformance corpus**
+(`gha-2024.12`), and the bug it catches — `actions/runner#1173` — is one almost
 every Actions user has been bitten by. Instant recognition, nothing to pick apart.
 
 ---
@@ -79,7 +79,7 @@ matters.
 Implementation notes: it's a hand-written lexer, parser and evaluator, not a
 regex approximation, because the coercion rules are the whole point — `'' == 0`
 is true, `'true'` is truthy, objects render as their JSON. Behaviour is pinned
-to a versioned conformance corpus (currently gha-2024.12) with 72 tests; the
+to a versioned conformance corpus (currently gha-2024.12) with 90 tests; the
 corpus is the spec, and changing engine behaviour means adding a fixture and
 bumping the version. The evaluator never throws — malformed input comes back as
 a structured error.
@@ -94,17 +94,17 @@ condition and see the value.
 
 It runs entirely in your browser. No signup, no upload, nothing to install —
 which matters here because workflows carry secret names and internal repo paths.
-Precisely: the engine never transmits what you paste, and the CSP only permits
-outbound connections to the origin itself plus Google Analytics, which the site
-loads for pageviews behind Consent Mode set to denied by default. So there is no
-endpoint your workflow could go to, but I'm not going to claim the page can't
-talk to anything — `curl -I` will show you the GA hosts in the header.
+Precisely: the engine never transmits what you paste. The CSP's connect-src allows
+the origin plus analytics hosts — three Google ones (GA4, behind Consent Mode v2,
+denied by default) and Cloudflare Web Analytics. So there is no endpoint your
+workflow could reach, but I'm not going to claim the page can't talk to anything;
+`curl -I` will show you exactly those hosts in the header.
 
 Source is MIT on GitHub: https://github.com/opscanopy/opscanopy.com — the engine
 is src/lib/github-actions-expression-tester/, and the conformance corpus is
 conformance.ts if you want to check the semantics against your own expectations.
 
-Static Astro, no framework. It's one of 29 browser-only DevOps tools I've been
+Static Astro, no framework. It's one of 39 browser-only DevOps tools I've been
 building; this is the one I use most.
 
 Happy to hear where the semantics are wrong — that's the part I care about
@@ -137,8 +137,8 @@ of hiding it.
 
 Conformance fixtures now assert `truthy` and `rendered` for footgun vectors, not
 just that a warning appears, so the verdict can't drift out of agreement again.
-Version bumped `gha-2024.11` → `gha-2024.12` per the corpus's own rule. 72 tests
-still pass.
+Version bumped `gha-2024.11` → `gha-2024.12` per the corpus's own rule. All tests
+still pass (72 at the time; 90 as of 2026-08-29).
 
 ## Before you post — a 5-minute check
 
@@ -151,7 +151,7 @@ live page yourself:
 | `${{ github.event_name == 'push' }}` | evaluates properly, no warning |
 | `'' == 0` | `true` (GitHub coerces) |
 | `contains('hello', 'ell')` | `true` |
-| `=== &&& (((` | a clean error, not a crash |
+| `=== &&& (((` | NOT an error — it answers "no `${{ }}`, so GitHub treats it as a non-empty string", i.e. always-true. Verified 2026-08-29. |
 
 If any misbehave, tell me before posting.
 
@@ -175,5 +175,5 @@ lands 30–80 points and a few thousand visitors in a day.
 
 The traffic spike is not the point and will decay within 48 hours. **The
 durable value is the backlink** from a domain search engines trust enormously,
-pointing at a seven-week-old site that currently has almost none. That is the
+pointing at a site barely three months old that currently has almost none. That is the
 constraint the last report exposed, and it's what this fixes.

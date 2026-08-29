@@ -142,7 +142,7 @@ Two things it does that I couldn't find elsewhere in the list:
   which jobs run or skip, with the deciding filter traced. It models the
   branch-vs-tag matrix and the AND-semantics of `branches` + `paths`.
 
-Behaviour is pinned to a versioned conformance corpus (72 tests) so the
+Behaviour is pinned to a versioned conformance corpus (90 tests) so the
 semantics are testable rather than best-effort.
 
 Runs fully client-side — no signup, no upload, and the site's CSP sets
