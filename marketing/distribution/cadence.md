@@ -202,6 +202,45 @@ Two notes for next time:
   but note that coupling the audit to the key means a missing secret would start
   failing the job, which it currently does not.
 
+## RECURRED 2026-08-29 — the CVE duplicate came back, and why that matters
+
+`...-4m57` was published again, self-canonical, having been unpublished and verified
+404 on 22 Aug. Unpublished a second time; the audit is clean again (25 canonical, 0
+need fixing) and the URL 404s.
+
+**The cause is not known, and the obvious explanations are ruled out:**
+
+| Checked | Result |
+|---|---|
+| Did the syndicator republish it? | No. `syndicate.mjs` only sets `published: true` when CREATING an article; this kept its original id 3890110. |
+| Edited in the dev.to UI? | `edited_at` is still `2026-08-22T10:27:11Z` — the timestamp of the unpublish PUT itself. Nothing has edited it since. |
+| Front matter in `body_markdown` overriding `published`? | Neither copy has any front matter. |
+
+So the unpublish took effect (verified `published=false` AND a live 404 at the time)
+and later reverted with no edit recorded. **Treat "unpublished via the API" as
+possibly non-durable on Forem** — re-check rather than assuming it stuck.
+
+**Forem enforces one article per `canonical_url`.** Pointing `-4m57` at the opscanopy
+original returns:
+
+```
+422 {"error":"Canonical url has already been taken. ..."}
+```
+
+because `-4i0m` already claims it. That kills the obvious belt-and-braces fix: you
+cannot neutralise the duplicate by canonicalising it home and leaving it published.
+Unpublishing one copy is the only lever available.
+
+It also means **the weekly canonicals job fails for as long as this duplicate is
+published**: `devto-sync --apply` attempts the PUT, gets 422, exits 1. That is a
+useful alarm rather than a bug — it is why the 24 Aug run passed (the duplicate was
+unpublished then) and why 31 Aug would have failed. `devto-sync.mjs` now prints what
+a 422 canonical collision actually means instead of the bare status line.
+
+**If it returns a third time**, escalate to support@dev.to — the 422 text points
+there itself — because an article that republishes with no edit trace is a
+platform-side behaviour, not something this repo can fix.
+
 ## Diagnostic traps — read before debugging anything here
 
 **curl returns false 401s on this machine** for keys that Node's `fetch` accepts —

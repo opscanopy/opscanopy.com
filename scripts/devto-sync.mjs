@@ -234,9 +234,20 @@ if (fix.length) {
         console.log(`updated  ${p.title.slice(0, 60)}`);
       } else {
         failed++;
-        console.error(
-          `FAILED ${r.status}  ${p.title.slice(0, 60)}  ${await r.text().catch(() => '')}`,
-        );
+        const detail = await r.text().catch(() => '');
+        console.error(`FAILED ${r.status}  ${p.title.slice(0, 60)}  ${detail}`);
+        // Forem enforces one article per canonical_url. A 422 here does not mean the
+        // canonical is wrong — it means ANOTHER article already points at the same
+        // target, i.e. this one is a duplicate. The PUT can never succeed while both
+        // are published; one has to be unpublished first. Spelled out because the bare
+        // 422 reads like a permissions or payload bug, and this has now recurred twice
+        // on unifying-cve-ignore-files.
+        if (r.status === 422 && /canonical url has already been taken/i.test(detail)) {
+          console.error('       ^ another published article already claims this canonical,');
+          console.error('         so this one is a DUPLICATE. Unpublish whichever copy lacks');
+          console.error('         the canonical (see the DUPLICATES section above); the PUT');
+          console.error('         cannot succeed until only one of them is published.');
+        }
       }
       // dev.to rate-limits writes; ~1 req/s is comfortably under the limit.
       await new Promise((resolve) => setTimeout(resolve, 1100));
