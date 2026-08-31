@@ -31,6 +31,20 @@ export interface Tool {
    * the sort falls back to registry position whenever it is absent.
    */
   addedAt?: string;
+  /**
+   * Hand-picked related tools, used ONLY to top up the "More in {category}" strip
+   * when the tool's own category cannot supply two siblings.
+   *
+   * Categories of one or two tools (Config, IaC, Logs, Kubernetes, Docker) left
+   * eight pages with no in-body tool links at all, which is the opposite of what a
+   * small category needs. Scoring by shared `keywords` was tried and rejected: the
+   * keywords are full search phrases, so exact overlap is almost always zero, and
+   * loosening the match produced pairings like env-example-checker → subnet-splitter.
+   *
+   * Only populate this where the category is too small. Tools in a category of
+   * three or more never read it.
+   */
+  related?: string[];
 }
 
 export const tools: Tool[] = [
@@ -153,6 +167,8 @@ export const tools: Tool[] = [
       'nginx access log regex pattern tester',
     ],
     accent: 'ship',
+    // Related: the other two places a bad regex silently drops your data.
+    related: ['prometheus-relabel-tester', 'loki-alert-rule-tester'],
   },
   {
     slug: 'env-example-checker',
@@ -173,6 +189,8 @@ export const tools: Tool[] = [
       'detect environment variable drift between code and config',
     ],
     accent: 'develop',
+    // Related: config-file drift and the secrets that leak into images.
+    related: ['json-yaml-converter', 'dockerfile-linter'],
   },
   {
     slug: 'logql-promql-helper',
@@ -441,6 +459,8 @@ export const tools: Tool[] = [
       'total cpu memory across pods and replicas',
     ],
     accent: 'preview',
+    // Related: where the memory numbers come from, and where they get provisioned.
+    related: ['promql-explainer', 'terraform-plan-summarizer'],
   },
   {
     slug: 'github-actions-expression-tester',
@@ -479,6 +499,8 @@ export const tools: Tool[] = [
       'bidirectional docker run compose converter',
     ],
     accent: 'ship',
+    // Related: the env file compose needs, and the next step after compose.
+    related: ['env-example-checker', 'kubernetes-resource-calculator'],
   },
   {
     slug: 'gitlab-ci-validator',
@@ -697,6 +719,8 @@ export const tools: Tool[] = [
       'dockerfile layer cache order',
     ],
     accent: 'develop',
+    // Related: secrets in build context, and the CI that builds the image.
+    related: ['env-example-checker', 'github-actions-validator'],
   },
   {
     slug: 'jq-playground',
@@ -717,6 +741,8 @@ export const tools: Tool[] = [
       'jq expression tester no upload',
     ],
     accent: 'develop',
+    // Related: the other JSON-shaped problems.
+    related: ['json-yaml-converter', 'grafana-dashboard-validator'],
   },
   {
     slug: 'certificate-decoder',
@@ -782,6 +808,8 @@ export const tools: Tool[] = [
       'label selector validator online',
     ],
     accent: 'develop',
+    // Related: label matching in the other systems that do it.
+    related: ['prometheus-relabel-tester', 'regex-log-tester'],
   },
   {
     slug: 'systemd-unit-validator',
@@ -825,6 +853,8 @@ export const tools: Tool[] = [
       'opentofu plan summary',
     ],
     accent: 'ship',
+    // Related: sizing what a plan is about to create, and the config formats around it.
+    related: ['kubernetes-resource-calculator', 'json-yaml-converter'],
   },
 ];
 

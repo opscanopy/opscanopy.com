@@ -59,17 +59,33 @@ export function getPrevNextInTrack(
  * category→track map in ToolCrossLinks, which only covered 3 of 11 categories
  * and left 26 of 29 tools with no route into /learn.
  *
- * Returns the lowest-`order` guide for the tool (the track's entry point), or
- * undefined when no guide claims it — callers must render nothing rather than
- * inventing a link.
+ * Returns undefined when no guide claims the tool — callers must render nothing
+ * rather than inventing a link.
+ *
+ * When several guides claim the same tool, `order` alone is not enough to choose:
+ * every track's entry point is `order: 1`, so the tie fell to whatever order the
+ * caller happened to pass them in (alphabetical by track). Both
+ * `aws-for-devops-engineers` and `networking-for-devops` are `order: 1` and both
+ * list `subnet-calculator`, so `/subnet-calculator/` advertised the **AWS** guide.
+ * Passing the tool's `category` lets a matching track win first, which is the
+ * relevance signal that was missing.
  */
 export function getGuideForTool(
   toolSlug: string,
   all: LocalizedGuide[],
+  category?: string,
 ): LocalizedGuide | undefined {
-  return all
-    .filter((g) => (g.entry.data.relatedTools ?? []).includes(toolSlug))
-    .sort((a, b) => a.entry.data.order - b.entry.data.order)[0];
+  const claiming = all.filter((g) => (g.entry.data.relatedTools ?? []).includes(toolSlug));
+  if (claiming.length === 0) return undefined;
+
+  // A track named for the tool's own category is the better answer than a lower
+  // `order` from an unrelated track. Categories with no matching track (Encoding,
+  // Security, Utilities, …) fall through to the original lowest-`order` rule.
+  const track = category?.toLowerCase();
+  const onTrack = track ? claiming.filter((g) => g.entry.data.track === track) : [];
+  const pool = onTrack.length > 0 ? onTrack : claiming;
+
+  return [...pool].sort((a, b) => a.entry.data.order - b.entry.data.order)[0];
 }
 
 export function getRelatedGuides(

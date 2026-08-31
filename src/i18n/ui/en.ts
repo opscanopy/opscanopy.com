@@ -73,6 +73,7 @@ const en = {
   'home.blogBrowseAll': 'Browse all posts',
 
   'crosslinks.moreIn': 'More in {category}',
+  'crosslinks.relatedTools': 'Related tools',
   'crosslinks.postsHeading': 'Read more about this',
   'crosslinks.learnNewTo': 'New to {track}?',
   'crosslinks.learnCta': 'Read the {track} guide',

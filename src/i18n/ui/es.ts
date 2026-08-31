@@ -62,6 +62,7 @@ const es: Partial<UiDict> = {
   'home.blogBrowseAll': 'Ver todos los artículos',
 
   'crosslinks.moreIn': 'Más en {category}',
+  'crosslinks.relatedTools': 'Herramientas relacionadas',
   'crosslinks.postsHeading': 'Leer más sobre esto',
   'crosslinks.learnNewTo': '¿Empiezas con {track}?',
   'crosslinks.learnCta': 'Lee la guía de {track}',

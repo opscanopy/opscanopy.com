@@ -52,7 +52,6 @@ export default defineConfig({
       // /tests/<cat>/<test>/ are the noindex test-taking pages — the /tests/
       // hub and /tests/<cat>/ category pages stay indexed).
       filter: (page) =>
-        !page.includes('/alertlint-wasm-demo') &&
         !page.includes('/404') &&
         !page.includes('/500') &&
         !page.includes('/offline') &&

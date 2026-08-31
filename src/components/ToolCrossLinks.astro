@@ -48,12 +48,40 @@ const resolvedSlug = slug ?? stripLocale(Astro.url.pathname).split('/').filter(B
 
 // Resolve sibling LIVE tools sharing the current tool's category.
 const current = resolvedSlug ? getTool(resolvedSlug) : undefined;
-const siblings = current
-  ? liveTools
-      .filter((t) => t.category === current.category && t.slug !== current.slug)
-      .slice(0, 3)
+const sameCategory = current
+  ? liveTools.filter((t) => t.category === current.category && t.slug !== current.slug)
   : [];
+
+/**
+ * Top up from the registry's hand-picked `related` when the category cannot supply
+ * two siblings.
+ *
+ * The strip only renders at `>= 2` siblings, so the 1- and 2-tool categories got NO
+ * strip at all — 8 tool pages (env-example-checker, terraform-plan-summarizer,
+ * regex-log-tester, jq-playground, both kubernetes-* tools, docker-run-to-compose,
+ * dockerfile-linter) lost their only in-body tool links, which is the opposite of
+ * what a small category needs.
+ *
+ * Deliberately curated rather than scored. Ranking by shared `keywords` was tried
+ * first and produced good pairs for some tools (jq-playground → json-yaml-converter)
+ * and nonsense for others (env-example-checker → subnet-splitter,
+ * terraform-plan-summarizer → jwt-decoder), because the keywords are full search
+ * phrases that rarely share exact tokens. An irrelevant internal link is worse than
+ * no link, so the eight get an explicit list instead of a guess.
+ */
+const siblings = (() => {
+  if (!current) return [];
+  if (sameCategory.length >= 2) return sameCategory.slice(0, 3);
+  const chosen = new Set([current.slug, ...sameCategory.map((t) => t.slug)]);
+  const topUp = (current.related ?? [])
+    .filter((s) => !chosen.has(s))
+    .map((s) => getTool(s))
+    .filter((t): t is NonNullable<typeof t> => Boolean(t) && t!.status === 'live');
+  return [...sameCategory, ...topUp].slice(0, 3);
+})();
 const showSiblings = siblings.length >= 2;
+/** True when the strip contains tools from outside this category — changes the label. */
+const toppedUp = siblings.some((t) => t.category !== current?.category);
 const categoryDot = current ? categoryAccent[current.category] : undefined;
 
 /**
@@ -69,7 +97,7 @@ const relatedPosts = current ? ((await getPostsByTool(lang)).get(current.slug) ?
  * the href both stay on the default locale on every page.
  */
 const guide = current
-  ? getGuideForTool(current.slug, await getGuidesForLocale(DEFAULT_LOCALE))
+  ? getGuideForTool(current.slug, await getGuidesForLocale(DEFAULT_LOCALE), current.category)
   : undefined;
 const guideTrack = guide ? getTrack(guide.entry.data.track) : undefined;
 const guideTrackName = guideTrack?.name ?? guide?.entry.data.track;
@@ -84,9 +112,16 @@ const guideTrackName = guideTrack?.name ?? guide?.entry.data.track;
         showSiblings && (
           <div class="w-full">
             <p class="eyebrow mb-3">
-              {t('crosslinks.moreIn', {
-                category: t(`category.${current!.category}` as UiKey),
-              })}
+              {
+                /* "More in {category}" becomes a false claim once the list is topped
+                   up from `related`, because those tools are by definition NOT in
+                   this category. Switch the label, not the links. */
+                toppedUp
+                  ? t('crosslinks.relatedTools')
+                  : t('crosslinks.moreIn', {
+                      category: t(`category.${current!.category}` as UiKey),
+                    })
+              }
             </p>
             <ul class="grid gap-3 text-left sm:grid-cols-2 lg:grid-cols-3">
               {siblings.map((tool) => (
