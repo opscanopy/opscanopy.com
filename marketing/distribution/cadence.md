@@ -62,10 +62,11 @@ on a command intended as a preview. Dry-run first, read it, then re-run with
 | 2026-08-17 | 1 | 2 | Guide 3. Bluesky feed recovered. 24h gap. |
 | 2026-08-19 | 1 | 2 | Guide 4. 2-day gap both. |
 | 2026-08-25 | 1 | 2 | Guide 5 (Linux). 6-day gap both. **dev.to returned HTTP 500 and published anyway** — second occurrence, see the trap below. |
+| 2026-08-31 | 2 | 2 | Normal. 6-day gap both. First of the error-string posts — blog-sized, so 2 rather than 1. |
 
 ## Current state
 
-**dev.to — 30 published, 2 still queued (all long-form guides)**
+**dev.to — 32 published, 3 still queued (1 error-string post + 2 long-form guides)**
 
 Syndicated on 2026-07-27: 7 Common .gitlab-ci.yml Mistakes · How to Convert a docker
 run Command · Why Isn't My Alert Reaching the Right Receiver · Why Did Prometheus
@@ -240,6 +241,23 @@ a 422 canonical collision actually means instead of the bare status line.
 **If it returns a third time**, escalate to support@dev.to — the 422 text points
 there itself — because an article that republishes with no edit trace is a
 platform-side behaviour, not something this repo can fix.
+
+## 2026-08-31 — the error-string posts start syndicating
+
+Published `docker-build-failed-to-solve-exit-code-1` and
+`kubernetes-oomkilled-exit-code-137` to dev.to plus the same two as Bluesky links.
+Two dev.to articles rather than one because these are blog-sized (~1,700 words), not
+the 3-hour guides that forced the one-per-session rule.
+
+Both verified against `/api/articles/me/all`: published, canonical pointing home, zero
+relative paths surviving absolutisation. Audit clean afterwards — 27 canonical, 0 need
+fixing, no duplicates. `x509-certificate-signed-by-unknown-authority` is next in the
+queue and was deliberately held back rather than making it three in one sitting.
+
+Why these two first: they are the posts targeting literal error strings, which is the
+only channel currently proven to rank — `/blog/github-actions-if-condition-always-true/`
+reaches page one against GitHub Docs, while every tool page still draws zero
+impressions.
 
 ## Diagnostic traps — read before debugging anything here
 
