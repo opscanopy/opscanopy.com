@@ -18,7 +18,20 @@ x509: certificate signed by unknown authority
 
 Then you open the same URL in Chrome and it loads with a padlock. Nothing is wrong with the certificate as far as your browser is concerned, so the natural conclusion is that your code, your container or your language is broken.
 
-It usually isn't. In the large majority of cases the server really is misconfigured, and your browser is hiding it. This post explains what the error actually means, why browsers disagree with Go and curl, and the four causes ranked by how often they turn out to be the culprit.
+It usually isn't. In the large majority of cases the server really is misconfigured, and your browser is hiding it. This post explains what the error actually means, why browsers disagree with Go and curl, and the four causes that between them account for almost every occurrence.
+
+## Which one is you — 20 seconds
+
+The right cause depends almost entirely on *what* you were connecting to, so start here rather than reading straight through:
+
+| What you were doing | Almost always | Jump to |
+|---|---|---|
+| `docker login` / `docker pull` from a **private registry** | Self-signed cert the daemon was never given | [Cause 4](#4-the-certificate-really-is-self-signed) |
+| Any HTTPS call **from inside a container**, failing against *every* host | The image has no CA bundle | [Cause 2](#2-your-container-has-no-ca-bundle-at-all) |
+| A Go service, curl or CI job hitting a **public** endpoint that works in Chrome | The server is missing its intermediate | [Cause 1](#1-the-server-is-missing-its-intermediate) |
+| Anything at all, but only **on the office network / VPN** | A TLS-inspecting proxy re-signed it | [Cause 3](#3-a-corporate-proxy-is-re-signing-traffic) |
+
+If you are here from a Docker registry error specifically, cause 4 is your answer and the fix is three commands. The rest of the post explains why the error is worded so unhelpfully, which is worth knowing the next time it appears somewhere else.
 
 ## What the error actually means
 
@@ -116,13 +129,28 @@ RUN update-ca-certificates
 
 ### 4. The certificate really is self-signed
 
-Internal services, a local dev stack, a private registry. Here the error is correct: the certificate genuinely is not trusted by anyone.
+Internal services, a local dev stack, a private registry. Here the error is correct: the certificate genuinely is not trusted by anyone, and nothing is misconfigured except your client's trust store.
 
-Add the CA to the trust store as above. For a private registry specifically, the Docker daemon reads a per-registry path:
+This is by far the most common way people meet this error in practice, because it is what `docker login` and `docker pull` against a private registry produce on day one.
+
+**The Docker daemon does not use the system trust store for registries.** It reads a per-registry directory, and the path must match the registry hostname *and port* exactly:
 
 ```bash
-/etc/docker/certs.d/registry.internal:5000/ca.crt
+# note: directory name = exactly what you type after docker login,
+# including the port. registry.internal and registry.internal:5000
+# are two different directories.
+sudo mkdir -p /etc/docker/certs.d/registry.internal:5000
+sudo cp ca.crt /etc/docker/certs.d/registry.internal:5000/ca.crt
+sudo systemctl restart docker
 ```
+
+Three details that account for most of the "I did that and it still fails" follow-ups:
+
+- **The file must be named `ca.crt`.** Not `ca.pem`, not `registry.crt`. The daemon looks for that name (plus `*.cert` / `*.key` for client auth).
+- **The port is part of the directory name.** A registry on `:5000` needs `registry.internal:5000`, and a registry on 443 needs the bare hostname.
+- **Restart the daemon.** It reads that directory at startup, so the file appearing is not enough.
+
+For Kubernetes pulling the same registry, this path does not apply — the kubelet uses the *node's* system trust store, so install the CA there with `update-ca-certificates` and restart the kubelet. This is why an image can pull fine on your laptop and fail with `ImagePullBackOff` on the cluster.
 
 ## The fix that is not a fix
 
