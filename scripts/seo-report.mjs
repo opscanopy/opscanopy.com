@@ -4,6 +4,17 @@
 // data every content decision is a guess; with it, the highest-ROI work is
 // simply "the queries where we already rank 11-20".
 //
+// Three Google endpoints, one service account:
+//   searchAnalytics/query          which queries and pages drew impressions
+//   urlInspection/index:inspect    whether a URL is INDEXED at all (sampled)
+//   analyticsData runReport        GA4 sessions by source (optional)
+//
+// The urlInspection call matters more than its size suggests. searchAnalytics only
+// reports URLs that were shown for some query, so "not indexed" and "indexed but
+// nobody searched" are indistinguishable in it — which is exactly the ambiguity that
+// made 494 zero-impression URLs impossible to act on. urlInspection reports
+// coverageState directly. It needs **Full** (not Restricted) property access.
+//
 // Auth: one Google Cloud service account, used for both APIs.
 //   GCP_SA_KEY         the service-account JSON, verbatim (whole file)
 //   GSC_SITE_URL       e.g. "sc-domain:opscanopy.com" or "https://opscanopy.com/"
@@ -127,6 +138,86 @@ const [queries, pages, totalsNow, totalsPrev] = await Promise.all([
   gsc({ startDate: prevStart, endDate: prevEnd, rowLimit: 1 }),
 ]);
 
+// ── Indexation (URL Inspection API) ───────────────────────────────────────────
+// searchAnalytics only reports URLs that were SHOWN for a query. A page Google has
+// crawled but declined to index is indistinguishable there from a page nobody
+// searched for — both are simply absent. That ambiguity made every "why isn't this
+// ranking" conclusion an inference, including for tool pages that have no competing
+// web tool at all. coverageState answers it outright: "Submitted and indexed" vs
+// "Crawled - currently not indexed".
+//
+// Quota is 2000/day and 600/min per property, so this SAMPLES deliberately rather
+// than sweeping all ~500 URLs. The four groups are chosen to behave differently if
+// the cause is site authority rather than individual page quality.
+const ORIGIN = SITE_URL.startsWith('sc-domain:')
+  ? `https://${SITE_URL.slice('sc-domain:'.length)}`
+  : SITE_URL.replace(/\/$/, '');
+
+const INSPECT_SAMPLE = [
+  ['entry', '/'],
+  ['entry', '/tools/'],
+  // No competing browser tool exists for these. Indexed-but-invisible here means
+  // the queries have no volume; not-indexed means authority.
+  ['differentiated', '/github-actions-expression-tester/'],
+  ['differentiated', '/prometheus-relabel-tester/'],
+  ['differentiated', '/alertmanager-route-tester/'],
+  ['differentiated', '/loki-alert-rule-tester/'],
+  ['differentiated', '/grafana-dashboard-validator/'],
+  // Head terms owned by long-established incumbents.
+  ['commodity', '/subnet-calculator/'],
+  ['commodity', '/jwt-decoder/'],
+  ['commodity', '/base64-encoder-decoder/'],
+  ['commodity', '/timestamp-converter/'],
+  ['commodity', '/hash-generator/'],
+  // The one surface already proven to reach page one.
+  ['blog', '/blog/github-actions-if-condition-always-true/'],
+  ['blog', '/blog/x509-certificate-signed-by-unknown-authority/'],
+  ['blog', '/blog/kubernetes-oomkilled-exit-code-137/'],
+  ['blog', '/blog/docker-build-failed-to-solve-exit-code-1/'],
+  ['blog', '/blog/debug-prometheus-relabeling/'],
+  // 264 translated URLs have never drawn an impression; whether they are indexed
+  // decides whether they cost anything.
+  ['localized', '/de/subnet-calculator/'],
+  ['localized', '/es/subnet-calculator/'],
+  ['localized', '/fr/subnet-calculator/'],
+  ['localized', '/pt-br/subnet-calculator/'],
+];
+
+async function inspectUrl(path) {
+  const res = await fetch('https://searchconsole.googleapis.com/v1/urlInspection/index:inspect', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ inspectionUrl: ORIGIN + path, siteUrl: SITE_URL, languageCode: 'en-US' }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 160)}`);
+  const r = (await res.json()).inspectionResult?.indexStatusResult ?? {};
+  return {
+    verdict: r.verdict ?? '?',
+    coverageState: r.coverageState ?? '?',
+    robotsTxtState: r.robotsTxtState ?? '?',
+    lastCrawlTime: r.lastCrawlTime ? r.lastCrawlTime.slice(0, 10) : 'never',
+    googleCanonical: r.googleCanonical ?? '',
+    userCanonical: r.userCanonical ?? '',
+  };
+}
+
+const indexation = [];
+let indexationError = null;
+for (const [group, path] of INSPECT_SAMPLE) {
+  try {
+    indexation.push({ group, path, ...(await inspectUrl(path)) });
+  } catch (err) {
+    // A 401/403 on the very first call means the service account lacks URL
+    // Inspection access — stop rather than burn quota on 21 more failures.
+    if (/HTTP 40[13]/.test(err.message) && indexation.length === 0) {
+      indexationError = err.message;
+      break;
+    }
+    indexation.push({ group, path, verdict: 'ERROR', coverageState: err.message });
+  }
+  await new Promise((r) => setTimeout(r, 250));
+}
+
 // ── GA4 (optional) ────────────────────────────────────────────────────────────
 let ga4 = null;
 if (GA4_PROPERTY) {
@@ -215,6 +306,47 @@ const queryCols = [
   ['Pos.', (r) => n(r.position)],
 ];
 
+const NL = String.fromCharCode(10);
+
+const indexationSection = indexationError
+  ? `_URL Inspection unavailable: ${indexationError}_` +
+    NL + NL +
+    '_The service account needs **Full** (not Restricted) access on the Search Console property._'
+  : indexation.length === 0
+    ? '_No URLs inspected._'
+    : [
+        table(indexation, [
+          ['Group', (r) => r.group],
+          ['URL', (r) => r.path],
+          ['Coverage', (r) => r.coverageState],
+          ['Last crawl', (r) => r.lastCrawlTime],
+          ['robots.txt', (r) => r.robotsTxtState],
+        ]),
+        '',
+        // The per-state counts are the number that matters week to week.
+        Object.entries(
+          indexation.reduce((acc, r) => {
+            acc[r.coverageState] = (acc[r.coverageState] ?? 0) + 1;
+            return acc;
+          }, {}),
+        )
+          .sort((x, y) => y[1] - x[1])
+          .map(([state, count]) => `- **${count}** ${state}`)
+          .join(NL),
+        '',
+        // Canonical disagreement is silent unless surfaced.
+        (() => {
+          const bad = indexation.filter(
+            (r) => r.googleCanonical && r.userCanonical && r.googleCanonical !== r.userCanonical,
+          );
+          return bad.length
+            ? `**Google chose a different canonical on ${bad.length} URL(s):**` +
+                NL +
+                bad.map((r) => `- ${r.path} → Google picked \`${r.googleCanonical}\``).join(NL)
+            : '_Google agrees with every declared canonical in the sample._';
+        })(),
+      ].join(NL);
+
 const md = `# SEO report — ${endDate}
 
 Window: **${startDate} → ${endDate}** (${WINDOW_DAYS} days, ending ${LAG_DAYS} days back
@@ -228,6 +360,18 @@ because Search Console data lags). Compared against the ${WINDOW_DAYS} days befo
 | Impressions | ${now.impressions} | ${prev.impressions} | ${delta(now.impressions, prev.impressions)} |
 | CTR | ${pct(now.ctr)} | ${pct(prev.ctr)} | — |
 | Avg position | ${n(now.position)} | ${n(prev.position)} | — |
+
+## Indexation — is Google actually indexing these pages?
+
+Read this before the query sections. \`searchAnalytics\` only reports URLs that were
+SHOWN for a query, so a page Google crawled and declined to index looks identical
+there to a page nobody searched for. This separates the two.
+
+If the differentiated tools come back indexed and still draw no impressions, the
+constraint is query volume. If they come back "Crawled - currently not indexed",
+the constraint is authority and on-page work will not move them.
+
+${indexationSection}
 
 ## Striking distance — position 11-20 (${striking.length})
 
