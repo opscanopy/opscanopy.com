@@ -1099,4 +1099,6 @@ aws s3control put-public-access-block \
 
 ---
 
+Going for the certification? The scenario questions in the [AWS DevOps Engineer – Professional (DOP-C02) practice tests](/tests/aws-devops-professional/) cover this material the way the exam actually asks it — with every answer explained.
+
 Running containers on AWS? Continue with [Kubernetes for DevOps](/learn/guides/kubernetes-for-devops/).
