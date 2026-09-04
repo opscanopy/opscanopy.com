@@ -155,22 +155,38 @@ export function getAllTags(lang: Locale, allPosts: LocalizedPost[]): string[] {
 }
 
 /**
- * Posts most related to `current`, in the SAME language, ranked by shared-tag
- * count (descending) then recency (newest first). The current post and any
- * other-locale posts are excluded. Returns at most `max` posts.
+ * Posts genuinely related to `current`, in the SAME language, ranked by
+ * shared-tag count (descending) then recency (newest first). The current post
+ * and any other-locale posts are excluded. Returns at most `max` posts, and
+ * FEWER — including none — when nothing shares a tag.
+ *
+ * Two bugs used to make this block misleading rather than merely imperfect:
+ *
+ *  - There was no minimum-overlap threshold, so once the shared-tag counts were
+ *    all zero the recency tiebreaker still filled all three slots. Every post
+ *    therefore showed three "Related posts" regardless of relatedness, which is
+ *    how docker-run-vs-compose came to recommend reading-promql.
+ *  - Tags were compared case-sensitively here while `getAllTags` lowercases
+ *    them, so a `Cron` / `cron` discrepancy scored zero overlap here yet merged
+ *    into one tag page. Both now normalise the same way.
  */
 export function getRelatedPosts(
   current: LocalizedPost,
   allPosts: LocalizedPost[],
   max = 3,
 ): LocalizedPost[] {
-  const currentTags = new Set(current.entry.data.tags ?? []);
+  const currentTags = new Set((current.entry.data.tags ?? []).map((t) => t.toLowerCase()));
+  if (currentTags.size === 0) return [];
+
   return allPosts
     .filter((p) => p.lang === current.lang && p.slug !== current.slug)
     .map((p) => {
-      const shared = (p.entry.data.tags ?? []).filter((tag) => currentTags.has(tag)).length;
+      const shared = (p.entry.data.tags ?? []).filter((tag) =>
+        currentTags.has(tag.toLowerCase()),
+      ).length;
       return { post: p, shared };
     })
+    .filter((ranked) => ranked.shared > 0)
     .sort(
       (a, b) =>
         b.shared - a.shared ||

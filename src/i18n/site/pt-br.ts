@@ -11,7 +11,6 @@ const ptBr: Partial<SiteContent> = {
     { href: '/learn', label: 'Learn' },
     { href: '/mission-90/', label: '90 Days DevOps' },
           { href: '/tests', label: 'Testes práticos' },
-    { href: '/tests', label: 'Practice Tests' },
     { href: '/blog', label: 'Blog' },
     { href: '/search', label: 'Buscar' },
   ],
