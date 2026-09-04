@@ -1,6 +1,6 @@
 ---
 title: "Reading cron expressions: a field-by-field guide"
-description: "A practical, field-by-field guide to reading cron expressions — the five time fields, ranges, steps, lists and @macros — plus the gotchas that make schedules fire when you least expect."
+description: "A field-by-field guide to reading cron expressions — the five time fields, ranges, steps, lists and @macros — plus the gotchas that misfire schedules."
 pubDate: 2026-05-13
 tags: ["cron", "scheduling", "devops"]
 relatedTool:

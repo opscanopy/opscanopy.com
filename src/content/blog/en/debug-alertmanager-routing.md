@@ -1,6 +1,6 @@
 ---
-title: "Why Isnt My Alert Reaching the Right Receiver? Debugging Alertmanager Routing"
-description: "Alerts going to the wrong receiver, or no receiver at all? Debug Alertmanager routing — first-match-wins, missing continue, matcher regex and catch-all defaults."
+title: "Why isn't my alert reaching the right receiver?"
+description: "Alerts going to the wrong receiver, or none at all? Debug Alertmanager routing — first-match-wins, missing continue, matcher regex and catch-all defaults."
 pubDate: 2026-06-18
 tags: ["alertmanager","observability","alerting"]
 relatedTool:

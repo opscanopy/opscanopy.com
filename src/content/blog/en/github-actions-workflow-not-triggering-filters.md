@@ -1,6 +1,6 @@
 ---
-title: "Why Your GitHub Actions Workflow Didn't Trigger: branches, tags & paths Filters Explained"
-description: "Why your GitHub Actions workflow didn't trigger: branch name mismatch, the AND-semantics of branches + paths filters, the ** glob requirement, paths-ignore on pull_request, and the fixes."
+title: "Why your GitHub Actions workflow didn't trigger"
+description: "Branch name mismatches, the AND-semantics of branches + paths, the ** glob requirement and paths-ignore on pull_request — with the fix for each."
 pubDate: 2026-06-14
 tags: ["github-actions", "ci-cd", "debugging"]
 relatedTool:

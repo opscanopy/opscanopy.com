@@ -1,6 +1,6 @@
 ---
 title: "Stop shipping a stale .env.example"
-description: "Your .env.example is documentation that silently rots. Here is why env drift breaks onboarding and deploys, how to detect missing and unused keys, and how to keep the example file honest."
+description: "Your .env.example is documentation that silently rots. Why env drift breaks onboarding and deploys, how to detect missing and unused keys, and how to fix it."
 pubDate: 2026-06-02
 tags: ["configuration", "developer-experience", "twelve-factor"]
 relatedTool:

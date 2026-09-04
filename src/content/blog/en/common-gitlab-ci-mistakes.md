@@ -1,6 +1,6 @@
 ---
 title: "7 Common .gitlab-ci.yml Mistakes (and How to Catch Them)"
-description: "The .gitlab-ci.yml mistakes that turn pipelines red: undefined stages, jobs without scripts, broken needs and rules, anchor misuse — each with a fix you can copy."
+description: "The .gitlab-ci.yml mistakes that turn pipelines red: undefined stages, jobs without scripts, broken needs and rules, anchor misuse — each with a fix."
 pubDate: 2026-06-12
 tags: ["gitlab-ci","ci-cd","yaml"]
 relatedTool:

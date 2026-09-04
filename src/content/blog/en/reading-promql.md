@@ -1,6 +1,6 @@
 ---
 title: "How to read a PromQL query"
-description: "A PromQL query is read from the inside out, not left to right. Learn the four layers — selectors, ranges, functions and aggregations — so you can decode any Prometheus expression at a glance."
+description: "A PromQL query reads inside out, not left to right. The four layers — selectors, ranges, functions and aggregations — so you can decode any expression fast."
 pubDate: 2026-06-08
 tags: ["promql", "prometheus", "observability"]
 relatedTool:

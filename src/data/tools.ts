@@ -14,6 +14,18 @@ export interface Tool {
   slug: string;
   /** Brand name, e.g. "AlertLint". */
   name: string;
+  /**
+   * Descriptive name for the page H1, when the brand `name` is not what people
+   * search for. ToolHero prefixes every tool H1 with this (falling back to
+   * `name`) so the head keyword appears in the heading, not only in the title.
+   *
+   * Only needed where the two genuinely differ: "AlertLint" is a brand nobody
+   * queries, while "Loki Alert Rule Tester" is the actual search term — and
+   * prefixing the brand there would have made the site's single best-positioned
+   * keyword opportunity worse. Every other tool's `name` already contains its
+   * head keyword, so this stays unset.
+   */
+  h1Name?: string;
   /** One-line descriptive tagline (nominative fair use of vendor marks). */
   tagline: string;
   /** Short marketing description for cards. */
@@ -51,6 +63,7 @@ export const tools: Tool[] = [
   {
     slug: 'loki-alert-rule-tester',
     name: 'AlertLint',
+    h1Name: 'Loki Alert Rule Tester',
     tagline: 'Unit testing for Grafana Loki alert rules.',
     description:
       'Test your Loki alerting and recording rules before they fire in production. Paste rules + synthetic logs, assert pass/fail — entirely in the browser. The promtool equivalent Loki never had.',

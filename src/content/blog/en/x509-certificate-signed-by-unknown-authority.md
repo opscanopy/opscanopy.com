@@ -1,6 +1,6 @@
 ---
-title: "x509: certificate signed by unknown authority — why it works in your browser but not in Go, curl or Docker"
-description: "The full error, what it actually means, and the four causes ranked by how often they bite. Includes the one-line openssl check that tells you whether an intermediate is missing."
+title: "x509: certificate signed by unknown authority — the fix"
+description: "What the error actually means, the four causes ranked by how often they bite, and the one-line openssl check that shows whether an intermediate is missing."
 pubDate: 2026-08-29
 tags: ["tls","certificates","docker","go","security"]
 relatedTool:

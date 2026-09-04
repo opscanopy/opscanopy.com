@@ -1,6 +1,6 @@
 ---
-title: "Learn DevOps in 90 Days: the free, incident-first path from developer to DevOps engineer"
-description: "Why we built Mission: 90 Days DevOps — a free day-by-day path from Linux to Kubernetes with playable incident missions. The full plan, the design decisions, and the honest tradeoffs."
+title: "Learn DevOps in 90 days: the incident-first path"
+description: "A free day-by-day path from Linux to Kubernetes with playable incident missions. The full plan, the design decisions, and the honest tradeoffs."
 pubDate: 2026-07-12
 tags: ["devops", "career", "learning"]
 relatedTool:

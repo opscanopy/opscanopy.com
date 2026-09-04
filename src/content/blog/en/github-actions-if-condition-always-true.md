@@ -1,6 +1,6 @@
 ---
-title: "Why Your GitHub Actions \"if\" Condition Always Runs (and How to Fix It)"
-description: "Your GitHub Actions if condition always runs true? It's the literal-text footgun: any text outside ${{ }} coerces to a truthy string. Here's the cause and the fix."
+title: "Why your GitHub Actions \"if\" condition always runs"
+description: "GitHub Actions if condition always running true? It is the literal-text footgun: any text outside ${{ }} coerces to a truthy string. The cause and the fix."
 pubDate: 2026-06-14
 tags: ["github-actions", "ci-cd"]
 relatedTool:

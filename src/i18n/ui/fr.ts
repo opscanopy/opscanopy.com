@@ -192,9 +192,12 @@ const fr: Partial<UiDict> = {
     "Le premier outil est en cours de finition avant sa mise en ligne : revenez bientôt pour découvrir ce qui arrive.",
 
   // Site search (/search)
-  'search.title': 'Recherche — OpsCanopy',
+  'search.title': 'Recherche',
   'search.metaDescription': 'Recherchez parmi tous les outils, guides et articles de blog OpsCanopy.',
   'search.ariaLabel': 'Recherche sur le site',
+  /** Appended to the header search control's tooltip so the command-palette
+   *  shortcut is discoverable — it was previously rendered nowhere in the header. */
+  'search.shortcutHint': 'Ctrl+K ou ⌘K',
   'search.eyebrow': 'Recherche',
   'search.heading': 'Rechercher sur OpsCanopy',
   'search.lead':

@@ -1,6 +1,6 @@
 ---
-title: "OOMKilled and exit code 137: why Kubernetes killed your pod, and what to actually change"
-description: "Exit code 137 means the kernel killed your container for exceeding its memory limit. How to confirm it, why raising the limit is often the wrong fix, and the requests-vs-limits mistake behind most of it."
+title: "OOMKilled and exit code 137: why Kubernetes killed your pod"
+description: "Exit code 137 means the kernel killed your container for exceeding its memory limit. How to confirm it, and why raising the limit is usually the wrong fix."
 pubDate: 2026-08-29
 tags: ["kubernetes","memory","limits","debugging"]
 relatedTool:

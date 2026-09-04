@@ -203,9 +203,12 @@ const en = {
   'tools.zeroLiveBody': 'The first tool is being polished to ship — check back soon to see what is coming.',
 
   // Site search (/search)
-  'search.title': 'Search — OpsCanopy',
+  'search.title': 'Search',
   'search.metaDescription': 'Search every OpsCanopy tool, guide, and blog post.',
   'search.ariaLabel': 'Site search',
+  /** Appended to the header search control's tooltip so the command-palette
+   *  shortcut is discoverable — it was previously rendered nowhere in the header. */
+  'search.shortcutHint': 'Ctrl+K or ⌘K',
   'search.eyebrow': 'Search',
   'search.heading': 'Search OpsCanopy',
   'search.lead':
