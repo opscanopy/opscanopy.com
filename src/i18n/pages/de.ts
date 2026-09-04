@@ -23,7 +23,7 @@ const de: Partial<PagesContent> = {
   privacy: {
     metaTitle: 'Datenschutzerklärung',
     description:
-      'Wie OpsCanopy mit Ihren Daten umgeht: Jedes Tool läuft vollständig in Ihrem Browser. Nichts, was Sie einfügen, wird hochgeladen, protokolliert oder weitergegeben. Keine Konten, kein Tracking.',
+      'Wie OpsCanopy mit Ihren Daten umgeht: Jedes Tool läuft in Ihrem Browser. Nichts, was Sie einfügen, wird hochgeladen, protokolliert oder weitergegeben.',
     eyebrow: 'Datenschutz',
     heading: 'Ihre Daten verlassen niemals Ihr Gerät.',
     lead: 'OpsCanopy ist nach dem Prinzip „Privacy First“ aufgebaut. Jedes Tool läuft vollständig in Ihrem Browser — es gibt keinen Server, der Ihre Eingaben empfängt, kein Konto, das Sie erstellen müssen, und nichts, was hochgeladen wird. Diese Erklärung erläutert genau, was das bedeutet.',
@@ -106,7 +106,7 @@ const de: Partial<PagesContent> = {
   about: {
     metaTitle: 'Über OpsCanopy',
     description:
-      'OpsCanopy ist ein wachsendes Dach kostenloser, privater, browserbasierter Tools für Plattform- und DevOps-Engineers — Validatoren, Konverter, Tester und Linter, die niemals einen Server berühren.',
+      'OpsCanopy ist ein wachsendes Dach kostenloser, privater, browserbasierter Tools für Plattform- und DevOps-Engineers — Validatoren, Konverter, Tester, Linter.',
     eyebrow: 'Über uns',
     heading: 'Kostenlose DevOps-Tools, die vollständig in Ihrem Browser laufen.',
     lead: 'OpsCanopy ist eine wachsende Sammlung fokussierter Werkzeuge für Plattform- und DevOps-Engineers. Jedes löst ein kleines, reales Problem — und jedes läuft zu 100 % clientseitig, sodass die Dinge, die Sie einfügen, niemals Ihr Gerät verlassen.',
@@ -222,7 +222,7 @@ const de: Partial<PagesContent> = {
   terms: {
     metaTitle: 'Allgemeine Geschäftsbedingungen',
     description:
-      'Die verständlichen Nutzungsbedingungen für OpsCanopy — kostenlose, browserbasierte DevOps-Tools, bereitgestellt „wie besehen“, ohne Gewährleistung und ohne Haftung dafür, wie Sie die Ausgaben verwenden.',
+      'Verständliche Nutzungsbedingungen für OpsCanopy — kostenlose, browserbasierte DevOps-Tools, bereitgestellt „wie besehen“, ohne Gewährleistung und Haftung.',
     eyebrow: 'Bedingungen',
     heading: 'Allgemeine Geschäftsbedingungen.',
     lead: 'Diese Bedingungen regeln Ihre Nutzung von OpsCanopy und seinen Tools. Sie sind in verständlicher Sprache verfasst und bewusst kurz gehalten. Durch die Nutzung der Website stimmen Sie ihnen zu.',
@@ -277,7 +277,7 @@ const de: Partial<PagesContent> = {
   contact: {
     metaTitle: 'Kontakt',
     description:
-      'Nehmen Sie Kontakt mit OpsCanopy auf. Melden Sie einen Fehler, schlagen Sie ein Tool vor oder stellen Sie eine Frage über unsere öffentliche GitHub-Organisation.',
+      'Nehmen Sie Kontakt mit OpsCanopy auf. Melden Sie einen Fehler, schlagen Sie ein Tool vor oder stellen Sie eine Frage über unsere GitHub-Organisation.',
     eyebrow: 'Kontakt',
     heading: 'Kontakt aufnehmen.',
     lead: 'OpsCanopy wird offen entwickelt und gepflegt. Der schnellste Weg, einen Fehler zu melden, eine Funktion vorzuschlagen oder eine Frage zu stellen, führt über unsere öffentliche GitHub-Organisation.',

@@ -61,7 +61,7 @@ export const tests: PracticeTest[] = [
     categorySlug: 'aws-devops-professional',
     name: 'Practice Set 1',
     description:
-      "Five scenario questions derived from AWS's official DOP-C02 sample exam (© Amazon Web Services). The 75% pass mark is OpsCanopy's practice mark, not AWS's official passing score.",
+      "Five scenario questions derived from AWS's official DOP-C02 sample exam (© Amazon Web Services). The 75% pass mark is OpsCanopy's, not AWS's official score.",
     passThreshold: 75,
     minutes: 20,
     status: 'live',
@@ -71,7 +71,7 @@ export const tests: PracticeTest[] = [
     categorySlug: 'aws-devops-professional',
     name: 'Practice Set 2',
     description:
-      "Twenty-five scenario questions written for OpsCanopy in the style of the DOP-C02 exam, spanning CI/CD automation, infrastructure as code, resilience, monitoring, incident response, and security. The 75% pass mark is OpsCanopy's practice mark, not AWS's official passing score.",
+      "Twenty-five scenario questions written for OpsCanopy in the style of the DOP-C02 exam — CI/CD, infrastructure as code, resilience, monitoring, and security.",
     passThreshold: 75,
     minutes: 60,
     status: 'live',

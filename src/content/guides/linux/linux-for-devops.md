@@ -9,7 +9,7 @@ updatedDate: "2026-06-27"
 tags: ["linux", "bash", "systemd", "ssh", "devops", "cli"]
 relatedTools: ["regex-log-tester", "cron-expression-tester", "base64-encoder-decoder", "hash-generator", "reverse-dns-ptr"]
 seoTitle: "Linux for DevOps Engineers — Complete Guide"
-metaDescription: "Master Linux for DevOps: filesystem hierarchy, permissions, process management, systemd services, SSH hardening, package managers, networking, and production bash scripting."
+metaDescription: "Master Linux for DevOps: filesystem hierarchy, permissions, process management, systemd services, SSH hardening, networking, and production bash scripting."
 faqs:
   - q: "Do you need to learn Linux for DevOps?"
     a: "Yes — the overwhelming majority of servers, containers, and CI runners are Linux. Comfort with the shell, the filesystem, permissions, processes, and systemd is foundational for any DevOps role."

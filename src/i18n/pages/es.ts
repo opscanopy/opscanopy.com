@@ -23,7 +23,7 @@ const es: Partial<PagesContent> = {
   privacy: {
     metaTitle: 'Política de privacidad',
     description:
-      'Cómo gestiona OpsCanopy tus datos: cada herramienta se ejecuta por completo en tu navegador. Nada de lo que pegas se sube, se registra ni se comparte. Sin cuentas, sin rastreo.',
+      'Cómo gestiona OpsCanopy tus datos: cada herramienta se ejecuta por completo en tu navegador. Nada de lo que pegas se sube, se registra ni se comparte.',
     eyebrow: 'Privacidad',
     heading: 'Tus datos nunca salen de tu dispositivo.',
     lead: 'OpsCanopy está diseñado con la privacidad por delante. Cada herramienta se ejecuta por completo en tu navegador: no hay servidor que reciba tu entrada, no hay cuenta que crear y no hay nada que subir. Esta política explica exactamente qué significa eso.',
@@ -106,7 +106,7 @@ const es: Partial<PagesContent> = {
   about: {
     metaTitle: 'Acerca de OpsCanopy',
     description:
-      'OpsCanopy es un dosel creciente de herramientas gratuitas, privadas y basadas en el navegador para ingenieros de plataforma y DevOps: validadores, conversores, testers y linters que nunca tocan un servidor.',
+      'OpsCanopy es un dosel creciente de herramientas gratuitas y privadas en el navegador para ingenieros de plataforma y DevOps: validadores, testers y linters.',
     eyebrow: 'Acerca de',
     heading: 'Herramientas DevOps gratuitas que se ejecutan por completo en tu navegador.',
     lead: 'OpsCanopy es una colección creciente de utilidades específicas para ingenieros de plataforma y DevOps. Cada una resuelve un problema pequeño y real, y cada una se ejecuta 100 % del lado del cliente, así que lo que pegas nunca sale de tu dispositivo.',
@@ -167,7 +167,7 @@ const es: Partial<PagesContent> = {
   security: {
     metaTitle: 'Seguridad',
     description:
-      'Cómo OpsCanopy está construido para que lo que pegas se quede en tu máquina: sin backend, una CSP basada en hashes y una vía publicada para reportar vulnerabilidades.',
+      'Cómo OpsCanopy hace que lo que pegas se quede en tu máquina: sin backend, una CSP basada en hashes y una vía publicada para reportar vulnerabilidades.',
     eyebrow: 'Seguridad',
     heading: 'Qué protege lo que pegas.',
     lead: 'Todas las herramientas de aquí se ejecutan en tu propio navegador. Esta página explica qué te aporta eso realmente, qué no, y cómo comprobarlo tú mismo en lugar de creernos.',
@@ -222,7 +222,7 @@ const es: Partial<PagesContent> = {
   terms: {
     metaTitle: 'Términos y condiciones',
     description:
-      'Los términos en lenguaje claro para usar OpsCanopy: herramientas DevOps gratuitas y basadas en el navegador, ofrecidas tal cual, sin garantía y sin responsabilidad por cómo uses la salida.',
+      'Los términos en lenguaje claro para usar OpsCanopy: herramientas DevOps gratuitas en tu navegador, ofrecidas tal cual, sin garantía ni responsabilidad.',
     eyebrow: 'Términos',
     heading: 'Términos y condiciones.',
     lead: 'Estos términos rigen tu uso de OpsCanopy y sus herramientas. Están escritos en lenguaje claro y son intencionadamente breves. Al usar el sitio, los aceptas.',

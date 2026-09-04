@@ -28,7 +28,7 @@ export const testCategoryCopy: Record<string, TestCategoryCopy> = {
   'aws-devops-professional': {
     examCode: 'DOP-C02',
     metaDescription:
-      'Free scenario-based practice questions for the AWS Certified DevOps Engineer – Professional (DOP-C02) exam, with a full explanation of every answer. Original questions, no signup, nothing to install.',
+    'Free scenario-based practice questions for the AWS Certified DevOps Engineer – Professional (DOP-C02) exam, with a full explanation of every answer.',
     intro: [
       'DOP-C02 is not a recall exam. Almost nothing on it can be answered by knowing what a service does — the questions describe a running system with a constraint, list four or five approaches that would all technically work, and ask which one meets the requirement. The difficulty is in the qualifier: "without downtime", "at the lowest cost", "within the existing account structure", "and no notification for other pipelines".',
       'That is why practice matters more here than on associate-level exams, and why a question bank of stems without explanations is close to useless. Getting an item wrong tells you nothing; knowing why the option you picked fails the qualifier is the whole lesson. Every question in these sets carries a full teardown — not just why the right answer is right, but what each distractor would actually do if you deployed it.',

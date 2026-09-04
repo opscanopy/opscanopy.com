@@ -23,7 +23,7 @@ const ptBr: Partial<PagesContent> = {
   privacy: {
     metaTitle: 'Política de Privacidade',
     description:
-      'Como o OpsCanopy lida com seus dados: cada ferramenta roda inteiramente no seu navegador. Nada do que você cola é enviado, registrado ou compartilhado. Sem contas, sem rastreamento.',
+      'Como o OpsCanopy lida com seus dados: cada ferramenta roda inteiramente no seu navegador. Nada do que você cola é enviado, registrado ou compartilhado.',
     eyebrow: 'Privacidade',
     heading: 'Seus dados nunca saem do seu dispositivo.',
     lead: 'O OpsCanopy foi construído com a privacidade em primeiro lugar. Cada ferramenta roda inteiramente no seu navegador — não há servidor para receber sua entrada, nenhuma conta a criar e nada a enviar. Esta política explica exatamente o que isso significa.',
@@ -106,7 +106,7 @@ const ptBr: Partial<PagesContent> = {
   about: {
     metaTitle: 'Sobre o OpsCanopy',
     description:
-      'O OpsCanopy é uma copa crescente de ferramentas gratuitas, privadas e baseadas no navegador para engenheiros de plataforma e DevOps — validadores, conversores, testadores e linters que nunca tocam em um servidor.',
+      'O OpsCanopy é uma copa crescente de ferramentas gratuitas, privadas e baseadas no navegador para engenheiros de plataforma e DevOps — validadores e linters.',
     eyebrow: 'Sobre',
     heading: 'Ferramentas de DevOps gratuitas que rodam inteiramente no seu navegador.',
     lead: 'O OpsCanopy é uma coleção crescente de utilitários focados para engenheiros de plataforma e DevOps. Cada um resolve um problema pequeno e real — e cada um roda 100% do lado do cliente, então as coisas que você cola nunca saem do seu dispositivo.',
@@ -167,7 +167,7 @@ const ptBr: Partial<PagesContent> = {
   security: {
     metaTitle: 'Segurança',
     description:
-      'Como o OpsCanopy é construído para que o que você cola fique na sua máquina: sem backend, uma CSP baseada em hashes e um canal publicado para relatar vulnerabilidades.',
+      'Como o OpsCanopy é construído para que o que você cola fique na sua máquina: sem backend, uma CSP baseada em hashes e um canal para relatar vulnerabilidades.',
     eyebrow: 'Segurança',
     heading: 'O que protege o que você cola.',
     lead: 'Todas as ferramentas aqui rodam no seu próprio navegador. Esta página explica o que isso realmente te dá, o que não dá, e como verificar tudo por conta própria em vez de acreditar na nossa palavra.',
@@ -222,7 +222,7 @@ const ptBr: Partial<PagesContent> = {
   terms: {
     metaTitle: 'Termos e Condições',
     description:
-      'Os termos em linguagem simples para usar o OpsCanopy — ferramentas de DevOps gratuitas e baseadas no navegador, fornecidas no estado em que se encontram, sem garantia e sem responsabilidade por como você usa a saída.',
+      'Os termos em linguagem simples para usar o OpsCanopy — ferramentas de DevOps gratuitas, fornecidas no estado em que se encontram, sem garantia.',
     eyebrow: 'Termos',
     heading: 'Termos e Condições.',
     lead: 'Estes termos regem o seu uso do OpsCanopy e de suas ferramentas. Eles são escritos em linguagem simples e são intencionalmente curtos. Ao usar o site, você concorda com eles.',

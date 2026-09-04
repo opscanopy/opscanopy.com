@@ -33,7 +33,7 @@ const fr: Partial<PagesContent> = {
   privacy: {
     metaTitle: 'Politique de confidentialité',
     description:
-      'Comment OpsCanopy traite vos données : chaque outil s’exécute entièrement dans votre navigateur. Rien de ce que vous collez n’est téléversé, journalisé ou partagé. Aucun compte, aucun suivi.',
+      'Comment OpsCanopy traite vos données : chaque outil s’exécute dans votre navigateur. Rien de ce que vous collez n’est téléversé, journalisé ou partagé.',
     eyebrow: 'Confidentialité',
     heading: 'Vos données ne quittent jamais votre appareil.',
     lead: 'OpsCanopy est conçu pour la confidentialité avant tout. Chaque outil s’exécute entièrement dans votre navigateur — il n’y a aucun serveur pour recevoir vos données, aucun compte à créer et rien à téléverser. Cette politique explique précisément ce que cela signifie.',
@@ -116,7 +116,7 @@ const fr: Partial<PagesContent> = {
   about: {
     metaTitle: 'À propos d’OpsCanopy',
     description:
-      'OpsCanopy est une canopée grandissante d’outils gratuits, privés et basés sur le navigateur, destinés aux ingénieurs plateforme et DevOps — validateurs, convertisseurs, testeurs et linters qui ne touchent jamais un serveur.',
+      'OpsCanopy est une canopée grandissante d’outils gratuits, privés et basés sur le navigateur pour les ingénieurs plateforme et DevOps, sans aucun serveur.',
     eyebrow: 'À propos',
     heading: 'Des outils DevOps gratuits qui s’exécutent entièrement dans votre navigateur.',
     lead: 'OpsCanopy est une collection grandissante d’utilitaires ciblés pour les ingénieurs plateforme et DevOps. Chacun résout un petit problème concret — et chacun s’exécute à 100 % côté client, de sorte que ce que vous collez ne quitte jamais votre appareil.',
@@ -177,7 +177,7 @@ const fr: Partial<PagesContent> = {
   security: {
     metaTitle: 'Sécurité',
     description:
-      'Comment OpsCanopy est conçu pour que ce que vous collez reste sur votre machine : aucun backend, une CSP fondée sur des hachages et une voie publiée pour signaler une vulnérabilité.',
+      'OpsCanopy garde sur votre machine ce que vous collez : aucun backend, une CSP fondée sur des hachages et une voie publiée pour signaler une vulnérabilité.',
     eyebrow: 'Sécurité',
     heading: 'Ce qui protège ce que vous collez.',
     lead: 'Chaque outil ici s’exécute dans votre propre navigateur. Cette page explique ce que cela vous apporte réellement, ce que cela n’apporte pas, et comment le vérifier vous-même plutôt que de nous croire.',
@@ -232,7 +232,7 @@ const fr: Partial<PagesContent> = {
   terms: {
     metaTitle: 'Conditions générales',
     description:
-      'Les conditions en langage clair pour utiliser OpsCanopy — des outils DevOps gratuits, basés sur le navigateur, fournis en l’état, sans garantie ni responsabilité quant à l’usage que vous faites des résultats.',
+      'Les conditions en langage clair pour utiliser OpsCanopy — outils DevOps gratuits, basés sur le navigateur, fournis en l’état, sans garantie ni responsabilité.',
     eyebrow: 'Conditions',
     heading: 'Conditions générales.',
     lead: 'Ces conditions régissent votre utilisation d’OpsCanopy et de ses outils. Elles sont rédigées en langage clair et sont volontairement courtes. En utilisant le site, vous les acceptez.',

@@ -92,7 +92,7 @@ const en: PagesContent = {
   privacy: {
     metaTitle: 'Privacy Policy',
     description:
-      'How OpsCanopy handles your data: every tool runs entirely in your browser. Nothing you paste is uploaded, logged, or shared. No accounts, and nothing you paste leaves your device.',
+      'How OpsCanopy handles your data: every tool runs entirely in your browser. Nothing you paste is uploaded, logged, or shared, and there are no accounts.',
     eyebrow: 'Privacy',
     heading: 'Your data never leaves your device.',
     lead: 'OpsCanopy is built privacy-first. Every tool runs entirely in your browser — there is no server to receive your input, no account to create, and nothing to upload. This policy explains exactly what that means.',
@@ -175,7 +175,7 @@ const en: PagesContent = {
   about: {
     metaTitle: 'About OpsCanopy',
     description:
-      'OpsCanopy is a growing canopy of free, private, browser-based tools for platform and DevOps engineers — validators, converters, testers and linters that never touch a server.',
+      'OpsCanopy is a growing canopy of free, private, browser-based tools for platform and DevOps engineers — validators, converters, testers and linters.',
     eyebrow: 'About',
     heading: 'Free DevOps tools that run entirely in your browser.',
     lead: 'OpsCanopy is a growing collection of focused utilities for platform and DevOps engineers. Each one solves a small, real problem — and each one runs 100% client-side, so the things you paste never leave your device.',
