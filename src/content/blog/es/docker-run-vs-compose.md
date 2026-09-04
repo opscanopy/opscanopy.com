@@ -1,6 +1,6 @@
 ---
-title: "docker run vs Docker Compose: una guía práctica de migración"
-description: "Cuándo usar docker run, cuándo pasar a Docker Compose y cómo convertir entre ambos en las dos direcciones, gestionando bien los volúmenes, las redes y la reproducibilidad."
+title: "Cuándo usar Docker Compose en lugar de docker run"
+description: "Cuál elegir y qué cambia de verdad al dar el salto: la red predeterminada, la política de reinicio, el modo desacoplado y la vuelta a una línea run."
 pubDate: 2026-06-10
 tags: ["docker","docker-compose","containers"]
 lang: es
@@ -14,7 +14,9 @@ relatedTool:
 
 Hace tres semanas levantaste un contenedor de Postgres con un `docker run` de una sola línea. Funciona. Luego reinicias la máquina, o un compañero necesita la misma configuración, o quieres tener el comando bajo control de versiones, y te das cuenta de que la única copia de ese comando está en el historial de tu shell, en algún punto entre un `ls` y un `kubectl get pods`. Este es el momento en que la pregunta `docker run` vs `docker compose` deja de ser teórica. El contenedor está bien; lo que no es reproducible es la forma en que lo lanzaste.
 
-Esta guía recorre ambas direcciones: cuándo `docker run` es la opción correcta, cuándo conviene pasar a un `docker-compose.yml` y cómo convertir un servicio de Compose de vuelta a una sola línea de run cuando la necesitas. Cada correspondencia de flags que aparece aquí coincide con lo que realmente hace el [conversor Docker Run to Compose](/docker-run-to-compose/), así que puedes contrastar tus propios comandos con él.
+Esta guía va sobre la decisión, no sobre la mecánica: cuándo `docker run` sigue siendo la opción correcta, cuándo un `docker-compose.yml` se gana su sitio, qué cambia de verdad en el comportamiento en cuanto das el salto y cómo convertir un servicio de Compose de vuelta a una sola línea de run cuando la necesitas.
+
+**¿Buscabas la equivalencia flag por flag?** [Cómo convertir un comando docker run a docker-compose.yml](/es/blog/convert-docker-run-to-compose/) es la referencia completa: cada flag de `docker run` y la clave de `docker-compose.yml` en la que se convierte, con las trampas que aparecen al traducir a mano. Este artículo plantea la pregunta anterior: ¿deberías convertirlo siquiera, y qué cambia cuando lo haces?
 
 ## El mismo contenedor, de dos maneras
 
@@ -144,46 +146,11 @@ docker run -d --name cache -p 6379:6379 -m 256m \
 
 El bloque healthcheck se expande de vuelta en los flags discretos `--health-*`; `mem_limit` se convierte en `-m`; las labels se convierten en `-l`. El conversor antepone `docker run -d` por ti precisamente porque el servicio estaba pensado para ejecutarse en segundo plano. Lo único que hay que vigilar: las claves exclusivas de Compose como `depends_on`, `build` y `deploy` no tienen equivalente en el comando, así que un conversor fiel las reporta como advertencias en lugar de inventar flags que no existen. Si tu servicio tiene `build:`, primero ejecutas `docker build` y le pasas el tag resultante a `docker run`.
 
-## Migrar un comando real paso a paso
+## Dónde está la equivalencia flag por flag
 
-Tomemos una línea `docker run` no trivial y recorramos la migración de principio a fin. Aquí tienes un contenedor de aplicación en una red definida por el usuario con capacidades ajustadas:
+Una vez que has decidido migrar, la traducción en sí es mecánica: cada flag de `docker run` o tiene una clave en `docker-compose.yml` o no tiene ninguna, y entonces se descarta con un aviso. La equivalencia completa — `-p` a `ports`, `-v` a `volumes`, `--network host` a `network_mode`, los flags `--health-*` a un bloque `healthcheck` y el resto — está escrita con un ejemplo resuelto en **[Cómo convertir un comando docker run a docker-compose.yml](/es/blog/convert-docker-run-to-compose/)**. Lee ese artículo cuando tengas un comando concreto delante; lee este cuando estés decidiendo si conviene convertirlo.
 
-```bash
-docker run -d --name api \
-  --network backend \
-  -p 3000:3000 \
-  -e NODE_ENV=production \
-  --cap-add NET_ADMIN --cap-drop ALL \
-  --add-host db:10.0.0.5 \
-  myorg/api:1.4.0
-```
-
-**Paso 1: tokeniza, no lo hagas a ojo.** El comando se divide al estilo del shell: se respetan las comillas y las continuaciones con barra invertida y salto de línea, y los flags cortos agrupados como `-it` se expanden a `-i -t`. El primer token que no es un flag (`myorg/api:1.4.0`) es la imagen; cualquier cosa que venga después sería el comando del contenedor.
-
-**Paso 2: clasifica cada flag en una clave.** Los puertos van a `ports`, `-e` a `environment`, `--cap-add`/`--cap-drop` a `cap_add`/`cap_drop`, `--add-host` a `extra_hosts` y `--network backend` a la lista `networks`.
-
-**Paso 3: lee el resultado.**
-
-```yaml
-services:
-  api:
-    image: myorg/api:1.4.0
-    container_name: api
-    ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=production
-    networks:
-      - backend
-    extra_hosts:
-      - db:10.0.0.5
-    cap_add:
-      - NET_ADMIN
-    cap_drop:
-      - ALL
-```
-
-Algo que el conversor deliberadamente *no* hace: inventar una sección `networks:` de nivel superior que no pediste. La red `backend` aparece bajo el servicio, exactamente con el nombre indicado. Si `backend` es una red que creaste con `docker network create`, tendrás que declararla tú mismo como `external` en el nivel superior; la herramienta no va a adivinar infraestructura que no escribiste. Esa contención es precisamente el objetivo; un conversor que alucina estructura es peor que uno que solo convierte lo que le diste.
+Una advertencia de nivel migración que la tabla de equivalencias no puede expresar: un conversor no debería inventar una sección `networks:` de nivel superior que no pediste. `--network backend` aparece bajo el servicio, exactamente con el nombre indicado. Si `backend` es una red que creaste con `docker network create`, tendrás que declararla tú mismo como `external` en el nivel superior; la herramienta no va a adivinar infraestructura que no escribiste. Esa contención es precisamente el objetivo; un conversor que alucina estructura es peor que uno que solo convierte lo que le diste.
 
 ## Errores frecuentes al migrar
 

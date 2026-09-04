@@ -1,6 +1,6 @@
 ---
-title: "Por qué tu workflow de GitHub Actions no se disparó: los filtros branches, tags y paths explicados"
-description: "Por qué tu workflow de GitHub Actions no se disparó: nombre de rama que no coincide, la semántica AND de los filtros branches + paths, el requisito del glob **, paths-ignore en pull_request, y las correcciones."
+title: "Por qué tu workflow de GitHub Actions no se disparó"
+description: "Por qué tu workflow no se disparó: rama que no coincide, la semántica AND de branches + paths, el glob ** obligatorio y paths-ignore en pull_request."
 pubDate: 2026-06-14
 tags: ["github-actions", "ci-cd", "debugging"]
 relatedTool:

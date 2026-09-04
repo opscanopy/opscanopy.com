@@ -1,6 +1,6 @@
 ---
-title: "Pourquoi mon alerte n'arrive-t-elle pas au bon receiver ? Déboguer le routage d'Alertmanager"
-description: "Vos alertes partent vers le mauvais receiver, ou vers aucun receiver ? Déboguez le routage d'Alertmanager — first-match-wins, continue oublié, regex de matcher et routes catch-all par défaut."
+title: "Déboguer le routage d'Alertmanager : le mauvais receiver"
+description: "Vos alertes partent vers le mauvais receiver, ou vers aucun ? Déboguez le routage d'Alertmanager : first-match-wins, continue oublié et routes catch-all."
 pubDate: 2026-06-18
 tags: ["alertmanager","observability","alerting"]
 lang: fr
@@ -253,6 +253,8 @@ Ensuite, en partant de la racine :
 5. **Résolvez l'héritage à la feuille.** Le `receiver` et le `group_by` effectifs proviennent de l'ancêtre le plus proche qui les a définis, pas nécessairement de la feuille.
 
 Faites cela pour les labels ci-dessus face à l'arbre de la doc et vous atterrissez sur `team-DB-pages` via `service=database`, en héritant du `group_by` de la racine. Faire ce parcours sur papier pour un arbre de 40 nœuds, c'est exactement le raisonnement sujet aux erreurs qui a produit le bug en premier lieu — et c'est toute la raison d'être d'un testeur.
+
+Si ce sont les règles qui vous intéressent plutôt que le correctif — les trois formes de matcher, les quatre champs de regroupement et ce qu'une route enfant hérite de son parent — la référence, c'est [Alertmanager : matchers, regroupement et héritage de routes](/fr/blog/how-alertmanager-routing-works/).
 
 ## Trouver le receiver correspondant dès maintenant : un débogueur de routes Alertmanager dans le navigateur
 

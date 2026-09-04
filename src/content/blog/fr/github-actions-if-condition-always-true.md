@@ -1,6 +1,6 @@
 ---
-title: "Pourquoi votre condition « if » GitHub Actions s'exécute toujours (et comment y remédier)"
-description: "Votre condition if GitHub Actions est toujours vraie ? C'est le piège du texte littéral : tout texte en dehors de ${{ }} est converti en chaîne truthy. Voici la cause et le correctif."
+title: "Pourquoi votre « if » GitHub Actions s'exécute toujours"
+description: "Votre condition if GitHub Actions est toujours vraie ? C'est le piège du texte littéral : tout texte en dehors de ${{ }} est converti en chaîne truthy."
 pubDate: 2026-06-14
 tags: ["github-actions", "ci-cd"]
 relatedTool:

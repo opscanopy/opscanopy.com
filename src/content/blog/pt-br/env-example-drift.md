@@ -1,6 +1,6 @@
 ---
 title: "Pare de publicar um .env.example desatualizado"
-description: "Seu .env.example é documentação que apodrece silenciosamente. Aqui está o porquê de o drift de env quebrar o onboarding e os deploys, como detectar chaves ausentes e não utilizadas, e como manter o arquivo de exemplo honesto."
+description: "Seu .env.example é documentação que apodrece. Por que o drift de env quebra o onboarding e os deploys, e como detectar chaves ausentes e não usadas."
 pubDate: 2026-06-02
 tags: ["configuration", "developer-experience", "twelve-factor"]
 lang: pt-br

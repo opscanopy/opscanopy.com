@@ -1,6 +1,6 @@
 ---
-title: "7 häufige Fehler in der .gitlab-ci.yml (und wie man sie aufspürt)"
-description: "Die Fehler in der .gitlab-ci.yml, die Pipelines rot werden lassen: nicht definierte Stages, Jobs ohne Skript, kaputte needs und rules, falsch eingesetzte Anchor — jeweils mit einer Lösung zum Kopieren."
+title: "7 häufige Fehler in der .gitlab-ci.yml (und ihre Lösung)"
+description: "Die Fehler in der .gitlab-ci.yml, die Pipelines rot werden lassen: nicht definierte Stages, Jobs ohne Skript, kaputte needs und rules, falsch gesetzte Anchor."
 pubDate: 2026-06-12
 tags: ["gitlab-ci","ci-cd","yaml"]
 lang: de

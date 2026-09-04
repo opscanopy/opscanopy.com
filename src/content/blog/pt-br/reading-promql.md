@@ -1,6 +1,6 @@
 ---
 title: "Como ler uma consulta PromQL"
-description: "Uma consulta PromQL é lida de dentro para fora, não da esquerda para a direita. Aprenda as quatro camadas — seletores, intervalos, funções e agregações — para decodificar qualquer expressão do Prometheus num relance."
+description: "Uma consulta PromQL é lida de dentro para fora, não da esquerda para a direita. Aprenda as quatro camadas — seletores, intervalos, funções e agregações."
 pubDate: 2026-06-08
 tags: ["promql", "prometheus", "observability"]
 lang: pt-br

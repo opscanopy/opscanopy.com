@@ -1,6 +1,6 @@
 ---
-title: "DevOps in 90 Tagen lernen: der kostenlose, Incident-first-Weg vom Entwickler zum DevOps-Engineer"
-description: "Warum wir Mission: 90 Days DevOps gebaut haben – ein kostenloser Tag-für-Tag-Weg von Linux bis Kubernetes mit spielbaren Incident-Missionen. Plan, Designentscheidungen und ehrliche Kompromisse."
+title: "DevOps in 90 Tagen lernen: der Incident-first-Weg"
+description: "Warum wir Mission: 90 Days DevOps gebaut haben – ein kostenloser Tag-für-Tag-Weg von Linux bis Kubernetes mit spielbaren Incident-Missionen."
 pubDate: 2026-07-12
 tags: ["devops", "career", "learning"]
 lang: de

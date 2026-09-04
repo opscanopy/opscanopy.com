@@ -1,6 +1,6 @@
 ---
-title: "Apprendre le DevOps en 90 jours : le parcours gratuit, axé sur les incidents, de développeur à ingénieur DevOps"
-description: "Pourquoi nous avons créé Mission: 90 Days DevOps — un parcours gratuit de Linux à Kubernetes, jour par jour, avec des missions d'incident jouables. Le plan, les choix de conception et les compromis."
+title: "Apprendre le DevOps en 90 jours, de développeur à ingénieur"
+description: "Pourquoi nous avons créé Mission: 90 Days DevOps — un parcours gratuit de Linux à Kubernetes, jour par jour, avec des missions d'incident jouables."
 pubDate: 2026-07-12
 tags: ["devops", "career", "learning"]
 lang: fr

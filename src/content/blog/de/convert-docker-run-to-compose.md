@@ -1,6 +1,6 @@
 ---
-title: "Wie man einen docker-run-Befehl in eine docker-compose.yml umwandelt"
-description: "Wandle jeden docker-run-Befehl Flag für Flag in einen docker-compose.yml-Service um – Ports, Volumes, Environment, Restart und mehr. Eine praxisnahe Anleitung zum Kopieren und Einfügen."
+title: "Einen docker-run-Befehl in docker-compose.yml umwandeln"
+description: "Wandle jeden docker-run-Befehl Flag für Flag in einen docker-compose.yml-Service um – Ports, Volumes, Environment, Restart und mehr. Zum Kopieren und Einfügen."
 pubDate: 2026-06-09
 tags: ["docker","docker-compose","containers"]
 lang: de

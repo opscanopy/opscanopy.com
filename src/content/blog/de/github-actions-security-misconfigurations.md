@@ -1,6 +1,6 @@
 ---
 title: "Die GitHub-Actions-Sicherheitsfehler, die Linter übersehen"
-description: "YAML-Validatoren prüfen die Syntax, nicht die Angriffsfläche. Hier sind die fünf folgenschwersten GitHub-Actions-Fehlkonfigurationen — pull_request_target, Script Injection, ungepinnte Actions, zu weite GITHUB_TOKEN-Berechtigungen und curl|bash — jeweils mit dem fehlerhaften Muster und der zugehörigen Lösung."
+description: "YAML-Validatoren prüfen die Syntax, nicht die Angriffsfläche. Die fünf folgenschwersten GitHub-Actions-Fehlkonfigurationen — jeweils mit Muster und Lösung."
 pubDate: 2026-05-06
 tags: ["github-actions", "security", "ci-cd"]
 lang: de

@@ -1,6 +1,6 @@
 ---
-title: "Prometheus relabel_configs Explained: A Practical Guide"
-description: "Prometheus relabel_configs end to end — source_labels, regex, replacement and every action (replace, keep, drop, labelmap, hashmod) — with copy-paste recipes."
+title: "Prometheus Relabel Actions: keep, labelmap, hashmod"
+description: "A field reference for all 11 Prometheus relabel actions — replace, keep, drop, labelmap, labeldrop, hashmod, keepequal, lowercase — each with an example."
 pubDate: 2026-06-13
 tags: ["prometheus","observability","relabeling"]
 relatedTool:
@@ -10,9 +10,11 @@ relatedTool:
 
 ![Diagram of a Prometheus relabel_configs pipeline showing source_labels joined into a value, matched against an anchored regex, and an action like replace, keep, drop, labelmap or hashmod rewriting the output labels.](/blog/prometheus-relabel-configs-explained-hero.svg)
 
-A target you expected to scrape never shows up in Prometheus. No error in the logs, no failed scrape, nothing red on the targets page — the series just isn't there. You add `--log.level=debug`, restart, squint at the output, and eventually find it: a `keep` rule three lines into your `relabel_configs` quietly dropped the target because the regex didn't match the way you assumed. That silent failure is the whole reason `relabel_configs` deserves a careful read. Prometheus relabeling rewrites, keeps, or drops targets and their labels, and when it's wrong it doesn't complain — it just discards your metrics.
+Prometheus relabeling takes a label set in and produces a label set out. Everything it can do — rewrite a label, promote service-discovery metadata into a durable label, shard targets across replicas, drop a target before it is ever scraped — is expressed through eleven actions assembled from the same handful of fields. This page is the reference for those actions: what each one reads, what it writes, and a runnable example for every one.
 
-This guide walks through Prometheus relabeling from the ground up: what it does, the fields every rule is built from, and each action with a small example. The semantics here match exactly what the engine in the [Prometheus Relabel Tester](/prometheus-relabel-tester/) implements, so you can paste any snippet below into it and watch the labels change.
+The semantics here match exactly what the engine in the [Prometheus Relabel Tester](/prometheus-relabel-tester/) implements, so you can paste any snippet below into it and watch the labels change.
+
+> **Debugging a live config rather than reading a reference?** Start with [Why Did Prometheus Drop My Target? Debugging relabel_configs](/blog/debug-prometheus-relabeling/). It covers the two symptoms — a target missing from `/targets` versus a label that vanished — how to recover the exact `__meta_*` input your rules saw, and how to bisect a long rule chain. Come back here for the per-action detail.
 
 ## What relabeling actually does
 
@@ -63,7 +65,7 @@ That joined value is matched against `regex`. The one detail that catches everyo
   action: keep
 ```
 
-A `regex: api` rule will not keep a target whose `job` is `api-server`, because `^(?:api)$` only matches the literal string `api`. You'd need `api.*` or `(api.*)`. This single fact explains the majority of "my target vanished" mysteries.
+A `regex: api` rule will not keep a target whose `job` is `api-server`, because `^(?:api)$` only matches the literal string `api`. You'd need `api.*` or `(api.*)`. Anchoring is by far the most common reason a rule behaves differently from how it reads — [the debugging guide](/blog/debug-prometheus-relabeling/) works that failure through from symptom to fix.
 
 When the regex matches and the action writes a label, `replacement` supplies the value. Capture groups expand as `$1`, `${1}`, or named groups `$name`/`${name}`; the default replacement is `$1`, which is why a bare `replace` with `regex: (.*)` copies the source value through unchanged. `modulus` is only read by `hashmod`, and `target_label` is required by `replace`, `hashmod`, `lowercase`, `uppercase`, `keepequal`, and `dropequal`.
 

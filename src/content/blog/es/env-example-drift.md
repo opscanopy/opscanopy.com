@@ -1,6 +1,6 @@
 ---
 title: "Deja de publicar un .env.example desactualizado"
-description: "Tu .env.example es documentación que se pudre en silencio. Aquí te explicamos por qué la deriva de variables de entorno rompe el onboarding y los despliegues, cómo detectar claves faltantes y sin usar, y cómo mantener honesto el archivo de ejemplo."
+description: "Tu .env.example es documentación que se pudre en silencio. Por qué la deriva de variables rompe el onboarding y cómo detectar claves faltantes y sin usar."
 pubDate: 2026-06-02
 tags: ["configuration", "developer-experience", "twelve-factor"]
 lang: es

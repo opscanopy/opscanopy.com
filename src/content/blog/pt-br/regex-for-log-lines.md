@@ -1,6 +1,6 @@
 ---
 title: "Escrevendo expressões regulares robustas para linhas de log"
-description: "Um guia prático para construir regexes que fazem o parsing de linhas de log de forma confiável — ancoragem, grupos de captura, escape, gulosidade e os modos de falha que te pegam em produção."
+description: "Construa regexes que fazem o parsing de linhas de log de forma confiável: ancoragem, grupos de captura, escape, gulosidade e os modos de falha em produção."
 pubDate: 2026-05-27
 tags: ["regex", "logs", "parsing"]
 lang: pt-br

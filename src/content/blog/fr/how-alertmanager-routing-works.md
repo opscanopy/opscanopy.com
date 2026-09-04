@@ -1,6 +1,6 @@
 ---
-title: "Comment fonctionne le routage Alertmanager : matchers, continue et l'arbre de routes"
-description: "Un modèle mental clair du routage Alertmanager — l'arbre de routes, les matchers, le flag continue, le regroupement et l'héritage du receiver — pour savoir exactement où part une alerte."
+title: "Alertmanager : matchers, regroupement et héritage de routes"
+description: "Référence de la config de routes Alertmanager : matchers, match et match_re, regex ancrées, les quatre champs de regroupement et ce qu'hérite une route enfant."
 pubDate: 2026-06-17
 tags: ["alertmanager","observability","alerting"]
 lang: fr
@@ -12,9 +12,11 @@ relatedTool:
 
 ![Schéma du routage Alertmanager : les labels d'une alerte entrent dans l'arbre de routes à la racine et descendent par les routes enfants correspondantes jusqu'à un receiver](/blog/how-alertmanager-routing-works-hero.svg)
 
-Une alerte `severity=critical` s'est déclenchée hier soir et l'équipe d'astreinte n'a jamais été notifiée. L'alerte était bien réelle, le receiver existait, le webhook Slack fonctionnait. Le problème se trouvait trois lignes plus haut dans la config : une route catch-all trop large était placée au-dessus de la route de l'équipe et avalait discrètement tout ce qui lui parvenait. Personne n'avait touché au receiver — on avait touché à l'ordre.
+Vous pouvez lire un `alertmanager.yml` de bout en bout sans pouvoir dire pour autant où atterrira une alerte donnée. Les définitions de receivers sont rarement en cause. L'arbre de routes, si : des matchers ancrés plus strictement qu'ils n'en ont l'air, des champs de regroupement qu'une feuille ne déclare jamais elle-même, et un ordre entre siblings qui décide discrètement lequel l'emporte.
 
-C'est précisément ce qui rend le routage Alertmanager facile à rater. Les receivers sont généralement corrects. C'est dans l'arbre de routes que se cachent les surprises. Une fois que vous disposez d'un modèle précis de la manière dont l'arbre de routes est parcouru — comment les matchers sont évalués, quand `continue` laisse une alerte poursuivre sa route, et ce que chaque enfant hérite de son parent — la question « pourquoi cette alerte est-elle partie là ? » cesse d'être un jeu de devinettes. Ce billet construit ce modèle, et chaque règle présentée ici correspond exactement à ce que fait l'[Alertmanager Route Tester](/alertmanager-route-tester/) lorsqu'il parcourt un arbre face à une alerte d'exemple.
+Une fois que vous disposez d'un modèle précis de la manière dont l'arbre de routes est parcouru — comment les matchers sont évalués, quand `continue` laisse une alerte poursuivre sa route, et ce que chaque enfant hérite de son parent — la question « pourquoi cette alerte est-elle partie là ? » cesse d'être un jeu de devinettes. Ce billet est cette référence : les trois formes de matcher, les quatre champs de regroupement et les règles d'héritage, chacune énoncée telle que l'[Alertmanager Route Tester](/alertmanager-route-tester/) l'implémente lorsqu'il parcourt un arbre face à une alerte d'exemple.
+
+**Vous déboguez une alerte précise en ce moment ?** [Pourquoi mon alerte n'arrive-t-elle pas au bon receiver ?](/fr/blog/debug-alertmanager-routing/) est le pendant dépannage de cette page — les cinq bugs qui envoient une alerte vers le mauvais receiver, ou vers aucun. Commencez par là quand quelque chose est déjà cassé ; restez ici pour les règles qui se trouvent en dessous.
 
 ## Le routage est un arbre, pas une liste
 
@@ -79,7 +81,7 @@ Faire en sorte que ces labels figurent sur l'alerte dès le départ est un trava
 
 ## Correspondance en profondeur d'abord et continue : le premier frère qui correspond gagne, sauf si continue vaut true
 
-Voici la règle que l'exemple de la nuit dernière a enfreinte. Au sein d'une route correspondante, les routes enfants sont évaluées **dans l'ordre, de haut en bas**. L'alerte descend dans le **premier** enfant dont tous les matchers sont vérifiés — puis, par défaut, le balayage des frères **s'arrête**. Les frères suivants ne sont même jamais examinés.
+Voici la règle qui décide quel frère l'emporte. Au sein d'une route correspondante, les routes enfants sont évaluées **dans l'ordre, de haut en bas**. L'alerte descend dans le **premier** enfant dont tous les matchers sont vérifiés — puis, par défaut, le balayage des frères **s'arrête**. Les frères suivants ne sont même jamais examinés.
 
 ```yaml
 # TRAP: the broad rule above shadows the specific one

@@ -1,6 +1,6 @@
 ---
 title: "Migrar de cron a temporizadores de systemd"
-description: "Una guía práctica para convertir entradas de crontab en unidades .timer y .service de systemd: sintaxis OnCalendar, registro de logs, retardos aleatorios, ejecuciones de recuperación y las trampas que aparecen durante la migración."
+description: "Cómo convertir entradas de crontab en unidades .timer y .service de systemd: sintaxis OnCalendar, logs, retardos aleatorios y ejecuciones de recuperación."
 pubDate: 2026-05-20
 tags: ["systemd", "cron", "linux"]
 lang: es

@@ -1,6 +1,6 @@
 ---
 title: "Leer expresiones cron: una guía campo por campo"
-description: "Una guía práctica, campo por campo, para leer expresiones cron — los cinco campos de tiempo, rangos, pasos, listas y @macros — además de las trampas que hacen que las programaciones se disparen cuando menos lo esperas."
+description: "Una guía práctica, campo por campo, para leer expresiones cron — los cinco campos de tiempo, rangos, pasos, listas y @macros — y las trampas más habituales."
 pubDate: 2026-05-13
 tags: ["cron", "scheduling", "devops"]
 lang: es

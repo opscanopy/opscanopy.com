@@ -1,6 +1,6 @@
 ---
 title: "Comment lire une requête PromQL"
-description: "Une requête PromQL se lit de l'intérieur vers l'extérieur, et non de gauche à droite. Découvrez les quatre couches — sélecteurs, plages, fonctions et agrégations — pour décoder n'importe quelle expression Prometheus en un coup d'œil."
+description: "Une requête PromQL se lit de l'intérieur vers l'extérieur, et non de gauche à droite. Les quatre couches : sélecteurs, plages, fonctions et agrégations."
 pubDate: 2026-06-08
 tags: ["promql", "prometheus", "observability"]
 lang: fr

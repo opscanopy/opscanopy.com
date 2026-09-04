@@ -1,6 +1,6 @@
 ---
-title: "Warum hat Prometheus mein Target verworfen? relabel_configs debuggen"
-description: "Ein Target ist verschwunden oder ein Label ist nach dem Relabeling weg. relabel_configs vs. metric_relabel_configs debuggen, Regex-Anker und keep/drop-Logik verstehen."
+title: "Warum Prometheus mein Target verwarf: relabel_configs"
+description: "Ein Target ist verschwunden oder ein Label ist nach dem Relabeling weg. relabel_configs vs. metric_relabel_configs debuggen, Regex-Anker und keep/drop."
 pubDate: 2026-06-16
 tags: ["prometheus","observability","relabeling"]
 lang: de

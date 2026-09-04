@@ -1,6 +1,6 @@
 ---
-title: "Wie das Routing von Alertmanager funktioniert: Matchers, continue und der Route-Baum"
-description: "Ein klares mentales Modell für das Routing von Alertmanager — der Route-Baum, Matchers, das continue-Flag, Gruppierung und Receiver-Vererbung — damit du genau weißt, wo ein Alert landet."
+title: "Alertmanager-Matchers, Gruppierung und Route-Vererbung"
+description: "Referenz zur Alertmanager-Route-Config: die Formen matchers, match und match_re, verankerte Regexes, die vier Gruppierungsfelder und was eine Child-Route erbt."
 pubDate: 2026-06-17
 tags: ["alertmanager","observability","alerting"]
 lang: de
@@ -12,9 +12,11 @@ relatedTool:
 
 ![Diagramm des Alertmanager-Routings: Die Labels eines Alerts treten an der Wurzel in den Route-Baum ein und fließen über die passenden Kind-Routen abwärts bis zu einem Receiver](/blog/how-alertmanager-routing-works-hero.svg)
 
-Letzte Nacht ist ein Alert mit `severity=critical` ausgelöst worden, und das Bereitschaftsteam wurde nie alarmiert. Der Alert war echt, der Receiver existierte, der Slack-Webhook funktionierte. Das Problem stand drei Zeilen höher in der Config: Eine breite Catch-all-Route saß über der Team-Route und verschluckte stillschweigend alles, was sie erreichte. Niemand hatte den Receiver angefasst — angefasst wurde die Reihenfolge.
+Du kannst eine `alertmanager.yml` von oben bis unten lesen und trotzdem nicht sagen, wo ein bestimmter Alert landet. An den Receiver-Definitionen liegt es selten. Am Route-Baum liegt es: Matcher, die enger verankert sind, als sie aussehen, Gruppierungsfelder, die ein Blatt nie selbst setzt, und eine Reihenfolge unter Siblings, die stillschweigend entscheidet, wer gewinnt.
 
-Genau das macht das Routing von Alertmanager so fehleranfällig. Die Receiver sind meistens in Ordnung. Im Route-Baum lauern die Überraschungen. Sobald du ein präzises Modell davon hast, wie der Route-Baum durchlaufen wird — wie Matchers ausgewertet werden, wann `continue` einen Alert weiterlaufen lässt und was jedes Kind von seinem Elternknoten erbt — wird aus "Warum ist dieser Alert dort gelandet?" kein Ratespiel mehr. Dieser Beitrag baut genau dieses Modell auf, und jede Regel hier entspricht dem, was der [Alertmanager Route Tester](/alertmanager-route-tester/) tatsächlich tut, wenn er einen Baum gegen einen Beispiel-Alert durchläuft.
+Sobald du ein präzises Modell davon hast, wie der Route-Baum durchlaufen wird — wie Matchers ausgewertet werden, wann `continue` einen Alert weiterlaufen lässt und was jedes Kind von seinem Elternknoten erbt — wird aus "Warum ist dieser Alert dort gelandet?" kein Ratespiel mehr. Dieser Beitrag ist genau diese Referenz: die drei Matcher-Formen, die vier Gruppierungsfelder und die Vererbungsregeln — jeweils so, wie der [Alertmanager Route Tester](/alertmanager-route-tester/) sie umsetzt, wenn er einen Baum gegen einen Beispiel-Alert durchläuft.
+
+**Debuggst du gerade einen konkreten Alert?** [Warum erreicht mein Alert nicht den richtigen Receiver?](/de/blog/debug-alertmanager-routing/) ist der Troubleshooting-Begleiter zu dieser Seite — die fünf Bugs, die einen Alert beim falschen Receiver oder bei gar keinem landen lassen. Fang dort an, wenn schon etwas kaputt ist; hier stehen die Regeln darunter.
 
 ## Routing ist ein Baum, keine Liste
 
@@ -79,7 +81,7 @@ Diese Labels überhaupt erst an den Alert zu bekommen, ist eine eigene Aufgabe, 
 
 ## Tiefensuche-Matching und continue: das erste passende Geschwister gewinnt, außer continue ist true
 
-Hier ist die Regel, die das nächtliche Beispiel verletzt hat. Innerhalb einer passenden Route werden die Kind-Routen **der Reihe nach, von oben nach unten** ausgewertet. Der Alert steigt in das **erste** Kind ab, dessen Matchers alle zutreffen — und danach **stoppt** der Geschwister-Scan standardmäßig. Spätere Geschwister werden nicht einmal mehr geprüft.
+Hier ist die Regel, die entscheidet, welches Geschwister gewinnt. Innerhalb einer passenden Route werden die Kind-Routen **der Reihe nach, von oben nach unten** ausgewertet. Der Alert steigt in das **erste** Kind ab, dessen Matchers alle zutreffen — und danach **stoppt** der Geschwister-Scan standardmäßig. Spätere Geschwister werden nicht einmal mehr geprüft.
 
 ```yaml
 # TRAP: the broad rule above shadows the specific one

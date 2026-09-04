@@ -1,6 +1,6 @@
 ---
-title: "Por que seu workflow do GitHub Actions não foi acionado: filtros branches, tags e paths explicados"
-description: "Por que seu workflow do GitHub Actions não foi acionado: nome de branch incompatível, a semântica de AND dos filtros branches + paths, a exigência do glob **, paths-ignore no pull_request, e as correções."
+title: "Por que seu workflow do GitHub Actions não foi acionado"
+description: "Nome de branch incompatível, a semântica de AND dos filtros branches + paths, a exigência do glob ** e paths-ignore no pull_request — com as correções."
 pubDate: 2026-06-14
 tags: ["github-actions", "ci-cd", "debugging"]
 relatedTool:

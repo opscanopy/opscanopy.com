@@ -1,6 +1,6 @@
 ---
 title: "Cómo validar tu .gitlab-ci.yml antes de hacer push"
-description: "Deja de subir pipelines rotos. Valida tu .gitlab-ci.yml en busca de errores de YAML y estructurales desde el navegador: antes del commit, no después del pipeline en rojo."
+description: "Deja de subir pipelines rotos. Valida tu .gitlab-ci.yml en busca de errores de YAML y estructurales: antes del commit, no después del pipeline en rojo."
 pubDate: 2026-06-11
 tags: ["gitlab-ci","ci-cd","yaml"]
 lang: es

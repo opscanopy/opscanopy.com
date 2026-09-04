@@ -1,6 +1,6 @@
 ---
-title: "Comment convertir une commande docker run en docker-compose.yml"
-description: "Convertissez n'importe quelle commande docker run en service docker-compose.yml, drapeau par drapeau — ports, volumes, environnement, redémarrage et plus encore. Un guide pratique, prêt à copier-coller."
+title: "Convertir une commande docker run en docker-compose.yml"
+description: "Convertissez n'importe quelle commande docker run en service docker-compose.yml, drapeau par drapeau — ports, volumes, environnement et redémarrage."
 pubDate: 2026-06-09
 tags: ["docker","docker-compose","containers"]
 lang: fr

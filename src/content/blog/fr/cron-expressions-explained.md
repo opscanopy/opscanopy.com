@@ -1,6 +1,6 @@
 ---
 title: "Lire les expressions cron : un guide champ par champ"
-description: "Un guide pratique, champ par champ, pour lire les expressions cron — les cinq champs temporels, les plages, les pas, les listes et les @macros — ainsi que les pièges qui déclenchent les planifications au moment où vous vous y attendez le moins."
+description: "Un guide pratique, champ par champ, pour lire les expressions cron : les cinq champs temporels, les plages, les pas, les listes, les @macros et leurs pièges."
 pubDate: 2026-05-13
 tags: ["cron", "scheduling", "devops"]
 lang: fr

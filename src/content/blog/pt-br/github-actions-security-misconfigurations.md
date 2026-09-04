@@ -1,6 +1,6 @@
 ---
-title: "Os erros de segurança no GitHub Actions que os linters não detectam"
-description: "Validadores de YAML detectam sintaxe, não exposição. Aqui estão as cinco configurações incorretas de alto impacto do GitHub Actions — pull_request_target, injeção de script, actions sem pin, escopos amplos do GITHUB_TOKEN e curl|bash — com o padrão ruim e a correção para cada uma."
+title: "Erros de segurança no GitHub Actions que os linters ignoram"
+description: "Validadores de YAML detectam sintaxe, não exposição. As cinco falhas de alto impacto: pull_request_target, injeção de script, actions sem pin e curl|bash."
 pubDate: 2026-05-06
 tags: ["github-actions", "security", "ci-cd"]
 lang: pt-br

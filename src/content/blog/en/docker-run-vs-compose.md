@@ -1,6 +1,6 @@
 ---
-title: "docker run vs Docker Compose: A Practical Migration Guide"
-description: "When to use docker run, when to switch to Docker Compose, and how to convert between them in both directions — volumes, networks and reproducibility included."
+title: "When to Use Docker Compose Instead of docker run"
+description: "Which one to reach for, and what actually changes when you switch — default network, restart policy, detached mode — plus Compose back to a run line."
 pubDate: 2026-06-10
 tags: ["docker","docker-compose","containers"]
 relatedTool:
@@ -12,7 +12,9 @@ relatedTool:
 
 You started a Postgres container three weeks ago with a `docker run` one-liner. It works. Then you reboot the box, or a teammate needs the same setup, or you want the command in version control — and you realize the only copy of that command is in your shell history, somewhere between an `ls` and a `kubectl get pods`. This is the moment the `docker run` vs `docker compose` question stops being academic. The container is fine; the way you launched it is not reproducible.
 
-This guide walks through both directions: when `docker run` is the right call, when to move to a `docker-compose.yml`, and how to convert a Compose service back to a single run line when you need one. Every flag mapping here matches what the [Docker Run to Compose converter](/docker-run-to-compose/) actually does, so you can check your own commands against it.
+This guide is about the choice, not the mechanics: when `docker run` is still the right call, when a `docker-compose.yml` earns its keep, what actually changes in behavior once you switch, and how to turn a Compose service back into a single run line when you need one.
+
+**Looking for the flag-by-flag mapping instead?** [How to Convert a docker run Command to docker-compose.yml](/blog/convert-docker-run-to-compose/) is the full reference — every `docker run` flag and the `docker-compose.yml` key it becomes, with the gotchas that bite when you translate by hand. This post asks the question that comes before it: should you convert at all, and what changes when you do.
 
 ## The same container, two ways
 
@@ -142,46 +144,11 @@ docker run -d --name cache -p 6379:6379 -m 256m \
 
 The healthcheck block expands back into the discrete `--health-*` flags; `mem_limit` becomes `-m`; labels become `-l`. The converter prepends `docker run -d` for you precisely because the service was meant to run in the background. The one thing to watch: Compose-only keys like `depends_on`, `build`, and `deploy` have no command equivalent, so a faithful converter reports them as warnings rather than inventing flags that do not exist. If your service has `build:`, you run `docker build` first and feed the resulting tag to `docker run`.
 
-## Migrating a real command step by step
+## Where the flag-by-flag mapping lives
 
-Let's take a non-trivial `docker run` line and walk the migration end to end. Here is an app container on a user-defined network with adjusted capabilities:
+Once you have decided to migrate, the translation itself is mechanical: every `docker run` flag either has a `docker-compose.yml` key, or it has none and gets dropped with a warning. The full mapping — `-p` to `ports`, `-v` to `volumes`, `--network host` to `network_mode`, the `--health-*` flags to a `healthcheck` block, and the rest — is written out with a worked example in **[How to Convert a docker run Command to docker-compose.yml](/blog/convert-docker-run-to-compose/)**. Read that one when you are holding a specific command; read this one when you are deciding whether to convert it at all.
 
-```bash
-docker run -d --name api \
-  --network backend \
-  -p 3000:3000 \
-  -e NODE_ENV=production \
-  --cap-add NET_ADMIN --cap-drop ALL \
-  --add-host db:10.0.0.5 \
-  myorg/api:1.4.0
-```
-
-**Step 1 — tokenise, don't eyeball.** The command is split shell-style: quotes and backslash-newline continuations are honored, and bundled short flags like `-it` are expanded into `-i -t`. The first non-flag token (`myorg/api:1.4.0`) is the image; anything after it would be the container command.
-
-**Step 2 — classify each flag onto a key.** Ports go to `ports`, `-e` to `environment`, `--cap-add`/`--cap-drop` to `cap_add`/`cap_drop`, `--add-host` to `extra_hosts`, and `--network backend` to the `networks` list.
-
-**Step 3 — read the result.**
-
-```yaml
-services:
-  api:
-    image: myorg/api:1.4.0
-    container_name: api
-    ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=production
-    networks:
-      - backend
-    extra_hosts:
-      - db:10.0.0.5
-    cap_add:
-      - NET_ADMIN
-    cap_drop:
-      - ALL
-```
-
-One thing the converter deliberately does *not* do: invent a top-level `networks:` section you did not ask for. The `backend` network shows up under the service, exactly as named. If `backend` is a network you created with `docker network create`, you will need to declare it as `external` at the top level yourself — the tool won't guess at infrastructure you didn't write down. That restraint is the point; a converter that hallucinates structure is worse than one that converts only what you gave it.
+One migration-level caveat the mapping table cannot express: a converter should not invent a top-level `networks:` section you did not ask for. `--network backend` shows up under the service, exactly as named. If `backend` is a network you created with `docker network create`, you will need to declare it as `external` at the top level yourself — the tool won't guess at infrastructure you didn't write down. That restraint is the point; a converter that hallucinates structure is worse than one that converts only what you gave it.
 
 ## Pitfalls when migrating
 

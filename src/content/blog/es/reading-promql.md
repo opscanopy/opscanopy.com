@@ -1,6 +1,6 @@
 ---
 title: "Cómo leer una consulta de PromQL"
-description: "Una consulta de PromQL se lee de dentro hacia afuera, no de izquierda a derecha. Aprende las cuatro capas —selectores, rangos, funciones y agregaciones— para que puedas descifrar cualquier expresión de Prometheus de un vistazo."
+description: "Una consulta de PromQL se lee de dentro hacia afuera, no de izquierda a derecha. Aprende las cuatro capas: selectores, rangos, funciones y agregaciones."
 pubDate: 2026-06-08
 tags: ["promql", "prometheus", "observability"]
 lang: es

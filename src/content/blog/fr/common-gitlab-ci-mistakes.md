@@ -1,6 +1,6 @@
 ---
-title: "7 erreurs courantes dans .gitlab-ci.yml (et comment les détecter)"
-description: "Les erreurs de .gitlab-ci.yml qui font passer les pipelines au rouge : stages non déclarés, jobs sans script, needs et rules cassés, mauvais usage des ancres — chacune avec un correctif prêt à copier."
+title: "7 erreurs courantes dans .gitlab-ci.yml et leurs correctifs"
+description: "Les erreurs de .gitlab-ci.yml qui font passer les pipelines au rouge : stages non déclarés, jobs sans script, needs et rules cassés, mauvais usage des ancres."
 pubDate: 2026-06-12
 tags: ["gitlab-ci","ci-cd","yaml"]
 lang: fr

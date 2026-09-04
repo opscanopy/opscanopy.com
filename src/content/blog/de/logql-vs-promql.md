@@ -1,6 +1,6 @@
 ---
 title: "LogQL vs. PromQL: dieselbe Abfrage in beiden Sprachen"
-description: "LogQL übernimmt die Form von PromQL, geht aber von Log-Zeilen aus, nicht von Metriken. Hier sehen Sie, wie die beiden Abfragesprachen zueinander passen, wo sie sich sauber übersetzen lassen und wo schlicht nicht."
+description: "LogQL übernimmt die Form von PromQL, geht aber von Log-Zeilen aus, nicht von Metriken. Wie beide Sprachen zueinander passen — und wo die Übersetzung bricht."
 pubDate: 2026-06-05
 tags: ["logql", "promql", "observability"]
 lang: de

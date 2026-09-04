@@ -1,6 +1,6 @@
 ---
-title: "Pourquoi Prometheus a-t-il supprimé ma cible ? Déboguer les relabel_configs"
-description: "Une cible a disparu ou un label s'est volatilisé après le relabeling. Déboguez les relabel_configs de Prometheus face aux metric_relabel_configs, l'ancrage des regex et la logique keep/drop."
+title: "Déboguer relabel_configs quand Prometheus perd une cible"
+description: "Une cible a disparu après le relabeling ? Déboguez relabel_configs face à metric_relabel_configs, l'ancrage des regex et la logique keep/drop."
 pubDate: 2026-06-16
 tags: ["prometheus","observability","relabeling"]
 lang: fr

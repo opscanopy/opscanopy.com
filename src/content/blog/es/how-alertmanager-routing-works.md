@@ -1,6 +1,6 @@
 ---
-title: "Cómo funciona el enrutamiento de Alertmanager: matchers, continue y el árbol de rutas"
-description: "Un modelo mental claro del enrutamiento de Alertmanager — el árbol de rutas, los matchers, el flag continue, la agrupación y la herencia de receiver — para que sepas exactamente a dónde va cada alerta."
+title: "Alertmanager: matchers, agrupación y herencia de rutas"
+description: "Referencia de la config de rutas de Alertmanager: matchers, match y match_re, regex ancladas, los cuatro campos de agrupación y qué hereda una ruta hija."
 pubDate: 2026-06-17
 tags: ["alertmanager","observability","alerting"]
 lang: es
@@ -12,9 +12,11 @@ relatedTool:
 
 ![Diagrama del enrutamiento de Alertmanager: las labels de una alerta entran en el árbol de rutas por la raíz y descienden por las rutas hijas coincidentes hasta llegar a un receiver](/blog/how-alertmanager-routing-works-hero.svg)
 
-Anoche se disparó una alerta `severity=critical` y al equipo de guardia nunca le llegó el aviso. La alerta era real, el receiver existía, el webhook de Slack funcionaba. El problema estaba tres líneas más arriba en la configuración: una ruta catch-all demasiado amplia se situaba por encima de la ruta del equipo y se tragaba en silencio todo lo que llegaba hasta ella. Nadie tocó el receiver — tocaron el orden.
+Puedes leer un `alertmanager.yml` de arriba abajo y aun así no saber decir dónde va a aterrizar una alerta concreta. Las definiciones de receivers rara vez son el problema. El árbol de rutas sí lo es: matchers anclados más estrictamente de lo que parecen, campos de agrupación que una hoja nunca declara por su cuenta y un orden entre hermanos que decide en silencio cuál gana.
 
-Eso es lo que hace que el enrutamiento de Alertmanager sea fácil de equivocar. Los receivers suelen estar bien. Es en el árbol de rutas donde viven las sorpresas. Una vez que tienes un modelo preciso de cómo se recorre el árbol de rutas — cómo se evalúan los matchers, cuándo `continue` mantiene a una alerta en movimiento y qué hereda cada hijo de su padre — la pregunta "¿por qué fue esta alerta ahí?" deja de ser un juego de adivinanzas. Este post construye ese modelo, y cada regla que aparece aquí coincide con lo que el [Alertmanager Route Tester](/alertmanager-route-tester/) hace realmente cuando recorre un árbol frente a una alerta de ejemplo.
+Una vez que tienes un modelo preciso de cómo se recorre el árbol de rutas — cómo se evalúan los matchers, cuándo `continue` mantiene a una alerta en movimiento y qué hereda cada hijo de su padre — la pregunta "¿por qué fue esta alerta ahí?" deja de ser un juego de adivinanzas. Este post es esa referencia: las tres formas de matcher, los cuatro campos de agrupación y las reglas de herencia, cada una enunciada tal y como la implementa el [Alertmanager Route Tester](/alertmanager-route-tester/) cuando recorre un árbol frente a una alerta de ejemplo.
+
+**¿Estás depurando una alerta concreta ahora mismo?** [¿Por qué mi alerta no llega al receiver correcto?](/es/blog/debug-alertmanager-routing/) es el compañero de troubleshooting de esta página: los cinco bugs que mandan una alerta al receiver equivocado, o a ninguno. Empieza ahí cuando algo ya está roto; quédate aquí para las reglas que hay debajo.
 
 ## El enrutamiento es un árbol, no una lista
 
@@ -79,7 +81,7 @@ Conseguir que esas labels lleguen a la alerta en primer lugar es una tarea apart
 
 ## Coincidencia en profundidad y continue: gana el primer hermano que coincide, salvo que continue sea true
 
-Esta es la regla que rompió el ejemplo de la madrugada. Dentro de una ruta coincidente, las rutas hijas se evalúan **en orden, de arriba abajo**. La alerta desciende al **primer** hijo cuyos matchers se cumplan todos — y entonces, por defecto, el barrido de hermanos **se detiene**. Los hermanos posteriores ni siquiera se comprueban.
+Esta es la regla que decide qué hermano gana. Dentro de una ruta coincidente, las rutas hijas se evalúan **en orden, de arriba abajo**. La alerta desciende al **primer** hijo cuyos matchers se cumplan todos — y entonces, por defecto, el barrido de hermanos **se detiene**. Los hermanos posteriores ni siquiera se comprueban.
 
 ```yaml
 # TRAP: the broad rule above shadows the specific one

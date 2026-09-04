@@ -1,6 +1,6 @@
 ---
-title: "Pourquoi votre workflow GitHub Actions ne s'est pas déclenché : les filtres branches, tags et paths expliqués"
-description: "Pourquoi votre workflow GitHub Actions ne s'est pas déclenché : un nom de branche qui ne correspond pas, la sémantique ET des filtres branches + paths, l'exigence du glob **, paths-ignore sur pull_request, et les correctifs."
+title: "Pourquoi votre workflow GitHub Actions ne se déclenche pas"
+description: "Un nom de branche qui ne correspond pas, la sémantique ET de branches + paths, l'exigence du glob **, paths-ignore sur pull_request — et les correctifs."
 pubDate: 2026-06-14
 tags: ["github-actions", "ci-cd", "debugging"]
 relatedTool:

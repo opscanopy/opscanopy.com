@@ -1,6 +1,6 @@
 ---
 title: "Wie man eine PromQL-Abfrage liest"
-description: "Eine PromQL-Abfrage liest man von innen nach außen, nicht von links nach rechts. Lernen Sie die vier Schichten – Selektoren, Bereiche, Funktionen und Aggregationen – kennen, damit Sie jeden Prometheus-Ausdruck auf einen Blick entschlüsseln können."
+description: "Eine PromQL-Abfrage liest man von innen nach außen, nicht von links nach rechts. Die vier Schichten – Selektoren, Bereiche, Funktionen, Aggregationen – erklärt."
 pubDate: 2026-06-08
 tags: ["promql", "prometheus", "observability"]
 lang: de

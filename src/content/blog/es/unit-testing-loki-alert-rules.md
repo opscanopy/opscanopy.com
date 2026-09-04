@@ -1,6 +1,6 @@
 ---
-title: "Pruebas unitarias de reglas de alerta de Loki: el vacío que deja promtool"
-description: "Prometheus tiene promtool test rules. Loki no tiene nada equivalente. Aquí está por qué importa probar las reglas de alerta LogQL, cómo debería verse una prueba unitaria de una regla de Loki y cómo cerrar el vacío hoy."
+title: "Probar reglas de alerta de Loki: el vacío que deja promtool"
+description: "Prometheus tiene promtool test rules. Loki no tiene nada equivalente. Por qué importa probar las reglas de alerta LogQL y cómo cerrar el vacío hoy."
 pubDate: 2026-04-15
 tags: ["loki", "observability", "testing"]
 lang: es

@@ -252,6 +252,8 @@ Then, starting at the root:
 
 Do that for the labels above against the docs tree and you land on `team-DB-pages` via `service=database`, inheriting `group_by` from the root. Doing this walk on paper for a 40-node tree is exactly the error-prone reasoning that produced the bug in the first place — which is the whole reason a tester exists.
 
+If you want the rules rather than the fix — the three matcher forms, the four grouping fields, and what a child route inherits from its parent — the reference is [Alertmanager matchers, grouping and route inheritance](/blog/how-alertmanager-routing-works/).
+
 ## Find the matching receiver now: an Alertmanager route debugger in the browser
 
 When the tree is more than a few nodes, walk it with the [Alertmanager Route Tester](/alertmanager-route-tester/) instead of in your head. Paste your route tree — a bare `route:` block or a full `alertmanager.yml`, of which only the `route` block is read — and the sample alert's labels, one `key=value` per line. It reproduces the semantics exactly: first-match-wins, `continue: true` fan-out, anchored regexes, missing-label-as-empty-string, and grouping inheritance.

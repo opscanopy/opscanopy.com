@@ -1,6 +1,6 @@
 ---
 title: "So validierst du deine .gitlab-ci.yml vor dem Push"
-description: "Schluss mit kaputten Pipelines beim Pushen. Validiere deine .gitlab-ci.yml direkt im Browser auf YAML- und Strukturfehler — vor dem Commit, nicht erst nach der roten Pipeline."
+description: "Schluss mit kaputten Pipelines beim Pushen. Validiere deine .gitlab-ci.yml direkt im Browser auf YAML- und Strukturfehler — vor dem Commit, nicht danach."
 pubDate: 2026-06-11
 tags: ["gitlab-ci","ci-cd","yaml"]
 lang: de

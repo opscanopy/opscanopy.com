@@ -1,6 +1,6 @@
 ---
-title: "Por que a sua condição \"if\" do GitHub Actions sempre roda (e como corrigir isso)"
-description: "A sua condição if do GitHub Actions sempre roda como verdadeira? É a armadilha do texto literal: qualquer texto fora de ${{ }} é convertido em uma string truthy. Aqui estão a causa e a correção."
+title: "Por que a sua condição \"if\" do GitHub Actions sempre roda"
+description: "Sua condição if do GitHub Actions sempre roda como verdadeira? É a armadilha do texto literal: qualquer texto fora de ${{ }} vira uma string truthy."
 pubDate: 2026-06-14
 tags: ["github-actions", "ci-cd"]
 relatedTool:

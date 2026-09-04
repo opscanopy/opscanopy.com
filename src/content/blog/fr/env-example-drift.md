@@ -1,6 +1,6 @@
 ---
 title: "Arrêtez de livrer un .env.example périmé"
-description: "Votre .env.example est une documentation qui pourrit en silence. Voici pourquoi le drift de configuration casse l'onboarding et les déploiements, comment détecter les clés manquantes et inutilisées, et comment garder le fichier d'exemple honnête."
+description: "Votre .env.example est une documentation qui pourrit en silence. Pourquoi le drift de configuration casse l'onboarding et comment repérer les clés manquantes."
 pubDate: 2026-06-02
 tags: ["configuration", "developer-experience", "twelve-factor"]
 lang: fr

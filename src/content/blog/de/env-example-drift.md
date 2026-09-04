@@ -1,6 +1,6 @@
 ---
 title: "Schluss mit dem Ausliefern einer veralteten .env.example"
-description: "Ihre .env.example ist Dokumentation, die stillschweigend verrottet. Hier erfahren Sie, warum Env-Drift Onboarding und Deployments zerstört, wie Sie fehlende und ungenutzte Schlüssel erkennen und wie Sie die Beispieldatei ehrlich halten."
+description: "Ihre .env.example ist Dokumentation, die stillschweigend verrottet. Warum Env-Drift Onboarding zerstört und wie Sie fehlende und ungenutzte Schlüssel erkennen."
 pubDate: 2026-06-02
 tags: ["configuration", "developer-experience", "twelve-factor"]
 lang: de

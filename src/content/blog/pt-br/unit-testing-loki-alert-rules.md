@@ -1,6 +1,6 @@
 ---
-title: "Testes unitários de regras de alerta do Loki: a lacuna que o promtool deixa"
-description: "O Prometheus tem o promtool test rules. O Loki não tem nada equivalente. Veja por que testar regras de alerta em LogQL importa, como deveria ser um teste unitário de regra do Loki e como fechar essa lacuna hoje."
+title: "Testes unitários de regras Loki: a lacuna do promtool"
+description: "O Prometheus tem o promtool test rules. O Loki não tem nada equivalente. Por que testar regras de alerta em LogQL importa e como fechar essa lacuna hoje."
 pubDate: 2026-04-15
 tags: ["loki", "observability", "testing"]
 lang: pt-br

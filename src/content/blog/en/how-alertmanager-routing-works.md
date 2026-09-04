@@ -1,6 +1,6 @@
 ---
-title: "How Alertmanager routing works: matchers and the route tree"
-description: "A clear mental model for Alertmanager routing — the route tree, matchers, the continue flag, grouping and receiver inheritance — so you know where alerts go."
+title: "Alertmanager matchers, grouping and route inheritance"
+description: "Alertmanager route config reference: the matchers, match and match_re forms, anchored regexes, the four grouping fields, and what a child route inherits."
 pubDate: 2026-06-17
 tags: ["alertmanager","observability","alerting"]
 relatedTool:
@@ -10,9 +10,11 @@ relatedTool:
 
 ![Diagram of Alertmanager routing: an alert's labels enter the route tree at the root and flow down matched child routes to a receiver](/blog/how-alertmanager-routing-works-hero.svg)
 
-A `severity=critical` alert fired last night and the on-call team never got paged. The alert was real, the receiver existed, the Slack webhook worked. The problem was three lines higher in the config: a broad catch-all route sat above the team route and quietly swallowed everything that reached it. Nobody touched the receiver — they touched the order.
+You can read an `alertmanager.yml` from top to bottom and still not be able to say where a given alert will land. The receiver definitions are rarely the problem. The route tree is: matchers anchored more tightly than they look, grouping fields a leaf never declares for itself, and an order among siblings that quietly decides which one wins.
 
-That is what makes Alertmanager routing easy to get wrong. The receivers are usually fine. The route tree is where the surprises live. Once you have a precise model of how the route tree is walked — how matchers are evaluated, when `continue` keeps an alert moving, and what each child inherits from its parent — "why did this alert go there?" stops being a guessing game. This post builds that model, and every rule here matches what the [Alertmanager Route Tester](/alertmanager-route-tester/) actually does when it walks a tree against a sample alert.
+Once you have a precise model of how the route tree is walked — how matchers are evaluated, when `continue` keeps an alert moving, and what each child inherits from its parent — "why did this alert go there?" stops being a guessing game. This post is that reference: the three matcher forms, the four grouping fields and the inheritance rules, each stated the way the [Alertmanager Route Tester](/alertmanager-route-tester/) implements it when it walks a tree against a sample alert.
+
+**Debugging a specific alert right now?** [Why isn't my alert reaching the right receiver?](/blog/debug-alertmanager-routing/) is the troubleshooting companion to this page — the five bugs that send an alert to the wrong receiver, or to nobody at all. Start there when something is already broken; stay here for the rules underneath it.
 
 ## Routing is a tree, not a list
 
@@ -77,7 +79,7 @@ Getting those labels onto the alert in the first place is a separate job that ha
 
 ## Depth-first matching and continue: first matching sibling wins unless continue is true
 
-Here is the rule that the late-night example broke. Within a matched route, child routes are evaluated **in order, top to bottom**. The alert descends into the **first** child whose matchers all hold — and then, by default, the sibling scan **stops**. Later siblings are never even checked.
+Here is the rule that decides which sibling wins. Within a matched route, child routes are evaluated **in order, top to bottom**. The alert descends into the **first** child whose matchers all hold — and then, by default, the sibling scan **stops**. Later siblings are never even checked.
 
 ```yaml
 # TRAP: the broad rule above shadows the specific one

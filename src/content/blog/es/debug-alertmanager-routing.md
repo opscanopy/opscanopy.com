@@ -1,6 +1,6 @@
 ---
-title: "¿Por qué mi alerta no llega al receiver correcto? Cómo depurar el enrutamiento de Alertmanager"
-description: "¿Las alertas van al receiver equivocado, o a ninguno? Depura el enrutamiento de Alertmanager: gana la primera coincidencia, el continue ausente, las regex de matcher y los valores por defecto catch-all."
+title: "Cómo depurar el enrutamiento de Alertmanager"
+description: "¿Las alertas van al receiver equivocado, o a ninguno? Depura el enrutamiento de Alertmanager: primera coincidencia, continue ausente, regex y catch-all."
 pubDate: 2026-06-18
 tags: ["alertmanager","observability","alerting"]
 lang: es
@@ -253,6 +253,8 @@ Luego, empezando por la raíz:
 5. **Resuelve la herencia en la hoja.** El `receiver` y el `group_by` efectivos provienen del ancestro más cercano que los estableció, no necesariamente de la hoja.
 
 Haz eso para los labels de arriba contra el árbol de la documentación y aterrizas en `team-DB-pages` vía `service=database`, heredando `group_by` de la raíz. Hacer este recorrido sobre papel para un árbol de 40 nodos es exactamente el razonamiento propenso a errores que produjo el bug en primer lugar, que es justo la razón por la que existe un tester.
+
+Si lo que buscas son las reglas y no el arreglo — las tres formas de matcher, los cuatro campos de agrupación y qué hereda una ruta hija de su padre — la referencia está en [Alertmanager: matchers, agrupación y herencia de rutas](/es/blog/how-alertmanager-routing-works/).
 
 ## Encuentra ya el receiver coincidente: un depurador de rutas de Alertmanager en el navegador
 

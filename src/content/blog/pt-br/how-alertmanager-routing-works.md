@@ -1,6 +1,6 @@
 ---
-title: "Como funciona o roteamento do Alertmanager: matchers, continue e a árvore de rotas"
-description: "Um modelo mental claro para o roteamento do Alertmanager — a árvore de rotas, os matchers, a flag continue, o agrupamento e a herança de receivers — para você saber exatamente para onde cada alerta vai."
+title: "Alertmanager: matchers, agrupamento e herança de rotas"
+description: "Referência da config de rotas do Alertmanager: matchers, match e match_re, regexes ancorados, os quatro campos de agrupamento e o que uma rota filha herda."
 pubDate: 2026-06-17
 tags: ["alertmanager","observability","alerting"]
 lang: pt-br
@@ -12,9 +12,11 @@ relatedTool:
 
 ![Diagrama do roteamento do Alertmanager: os labels de um alerta entram na árvore de rotas pela raiz e descem pelas rotas filhas correspondentes até chegar a um receiver](/blog/how-alertmanager-routing-works-hero.svg)
 
-Um alerta `severity=critical` disparou ontem à noite e o time de plantão nunca foi acionado. O alerta era real, o receiver existia, o webhook do Slack funcionava. O problema estava três linhas acima na configuração: uma rota catch-all abrangente ficava acima da rota do time e engolia silenciosamente tudo que chegava até ela. Ninguém mexeu no receiver — mexeram na ordem.
+Você pode ler um `alertmanager.yml` de cima a baixo e ainda assim não saber dizer onde um alerta específico vai parar. As definições de receivers raramente são o problema. A árvore de rotas é: matchers ancorados de forma mais estrita do que parecem, campos de agrupamento que uma folha nunca declara por conta própria e uma ordem entre irmãos que decide silenciosamente qual deles vence.
 
-É isso que torna o roteamento do Alertmanager tão fácil de errar. Os receivers geralmente estão corretos. É na árvore de rotas que moram as surpresas. Quando você tem um modelo preciso de como a árvore de rotas é percorrida — como os matchers são avaliados, quando o `continue` mantém um alerta em movimento e o que cada filho herda do seu pai — "por que esse alerta foi parar ali?" deixa de ser um jogo de adivinhação. Este post constrói esse modelo, e cada regra aqui corresponde ao que o [Alertmanager Route Tester](/alertmanager-route-tester/) realmente faz quando percorre uma árvore com um alerta de exemplo.
+Quando você tem um modelo preciso de como a árvore de rotas é percorrida — como os matchers são avaliados, quando o `continue` mantém um alerta em movimento e o que cada filho herda do seu pai — "por que esse alerta foi parar ali?" deixa de ser um jogo de adivinhação. Este post é essa referência: as três formas de matcher, os quatro campos de agrupamento e as regras de herança, cada uma enunciada do jeito que o [Alertmanager Route Tester](/alertmanager-route-tester/) implementa quando percorre uma árvore com um alerta de exemplo.
+
+**Está depurando um alerta específico agora?** [Por Que Meu Alerta Não Chega ao Receiver Certo?](/pt-br/blog/debug-alertmanager-routing/) é o post companheiro de troubleshooting desta página — os cinco bugs que mandam um alerta para o receiver errado, ou para nenhum. Comece por lá quando algo já está quebrado; fique aqui para as regras que sustentam tudo isso.
 
 ## Roteamento é uma árvore, não uma lista
 
@@ -79,7 +81,7 @@ Colocar esses labels no alerta em primeiro lugar é um trabalho à parte, que ac
 
 ## Correspondência em profundidade e continue: o primeiro irmão correspondente vence, a menos que continue seja true
 
-Aqui está a regra que o exemplo da madrugada quebrou. Dentro de uma rota correspondente, as rotas filhas são avaliadas **em ordem, de cima para baixo**. O alerta desce para o **primeiro** filho cujos matchers se aplicam por completo — e então, por padrão, a varredura dos irmãos **para**. Os irmãos seguintes nem chegam a ser verificados.
+Aqui está a regra que decide qual irmão vence. Dentro de uma rota correspondente, as rotas filhas são avaliadas **em ordem, de cima para baixo**. O alerta desce para o **primeiro** filho cujos matchers se aplicam por completo — e então, por padrão, a varredura dos irmãos **para**. Os irmãos seguintes nem chegam a ser verificados.
 
 ```yaml
 # TRAP: the broad rule above shadows the specific one

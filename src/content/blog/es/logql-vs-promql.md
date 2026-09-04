@@ -1,6 +1,6 @@
 ---
 title: "LogQL vs PromQL: la misma consulta en ambos lenguajes"
-description: "LogQL toma prestada la forma de PromQL, pero parte de líneas de log, no de métricas. Así es como se alinean ambos lenguajes de consulta, dónde se traducen con limpieza y dónde simplemente no lo hacen."
+description: "LogQL toma prestada la forma de PromQL, pero parte de líneas de log, no de métricas. Cómo se alinean ambos lenguajes, dónde se traducen bien y dónde no."
 pubDate: 2026-06-05
 tags: ["logql", "promql", "observability"]
 lang: es

@@ -1,6 +1,6 @@
 ---
 title: "7 Erros Comuns no .gitlab-ci.yml (e Como Detectá-los)"
-description: "Os erros de .gitlab-ci.yml que deixam os pipelines vermelhos: stages indefinidos, jobs sem script, needs e rules quebrados, uso indevido de anchors — cada um com uma correção que você pode copiar."
+description: "Os erros de .gitlab-ci.yml que deixam pipelines vermelhos: stages indefinidos, jobs sem script, needs e rules quebrados, anchors — com a correção de cada um."
 pubDate: 2026-06-12
 tags: ["gitlab-ci","ci-cd","yaml"]
 lang: pt-br

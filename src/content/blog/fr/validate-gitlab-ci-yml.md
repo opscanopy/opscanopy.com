@@ -1,6 +1,6 @@
 ---
 title: "Comment valider votre .gitlab-ci.yml avant de pousser"
-description: "Arrêtez de pousser des pipelines cassés. Validez votre .gitlab-ci.yml pour les erreurs YAML et structurelles directement dans votre navigateur — avant le commit, pas après le pipeline en rouge."
+description: "Arrêtez de pousser des pipelines cassés. Validez votre .gitlab-ci.yml pour les erreurs YAML et structurelles dans votre navigateur, avant le commit."
 pubDate: 2026-06-11
 tags: ["gitlab-ci","ci-cd","yaml"]
 lang: fr

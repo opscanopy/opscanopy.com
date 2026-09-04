@@ -1,6 +1,6 @@
 ---
-title: "Unit-Tests für Loki-Alert-Regeln: die Lücke, die promtool hinterlässt"
-description: "Prometheus hat promtool test rules. Loki hat nichts Vergleichbares. Hier erfahren Sie, warum das Testen von LogQL-Alert-Regeln wichtig ist, wie ein Unit-Test für eine Loki-Regel aussehen sollte und wie Sie die Lücke heute schließen."
+title: "Unit-Tests für Loki-Alert-Regeln: die promtool-Lücke"
+description: "Prometheus hat promtool test rules. Loki hat nichts Vergleichbares. Warum das Testen von LogQL-Alert-Regeln wichtig ist und wie Sie die Lücke heute schließen."
 pubDate: 2026-04-15
 tags: ["loki", "observability", "testing"]
 lang: de

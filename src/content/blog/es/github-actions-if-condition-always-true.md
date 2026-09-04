@@ -1,6 +1,6 @@
 ---
-title: "Por qué tu condición \"if\" de GitHub Actions siempre se ejecuta (y cómo solucionarlo)"
-description: "¿Tu condición if de GitHub Actions siempre se evalúa como verdadera? Es la trampa del texto literal: cualquier texto fuera de ${{ }} se convierte en una cadena truthy. Aquí tienes la causa y la solución."
+title: "Por qué tu condición if de GitHub Actions siempre se ejecuta"
+description: "¿Tu condición if de GitHub Actions siempre se evalúa como verdadera? Es la trampa del texto literal: todo lo que queda fuera de ${{ }} es una cadena truthy."
 pubDate: 2026-06-14
 tags: ["github-actions", "ci-cd"]
 relatedTool:

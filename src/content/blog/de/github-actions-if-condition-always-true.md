@@ -1,6 +1,6 @@
 ---
-title: "Warum Ihre GitHub-Actions-\"if\"-Bedingung immer ausgeführt wird (und wie Sie das beheben)"
-description: "Ihre GitHub-Actions-if-Bedingung ist immer wahr? Das ist der Literaltext-Fallstrick: Jeder Text außerhalb von ${{ }} wird zu einer truthy Zeichenkette gecastet. Hier sind Ursache und Lösung."
+title: "Warum Ihre GitHub-Actions-\"if\"-Bedingung immer läuft"
+description: "Ihre GitHub-Actions-if-Bedingung ist immer wahr? Das ist der Literaltext-Fallstrick: Jeder Text außerhalb von ${{ }} wird zu einer truthy Zeichenkette gecastet."
 pubDate: 2026-06-14
 tags: ["github-actions", "ci-cd"]
 relatedTool:

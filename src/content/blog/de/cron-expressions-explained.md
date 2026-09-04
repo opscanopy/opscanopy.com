@@ -1,6 +1,6 @@
 ---
 title: "Cron-Ausdrücke lesen: eine Feld-für-Feld-Anleitung"
-description: "Eine praktische Feld-für-Feld-Anleitung zum Lesen von Cron-Ausdrücken — die fünf Zeitfelder, Bereiche, Schritte, Listen und @macros — plus die Tücken, die Zeitpläne genau dann auslösen lassen, wenn Sie am wenigsten damit rechnen."
+description: "Eine Feld-für-Feld-Anleitung zum Lesen von Cron-Ausdrücken — die fünf Zeitfelder, Bereiche, Schritte, Listen und @macros — plus die Tücken, die dabei zubeißen."
 pubDate: 2026-05-13
 tags: ["cron", "scheduling", "devops"]
 lang: de

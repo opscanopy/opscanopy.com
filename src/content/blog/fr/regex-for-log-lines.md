@@ -1,6 +1,6 @@
 ---
-title: "Écrire des expressions régulières robustes pour les lignes de log"
-description: "Un guide pratique pour construire des regex qui analysent les lignes de log de manière fiable — ancrage, groupes de capture, échappement, gourmandise et les modes de défaillance qui vous piègent en production."
+title: "Des expressions régulières robustes pour les lignes de log"
+description: "Un guide pratique pour construire des regex qui analysent les lignes de log de manière fiable : ancrage, groupes de capture, échappement et gourmandise."
 pubDate: 2026-05-27
 tags: ["regex", "logs", "parsing"]
 lang: fr

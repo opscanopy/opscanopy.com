@@ -1,6 +1,6 @@
 ---
-title: "Warum erreicht mein Alert nicht den richtigen Receiver? Alertmanager-Routing debuggen"
-description: "Alerts landen beim falschen Receiver oder bei gar keinem? Debugge das Alertmanager-Routing — first-match-wins, fehlendes continue, Matcher-Regex und Catch-all-Defaults."
+title: "Warum erreicht mein Alert nicht den richtigen Receiver?"
+description: "Alerts landen beim falschen Receiver oder bei gar keinem? Debugge das Alertmanager-Routing — first-match-wins, fehlendes continue, Matcher-Regex und Catch-all."
 pubDate: 2026-06-18
 tags: ["alertmanager","observability","alerting"]
 lang: de
@@ -253,6 +253,8 @@ Dann, beginnend an der Wurzel:
 5. **Löse die Vererbung am Blatt auf.** Der effektive `receiver` und das effektive `group_by` stammen vom nächstgelegenen Vorfahren, der sie gesetzt hat, nicht zwangsläufig vom Blatt.
 
 Mach das für die obigen Labels gegen den Docs-Baum, und du landest über `service=database` bei `team-DB-pages`, wobei du `group_by` von der Wurzel erbst. Diesen Durchlauf für einen Baum mit 40 Knoten auf Papier zu machen, ist genau das fehleranfällige Nachdenken, das den Bug überhaupt erst hervorgebracht hat — was der ganze Grund ist, warum es einen Tester gibt.
+
+Wenn du die Regeln statt der Fehlerbehebung suchst — die drei Matcher-Formen, die vier Gruppierungsfelder und was eine Child-Route von ihrem Elternknoten erbt — findest du die Referenz in [Alertmanager-Matchers, Gruppierung und Route-Vererbung](/de/blog/how-alertmanager-routing-works/).
 
 ## Finde jetzt den matchenden Receiver: ein Alertmanager-Route-Debugger im Browser
 

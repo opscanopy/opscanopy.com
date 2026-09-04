@@ -1,6 +1,6 @@
 ---
-title: "relabel_configs do Prometheus explicado: um guia prático"
-description: "Entenda os relabel_configs do Prometheus de ponta a ponta — source_labels, regex, replacement e cada action (replace, keep, drop, labelmap, hashmod) — com receitas prontas para copiar e colar."
+title: "Actions de relabeling do Prometheus: keep, labelmap, hashmod"
+description: "Referência das 11 actions de relabeling do Prometheus — replace, keep, drop, labelmap, labeldrop, hashmod, keepequal, lowercase — cada uma com um exemplo."
 pubDate: 2026-06-13
 tags: ["prometheus","observability","relabeling"]
 lang: pt-br
@@ -12,9 +12,11 @@ relatedTool:
 
 ![Diagrama de um pipeline de relabel_configs do Prometheus mostrando os source_labels combinados em um valor, comparados a uma regex ancorada e uma action como replace, keep, drop, labelmap ou hashmod reescrevendo os labels de saída.](/blog/prometheus-relabel-configs-explained-hero.svg)
 
-Um target que você esperava coletar simplesmente nunca aparece no Prometheus. Nenhum erro nos logs, nenhum scrape falho, nada vermelho na página de targets — a série simplesmente não está lá. Você adiciona `--log.level=debug`, reinicia, fica apertando os olhos diante da saída e, no fim, encontra: uma regra `keep` três linhas adentro do seu `relabel_configs` descartou o target silenciosamente porque a regex não casou da forma que você imaginava. Essa falha silenciosa é exatamente o motivo pelo qual `relabel_configs` merece uma leitura cuidadosa. O relabeling do Prometheus reescreve, mantém ou descarta targets e seus labels, e quando está errado ele não reclama — apenas joga fora suas métricas.
+O relabeling do Prometheus recebe um conjunto de labels e devolve outro. Tudo o que ele faz — reescrever um label, promover metadados de service discovery a um label duradouro, distribuir targets entre réplicas, descartar um target antes mesmo de ele ser coletado — é expresso por onze actions montadas a partir do mesmo punhado de campos. Esta página é a referência dessas actions: o que cada uma lê, o que escreve e um exemplo executável para todas.
 
-Este guia percorre o relabeling do Prometheus do zero: o que ele faz, os campos que compõem cada regra e cada action com um pequeno exemplo. A semântica aqui é exatamente a mesma que o motor do [Prometheus Relabel Tester](/prometheus-relabel-tester/) implementa, então você pode colar nele qualquer snippet abaixo e ver os labels mudarem.
+A semântica aqui é exatamente a mesma que o motor do [Prometheus Relabel Tester](/prometheus-relabel-tester/) implementa, então você pode colar nele qualquer snippet abaixo e ver os labels mudarem.
+
+> **Está depurando uma configuração em execução em vez de consultar uma referência?** Comece por [Por que o Prometheus descartou meu target? Depurando relabel_configs](/pt-br/blog/debug-prometheus-relabeling/). Lá estão os dois sintomas — um target ausente em `/targets` versus um label que sumiu —, como recuperar exatamente a entrada `__meta_*` que suas regras viram e como bisseccionar uma cadeia longa de regras. Volte aqui para o detalhe de cada action.
 
 ## O que o relabeling realmente faz
 
@@ -65,7 +67,7 @@ Esse valor combinado é comparado com a `regex`. O detalhe que pega todo mundo: 
   action: keep
 ```
 
-Uma regra `regex: api` não vai manter um target cujo `job` seja `api-server`, porque `^(?:api)$` só casa com a string literal `api`. Você precisaria de `api.*` ou `(api.*)`. Esse único fato explica a maioria dos mistérios do tipo "meu target sumiu".
+Uma regra `regex: api` não vai manter um target cujo `job` seja `api-server`, porque `^(?:api)$` só casa com a string literal `api`. Você precisaria de `api.*` ou `(api.*)`. A ancoragem é de longe o motivo mais comum de uma regra se comportar de forma diferente de como ela se lê — [o guia de depuração](/pt-br/blog/debug-prometheus-relabeling/) percorre essa falha do sintoma até a correção.
 
 Quando a regex casa e a action escreve um label, o `replacement` fornece o valor. Os grupos de captura se expandem como `$1`, `${1}` ou grupos nomeados `$name`/`${name}`; o replacement padrão é `$1`, e é por isso que um `replace` simples com `regex: (.*)` repassa o valor de origem sem alterações. O `modulus` só é lido pelo `hashmod`, e o `target_label` é obrigatório para `replace`, `hashmod`, `lowercase`, `uppercase`, `keepequal` e `dropequal`.
 

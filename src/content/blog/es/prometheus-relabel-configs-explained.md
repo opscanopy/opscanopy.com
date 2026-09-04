@@ -1,6 +1,6 @@
 ---
-title: "relabel_configs de Prometheus explicado: una guía práctica"
-description: "Entiende los relabel_configs de Prometheus de principio a fin —source_labels, regex, replacement y cada action (replace, keep, drop, labelmap, hashmod)— con recetas listas para copiar y pegar."
+title: "Actions de relabeling de Prometheus: keep, labelmap, hashmod"
+description: "Referencia de las 11 actions de relabeling de Prometheus —replace, keep, drop, labelmap, labeldrop, hashmod, keepequal, lowercase— cada una con un ejemplo."
 pubDate: 2026-06-13
 tags: ["prometheus","observability","relabeling"]
 lang: es
@@ -12,9 +12,11 @@ relatedTool:
 
 ![Diagrama de un pipeline de relabel_configs de Prometheus que muestra los source_labels unidos en un valor, comparado con una regex anclada, y una action como replace, keep, drop, labelmap o hashmod reescribiendo las etiquetas de salida.](/blog/prometheus-relabel-configs-explained-hero.svg)
 
-Un target que esperabas scrapear nunca aparece en Prometheus. Ningún error en los logs, ningún scrape fallido, nada en rojo en la página de targets: la serie sencillamente no está ahí. Añades `--log.level=debug`, reinicias, entrecierras los ojos ante la salida y al final lo encuentras: una regla `keep` tres líneas más abajo en tus `relabel_configs` descartó el target en silencio porque la regex no coincidió como suponías. Ese fallo silencioso es justamente la razón por la que `relabel_configs` merece una lectura atenta. El relabeling de Prometheus reescribe, conserva o descarta targets y sus etiquetas, y cuando se equivoca no se queja: simplemente tira tus métricas.
+El relabeling de Prometheus recibe un conjunto de etiquetas y devuelve otro. Todo lo que puede hacer —reescribir una etiqueta, ascender metadatos de service discovery a una etiqueta duradera, repartir targets entre réplicas, descartar un target antes incluso de scrapearlo— se expresa con once actions construidas a partir del mismo puñado de campos. Esta página es la referencia de esas actions: qué lee cada una, qué escribe y un ejemplo ejecutable para todas.
 
-Esta guía recorre el relabeling de Prometheus desde cero: qué hace, los campos con los que se construye cada regla y cada action con un pequeño ejemplo. La semántica de aquí coincide exactamente con la que implementa el motor del [Prometheus Relabel Tester](/prometheus-relabel-tester/), así que puedes pegar en él cualquier fragmento de los de abajo y ver cómo cambian las etiquetas.
+La semántica de aquí coincide exactamente con la que implementa el motor del [Prometheus Relabel Tester](/prometheus-relabel-tester/), así que puedes pegar en él cualquier fragmento de los de abajo y ver cómo cambian las etiquetas.
+
+> **¿Estás depurando una configuración en marcha en lugar de consultar una referencia?** Empieza por [¿Por qué Prometheus descartó mi target? Depurando relabel_configs](/es/blog/debug-prometheus-relabeling/). Ahí se cubren los dos síntomas —un target que no aparece en `/targets` frente a una etiqueta que se esfumó—, cómo recuperar exactamente la entrada `__meta_*` que vieron tus reglas y cómo bisecar una cadena larga de reglas. Vuelve aquí para el detalle de cada action.
 
 ## Qué hace realmente el relabeling
 
@@ -65,7 +67,7 @@ Ese valor unido se compara con `regex`. El detalle que a todo el mundo se le esc
   action: keep
 ```
 
-Una regla `regex: api` no conservará un target cuyo `job` sea `api-server`, porque `^(?:api)$` solo coincide con la cadena literal `api`. Necesitarías `api.*` o `(api.*)`. Este único hecho explica la mayoría de los misterios del estilo "mi target desapareció".
+Una regla `regex: api` no conservará un target cuyo `job` sea `api-server`, porque `^(?:api)$` solo coincide con la cadena literal `api`. Necesitarías `api.*` o `(api.*)`. El anclaje es, con diferencia, el motivo más habitual de que una regla se comporte de forma distinta a como se lee: [la guía de depuración](/es/blog/debug-prometheus-relabeling/) recorre ese fallo desde el síntoma hasta la solución.
 
 Cuando la regex coincide y la action escribe una etiqueta, `replacement` aporta el valor. Los grupos de captura se expanden como `$1`, `${1}`, o los grupos nombrados `$name`/`${name}`; el replacement por defecto es `$1`, que es por lo que un `replace` simple con `regex: (.*)` copia el valor de origen sin cambios. `modulus` solo lo lee `hashmod`, y `target_label` es obligatorio para `replace`, `hashmod`, `lowercase`, `uppercase`, `keepequal` y `dropequal`.
 

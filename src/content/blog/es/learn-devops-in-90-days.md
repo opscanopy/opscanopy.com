@@ -1,6 +1,6 @@
 ---
-title: "Aprende DevOps en 90 días: la ruta gratuita y centrada en incidentes de desarrollador a ingeniero DevOps"
-description: "Por qué creamos Mission: 90 Days DevOps — una ruta gratuita día a día de Linux a Kubernetes con misiones de incidentes jugables. El plan completo, las decisiones de diseño y los compromisos honestos."
+title: "Aprende DevOps en 90 días: de desarrollador a ingeniero"
+description: "Por qué creamos Mission: 90 Days DevOps — una ruta gratuita día a día de Linux a Kubernetes con misiones de incidentes jugables, y las decisiones de diseño."
 pubDate: 2026-07-12
 tags: ["devops", "career", "learning"]
 lang: es

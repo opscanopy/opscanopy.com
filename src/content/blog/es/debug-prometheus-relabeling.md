@@ -1,6 +1,6 @@
 ---
-title: "¿Por qué Prometheus descartó mi target? Depurando relabel_configs"
-description: "Un target desapareció o una etiqueta se esfumó tras el relabeling. Depura relabel_configs frente a metric_relabel_configs, el anclaje de regex y la lógica de keep/drop."
+title: "Prometheus descartó mi target: depurando relabel_configs"
+description: "Un target o una etiqueta desapareció tras el relabeling. Depura relabel_configs frente a metric_relabel_configs, el anclaje de regex y la lógica de keep/drop."
 pubDate: 2026-06-16
 tags: ["prometheus","observability","relabeling"]
 lang: es

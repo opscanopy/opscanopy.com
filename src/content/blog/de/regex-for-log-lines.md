@@ -1,6 +1,6 @@
 ---
 title: "Robuste reguläre Ausdrücke für Log-Zeilen schreiben"
-description: "Ein praktischer Leitfaden zum Erstellen von Regexes, die Log-Zeilen zuverlässig parsen — Verankerung, Capture-Gruppen, Escaping, Gier und die Fehlermodi, die Sie in der Produktion treffen."
+description: "Ein praktischer Leitfaden zu Regexes, die Log-Zeilen zuverlässig parsen — Verankerung, Capture-Gruppen, Escaping, Gier und die Fehlermodi in der Produktion."
 pubDate: 2026-05-27
 tags: ["regex", "logs", "parsing"]
 lang: de

@@ -1,6 +1,6 @@
 ---
 title: "Lendo expressões cron: um guia campo a campo"
-description: "Um guia prático, campo a campo, para ler expressões cron — os cinco campos de tempo, intervalos, passos, listas e @macros — além das pegadinhas que fazem os agendamentos dispararem quando você menos espera."
+description: "Um guia prático, campo a campo, para ler expressões cron — os cinco campos de tempo, intervalos, passos, listas e @macros — mais as pegadinhas mais comuns."
 pubDate: 2026-05-13
 tags: ["cron", "scheduling", "devops"]
 lang: pt-br

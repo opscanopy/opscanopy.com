@@ -1,6 +1,6 @@
 ---
-title: "docker run vs. Docker Compose: Ein praktischer Migrationsleitfaden"
-description: "Wann du docker run verwenden solltest, wann der Wechsel zu Docker Compose sinnvoll ist und wie du in beide Richtungen konvertierst — mit korrekt behandelten Volumes, Netzwerken und Reproduzierbarkeit."
+title: "Wann du Docker Compose statt docker run verwenden solltest"
+description: "Wofür du dich entscheidest und was sich beim Wechsel wirklich ändert: Standardnetzwerk, Restart-Policy, Detached-Modus — und der Weg zurück zur Run-Zeile."
 pubDate: 2026-06-10
 tags: ["docker","docker-compose","containers"]
 lang: de
@@ -14,7 +14,9 @@ relatedTool:
 
 Du hast vor drei Wochen einen Postgres-Container mit einem `docker run`-Einzeiler gestartet. Er läuft. Dann startest du die Maschine neu, oder ein Teamkollege braucht dasselbe Setup, oder du willst den Befehl in die Versionsverwaltung packen — und merkst, dass die einzige Kopie dieses Befehls in deiner Shell-History steckt, irgendwo zwischen einem `ls` und einem `kubectl get pods`. In diesem Moment hört die Frage `docker run` vs. `docker compose` auf, eine akademische zu sein. Der Container ist in Ordnung; die Art, wie du ihn gestartet hast, ist nicht reproduzierbar.
 
-Dieser Leitfaden geht beide Richtungen durch: wann `docker run` die richtige Wahl ist, wann der Umstieg auf eine `docker-compose.yml` sinnvoll ist und wie du einen Compose-Service wieder in eine einzelne Run-Zeile zurückverwandelst, wenn du eine brauchst. Jede Flag-Zuordnung hier entspricht genau dem, was der [Docker Run to Compose Konverter](/docker-run-to-compose/) tatsächlich macht, sodass du deine eigenen Befehle damit abgleichen kannst.
+In diesem Leitfaden geht es um die Entscheidung, nicht um die Mechanik: wann `docker run` weiterhin die richtige Wahl ist, wann sich eine `docker-compose.yml` lohnt, was sich im Verhalten tatsächlich ändert, sobald du wechselst, und wie du einen Compose-Service wieder in eine einzelne Run-Zeile zurückverwandelst, wenn du eine brauchst.
+
+**Du suchst stattdessen die Zuordnung Flag für Flag?** [Wie man einen docker-run-Befehl in eine docker-compose.yml umwandelt](/de/blog/convert-docker-run-to-compose/) ist die vollständige Referenz — jedes `docker run`-Flag und der `docker-compose.yml`-Schlüssel, der daraus wird, samt der Stolperfallen, die beim Übersetzen von Hand zubeißen. Dieser Beitrag stellt die Frage davor: Solltest du überhaupt umstellen, und was ändert sich dadurch?
 
 ## Derselbe Container, zwei Wege
 
@@ -144,46 +146,11 @@ docker run -d --name cache -p 6379:6379 -m 256m \
 
 Der Healthcheck-Block expandiert zurück in die einzelnen `--health-*`-Flags; aus `mem_limit` wird `-m`; aus Labels werden `-l`. Der Konverter stellt `docker run -d` genau deshalb voran, weil der Service im Hintergrund laufen sollte. Worauf du achten musst: Compose-eigene Schlüssel wie `depends_on`, `build` und `deploy` haben kein Befehls-Äquivalent, deshalb meldet ein verlässlicher Konverter sie als Warnungen, statt Flags zu erfinden, die es nicht gibt. Wenn dein Service `build:` hat, führst du zuerst `docker build` aus und übergibst das resultierende Tag an `docker run`.
 
-## Einen echten Befehl Schritt für Schritt migrieren
+## Wo die Zuordnung Flag für Flag steht
 
-Nehmen wir eine nicht-triviale `docker run`-Zeile und gehen die Migration von Anfang bis Ende durch. Hier ist ein App-Container in einem benutzerdefinierten Netzwerk mit angepassten Capabilities:
+Wenn die Entscheidung zur Migration gefallen ist, ist die Übersetzung selbst mechanisch: Jedes `docker run`-Flag hat entweder einen `docker-compose.yml`-Schlüssel oder keinen — und wird dann mit einer Warnung verworfen. Die vollständige Zuordnung — `-p` zu `ports`, `-v` zu `volumes`, `--network host` zu `network_mode`, die `--health-*`-Flags zu einem `healthcheck`-Block und der Rest — steht mitsamt durchgespieltem Beispiel in **[Wie man einen docker-run-Befehl in eine docker-compose.yml umwandelt](/de/blog/convert-docker-run-to-compose/)**. Lies jenen Beitrag, wenn du einen konkreten Befehl vor dir hast; lies diesen, wenn du entscheidest, ob du ihn überhaupt umstellen sollst.
 
-```bash
-docker run -d --name api \
-  --network backend \
-  -p 3000:3000 \
-  -e NODE_ENV=production \
-  --cap-add NET_ADMIN --cap-drop ALL \
-  --add-host db:10.0.0.5 \
-  myorg/api:1.4.0
-```
-
-**Schritt 1 — tokenisieren, nicht nach Augenmaß.** Der Befehl wird shell-typisch zerlegt: Anführungszeichen und Backslash-Zeilenumbrüche werden berücksichtigt, und gebündelte Kurz-Flags wie `-it` werden in `-i -t` expandiert. Der erste Token, der kein Flag ist (`myorg/api:1.4.0`), ist das Image; alles danach wäre der Container-Befehl.
-
-**Schritt 2 — jedes Flag einem Schlüssel zuordnen.** Ports gehen zu `ports`, `-e` zu `environment`, `--cap-add`/`--cap-drop` zu `cap_add`/`cap_drop`, `--add-host` zu `extra_hosts` und `--network backend` zur `networks`-Liste.
-
-**Schritt 3 — das Ergebnis lesen.**
-
-```yaml
-services:
-  api:
-    image: myorg/api:1.4.0
-    container_name: api
-    ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=production
-    networks:
-      - backend
-    extra_hosts:
-      - db:10.0.0.5
-    cap_add:
-      - NET_ADMIN
-    cap_drop:
-      - ALL
-```
-
-Eine Sache, die der Konverter bewusst *nicht* tut: einen Top-Level-Abschnitt `networks:` erfinden, um den du nicht gebeten hast. Das `backend`-Netzwerk taucht unter dem Service auf, genau so benannt. Wenn `backend` ein Netzwerk ist, das du mit `docker network create` angelegt hast, musst du es selbst auf oberster Ebene als `external` deklarieren — das Tool rät nicht an Infrastruktur herum, die du nicht aufgeschrieben hast. Diese Zurückhaltung ist der springende Punkt; ein Konverter, der Struktur halluziniert, ist schlimmer als einer, der nur das konvertiert, was du ihm gegeben hast.
+Ein Vorbehalt auf Migrationsebene, den die Zuordnungstabelle nicht ausdrücken kann: Ein Konverter sollte keinen Top-Level-Abschnitt `networks:` erfinden, um den du nicht gebeten hast. `--network backend` taucht unter dem Service auf, genau so benannt. Wenn `backend` ein Netzwerk ist, das du mit `docker network create` angelegt hast, musst du es selbst auf oberster Ebene als `external` deklarieren — das Tool rät nicht an Infrastruktur herum, die du nicht aufgeschrieben hast. Diese Zurückhaltung ist der springende Punkt; ein Konverter, der Struktur halluziniert, ist schlimmer als einer, der nur das konvertiert, was du ihm gegeben hast.
 
 ## Fallstricke bei der Migration
 
