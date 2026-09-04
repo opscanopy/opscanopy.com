@@ -1,6 +1,6 @@
 ---
 title: "docker run vs Docker Compose: A Practical Migration Guide"
-description: "When to use docker run, when to switch to Docker Compose, and how to convert between them in both directions — with volumes, networks and reproducibility handled right."
+description: "When to use docker run, when to switch to Docker Compose, and how to convert between them in both directions — volumes, networks and reproducibility included."
 pubDate: 2026-06-10
 tags: ["docker","docker-compose","containers"]
 relatedTool:

@@ -63,10 +63,11 @@ on a command intended as a preview. Dry-run first, read it, then re-run with
 | 2026-08-19 | 1 | 2 | Guide 4. 2-day gap both. |
 | 2026-08-25 | 1 | 2 | Guide 5 (Linux). 6-day gap both. **dev.to returned HTTP 500 and published anyway** — second occurrence, see the trap below. |
 | 2026-08-31 | 2 | 2 | Normal. 6-day gap both. First of the error-string posts — blog-sized, so 2 rather than 1. |
+| 2026-09-02 | 1 | 2 | Normal. 2-day gap both. Last error-string post; held the two guides back on Show HN day. |
 
 ## Current state
 
-**dev.to — 32 published, 3 still queued (1 error-string post + 2 long-form guides)**
+**dev.to — 33 published, 2 still queued (both long-form guides)**
 
 Syndicated on 2026-07-27: 7 Common .gitlab-ci.yml Mistakes · How to Convert a docker
 run Command · Why Isn't My Alert Reaching the Right Receiver · Why Did Prometheus

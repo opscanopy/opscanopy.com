@@ -1,6 +1,6 @@
 ---
-title: "failed to solve: process \"/bin/sh -c ...\" did not complete successfully: exit code: 1"
-description: "BuildKit's generic build failure tells you which line failed but not why. How to read the error, get the real output back, and fix the four structural causes that produce it most often."
+title: "failed to solve: did not complete successfully: exit code 1"
+description: "BuildKit tells you which line failed but not why. How to read the error, get the real output back, and fix the four structural causes behind most of them."
 pubDate: 2026-08-29
 tags: ["docker","buildkit","ci","dockerfile"]
 relatedTool:

@@ -1,6 +1,6 @@
 ---
-title: "How Alertmanager Routing Works: Matchers, continue, and the Route Tree"
-description: "A clear mental model for Alertmanager routing — the route tree, matchers, the continue flag, grouping and receiver inheritance — so you know exactly where an alert goes."
+title: "How Alertmanager routing works: matchers and the route tree"
+description: "A clear mental model for Alertmanager routing — the route tree, matchers, the continue flag, grouping and receiver inheritance — so you know where alerts go."
 pubDate: 2026-06-17
 tags: ["alertmanager","observability","alerting"]
 relatedTool:

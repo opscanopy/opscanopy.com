@@ -7,6 +7,7 @@
  */
 import { site } from '../data/site';
 import { getToolUpdatedAt } from '../data/tool-meta';
+import { toolOgImage } from './tool-og';
 
 const LOCALE_PREFIXES = ['de', 'es', 'fr', 'pt-br'];
 
@@ -48,7 +49,12 @@ export function organizationLd(): Record<string, unknown> {
     name: site.name,
     url: site.url,
     description: site.description,
-    sameAs: [site.github, `https://x.com/${site.twitter.replace('@', '')}`],
+    sameAs: [
+      site.github,
+      `https://x.com/${site.twitter.replace('@', '')}`,
+      site.bluesky,
+      site.devto,
+    ],
   };
 }
 
@@ -102,12 +108,21 @@ export function softwareAppLd(o: {
 }): Record<string, unknown> {
   const slug = slugFromUrl(o.url);
   const dateModified = o.dateModified ?? (slug ? getToolUpdatedAt(slug) : undefined);
+  // The generated OG card doubles as the app screenshot. Google's software
+  // rich-result guidance asks for one, and we already render a per-tool image —
+  // it just was not declared. Absolute, because consumers resolve it out of context.
+  const screenshot = slug ? toolOgImage(slug) : undefined;
   return {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
     applicationCategory: 'DeveloperApplication',
     applicationSubCategory: o.subCategory,
-    operatingSystem: 'Any (browser-based)',
+    // "Any (browser-based)" was free text that no consumer could parse. The
+    // schema.org convention for a web app is a recognised `operatingSystem`
+    // value plus `browserRequirements` carrying the real constraint.
+    operatingSystem: 'Any',
+    browserRequirements: 'Requires a modern browser with JavaScript enabled.',
+    ...(screenshot ? { screenshot: `${site.url}${screenshot}` } : {}),
     url: o.url,
     name: o.name,
     description: o.description,

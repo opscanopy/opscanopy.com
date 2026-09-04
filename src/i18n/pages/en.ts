@@ -22,7 +22,7 @@ export interface PageLink {
 }
 
 export interface PageDoc {
-  /** Base <title>; the page appends " — OpsCanopy". */
+  /** Base <title>. Layout appends " · OpsCanopy" only if it fits the length budget. */
   metaTitle: string;
   /** Meta description + OG description. */
   description: string;

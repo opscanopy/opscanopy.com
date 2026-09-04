@@ -1,6 +1,6 @@
 ---
 title: "The GitHub Actions security mistakes linters miss"
-description: "YAML validators catch syntax, not exposure. Here are the five high-impact GitHub Actions misconfigurations — pull_request_target, script injection, unpinned actions, broad GITHUB_TOKEN scopes, and curl|bash — with the bad pattern and the fix for each."
+description: "YAML validators catch syntax, not exposure. Five high-impact GitHub Actions misconfigurations — pull_request_target, script injection and more — with fixes."
 pubDate: 2026-05-06
 tags: ["github-actions", "security", "ci-cd"]
 relatedTool:

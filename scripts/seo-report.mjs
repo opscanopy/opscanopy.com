@@ -246,6 +246,39 @@ if (GA4_PROPERTY) {
   }
 }
 
+// ── Domain Rating ─────────────────────────────────────────────────────────────
+// Ahrefs' free public endpoint. DR is the missing half of this report: clicks and
+// impressions say what happened, DR says whether the thing that gates them —
+// referring domains — is moving. On a young site DR climbs months before traffic
+// does, so it is the only early signal that distribution work is landing.
+//
+// Free endpoint, free key (Ahrefs account -> API keys), no subscription. It became
+// key-gated on 2026-08-10. Absent key = section omitted, never a failed report.
+async function fetchDomainRating() {
+  const key = process.env.AHREFS_API_KEY ?? process.env.PUBLIC_KEY_AHREF;
+  if (!key) return null;
+  const target = SITE_URL.startsWith('sc-domain:')
+    ? SITE_URL.slice('sc-domain:'.length)
+    : new URL(SITE_URL).hostname;
+  try {
+    const res = await fetch(
+      `https://api.ahrefs.com/v3/public/domain-rating-free?target=${encodeURIComponent(target)}`,
+      { headers: { Authorization: `Bearer ${key}` } },
+    );
+    if (!res.ok) {
+      console.warn(`Ahrefs DR failed (HTTP ${res.status}) — continuing without it.`);
+      return null;
+    }
+    const json = await res.json();
+    return { target, dr: json?.domain_rating?.domain_rating ?? null };
+  } catch (err) {
+    console.warn(`Ahrefs DR failed (${err.message}) — continuing without it.`);
+    return null;
+  }
+}
+
+const domainRating = await fetchDomainRating();
+
 // ── Analysis ──────────────────────────────────────────────────────────────────
 const n = (v) => Math.round((v ?? 0) * 10) / 10;
 const pct = (v) => `${(v * 100).toFixed(1)}%`;
@@ -360,7 +393,15 @@ because Search Console data lags). Compared against the ${WINDOW_DAYS} days befo
 | Impressions | ${now.impressions} | ${prev.impressions} | ${delta(now.impressions, prev.impressions)} |
 | CTR | ${pct(now.ctr)} | ${pct(prev.ctr)} | — |
 | Avg position | ${n(now.position)} | ${n(prev.position)} | — |
-
+${
+  domainRating
+    ? `| Domain Rating | ${domainRating.dr} | — | _Ahrefs, ${domainRating.target}_ |\n` +
+      `\n> DR is the leading indicator. Impressions cannot grow past what referring\n` +
+      `> domains allow, and DR moves months before traffic does — so on a young site\n` +
+      `> this row tells you whether distribution work is landing long before the\n` +
+      `> clicks column can.\n`
+    : ''
+}
 ## Indexation — is Google actually indexing these pages?
 
 Read this before the query sections. \`searchAnalytics\` only reports URLs that were

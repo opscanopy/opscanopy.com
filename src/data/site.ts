@@ -12,6 +12,12 @@ export const site = {
     'OpsCanopy is a growing hub of free, browser-based DevOps utilities — validators, converters, testers and linters that run entirely client-side. No signup, no servers, your data never leaves the device.',
   github: 'https://github.com/opscanopy',
   twitter: '@opscanopy',
+  // Profiles that publish OpsCanopy content under the same identity. These feed
+  // the Organization `sameAs` set, which is how a search or AI engine resolves
+  // "OpsCanopy" on dev.to and Bluesky to the same entity as this site rather
+  // than to three unrelated accounts that happen to share a name.
+  bluesky: 'https://bsky.app/profile/opscanopy.bsky.social',
+  devto: 'https://dev.to/opscanopy',
   author: 'OpsCanopy',
 } as const;
 

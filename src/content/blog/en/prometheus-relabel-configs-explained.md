@@ -1,6 +1,6 @@
 ---
 title: "Prometheus relabel_configs Explained: A Practical Guide"
-description: "Understand Prometheus relabel_configs end to end — source_labels, regex, replacement and every action (replace, keep, drop, labelmap, hashmod) — with copy-paste recipes."
+description: "Prometheus relabel_configs end to end — source_labels, regex, replacement and every action (replace, keep, drop, labelmap, hashmod) — with copy-paste recipes."
 pubDate: 2026-06-13
 tags: ["prometheus","observability","relabeling"]
 relatedTool:
