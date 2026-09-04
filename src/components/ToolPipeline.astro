@@ -8,6 +8,11 @@
  * Tailwind literal (5 steps → 5 columns, otherwise 4) so the class survives the
  * compiler's static-extraction.
  */
+import { getTool } from '../data/tools';
+import { site } from '../data/site';
+import { howToLd } from '../lib/jsonld';
+import { stripLocale } from '../i18n/utils';
+
 interface Step {
   title: string;
   body: string;
@@ -19,12 +24,53 @@ interface Props {
   heading: string;
   lead?: string;
   steps: Step[];
+  /**
+   * Suppress the HowTo JSON-LD. The steps describe how to use the tool, so the
+   * schema is emitted automatically on every tool page — set this on the rare
+   * pipeline that documents something other than the page's own tool.
+   */
+  noHowToLd?: boolean;
 }
 
-const { id, eyebrow, heading, lead, steps } = Astro.props;
+const { id, eyebrow, heading, lead, steps, noHowToLd = false } = Astro.props;
 
 // Full literal classes — never interpolated — so Tailwind keeps them.
 const cols = steps.length === 5 ? 'lg:grid-cols-5' : 'lg:grid-cols-4';
+
+/**
+ * HowTo structured data, derived from the steps already rendered below.
+ *
+ * Every tool page ships a 4–5 step "how it works" section and none of them
+ * declared it, so the one piece of genuinely step-shaped content on the page was
+ * invisible to parsers. The mapping is exact — {title, body} → {name, text} —
+ * so this adds no new prose to maintain and cannot drift from what is rendered.
+ *
+ * Emitted here rather than threaded through 195 pages' `jsonLd` props, following
+ * the precedent ToolHero already sets by emitting its own BreadcrumbList.
+ * `heading` is usually "How it works.", which is a poor HowTo name on its own —
+ * so the registered tool name supplies the subject when the URL resolves to one.
+ */
+const slug = stripLocale(Astro.url.pathname).replace(/^\/+|\/+$/g, '');
+const tool = slug && !slug.includes('/') ? getTool(slug) : undefined;
+// THIS page's own URL — locale prefix kept, trailing slash enforced. Using the
+// locale-stripped key here would have pointed every localized page's HowTo at
+// the English URL, and dropped the trailing slash the whole site canonicalises on.
+const pagePath = Astro.url.pathname.endsWith('/')
+  ? Astro.url.pathname
+  : `${Astro.url.pathname}/`;
+const howToJson =
+  !noHowToLd && tool && steps.length > 0
+    ? JSON.stringify(
+        howToLd({
+          // No article before the name: `h1Name ?? name` may be a bare brand
+          // ("AlertLint"), and "How to use the AlertLint" does not read as English.
+          name: `How to use ${tool.h1Name ?? tool.name}`,
+          description: lead ?? tool.tagline,
+          url: `${site.url}${pagePath}`,
+          steps: steps.map((s) => ({ name: s.title, text: s.body })),
+        }),
+      )
+    : null;
 ---
 
 <section id={id} class="scroll-mt-24 bg-canvas py-16 sm:py-20">
@@ -51,4 +97,5 @@ const cols = steps.length === 5 ? 'lg:grid-cols-5' : 'lg:grid-cols-4';
       }
     </ol>
   </div>
+  {howToJson && <script type="application/ld+json" set:html={howToJson} />}
 </section>
