@@ -18,6 +18,19 @@ try {
   console.warn('[sitemap] lastmod.generated.json not found — using build date for all URLs.');
 }
 
+// Tag pages with too few posts to index, written by scripts/gen-thin-tags.mjs in
+// `prebuild`. The tag page reads the same file to set `noindex`, so the sitemap
+// and the markup cannot disagree. Missing on a bare `astro dev` — fall back to
+// an empty set, which keeps every tag page in the sitemap rather than failing.
+/** @type {{ threshold: number, thin: string[] }} */
+let THIN_TAGS = { threshold: 0, thin: [] };
+try {
+  THIN_TAGS = require('./src/data/thin-tags.generated.json');
+} catch {
+  console.warn('[sitemap] thin-tags.generated.json not found — all tag pages stay listed.');
+}
+const THIN_TAG_PATHS = new Set(THIN_TAGS.thin.map((t) => `/blog/tag/${t}/`));
+
 const BUILD_DATE = new Date();
 
 // https://astro.build/config
@@ -57,7 +70,11 @@ export default defineConfig({
         !page.includes('/offline') &&
         !/\/search\/?$/.test(page) &&
         !/\/mission-90\/complete\/?$/.test(page) &&
-        !/\/tests\/[^/]+\/[^/]+\/?$/.test(page),
+        !/\/tests\/[^/]+\/[^/]+\/?$/.test(page) &&
+        // Thin tag pages (fewer than `threshold` posts) are noindex — see
+        // THIN_TAG_PATHS above. Keeping them listed would advertise URLs we
+        // simultaneously ask Google to ignore.
+        !THIN_TAG_PATHS.has(new URL(page).pathname),
       // Replace the blanket build-date stamp with the page's real last-modified
       // date where one exists (git commit date for tools, frontmatter dates for
       // posts and guides). Claiming all 445 URLs changed on every deploy is both
@@ -66,6 +83,18 @@ export default defineConfig({
         const pathname = new URL(item.url).pathname;
         const known = LASTMOD[pathname];
         if (known) item.lastmod = known;
+
+        // Add the x-default alternate the integration's `i18n` option omits.
+        // The page HTML has declared x-default all along (SEO.astro), so the
+        // sitemap was contradicting the markup on all 1675 hreflang entries —
+        // it named five language alternates but never said which one serves a
+        // visitor whose language matches none of them.
+        if (item.links?.length) {
+          const en = item.links.find((l) => l.lang === 'en');
+          if (en && !item.links.some((l) => l.lang === 'x-default')) {
+            item.links.push({ lang: 'x-default', url: en.url });
+          }
+        }
         return item;
       },
     }),
