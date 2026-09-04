@@ -131,6 +131,33 @@ your data to go.
 - Fully static, deployed on Cloudflare — no server-side code paths
 - Localized in English, Spanish, German, French and Brazilian Portuguese
 
+## Self-hosting
+
+Every tool already runs entirely in your browser, so the public site never sees
+your input. Self-hosting closes the remaining gap: an air-gapped network, or a
+policy that says internal config does not get pasted into a page loaded from the
+internet at all.
+
+```bash
+docker compose up -d     # http://localhost:8080
+```
+
+or without Compose:
+
+```bash
+docker build -t opscanopy .
+docker run --rm -p 8080:8080 opscanopy
+```
+
+There is no database, no volume, no environment to configure and no account
+system — the image is nginx serving a directory of static files. It runs
+unprivileged and read-only, and it keeps the same Content-Security-Policy as
+production: `_headers` is Cloudflare syntax, so the build translates it into
+nginx form ([`scripts/headers-to-nginx.mjs`](./scripts/headers-to-nginx.mjs))
+rather than quietly dropping the policy.
+
+Analytics and the service worker are inert offline; nothing phones home.
+
 ## Local development
 
 All commands run from the project root:
