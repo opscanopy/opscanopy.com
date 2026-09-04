@@ -21,10 +21,20 @@
  *   ../lib/logql-promql/examples →
  *     examples: { id: string; label: string; direction: Direction; query: string }[]
  *
+ * The example picker is a row of squared chips, server-rendered at build time
+ * from the same `examples` module the script loads lazily (see the import
+ * below); the script only wires clicks onto them, it never rebuilds them.
+ *
  * The dark editor surface follows DESIGN.md `code-editor-mockup`; notes use the
  * neutral / semantic tokens, errors the error tokens. Headlines stay
  * sentence-case, weight 600.
  */
+// Build-time import of the same `examples` the client script loads lazily.
+// Used ONLY to server-render the example chips below, so the static HTML
+// carries real example names rather than a "Loading…" placeholder that
+// crawlers and no-JS visitors would otherwise be served. It adds nothing to
+// the client bundle.
+import { examples as prerenderedExamples } from '../lib/logql-promql/examples';
 ---
 
 <section class="lp-pg" aria-label="LogQL to PromQL helper playground">
@@ -47,25 +57,21 @@
           </div>
         </div>
 
-        <div class="flex min-w-0 flex-col gap-1.5">
-          <label class="eyebrow" for="lp-example">Example</label>
-          <div class="lp-select-wrap relative min-w-0">
-            <select id="lp-example" class="lp-select code-mono" autocomplete="off">
-              {/* Options injected by the hydration script from `examples`. */}
-              <option value="">Loading…</option>
-            </select>
-            <svg
-              class="lp-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.4"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M4 6l4 4 4-4"></path>
-            </svg>
+        <div class="flex min-w-0 basis-full flex-col gap-1.5">
+          <span class="eyebrow">Example</span>
+          {/* Server-rendered from `examples`; the hydration script only wires
+              clicks onto these buttons, it never rebuilds them. */}
+          <div id="lp-chips" class="lp-chips" role="group" aria-label="Examples">
+            {prerenderedExamples.map((ex, i) => (
+              <button
+                type="button"
+                class="lp-chip lp-tap"
+                data-example-idx={i}
+                aria-pressed={i === 0 ? 'true' : 'false'}
+              >
+                {ex.label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -334,45 +340,45 @@
     outline-offset: 2px;
   }
 
-  /* The example picker: a 6px-radius in-app form control. */
-  .lp-select {
-    appearance: none;
-    -webkit-appearance: none;
-    width: 100%;
-    height: 32px;
-    min-width: 0;
-    max-width: 280px;
-    padding: 0 32px 0 12px;
-    border-radius: var(--radius-sm);
+  /* ── Example chips ──────────────────────────────────────────────────── */
+  .lp-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .lp-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 11px;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--color-hairline-muted);
     background: var(--color-canvas);
-    color: var(--color-ink);
-    box-shadow: var(--shadow-hairline);
-    font-size: 13px;
-    line-height: 20px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 16px;
+    letter-spacing: 0.01em;
+    color: var(--color-brand-strong);
     cursor: pointer;
-    text-overflow: ellipsis;
-    touch-action: manipulation;
-    transition: box-shadow 0.15s ease;
+    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
   }
-  @media (min-width: 640px) {
-    .lp-select {
-      width: auto;
-      min-width: 200px;
+  .lp-chip:hover {
+    border-color: var(--color-hairline-strong);
+    background: var(--color-canvas-hover);
+  }
+  .lp-chip.is-active,
+  .lp-chip[aria-pressed='true'] {
+    background: var(--color-brand-soft);
+    border-color: var(--color-brand-strong);
+    color: var(--color-brand-strong);
+  }
+  .lp-chip:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+  @media (pointer: coarse) {
+    .lp-chip {
+      min-height: 44px;
     }
-  }
-  .lp-select:hover {
-    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
-  }
-  .lp-select:disabled {
-    cursor: not-allowed;
-    color: var(--color-mute);
-    opacity: 0.7;
-  }
-  .lp-select-caret {
-    transition: color 0.15s ease;
-  }
-  .lp-select-wrap:hover .lp-select-caret {
-    color: var(--color-body);
   }
 
   .lp-snap-btn {
@@ -943,7 +949,7 @@
     const inputHost = el<HTMLElement>(root, '#lp-editor-input');
     const outputHost = el<HTMLElement>(root, '#lp-editor-output');
     const dirGroup = el<HTMLElement>(root, '#lp-direction');
-    const exampleSel = el<HTMLSelectElement>(root, '#lp-example');
+    const chipsWrap = el<HTMLElement>(root, '#lp-chips');
     const convertBtn = el<HTMLButtonElement>(root, '#lp-convert');
     const copyBtn = el<HTMLButtonElement>(root, '#lp-copy');
     const notesBox = el<HTMLElement>(root, '#lp-notes');
@@ -963,7 +969,7 @@
       !inputHost ||
       !outputHost ||
       !dirGroup ||
-      !exampleSel ||
+      !chipsWrap ||
       !convertBtn ||
       !copyBtn ||
       !notesBox ||
@@ -1136,20 +1142,21 @@
       if (outputNameEl) outputNameEl.textContent = files.output;
     }
 
-    // Populate the example picker (with a leading "Custom" sentinel).
-    exampleSel.innerHTML = '';
-    const customOpt = document.createElement('option');
-    customOpt.value = '-1';
-    customOpt.textContent = examples.length ? 'Custom input' : 'No examples';
-    exampleSel.appendChild(customOpt);
-    examples.forEach((ex, i) => {
-      const opt = document.createElement('option');
-      opt.value = String(i);
-      opt.textContent = ex.label;
-      exampleSel.appendChild(opt);
-    });
-    exampleSel.value = fromShare || fromRestored ? '-1' : examples.length ? '0' : '-1';
-    if (!examples.length) exampleSel.disabled = true;
+    // The chips are server-rendered from the same `examples` module, so their
+    // data-example-idx values index straight into `examples`. `null` clears the
+    // selection — a shared link or a restored input matches no example, so it
+    // leaves every chip unpressed (the old picker showed a "Custom" option).
+    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>('.lp-chip'));
+
+    function setActiveChip(idx: number | null): void {
+      chips.forEach((chip) => {
+        const active = idx !== null && chip.dataset.exampleIdx === String(idx);
+        chip.classList.toggle('is-active', active);
+        chip.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+    }
+
+    setActiveChip(fromShare || fromRestored || !examples.length ? null : 0);
 
     // Editors — seed the input from the shared link, else a restored last
     // input, else the first example.
@@ -1221,20 +1228,24 @@
       clearShareHash();
     }
 
-    // Editing the input or direction means the shown output is stale → Custom.
+    // Editing the input or direction means the shown output is stale, so the
+    // example it came from is no longer what is on screen — drop the selection.
     function markCustom(): void {
-      if (exampleSel!.value !== '-1') exampleSel!.value = '-1';
+      setActiveChip(null);
     }
 
     // Choosing an example swaps the input + direction, then clears the output.
-    exampleSel.addEventListener('change', () => {
-      const idx = Number(exampleSel.value);
-      if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
-      const ex = examples[idx];
-      setEditorDoc(inputView, ex.query);
-      direction = ex.direction;
-      syncDirection();
-      resetOutput();
+    chips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const idx = Number(chip.dataset.exampleIdx);
+        if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+        const ex = examples[idx];
+        setActiveChip(idx);
+        setEditorDoc(inputView, ex.query);
+        direction = ex.direction;
+        syncDirection();
+        resetOutput();
+      });
     });
 
     // Direction toggle: roving-tabindex tablist with arrow-key navigation.

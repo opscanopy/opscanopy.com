@@ -23,6 +23,14 @@
  * the semantic warning tokens, errors the error tokens. Headlines stay
  * sentence-case, weight 600.
  */
+// Build-time import of the same `examples` the client script loads lazily.
+// Used ONLY to server-render the example CHIPS below (the playground UX
+// contract's picker — never a <select>), so the static HTML carries real
+// example names for crawlers and no-JS visitors. The script re-reads the
+// examples module at hydration and addresses each chip by its
+// `data-example-idx`, so this adds nothing to the client bundle.
+// The From/To pickers stay <select>s — they are format pickers, not examples.
+import { examples as prerenderedExamples } from '../lib/cve-ignore/examples';
 ---
 
 <section class="cv-pg" aria-label="CVE-Ignore Converter playground">
@@ -90,23 +98,23 @@
         </div>
 
         <div class="flex min-w-0 flex-col gap-1">
-          <label class="eyebrow" for="cv-example">Example</label>
-          <div class="cv-select-wrap relative min-w-0">
-            <select id="cv-example" class="cv-select code-mono" autocomplete="off">
-              <option value="">Loading…</option>
-            </select>
-            <svg
-              class="cv-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.4"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M4 6l4 4 4-4"></path>
-            </svg>
+          <span class="eyebrow">Example</span>
+          {/* Chips, not a <select> — the playground UX contract's example
+              picker. Server-rendered from `examples`; the hydration script
+              addresses each by its data-example-idx. */}
+          <div id="cv-chips" class="cv-chips" role="group" aria-label="Examples">
+            {
+              prerenderedExamples.map((ex, i) => (
+                <button
+                  type="button"
+                  class:list={['cv-chip', { 'is-active': i === 0 }]}
+                  data-example-idx={i}
+                  aria-pressed={i === 0 ? 'true' : 'false'}
+                >
+                  {ex.label}
+                </button>
+              ))
+            }
           </div>
         </div>
       </div>
@@ -324,7 +332,53 @@
     touch-action: manipulation;
   }
 
-  /* The format/example pickers: 6px-radius in-app form controls. */
+  /* The example picker: squared chips (playground UX contract), not a select. */
+  .cv-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .cv-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 11px;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--color-hairline-muted);
+    background: var(--color-canvas);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 16px;
+    letter-spacing: 0.01em;
+    color: var(--color-brand-strong);
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  }
+  .cv-chip:hover {
+    border-color: var(--color-hairline-strong);
+    background: var(--color-canvas-hover);
+  }
+  .cv-chip.is-active {
+    background: var(--color-brand-soft);
+    border-color: var(--color-brand-strong);
+    color: var(--color-brand-strong);
+  }
+  .cv-chip:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+  .cv-chip:disabled {
+    cursor: not-allowed;
+    color: var(--color-mute);
+    opacity: 0.7;
+  }
+  @media (pointer: coarse) {
+    .cv-chip {
+      min-height: 44px;
+    }
+  }
+
+  /* The From/To format pickers: 6px-radius in-app form controls. */
   .cv-select {
     appearance: none;
     -webkit-appearance: none;
@@ -920,7 +974,7 @@
     const outputHost = el<HTMLElement>(root, '#cv-editor-output');
     const fromSel = el<HTMLSelectElement>(root, '#cv-from');
     const toSel = el<HTMLSelectElement>(root, '#cv-to');
-    const exampleSel = el<HTMLSelectElement>(root, '#cv-example');
+    const chipsWrap = el<HTMLElement>(root, '#cv-chips');
     const convertBtn = el<HTMLButtonElement>(root, '#cv-convert');
     const copyBtn = el<HTMLButtonElement>(root, '#cv-copy');
     const shareBtn = el<HTMLButtonElement>(root, '#cv-share');
@@ -940,7 +994,7 @@
       !outputHost ||
       !fromSel ||
       !toSel ||
-      !exampleSel ||
+      !chipsWrap ||
       !convertBtn ||
       !copyBtn ||
       !shareBtn ||
@@ -1003,9 +1057,14 @@
 
     if (formats.length === 0) {
       renderError(messagesBox, summaryEl, 'No formats are available to convert between.');
-      [fromSel, toSel, exampleSel].forEach((s) => {
+      [fromSel, toSel].forEach((s) => {
         s.innerHTML = '<option value="">Unavailable</option>';
         s.disabled = true;
+      });
+      chipsWrap.querySelectorAll<HTMLButtonElement>('.cv-chip').forEach((chip) => {
+        chip.disabled = true;
+        chip.classList.remove('is-active');
+        chip.setAttribute('aria-pressed', 'false');
       });
       convertBtn.setAttribute('aria-disabled', 'true');
       convertBtn.classList.add('is-busy');
@@ -1078,22 +1137,27 @@
     fillFormatSelect(fromSel, defaultFrom);
     fillFormatSelect(toSel, defaultTo);
 
-    // Populate the example picker (with a leading "Custom" sentinel — also
-    // used to mark a shared/deep-linked or restored input, same convention as
-    // any other hand-edited input).
-    exampleSel.innerHTML = '';
-    const customOpt = document.createElement('option');
-    customOpt.value = '-1';
-    customOpt.textContent = examples.length ? 'Custom input' : 'No examples';
-    exampleSel.appendChild(customOpt);
-    examples.forEach((ex, i) => {
-      const opt = document.createElement('option');
-      opt.value = String(i);
-      opt.textContent = ex.label + ' (sample)';
-      exampleSel.appendChild(opt);
-    });
-    exampleSel.value = fromShare || fromRestored ? '-1' : examples.length ? '0' : '-1';
-    if (!examples.length) exampleSel.disabled = true;
+    // The example chips are server-rendered from the same module; wire them by
+    // index. The old "Custom input" sentinel becomes "no chip active" — which
+    // is what a shared/deep-linked or restored input gets, same convention as
+    // any other hand-edited input.
+    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>('.cv-chip'));
+
+    /** Mark one chip active (idx < 0 clears the whole group). */
+    function setActiveChip(idx: number): void {
+      chips.forEach((chip) => {
+        const active = Number(chip.dataset.exampleIdx) === idx;
+        chip.classList.toggle('is-active', active);
+        chip.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+    }
+
+    setActiveChip(fromShare || fromRestored ? -1 : examples.length ? 0 : -1);
+    if (!examples.length) {
+      chips.forEach((chip) => {
+        chip.disabled = true;
+      });
+    }
 
     /* ---- Editor factory (CM symbols now in async scope) --------------------- */
 
@@ -1205,23 +1269,24 @@
     }
 
     // Choosing an example swaps input + both formats, then clears the output.
-    exampleSel.addEventListener('change', () => {
-      const idx = Number(exampleSel.value);
-      if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
-      const ex = examples[idx];
-      setEditorDoc(inputView, ex.text);
-      if (ex.from && formats.some((f) => f.value === ex.from)) fromSel.value = ex.from;
-      if (ex.to && formats.some((f) => f.value === ex.to)) toSel.value = ex.to;
-      syncNames();
-      resetOutput();
+    chips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const idx = Number(chip.dataset.exampleIdx);
+        if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+        const ex = examples[idx];
+        setActiveChip(idx);
+        setEditorDoc(inputView, ex.text);
+        if (ex.from && formats.some((f) => f.value === ex.from)) fromSel.value = ex.from;
+        if (ex.to && formats.some((f) => f.value === ex.to)) toSel.value = ex.to;
+        syncNames();
+        resetOutput();
+      });
     });
 
-    // Editing the input or formats means the shown output is stale → drop to Custom.
+    // Editing the input or formats means the shown output is stale → drop to
+    // "custom input", i.e. no chip active.
     function markCustom(): void {
-      // Guaranteed present by the early return in boot(); restated because TypeScript
-      // discards that narrowing inside a hoisted function declaration.
-      if (!exampleSel) return;
-      if (exampleSel.value !== '-1') exampleSel.value = '-1';
+      setActiveChip(-1);
     }
     fromSel.addEventListener('change', () => {
       markCustom();

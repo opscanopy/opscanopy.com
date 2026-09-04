@@ -27,6 +27,13 @@
  * semantic warning tokens, errors the error tokens. Headlines stay
  * sentence-case, weight 600.
  */
+// Build-time import of the same `examples` the client script loads lazily.
+// Used ONLY to server-render the example CHIPS below (the playground UX
+// contract's picker — never a <select>), so the static HTML carries real
+// example names for crawlers and no-JS visitors. The script re-reads the
+// examples module at hydration and addresses each chip by its
+// `data-example-idx`, so this adds nothing to the client bundle.
+import { examples as prerenderedExamples } from '../lib/cron-systemd/examples';
 ---
 
 <section class="cs-pg" aria-label="Cron to systemd converter playground">
@@ -37,24 +44,23 @@
     >
       <div class="flex flex-wrap items-end gap-3">
         <div class="flex min-w-0 flex-col gap-1">
-          <label class="eyebrow" for="cs-example">Example</label>
-          <div class="cs-select-wrap relative min-w-0">
-            <select id="cs-example" class="cs-select code-mono" autocomplete="off">
-              {/* Options injected by the hydration script from `examples`. */}
-              <option value="">Loading…</option>
-            </select>
-            <svg
-              class="cs-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.4"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M4 6l4 4 4-4"></path>
-            </svg>
+          <span class="eyebrow">Example</span>
+          {/* Chips, not a <select> — the playground UX contract's example
+              picker. Server-rendered from `examples`; the hydration script
+              addresses each by its data-example-idx. */}
+          <div id="cs-chips" class="cs-chips" role="group" aria-label="Examples">
+            {
+              prerenderedExamples.map((ex, i) => (
+                <button
+                  type="button"
+                  class:list={['cs-chip', { 'is-active': i === 0 }]}
+                  data-example-idx={i}
+                  aria-pressed={i === 0 ? 'true' : 'false'}
+                >
+                  {ex.label}
+                </button>
+              ))
+            }
           </div>
         </div>
 
@@ -307,45 +313,50 @@
     touch-action: manipulation;
   }
 
-  /* The example picker: a 6px-radius in-app form control. */
-  .cs-select {
-    appearance: none;
-    -webkit-appearance: none;
-    width: 100%;
-    height: 32px;
-    min-width: 0;
-    max-width: 280px;
-    padding: 0 32px 0 12px;
-    border-radius: var(--radius-sm);
+  /* The example picker: squared chips (playground UX contract), not a select. */
+  .cs-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .cs-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 11px;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--color-hairline-muted);
     background: var(--color-canvas);
-    color: var(--color-ink);
-    box-shadow: var(--shadow-hairline);
-    font-size: 13px;
-    line-height: 20px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 16px;
+    letter-spacing: 0.01em;
+    color: var(--color-brand-strong);
     cursor: pointer;
-    text-overflow: ellipsis;
     touch-action: manipulation;
-    transition: box-shadow 0.15s ease;
+    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
   }
-  @media (min-width: 640px) {
-    .cs-select {
-      width: auto;
-      min-width: 200px;
-    }
+  .cs-chip:hover {
+    border-color: var(--color-hairline-strong);
+    background: var(--color-canvas-hover);
   }
-  .cs-select:hover {
-    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  .cs-chip.is-active {
+    background: var(--color-brand-soft);
+    border-color: var(--color-brand-strong);
+    color: var(--color-brand-strong);
   }
-  .cs-select:disabled {
+  .cs-chip:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+  .cs-chip:disabled {
     cursor: not-allowed;
     color: var(--color-mute);
     opacity: 0.7;
   }
-  .cs-select-caret {
-    transition: color 0.15s ease;
-  }
-  .cs-select-wrap:hover .cs-select-caret {
-    color: var(--color-body);
+  @media (pointer: coarse) {
+    .cs-chip {
+      min-height: 44px;
+    }
   }
 
   /* Unit-name text input (same 6px in-app form scale as the picker). */
@@ -930,7 +941,7 @@
     const inputHost = el<HTMLElement>(root, '#cs-editor-input');
     const timerHost = el<HTMLElement>(root, '#cs-editor-timer');
     const serviceHost = el<HTMLElement>(root, '#cs-editor-service');
-    const exampleSel = el<HTMLSelectElement>(root, '#cs-example');
+    const chipsWrap = el<HTMLElement>(root, '#cs-chips');
     const unitInput = el<HTMLInputElement>(root, '#cs-unit');
     const convertBtn = el<HTMLButtonElement>(root, '#cs-convert');
     const copyTimerBtn = el<HTMLButtonElement>(root, '#cs-copy-timer');
@@ -950,7 +961,7 @@
       !inputHost ||
       !timerHost ||
       !serviceHost ||
-      !exampleSel ||
+      !chipsWrap ||
       !unitInput ||
       !convertBtn ||
       !copyTimerBtn ||
@@ -1061,20 +1072,26 @@
     const timerView = makeOutputEditor(timerHost, '');
     const serviceView = makeOutputEditor(serviceHost, '');
 
-    // Populate the example picker (with a leading "Custom" sentinel).
-    exampleSel.innerHTML = '';
-    const customOpt = document.createElement('option');
-    customOpt.value = '-1';
-    customOpt.textContent = examples.length ? 'Custom input' : 'No examples';
-    exampleSel.appendChild(customOpt);
-    examples.forEach((ex, i) => {
-      const opt = document.createElement('option');
-      opt.value = String(i);
-      opt.textContent = ex.label;
-      exampleSel.appendChild(opt);
-    });
-    exampleSel.value = hashValue || restored ? '-1' : examples.length ? '0' : '-1';
-    if (!examples.length) exampleSel.disabled = true;
+    // The example chips are server-rendered from the same module; wire them by
+    // index. `-1` is the old "Custom input" sentinel: no chip active — which is
+    // what a deep-linked or restored input gets.
+    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>('.cs-chip'));
+
+    /** Mark one chip active (idx < 0 clears the whole group). */
+    function setActiveChip(idx: number): void {
+      chips.forEach((chip) => {
+        const active = Number(chip.dataset.exampleIdx) === idx;
+        chip.classList.toggle('is-active', active);
+        chip.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+    }
+
+    setActiveChip(hashValue || restored ? -1 : examples.length ? 0 : -1);
+    if (!examples.length) {
+      chips.forEach((chip) => {
+        chip.disabled = true;
+      });
+    }
 
     /** Current sanitised unit base name, defaulting to "cron-job". */
     function unitBase(): string {
@@ -1100,11 +1117,14 @@
     }
 
     // Choosing an example swaps the input, then clears the output.
-    exampleSel.addEventListener('change', () => {
-      const idx = Number(exampleSel.value);
-      if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
-      setEditorDoc(inputView, examples[idx].cron);
-      resetOutput();
+    chips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const idx = Number(chip.dataset.exampleIdx);
+        if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+        setActiveChip(idx);
+        setEditorDoc(inputView, examples[idx].cron);
+        resetOutput();
+      });
     });
 
     // Editing the unit name re-labels the chrome and stales any shown output —
@@ -1295,7 +1315,7 @@
       getValue: () => inputView.state.doc.toString(),
       setValue: (value) => {
         setEditorDoc(inputView, value);
-        exampleSel!.value = '-1';
+        setActiveChip(-1);
         void convertNow();
       },
     });

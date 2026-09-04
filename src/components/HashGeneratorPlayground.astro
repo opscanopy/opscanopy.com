@@ -16,39 +16,37 @@
  *   ../lib/hash-generator/examples → examples: { id; label; input }[]
  */
 // Build-time import of the same `examples` the client script loads lazily.
-// Used ONLY to server-render the picker <option>s below, so the static HTML
+// Used ONLY to server-render the example chips below, so the static HTML
 // carries real example names rather than a "Loading examples…" placeholder
-// that crawlers and no-JS visitors would otherwise be served. The script
-// clears the select (`select.innerHTML = ''`) and rebuilds it identically at
-// hydration, so this adds nothing to the client bundle and cannot drift.
+// that crawlers and no-JS visitors would otherwise be served. The chips are
+// never rebuilt at hydration — the script only wires clicks onto them and
+// reads `data-example-idx`, so this adds nothing to the client bundle and
+// cannot drift from the array the script lazily imports.
 import { examples as prerenderedExamples } from '../lib/hash-generator/examples';
 
 ---
 
 <section class="hash-pg" aria-label="Hash Generator playground">
   <div class="card shadow-float overflow-hidden rounded-lg">
-    <div class="flex flex-col gap-1 border-b border-hairline px-4 py-3 sm:px-5">
-      <label class="eyebrow shrink-0" for="hash-example">Example</label>
-      <div class="hash-select-wrap relative min-w-0">
-        <select id="hash-example" class="hash-select code-mono" autocomplete="off">
-          {/* Server-rendered so the examples are in the static HTML; the
-              hydration script clears and rebuilds this identically. */}
-          {prerenderedExamples.map((ex, i) => (
-            <option value={i}>{ex.label}</option>
-          ))}
-        </select>
-        <svg
-          class="hash-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
-          viewBox="0 0 16 16"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.4"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M4 6l4 4 4-4"></path>
-        </svg>
+    <div class="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:px-5">
+      <span class="eyebrow shrink-0">Example</span>
+      {/* Real <button> chips, server-rendered in DOM order so tab order and
+          no-JS legibility come for free. The first is pre-marked active to
+          match the boot seed; the script clears it when a handoff wins, or
+          once the text is edited by hand. The id and classes are `-ex-`
+          prefixed because `.hash-chips` / `.hash-chip` already name the
+          cross-tool handoff chips rendered into the results panel. */}
+      <div id="hash-example-chips" class="hash-ex-chips" role="group" aria-label="Examples">
+        {prerenderedExamples.map((ex, i) => (
+          <button
+            type="button"
+            class:list={['hash-ex-chip', { 'is-active': i === 0 }]}
+            data-example-idx={i}
+            aria-pressed={i === 0 ? 'true' : 'false'}
+          >
+            {ex.label}
+          </button>
+        ))}
       </div>
     </div>
 
@@ -140,6 +138,50 @@ import { examples as prerenderedExamples } from '../lib/hash-generator/examples'
 <style>
   @reference "../styles/global.css";
 
+  /* ── Example chips (playground UX contract; ported from SlugifyPlayground) ──
+     Named `.hash-ex-chip` because `.hash-chip` is already the cross-tool
+     handoff chip injected into the results panel. */
+  .hash-ex-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .hash-ex-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 11px;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--color-hairline-muted);
+    background: var(--color-canvas);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 16px;
+    letter-spacing: 0.01em;
+    color: var(--color-brand-strong);
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  }
+  .hash-ex-chip:hover {
+    border-color: var(--color-hairline-strong);
+    background: var(--color-canvas-hover);
+  }
+  .hash-ex-chip.is-active {
+    background: var(--color-brand-soft);
+    border-color: var(--color-brand-strong);
+    color: var(--color-brand-strong);
+  }
+  .hash-ex-chip:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+  @media (pointer: coarse) {
+    .hash-ex-chip {
+      min-height: 44px;
+    }
+  }
+
+  /* The HMAC algorithm picker — the one remaining <select> on this island. */
   .hash-select {
     appearance: none;
     -webkit-appearance: none;
@@ -594,7 +636,7 @@ import { examples as prerenderedExamples } from '../lib/hash-generator/examples'
     const input = el<HTMLTextAreaElement>(root, '#hash-input');
     const keyInput = el<HTMLInputElement>(root, '#hash-hmac-key');
     const algoSel = el<HTMLSelectElement>(root, '#hash-hmac-algo');
-    const exampleSel = el<HTMLSelectElement>(root, '#hash-example');
+    const chipsWrap = el<HTMLElement>(root, '#hash-example-chips');
     const resultsBox = el<HTMLElement>(root, '#hash-results');
     const summaryEl = el<HTMLElement>(root, '#hash-summary');
     const announce = el<HTMLElement>(root, '#hash-announce');
@@ -605,7 +647,7 @@ import { examples as prerenderedExamples } from '../lib/hash-generator/examples'
       !input ||
       !keyInput ||
       !algoSel ||
-      !exampleSel ||
+      !chipsWrap ||
       !resultsBox ||
       !summaryEl ||
       !snapSaveBtn ||
@@ -630,18 +672,22 @@ import { examples as prerenderedExamples } from '../lib/hash-generator/examples'
       return;
     }
 
-    exampleSel.innerHTML = '';
-    const customOpt = document.createElement('option');
-    customOpt.value = '-1';
-    customOpt.textContent = examples.length ? 'Custom input' : 'No examples';
-    exampleSel.appendChild(customOpt);
-    examples.forEach((ex, i) => {
-      const opt = document.createElement('option');
-      opt.value = String(i);
-      opt.textContent = ex.label;
-      exampleSel.appendChild(opt);
-    });
-    if (!examples.length) exampleSel.disabled = true;
+    // The chips are already in the DOM (server-rendered from the same module),
+    // so there is nothing to build — only to wire and to mark.
+    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>('.hash-ex-chip'));
+
+    /**
+     * Mark one chip active, or none for -1 — the chip equivalent of the old
+     * "Custom input" option: hand-typed text, a restored snapshot, or a
+     * handoff from another tool belongs to no example.
+     */
+    const setActiveChip = (index: number): void => {
+      chips.forEach((chip, i) => {
+        const active = i === index;
+        chip.classList.toggle('is-active', active);
+        chip.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+    };
 
     // Monotonic request id: only the latest async run is allowed to paint, so a
     // slow earlier digest can never overwrite a newer one (stale-result guard).
@@ -700,7 +746,7 @@ import { examples as prerenderedExamples } from '../lib/hash-generator/examples'
     }
 
     input.addEventListener('input', () => {
-      if (exampleSel.value !== '-1') exampleSel.value = '-1';
+      setActiveChip(-1);
       scheduleEvaluate();
     });
     keyInput.addEventListener('input', scheduleEvaluate);
@@ -708,12 +754,15 @@ import { examples as prerenderedExamples } from '../lib/hash-generator/examples'
       window.clearTimeout(timer);
       void evaluate();
     });
-    exampleSel.addEventListener('change', () => {
-      const idx = Number(exampleSel.value);
-      if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
-      input.value = examples[idx].input;
-      window.clearTimeout(timer);
-      void evaluate();
+    chips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const idx = Number(chip.dataset.exampleIdx);
+        if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+        setActiveChip(idx);
+        input.value = examples[idx].input;
+        window.clearTimeout(timer);
+        void evaluate();
+      });
     });
 
     // Save-snapshot only — this tool is hard-excluded from auto-restore-last-input
@@ -726,7 +775,7 @@ import { examples as prerenderedExamples } from '../lib/hash-generator/examples'
       getValue: () => input!.value,
       setValue: (value) => {
         input!.value = value;
-        exampleSel!.value = '-1';
+        setActiveChip(-1);
         window.clearTimeout(timer);
         void evaluate();
       },
@@ -775,13 +824,14 @@ import { examples as prerenderedExamples } from '../lib/hash-generator/examples'
     const handoff = readHandoffOnce();
     if (handoff !== null) {
       input.value = handoff;
-      exampleSel.value = '-1';
+      setActiveChip(-1);
       void evaluate();
     } else if (examples.length > 0) {
       input.value = examples[0].input;
-      exampleSel.value = '0';
+      setActiveChip(0);
       void evaluate();
     } else {
+      setActiveChip(-1);
       renderEmpty(resultsBox, summaryEl);
     }
   }
