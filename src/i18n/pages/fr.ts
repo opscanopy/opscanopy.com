@@ -17,7 +17,7 @@ const fr: Partial<PagesContent> = {
     updatedLabel: 'Dernière mise à jour',
     consent: {
       label: 'Autoriser les cookies d’analyse',
-      on: 'Les cookies d’analyse sont activés. Décochez la case pour revenir au mode sans cookies.',
+      on: 'Les cookies d’analyse sont activés. Décochez la case pour passer en mode sans cookies.',
       off: 'Actuellement sans cookies — aucun cookie d’analyse n’est déposé sans votre accord.',
     },
     purge: {
@@ -57,7 +57,7 @@ const fr: Partial<PagesContent> = {
       {
         heading: 'Ce que nous ne collectons pas',
         body: [
-          'Nous ne collectons pas le contenu de vos entrées ou de vos sorties. Nous n’utilisons pas de cookies publicitaires, de traceurs intersites ni d’empreinte numérique. Nous ne vendons, ne louons ni ne partageons aucune donnée personnelle, car nous ne la recueillons pas en premier lieu. Notre seule mesure d’audience est l’outil d’analyse sans cookies par défaut décrit ci-dessous.',
+          'Nous ne collectons pas le contenu de vos entrées ou de vos sorties. Nous n’utilisons pas de cookies publicitaires, de traceurs intersites ni d’empreinte numérique. Nous ne vendons, ne louons ni ne partageons aucune donnée personnelle, car nous ne la recueillons pas en premier lieu. Notre seule mesure d’audience est l’outil d’analyse décrit ci-dessous : sans cookies par défaut dans l’UE, au Royaume-Uni et en Suisse, et un unique cookie interne ailleurs, sauf si vous le désactivez.',
           'Toute préférence que le site mémorise — comme votre thème clair/sombre ou votre langue — est stockée dans le stockage local de votre navigateur, sur votre appareil, et ne nous est jamais transmise.',
         ],
       },
@@ -89,7 +89,7 @@ const fr: Partial<PagesContent> = {
         heading: 'Mesure d’audience',
         body: [
           'Nous utilisons Google Analytics 4 pour comprendre quels outils et guides sont réellement utiles : pages vues et une poignée d’événements produit anonymes (par exemple « un résultat a été copié sur cette page » ou « un jour de Mission 90 a été marqué comme terminé »). Ces événements ne contiennent que le chemin de la page — jamais ce que vous saisissez ou collez dans un outil.',
-          'Par défaut, la mesure d’audience fonctionne en mode sans cookies (« consentement refusé ») : aucun cookie d’analyse n’est déposé et aucun identifiant persistant n’est stocké sur votre appareil, sauf si vous l’acceptez explicitement via l’interrupteur ci-dessous. Vous pouvez changer d’avis à tout moment sur cette page, et le site fonctionne exactement de la même façon dans les deux cas.',
+          'Les cookies d’analyse nécessitent votre consentement préalable dans l’Espace économique européen, au Royaume-Uni et en Suisse : si vous nous visitez depuis ces régions, la mesure d’audience fonctionne par défaut en mode sans cookies (« consentement refusé ») — aucun cookie d’analyse n’est déposé et aucun identifiant persistant n’est stocké sur votre appareil, sauf si vous l’acceptez explicitement via l’interrupteur ci-dessous. Partout ailleurs, un cookie d’analyse interne (_ga) est déposé par défaut afin de compter les visites et de voir quels outils sont utilisés ; le même interrupteur le désactive. Votre région est déduite de votre connexion réseau et n’est pas conservée. Vous pouvez changer d’avis à tout moment sur cette page, et le site fonctionne exactement de la même façon dans les deux cas.',
         ],
       },
       {

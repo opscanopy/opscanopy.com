@@ -22,6 +22,8 @@ export interface TestCategoryCopy {
   intro: string[];
   /** The exam's own objective domains, with the weighting AWS publishes. */
   domains: { name: string; weight: string }[];
+  /** Optional link to the Learn study guide for this certification, rendered under the domains. */
+  studyGuide?: { label: string; href: string };
 }
 
 export const testCategoryCopy: Record<string, TestCategoryCopy> = {
@@ -42,5 +44,26 @@ export const testCategoryCopy: Record<string, TestCategoryCopy> = {
       { name: 'Incident and event response', weight: '14%' },
       { name: 'Security and compliance', weight: '17%' },
     ],
+  },
+  'aws-ai-practitioner': {
+    examCode: 'AIF-C01',
+    metaDescription:
+      'Free 65-question AWS Certified AI Practitioner (AIF-C01) mock exam. Every answer explained: Bedrock, SageMaker AI, agentic AI, responsible AI, and AI security.',
+    intro: [
+      'AIF-C01 is a foundational exam: 65 questions in 90 minutes, 50 of them scored, and a scaled pass mark of 700 out of 1,000. It is written for people who use AI on AWS rather than build it — analysts, product managers, and developers adding AI literacy — and it asks for no code, no maths, and no hands-on configuration. This mock follows exam guide v1.1 (April 2026), which added agentic AI, Amazon Bedrock AgentCore, Kiro, Strands Agents, and Amazon Nova to the syllabus.',
+      'Almost every question is a service-selection or approach-selection scenario. A company describes a goal and a constraint — "least operational overhead", "no ML expertise", "must not leave the VPC", "needs current internal documents" — followed by four options that all sound plausible. The skill being tested is knowing which AWS AI service, or which customisation approach (prompt engineering, RAG, fine-tuning, distillation), the qualifier points to, and why the other three miss it.',
+      'The questions here are original, written to match the style and difficulty of the real exam. They are not reproduced exam content: publishing that breaches the AWS Certification Agreement, and memorising leaked items does not survive contact with a scenario you have not seen. The real exam also uses ordering and matching items, which this runner does not reproduce; the concepts those items test are covered here as multiple-choice and multiple-response questions.',
+    ],
+    domains: [
+      { name: 'Fundamentals of AI and ML', weight: '20%' },
+      { name: 'Fundamentals of generative AI', weight: '24%' },
+      { name: 'Applications of foundation models', weight: '28%' },
+      { name: 'Guidelines for responsible AI', weight: '14%' },
+      { name: 'Security, compliance, and governance for AI solutions', weight: '14%' },
+    ],
+    studyGuide: {
+      label: 'Read the 14-day AIF-C01 study guide',
+      href: '/learn/guides/aws-ai-practitioner-study-guide/',
+    },
   },
 };

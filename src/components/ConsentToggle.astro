@@ -3,18 +3,20 @@
  * ConsentToggle — the analytics opt-in switch rendered on the /privacy pages
  * (all locales; each page passes translated strings).
  *
- * Pairs with the Consent Mode v2 default in Layout.astro: GA4 runs cookieless
- * ("denied") until the visitor checks this box, which persists
- * localStorage['oc-analytics-consent'] and pushes a live consent update.
- * Unchecking reverts to denied. Works without JS (the box simply does nothing),
- * and renders no personal data.
+ * Pairs with the region-scoped Consent Mode v2 defaults in Layout.astro:
+ * analytics_storage is denied (cookieless) by default in the EEA, UK and
+ * Switzerland and granted everywhere else, so this box is an opt-in there and
+ * an opt-out elsewhere. Either way it persists
+ * localStorage['oc-analytics-consent'] ('granted' | 'denied') and pushes a
+ * live consent update; a stored choice always beats the regional default.
+ * Works without JS (the box simply does nothing), and renders no personal data.
  */
 export interface Props {
   /** Checkbox label, e.g. "Allow analytics cookies". */
   label: string;
   /** Status line shown while opted in. */
   onText: string;
-  /** Status line shown while cookieless (default). */
+  /** Status line shown while cookieless. */
   offText: string;
 }
 
@@ -41,8 +43,41 @@ const { label, onText, offText } = Astro.props;
 </div>
 
 <script>
-  import { CONSENT_KEY, CONSENT_GRANTED, CONSENT_DENIED } from '../lib/consent';
+  import {
+    CONSENT_KEY,
+    CONSENT_GRANTED,
+    CONSENT_DENIED,
+    consentRequiredFor,
+    parseTraceCountry,
+  } from '../lib/consent';
   import { safeGtag } from '../lib/gtag';
+
+  /**
+   * What analytics_storage defaults to for THIS visitor when nothing is stored.
+   * Layout.astro's gtag defaults are region-scoped (denied in the EEA/UK/CH,
+   * granted elsewhere) and Google resolves the region from the IP, so the box
+   * has to answer the same question the same way or it would misreport the
+   * visitor's real state. Cloudflare's /cdn-cgi/trace is same-origin,
+   * cookieless and already inside connect-src 'self'; only the loc= line is
+   * read and nothing is stored. If it is unavailable (astro dev, a blocked
+   * request) fall back to observing whether gtag.js actually set _ga —
+   * re-checking once after its idle-deferred config has had time to run.
+   */
+  async function defaultGranted(): Promise<boolean> {
+    try {
+      const res = await fetch('/cdn-cgi/trace', { cache: 'no-store' });
+      if (res.ok) {
+        const loc = parseTraceCountry(await res.text());
+        if (loc) return !consentRequiredFor(loc);
+      }
+    } catch {
+      /* fall through to the cookie observation */
+    }
+    const hasGa = () => /(?:^|;\s*)_ga=/.test(document.cookie);
+    if (hasGa()) return true;
+    await new Promise((r) => setTimeout(r, 2500));
+    return hasGa();
+  }
 
   function bootConsentToggles() {
     document.querySelectorAll<HTMLElement>('[data-consent-widget]').forEach((root) => {
@@ -53,19 +88,32 @@ const { label, onText, offText } = Astro.props;
       const status = root.querySelector<HTMLElement>('[data-consent-status]');
       if (!cb || !status) return;
 
-      const granted = () => {
+      const stored = (): string | null => {
         try {
-          return localStorage.getItem(CONSENT_KEY) === CONSENT_GRANTED;
+          return localStorage.getItem(CONSENT_KEY);
         } catch {
-          return false;
+          return null;
         }
       };
       const render = () => {
         status.textContent = (cb.checked ? status.dataset.on : status.dataset.off) ?? '';
       };
 
-      cb.checked = granted();
-      render();
+      let touched = false;
+      const choice = stored();
+      if (choice === CONSENT_GRANTED || choice === CONSENT_DENIED) {
+        cb.checked = choice === CONSENT_GRANTED;
+        render();
+      } else {
+        // No explicit choice yet: the status line stays empty (never a guess)
+        // until the regional default is known. A click in the meantime stores
+        // an explicit choice, which then wins over the late answer.
+        void defaultGranted().then((granted) => {
+          if (touched || stored() !== null) return;
+          cb.checked = granted;
+          render();
+        });
+      }
 
       // Withdrawing consent must also REMOVE the cookies GA set while consent
       // was granted (_ga + _ga_<container>), or the "currently cookieless"
@@ -95,6 +143,7 @@ const { label, onText, offText } = Astro.props;
       };
 
       cb.addEventListener('change', () => {
+        touched = true;
         try {
           localStorage.setItem(CONSENT_KEY, cb.checked ? CONSENT_GRANTED : CONSENT_DENIED);
         } catch {

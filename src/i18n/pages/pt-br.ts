@@ -7,7 +7,7 @@ const ptBr: Partial<PagesContent> = {
     updatedLabel: 'Última atualização',
     consent: {
       label: 'Permitir cookies de análise',
-      on: 'Os cookies de análise estão ativados. Desmarque a caixa para voltar ao modo sem cookies.',
+      on: 'Os cookies de análise estão ativados. Desmarque a caixa para passar ao modo sem cookies.',
       off: 'Atualmente sem cookies — nenhum cookie de análise é definido sem o seu consentimento.',
     },
     purge: {
@@ -47,7 +47,7 @@ const ptBr: Partial<PagesContent> = {
       {
         heading: 'O que não coletamos',
         body: [
-          'Não coletamos o conteúdo das suas entradas nem das suas saídas. Não usamos cookies de publicidade, rastreadores entre sites ou fingerprinting. Não vendemos, alugamos nem compartilhamos dados pessoais, porque nem sequer os coletamos. Nossa única medição é a análise sem cookies por padrão descrita abaixo.',
+          'Não coletamos o conteúdo das suas entradas nem das suas saídas. Não usamos cookies de publicidade, rastreadores entre sites ou fingerprinting. Não vendemos, alugamos nem compartilhamos dados pessoais, porque nem sequer os coletamos. Nossa única medição é a análise descrita abaixo: sem cookies por padrão na UE, no Reino Unido e na Suíça, e um único cookie próprio no restante do mundo, a menos que você o desative.',
           'Qualquer preferência que o site memoriza — como o tema claro/escuro ou o idioma — é armazenada no armazenamento local do seu navegador, no seu dispositivo, e nunca é transmitida para nós.',
         ],
       },
@@ -79,7 +79,7 @@ const ptBr: Partial<PagesContent> = {
         heading: 'Análise de uso (analytics)',
         body: [
           'Usamos o Google Analytics 4 para entender quais ferramentas e guias são realmente úteis: visualizações de página e um punhado de eventos de produto anônimos (por exemplo, “um resultado foi copiado nesta página” ou “um dia do Mission 90 foi marcado como concluído”). Esses eventos carregam apenas o caminho da página — nunca incluem nada do que você digita ou cola em uma ferramenta.',
-          'Por padrão, a análise roda em modo sem cookies (“consentimento negado”): nenhum cookie de análise é definido e nenhum identificador persistente é armazenado no seu dispositivo, a menos que você aceite explicitamente no controle abaixo. Você pode mudar sua escolha a qualquer momento nesta página, e o site funciona exatamente igual nos dois casos.',
+          'Cookies de análise exigem o seu consentimento prévio no Espaço Econômico Europeu, no Reino Unido e na Suíça; se você nos visita de lá, a análise roda por padrão em modo sem cookies (“consentimento negado”): nenhum cookie de análise é definido e nenhum identificador persistente é armazenado no seu dispositivo, a menos que você aceite explicitamente no controle abaixo. No restante do mundo, um cookie de análise próprio (_ga) é definido por padrão para contarmos visitas e vermos quais ferramentas são usadas, e o mesmo controle o desativa. Sua região é deduzida da sua conexão de rede e não é armazenada. Você pode mudar sua escolha a qualquer momento nesta página, e o site funciona exatamente igual nos dois casos.',
         ],
       },
       {

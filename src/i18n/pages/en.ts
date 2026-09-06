@@ -76,7 +76,7 @@ const en: PagesContent = {
     updatedLabel: 'Last updated',
     consent: {
       label: 'Allow analytics cookies',
-      on: 'Analytics cookies are on. Uncheck the box to return to cookieless mode.',
+      on: 'Analytics cookies are on. Uncheck the box to switch to cookieless mode.',
       off: 'Currently cookieless — no analytics cookie is set unless you opt in.',
     },
     purge: {
@@ -116,7 +116,7 @@ const en: PagesContent = {
       {
         heading: 'What we do not collect',
         body: [
-          'We do not collect the contents of your inputs or outputs. We do not use advertising cookies, cross-site trackers, or fingerprinting. We do not sell, rent, or share personal data, because we do not gather it in the first place. Our only measurement is the cookieless-by-default analytics described below.',
+          'We do not collect the contents of your inputs or outputs. We do not use advertising cookies, cross-site trackers, or fingerprinting. We do not sell, rent, or share personal data, because we do not gather it in the first place. Our only measurement is the analytics described below: cookieless by default in the EU, the UK and Switzerland, and a single first-party cookie elsewhere unless you switch it off.',
           'Any preference the site remembers — such as your light/dark theme or language — is stored in your browser’s local storage on your device and is never transmitted to us.',
         ],
       },
@@ -125,7 +125,7 @@ const en: PagesContent = {
         body: [
           'Everything OpsCanopy remembers is kept in your browser’s local storage on your device, under a handful of named keys you can inspect and delete at any time. None of it is transmitted to us. Today those keys are:',
           'theme — your light or dark theme choice.',
-          'oc-analytics-consent — your analytics opt-in choice from the toggle on this page.',
+          'oc-analytics-consent — your analytics choice (on or off) from the toggle on this page.',
           'oc-m90-v1 — your Mission 90 Days DevOps progress: which days and missions you have marked done in this browser.',
           'oc-m90-backup-meta — when you last backed up that progress (and whether you dismissed the backup reminder), so the Mission 90 hub knows when a reminder is worth showing.',
           'opscanopy:tools:sort — how you last sorted the tools catalog.',
@@ -148,7 +148,7 @@ const en: PagesContent = {
         heading: 'Analytics',
         body: [
           'We use Google Analytics 4 to understand which tools and guides are actually useful: page views plus a handful of anonymous product events (for example “a result was copied on this page” or “a Mission 90 day was marked complete”). These events carry only the page path — they never include anything you type or paste into a tool.',
-          'By default, analytics runs in cookieless “consent denied” mode: no analytics cookie is set and no persistent identifier is stored on your device unless you explicitly opt in with the toggle below. You can change your choice at any time on this page, and the site works identically either way.',
+          'Analytics cookies need your prior consent in the European Economic Area, the United Kingdom and Switzerland, so if you visit from there analytics runs in cookieless “consent denied” mode by default: no analytics cookie is set and no persistent identifier is stored on your device unless you explicitly opt in with the toggle below. Everywhere else a first-party analytics cookie (_ga) is set by default so we can count visits and see which tools get used, and the same toggle switches it off. Your region is inferred from your network connection and is not stored. You can change your choice at any time on this page, and the site works identically either way.',
         ],
       },
       {

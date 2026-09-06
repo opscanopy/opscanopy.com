@@ -7,7 +7,7 @@ const es: Partial<PagesContent> = {
     updatedLabel: 'Última actualización',
     consent: {
       label: 'Permitir cookies de analítica',
-      on: 'Las cookies de analítica están activadas. Desmarca la casilla para volver al modo sin cookies.',
+      on: 'Las cookies de analítica están activadas. Desmarca la casilla para pasar al modo sin cookies.',
       off: 'Actualmente sin cookies: no se establece ninguna cookie de analítica salvo que actives esta opción.',
     },
     purge: {
@@ -47,7 +47,7 @@ const es: Partial<PagesContent> = {
       {
         heading: 'Qué no recopilamos',
         body: [
-          'No recopilamos el contenido de tus entradas ni de tus salidas. No usamos cookies publicitarias, rastreadores entre sitios ni fingerprinting. No vendemos, alquilamos ni compartimos datos personales, porque, para empezar, no los recopilamos. Nuestra única medición es la analítica sin cookies por defecto que se describe más abajo.',
+          'No recopilamos el contenido de tus entradas ni de tus salidas. No usamos cookies publicitarias, rastreadores entre sitios ni fingerprinting. No vendemos, alquilamos ni compartimos datos personales, porque, para empezar, no los recopilamos. Nuestra única medición es la analítica que se describe más abajo: sin cookies por defecto en la UE, el Reino Unido y Suiza, y una única cookie propia en el resto del mundo, salvo que la desactives.',
           'Cualquier preferencia que el sitio recuerde —como tu tema claro/oscuro o tu idioma— se guarda en el almacenamiento local de tu navegador, en tu dispositivo, y nunca se nos transmite.',
         ],
       },
@@ -79,7 +79,7 @@ const es: Partial<PagesContent> = {
         heading: 'Analítica',
         body: [
           'Usamos Google Analytics 4 para entender qué herramientas y guías resultan realmente útiles: páginas vistas y un puñado de eventos de producto anónimos (por ejemplo, «se copió un resultado en esta página» o «se marcó como completado un día de Mission 90»). Estos eventos solo incluyen la ruta de la página; nunca contienen nada de lo que escribes o pegas en una herramienta.',
-          'Por defecto, la analítica funciona en modo sin cookies («consentimiento denegado»): no se establece ninguna cookie de analítica ni se guarda ningún identificador persistente en tu dispositivo, salvo que actives expresamente el interruptor de abajo. Puedes cambiar tu elección en cualquier momento en esta página, y el sitio funciona exactamente igual en ambos casos.',
+          'Las cookies de analítica requieren tu consentimiento previo en el Espacio Económico Europeo, el Reino Unido y Suiza, así que si nos visitas desde allí la analítica funciona por defecto en modo sin cookies («consentimiento denegado»): no se establece ninguna cookie de analítica ni se guarda ningún identificador persistente en tu dispositivo, salvo que actives expresamente el interruptor de abajo. En el resto del mundo se establece por defecto una cookie de analítica propia (_ga) para contar visitas y ver qué herramientas se usan, y el mismo interruptor la desactiva. Tu región se deduce de tu conexión de red y no se almacena. Puedes cambiar tu elección en cualquier momento en esta página, y el sitio funciona exactamente igual en ambos casos.',
         ],
       },
       {

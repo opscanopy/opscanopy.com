@@ -7,7 +7,7 @@ const de: Partial<PagesContent> = {
     updatedLabel: 'Zuletzt aktualisiert',
     consent: {
       label: 'Analyse-Cookies erlauben',
-      on: 'Analyse-Cookies sind aktiv. Deaktivieren Sie das Kästchen, um zum cookielosen Modus zurückzukehren.',
+      on: 'Analyse-Cookies sind aktiv. Deaktivieren Sie das Kästchen, um in den cookielosen Modus zu wechseln.',
       off: 'Derzeit cookielos — ohne Ihre Zustimmung wird kein Analyse-Cookie gesetzt.',
     },
     purge: {
@@ -47,7 +47,7 @@ const de: Partial<PagesContent> = {
       {
         heading: 'Was wir nicht erfassen',
         body: [
-          'Wir erfassen nicht den Inhalt Ihrer Eingaben oder Ausgaben. Wir verwenden keine Werbe-Cookies, keine seitenübergreifenden Tracker und kein Fingerprinting. Wir verkaufen, vermieten oder teilen keine personenbezogenen Daten, weil wir sie gar nicht erst erheben. Unsere einzige Messung ist die unten beschriebene, standardmäßig cookielose Web-Analyse.',
+          'Wir erfassen nicht den Inhalt Ihrer Eingaben oder Ausgaben. Wir verwenden keine Werbe-Cookies, keine seitenübergreifenden Tracker und kein Fingerprinting. Wir verkaufen, vermieten oder teilen keine personenbezogenen Daten, weil wir sie gar nicht erst erheben. Unsere einzige Messung ist die unten beschriebene Web-Analyse: in der EU, im Vereinigten Königreich und in der Schweiz standardmäßig cookielos, andernorts ein einzelnes Erstanbieter-Cookie, sofern Sie es nicht abschalten.',
           'Jede Einstellung, die sich die Website merkt — etwa Ihr helles/dunkles Theme oder Ihre Sprache —, wird im lokalen Speicher Ihres Browsers auf Ihrem Gerät abgelegt und niemals an uns übertragen.',
         ],
       },
@@ -79,7 +79,7 @@ const de: Partial<PagesContent> = {
         heading: 'Web-Analyse',
         body: [
           'Wir verwenden Google Analytics 4, um zu verstehen, welche Tools und Guides tatsächlich nützlich sind: Seitenaufrufe sowie eine Handvoll anonymer Produkt-Ereignisse (zum Beispiel „auf dieser Seite wurde ein Ergebnis kopiert“ oder „ein Mission-90-Tag wurde als abgeschlossen markiert“). Diese Ereignisse enthalten nur den Seitenpfad — niemals etwas, das Sie in ein Tool eingeben oder einfügen.',
-          'Standardmäßig läuft die Analyse im cookielosen Modus („Einwilligung verweigert“): Es wird kein Analyse-Cookie gesetzt und keine dauerhafte Kennung auf Ihrem Gerät gespeichert, es sei denn, Sie stimmen über den Schalter unten ausdrücklich zu. Sie können Ihre Wahl jederzeit auf dieser Seite ändern — die Website funktioniert in beiden Fällen identisch.',
+          'Analyse-Cookies erfordern im Europäischen Wirtschaftsraum, im Vereinigten Königreich und in der Schweiz Ihre vorherige Einwilligung. Besuchen Sie uns von dort, läuft die Analyse standardmäßig im cookielosen Modus („Einwilligung verweigert“): Es wird kein Analyse-Cookie gesetzt und keine dauerhafte Kennung auf Ihrem Gerät gespeichert, es sei denn, Sie stimmen über den Schalter unten ausdrücklich zu. Überall sonst wird standardmäßig ein Erstanbieter-Analyse-Cookie (_ga) gesetzt, damit wir Besuche zählen und sehen können, welche Tools genutzt werden — derselbe Schalter schaltet es ab. Ihre Region wird aus Ihrer Netzwerkverbindung abgeleitet und nicht gespeichert. Sie können Ihre Wahl jederzeit auf dieser Seite ändern — die Website funktioniert in beiden Fällen identisch.',
         ],
       },
       {

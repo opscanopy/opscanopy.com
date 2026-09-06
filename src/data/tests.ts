@@ -53,6 +53,17 @@ export const categories: TestCategory[] = [
     icon: '<path d="M15 33h18a6.5 6.5 0 0 0 .8-13A9 9 0 0 0 16.4 17 6.5 6.5 0 0 0 15 33z"/>',
     status: 'live',
   },
+  {
+    slug: 'aws-ai-practitioner',
+    name: 'AWS Certified AI Practitioner (AIF-C01)',
+    shortName: 'AWS AI Practitioner',
+    description:
+      'A full-length original mock for the AIF-C01 exam — AI/ML fundamentals, generative AI, foundation models, agentic AI, responsible AI, and AI security on AWS.',
+    accent: 'develop',
+    // Processor-chip mark (stroke-based, viewBox "0 0 48 48"), matching track-icons convention.
+    icon: '<rect x="15" y="15" width="18" height="18" rx="3"/><path d="M21 21h6v6h-6z"/><path d="M20 15V9M28 15V9M20 39v-6M28 39v-6M15 20H9M15 28H9M39 20h-6M39 28h-6"/>',
+    status: 'live',
+  },
 ];
 
 export const tests: PracticeTest[] = [
@@ -74,6 +85,16 @@ export const tests: PracticeTest[] = [
       "Twenty-five scenario questions written for OpsCanopy in the style of the DOP-C02 exam — CI/CD, infrastructure as code, resilience, monitoring, and security.",
     passThreshold: 75,
     minutes: 60,
+    status: 'live',
+  },
+  {
+    slug: 'aif-c01-full-mock-exam',
+    categorySlug: 'aws-ai-practitioner',
+    name: 'Full Mock Exam',
+    description:
+      'Sixty-five original questions in the real exam’s domain weighting, written for OpsCanopy against exam guide v1.1 (April 2026). Time yourself: the real exam allows 90 minutes. The 70% pass mark mirrors AWS’s 700/1,000 scaled cutoff but is OpsCanopy’s, not AWS’s.',
+    passThreshold: 70,
+    minutes: 90,
     status: 'live',
   },
 ];

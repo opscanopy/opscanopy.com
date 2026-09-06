@@ -54,3 +54,11 @@ ud=$(mktemp -d)   # fresh profile per run avoids lock clashes
 - `npm run build` (~30s, 312 pages) type-checks every locale page — run it
   before calling page-frontmatter changes done.
 - Kill your dev server when finished; orphaned ones accumulate on 4321+.
+- Reuse of one `--user-data-dir` across several page loads lets the service worker
+  from the first load serve its **"You're offline" fallback** to later navigations
+  under a virtual-time budget. Use a fresh `mktemp -d` profile per URL.
+- `/tests/<cat>/<test>/` renders "Question 1 of 65" and the "0 of 2 selected"
+  counters **server-side**, so their presence in a dump proves nothing about the
+  runner script. To prove boot, drive it over CDP (`--remote-debugging-port`):
+  click `[data-next]` and check the second `[data-q]` fieldset unhides; answers
+  register only through `input.click()` (the runner listens for `change`).
