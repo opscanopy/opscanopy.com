@@ -34,7 +34,7 @@ When you are ready to test yourself, the [free 65-question AIF-C01 mock](/tests/
 
 ## Exam at a glance
 
-| | |
+| Fact | Detail |
 |---|---|
 | **Exam code** | AIF-C01 (AWS Certified AI Practitioner) |
 | **Questions** | 65 (50 scored + 15 unscored, not identified) |
