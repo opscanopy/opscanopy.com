@@ -169,6 +169,11 @@ describe('CSS token extraction', () => {
       '--color-warning-deep',
       '--color-primary',
       '--color-on-primary',
+      // Dark-stable slab inks — the instrument-slab rule in DESIGN.md.
+      '--color-inverse',
+      '--color-inverse-fg',
+      '--color-inverse-brand',
+      '--color-inverse-accent',
     ];
     for (const token of required) {
       expect(light[token], `missing light token ${token}`).toBeDefined();
@@ -200,6 +205,11 @@ describe('CSS token extraction', () => {
       '--color-warning-deep',
       '--color-primary',
       '--color-on-primary',
+      // Dark-stable slab inks — the instrument-slab rule in DESIGN.md.
+      '--color-inverse',
+      '--color-inverse-fg',
+      '--color-inverse-brand',
+      '--color-inverse-accent',
     ];
     for (const token of required) {
       expect(dark[token], `missing dark token ${token}`).toBeDefined();
@@ -248,6 +258,19 @@ describe('WCAG AA contrast — light theme tokens', () => {
 
   it('inverse-fg on inverse slab >= 4.5:1 (AA, dark slab in light theme)', () => {
     assertContrast(light['--color-inverse-fg'], light['--color-inverse'], 4.5, 'light: inverse-fg on inverse');
+  });
+
+  // The slab's accent inks. This is the pair that was missing: accent-ink and
+  // brand were only ever gated against the canvas, so the light-theme amber
+  // (#a85a06, 3.45:1) and leaf (#4a8c3f, 4.27:1) sat below AA on the charcoal
+  // slab in HeroDemo, TerminalPlay, ErrorTerminal and the homepage Mission 90
+  // band without any test noticing.
+  it('inverse-accent (amber) on inverse slab >= 4.5:1 (AA)', () => {
+    assertContrast(light['--color-inverse-accent'], light['--color-inverse'], 4.5, 'light: inverse-accent on inverse');
+  });
+
+  it('inverse-brand (leaf) on inverse slab >= 4.5:1 (AA)', () => {
+    assertContrast(light['--color-inverse-brand'], light['--color-inverse'], 4.5, 'light: inverse-brand on inverse');
   });
 
   // JWT playground status surfaces (validity pill, trust banner, verify
@@ -324,6 +347,16 @@ describe('WCAG AA contrast — dark theme tokens', () => {
 
   it('inverse-fg on inverse slab >= 4.5:1 (AA)', () => {
     assertContrast(dark['--color-inverse-fg'], dark['--color-inverse'], 4.5, 'dark: inverse-fg on inverse');
+  });
+
+  // See the light-theme block: the slab is dark in both themes, so these two
+  // must hold in both. They are declared with the same values on purpose.
+  it('inverse-accent (amber) on inverse slab >= 4.5:1 (AA)', () => {
+    assertContrast(dark['--color-inverse-accent'], dark['--color-inverse'], 4.5, 'dark: inverse-accent on inverse');
+  });
+
+  it('inverse-brand (leaf) on inverse slab >= 4.5:1 (AA)', () => {
+    assertContrast(dark['--color-inverse-brand'], dark['--color-inverse'], 4.5, 'dark: inverse-brand on inverse');
   });
 
   // JWT playground status surfaces — see the light-theme block for rationale.

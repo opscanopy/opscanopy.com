@@ -66,7 +66,12 @@ squared with a 1px border; badges are mono tags (`radius-xs`), except
 
 **Instrument-slab rule:** `HeroDemo`, `TerminalPlay`, `ErrorTerminal`,
 `CodeBlock`, and privacy panels render on `--color-inverse` in BOTH themes, with
-a 1px `#ffffff1f` ring + mono caption bar.
+a 1px `#ffffff1f` ring + mono caption bar. Because the surface is dark in both
+themes, so are its inks: the only legal text colours on a slab are
+`--color-inverse-fg`, `--color-inverse-brand` (leaf) and `--color-inverse-accent`
+(amber) — never `brand`, `brand-strong` or `accent-ink`, whose light-theme values
+are tuned for warm paper and fall below AA on charcoal. Eyebrows on a slab need
+the `!` form (`!text-inverse-brand`) to beat the `eyebrow` utility's own colour.
 
 **Concentricity:** nested rounded elements use `inner-radius = outer-radius −
 padding` (chips in cards, code in slabs, art in card caps).
