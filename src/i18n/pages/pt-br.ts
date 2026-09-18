@@ -153,7 +153,6 @@ const ptBr: Partial<PagesContent> = {
         body: [
           'O OpsCanopy é construído e mantido por Pushkar Kumar e Asif Khan — engenheiros que se cansaram de colar configurações sensíveis em ferramentas web aleatórias e decidiram construir alternativas rápidas, privadas e do lado do cliente.',
           'Pushkar Kumar — desenvolvedor de software e engenheiro DevOps interessado em DevOps. Ele decidiu criar um recurso gratuito para novos desenvolvedores e engenheiros DevOps que estão aprendendo esse caminho, para que o DevOps possa ser facilmente orientado e aprendido — já que, quando ele começou, não havia um recurso gratuito assim.',
-          'Asif Khan — desenvolvedor de software e engenheiro DevOps interessado em DevOps. Ele decidiu criar um recurso gratuito para novos desenvolvedores e engenheiros DevOps que estão aprendendo esse caminho, para que o DevOps possa ser facilmente orientado e aprendido — já que, quando ele começou, não havia um recurso gratuito assim.',
           'O desenvolvimento acontece de forma aberta no GitHub, então você pode auditar exatamente como cada ferramenta se comporta, relatar um bug ou sugerir o próximo utilitário a ser adicionado.',
         ],
       },

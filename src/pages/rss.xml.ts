@@ -37,6 +37,13 @@ export async function GET(): Promise<Response> {
       const title = escapeXml(post.entry.data.title);
       const description = escapeXml(post.entry.data.description ?? '');
       const pubDate = rfc822(post.entry.data.pubDate);
+      // dc:creator, not <author> — RSS 2.0's <author> element is specified as an
+      // email address, which we are not publishing. Readers and aggregators
+      // render dc:creator as the byline. The frontmatter default is the
+      // Organization name, which resolves to the person who writes the posts.
+      const creator = escapeXml(
+        post.entry.data.author === site.author ? site.person.name : post.entry.data.author,
+      );
       // Tags become <category> so readers and aggregators can filter the feed.
       const categories = (post.entry.data.tags ?? [])
         .map((tag) => `\n      <category>${escapeXml(tag)}</category>`)
@@ -46,6 +53,7 @@ export async function GET(): Promise<Response> {
       <link>${link}</link>
       <guid isPermaLink="true">${link}</guid>
       <description>${description}</description>
+      <dc:creator>${creator}</dc:creator>
       <pubDate>${pubDate}</pubDate>${categories}
     </item>`;
     })
@@ -62,7 +70,7 @@ export async function GET(): Promise<Response> {
   );
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/elements/1.1/">
   <channel>
     <title>${channelTitle}</title>
     <link>${channelLink}</link>

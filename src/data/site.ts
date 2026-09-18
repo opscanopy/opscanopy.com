@@ -19,6 +19,17 @@ export const site = {
   bluesky: 'https://bsky.app/profile/opscanopy.bsky.social',
   devto: 'https://dev.to/opscanopy',
   author: 'OpsCanopy',
+  /**
+   * The human behind the writing. Schema.org wants a Person, not an
+   * Organization, as the `author` of a how-to article — an org can publish, but
+   * only a person can have the experience E-E-A-T asks about. `author` above
+   * stays the Organization byline used for `publisher` and for the frontmatter
+   * default; this is who that byline resolves to.
+   */
+  person: {
+    name: 'Pushkar Kumar',
+    url: 'https://opscanopy.com/about/',
+  },
 } as const;
 
 export interface NavLink {

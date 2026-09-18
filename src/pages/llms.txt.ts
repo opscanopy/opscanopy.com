@@ -17,6 +17,7 @@ import { liveTools } from '../data/tools';
 import { tracks } from '../data/learn';
 import { roadmaps } from '../data/roadmaps';
 import { program, liveDays } from '../data/mission90';
+import { liveCategories, liveTestsInCategory } from '../data/tests';
 import { getPostsForLocale } from '../i18n/blog';
 import { getGuidesForLocale } from '../lib/learn/guides';
 
@@ -70,6 +71,22 @@ export async function GET(): Promise<Response> {
     push(`- [${r.title}](${site.url}/learn/roadmaps/${r.slug}/): ${r.description}`);
   }
 
+  push('', '## Practice tests', '');
+  push(
+    `- [All practice tests](${site.url}/tests/): free, browser-based certification practice with a worked explanation on every question.`,
+  );
+  for (const c of liveCategories) {
+    push(`- [${c.name}](${site.url}/tests/${c.slug}/): ${c.description}`);
+    for (const t of liveTestsInCategory(c.slug)) {
+      push(`  - [${t.name}](${site.url}/tests/${c.slug}/${t.slug}/): ${t.description}`);
+      // The review page is the readable one: every question, the correct answer
+      // and the full explanation as prose, with no interaction required.
+      push(
+        `  - [${t.name} — all questions and answers explained](${site.url}/tests/${c.slug}/${t.slug}/review/)`,
+      );
+    }
+  }
+
   push(
     '',
     `## ${program.name}`,
@@ -80,9 +97,14 @@ export async function GET(): Promise<Response> {
     `- [Playable incident missions](${site.url}/mission-90/missions/)`,
     `- [Setup guide](${site.url}/mission-90/setup/)`,
     '',
-    '## Blog',
-    '',
   );
+  // Every live day, not just the hubs: each is a standalone lesson an assistant
+  // can cite for a specific topic, and the hub pages don't name them.
+  for (const d of liveDays) {
+    push(`- [Day ${d.day}: ${d.title}](${site.url}/mission-90/day/${d.day}/)`);
+  }
+
+  push('', '## Blog', '');
   for (const p of posts) {
     push(`- [${p.entry.data.title}](${site.url}/blog/${p.slug}/): ${p.entry.data.description}`);
   }
