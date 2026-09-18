@@ -401,8 +401,8 @@ aws ec2 associate-address \
 
 | DNS Record | Type | Value |
 |---|---|---|
-| app.yourdomain.com | A | your-elastic-ip |
-| www.yourdomain.com | CNAME | app.yourdomain.com |
+| `app.yourdomain.com` | A | `your-elastic-ip` |
+| `www.yourdomain.com` | CNAME | `app.yourdomain.com` |
 
 > **Caution:** An Elastic IP is free **only while it's attached to a running instance**. Allocate one and leave it unattached (or attached to a stopped instance) and AWS charges a small hourly fee. When you tear the project down, **release the EIP**: `aws ec2 release-address --allocation-id eipalloc-xxxx`.
 
