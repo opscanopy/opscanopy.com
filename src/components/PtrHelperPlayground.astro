@@ -84,8 +84,50 @@ import { examples as prerenderedExamples } from '../lib/ptr-helper/examples';
     </div>
 
     <div class="bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex items-center justify-between gap-3">
-        <span class="eyebrow">Result</span>
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <span class="flex items-center gap-2">
+          <span class="eyebrow">Result</span>
+          <button
+            id="ptr-share"
+            type="button"
+            class="ptr-copy ptr-copy--labeled"
+            data-copy=""
+            data-copy-label="Copy link"
+            hidden
+          >
+            <svg
+              class="ptr-copy-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6.75 9.25l2.5-2.5"></path>
+              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
+              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
+            </svg>
+            <svg
+              class="ptr-check-icon hidden"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="ptr-copy-label">Copy link</span>
+          </button>
+        </span>
         <span id="ptr-summary" class="ptr-summary code-mono text-mute" role="status" aria-live="polite"></span>
       </div>
       <div id="ptr-results" class="ptr-results">
@@ -261,6 +303,47 @@ import { examples as prerenderedExamples } from '../lib/ptr-helper/examples';
   .ptr-summary {
     white-space: nowrap;
   }
+
+  /* Copy-link button — same shape as the cidr-checker's, which is the
+     playground reference implementation for share affordances. */
+  .ptr-copy--labeled {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 10px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-mute);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease;
+  }
+  .ptr-copy--labeled:hover {
+    color: var(--color-brand-strong);
+    background: var(--color-hairline);
+  }
+  .ptr-copy--labeled:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  .ptr-copy--copied {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+  @media (pointer: coarse) {
+    .ptr-copy--labeled {
+      min-height: 44px;
+    }
+  }
+
   .ptr-results {
     min-height: 44px;
   }
@@ -406,7 +489,8 @@ import { examples as prerenderedExamples } from '../lib/ptr-helper/examples';
 
 <script>
   import { escapeHtml } from '../lib/escape-html';
-  import { readIpHash } from '../lib/ip-hash';
+  import { wireRunKeys } from '../lib/run-keys';
+  import { buildIpHash, readIpHash } from '../lib/ip-hash';
   import { copyTextToClipboard } from '../lib/clipboard';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
 
@@ -567,11 +651,74 @@ import { examples as prerenderedExamples } from '../lib/ptr-helper/examples';
       });
     }
 
-    function evaluate(): void {
+
+    /* ---- Share link / #ip= deep link ---------------------------------- */
+    /* The tool already READ #ip= on boot (written by the sibling networking
+       tools) but never wrote one, so a result here could not be linked to.
+       Same contract as the cidr-checker: only user-initiated evaluations touch
+       the hash — a boot seed or a restored input must not rewrite the URL. */
+    const shareBtn = root.querySelector<HTMLButtonElement>('#ptr-share');
+    let lastWrittenHash: string | null = null;
+
+    function writeHash(value: string | null): void {
+      const target = value ? buildIpHash(value) : '';
+      if (target === lastWrittenHash) return;
+      // Safari throttles replaceState (~100/30s) and throws — never let that
+      // break typing.
+      try {
+        if (value) {
+          history.replaceState(null, '', target);
+        } else {
+          history.replaceState(null, '', location.pathname + location.search);
+        }
+        lastWrittenHash = target;
+      } catch {
+        /* ignore */
+      }
+    }
+
+    function hideShare(): void {
+      if (!shareBtn) return;
+      shareBtn.hidden = true;
+      shareBtn.dataset.copy = '';
+    }
+
+    function showShare(value: string): void {
+      if (!shareBtn) return;
+      shareBtn.hidden = false;
+      shareBtn.dataset.copy = location.origin + location.pathname + location.search + buildIpHash(value);
+    }
+
+    if (shareBtn) {
+      const label = shareBtn.querySelector<HTMLElement>('.ptr-copy-label');
+      const copyIcon = shareBtn.querySelector<HTMLElement>('.ptr-copy-icon');
+      const checkIcon = shareBtn.querySelector<HTMLElement>('.ptr-check-icon');
+      shareBtn.addEventListener('click', () => {
+        const url = shareBtn.dataset.copy ?? '';
+        if (!url) return;
+        void copyTextToClipboard(url).then((ok) => {
+          if (!ok) return;
+          shareBtn.classList.add('ptr-copy--copied');
+          copyIcon?.classList.add('hidden');
+          checkIcon?.classList.remove('hidden');
+          if (label) label.textContent = 'Copied';
+          window.setTimeout(() => {
+            shareBtn.classList.remove('ptr-copy--copied');
+            copyIcon?.classList.remove('hidden');
+            checkIcon?.classList.add('hidden');
+            if (label) label.textContent = 'Copy link';
+          }, 1500);
+        });
+      });
+    }
+
+    function evaluate(userInitiated = false): void {
       const value = input!.value.trim();
       if (value.length === 0) {
         input!.classList.remove('ptr-input--error');
         renderEmpty(resultsBox!, summaryEl!);
+        hideShare();
+        if (userInitiated) writeHash(null);
         return;
       }
       let result: Result | null = null;
@@ -580,22 +727,28 @@ import { examples as prerenderedExamples } from '../lib/ptr-helper/examples';
       } catch {
         input!.classList.add('ptr-input--error');
         renderError(resultsBox!, summaryEl!, 'Unexpected error while generating the PTR record.');
+        hideShare();
+        if (userInitiated) writeHash(null);
         return;
       }
       if (!result || result.valid === false) {
         input!.classList.add('ptr-input--error');
         renderError(resultsBox!, summaryEl!, result?.error ?? 'This is not a valid IP address or CIDR.');
+        hideShare();
+        if (userInitiated) writeHash(null);
         return;
       }
       input!.classList.remove('ptr-input--error');
       renderResult(resultsBox!, summaryEl!, result);
+      showShare(value);
+      if (userInitiated) writeHash(value);
       recordToolLastInput('reverse-dns-ptr', value);
     }
 
     let timer: number | undefined;
     function scheduleEvaluate(): void {
       window.clearTimeout(timer);
-      timer = window.setTimeout(evaluate, DEBOUNCE_MS);
+      timer = window.setTimeout(() => evaluate(true), DEBOUNCE_MS);
     }
 
     const sampleCue = root.querySelector<HTMLElement>('.ptr-sample-cue');
@@ -604,6 +757,11 @@ import { examples as prerenderedExamples } from '../lib/ptr-helper/examples';
       if (sampleCue) sampleCue.classList.add('is-hidden');
       scheduleEvaluate();
     });
+
+    wireRunKeys(input, () => {
+      window.clearTimeout(timer);
+      evaluate(true);
+    });
     chips.forEach((chip) => {
       chip.addEventListener('click', () => {
         const idx = Number(chip.dataset.exampleIdx);
@@ -611,7 +769,7 @@ import { examples as prerenderedExamples } from '../lib/ptr-helper/examples';
         input.value = examples[idx].input;
         setActiveChip(idx);
         window.clearTimeout(timer);
-        evaluate();
+        evaluate(true);
       });
     });
 
@@ -626,7 +784,7 @@ import { examples as prerenderedExamples } from '../lib/ptr-helper/examples';
         setActiveChip(null);
         if (sampleCue) sampleCue.classList.add('is-hidden');
         window.clearTimeout(timer);
-        evaluate();
+        evaluate(true);
       },
     });
 

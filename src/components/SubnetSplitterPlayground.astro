@@ -102,8 +102,50 @@ import { examples as prerenderedExamples } from '../lib/subnet-splitter/examples
     </div>
 
     <div class="bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex items-center justify-between gap-3">
-        <span class="eyebrow">Result</span>
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <span class="flex items-center gap-2">
+          <span class="eyebrow">Result</span>
+          <button
+            id="spl-share"
+            type="button"
+            class="spl-copy--labeled"
+            data-copy=""
+            data-copy-label="Copy link"
+            hidden
+          >
+            <svg
+              class="spl-copy-icon"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6.75 9.25l2.5-2.5"></path>
+              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
+              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
+            </svg>
+            <svg
+              class="spl-check-icon hidden"
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
+            </svg>
+            <span class="spl-copy-label">Copy link</span>
+          </button>
+        </span>
         <span id="spl-summary" class="spl-summary code-mono text-mute" role="status" aria-live="polite"></span>
       </div>
       <div id="spl-results" class="spl-results">
@@ -289,6 +331,47 @@ import { examples as prerenderedExamples } from '../lib/subnet-splitter/examples
   .spl-summary {
     white-space: nowrap;
   }
+
+  /* Copy-link button — same shape as the cidr-checker's, which is the
+     playground reference implementation for share affordances. */
+  .spl-copy--labeled {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 10px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+    color: var(--color-mute);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease;
+  }
+  .spl-copy--labeled:hover {
+    color: var(--color-brand-strong);
+    background: var(--color-hairline);
+  }
+  .spl-copy--labeled:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
+  }
+  .spl-copy--copied {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+  }
+  @media (pointer: coarse) {
+    .spl-copy--labeled {
+      min-height: 44px;
+    }
+  }
+
   .spl-results {
     min-height: 44px;
   }
@@ -439,7 +522,9 @@ import { examples as prerenderedExamples } from '../lib/subnet-splitter/examples
 
 <script>
   import { escapeHtml } from '../lib/escape-html';
-  import { readIpHash } from '../lib/ip-hash';
+  import { wireRunKeys } from '../lib/run-keys';
+  import { buildIpHash, readIpHash } from '../lib/ip-hash';
+  import { copyTextToClipboard } from '../lib/clipboard';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
 
   // Type-only import: erased at build, so the engine is still lazily imported inside
@@ -657,11 +742,75 @@ import { examples as prerenderedExamples } from '../lib/subnet-splitter/examples
       field.classList.add('ring-2', 'ring-red-500');
     }
 
-    function evaluate(): void {
+    /* ---- Share link / #ip= deep link ---------------------------------- */
+    /* The splitter already READ #ip= (the subnet calculator's "Split this
+       subnet" chip writes one) but never wrote one back, so a split you typed
+       here could not be linked to. Only the PARENT block goes in the hash —
+       the same scope the boot sequence restores. Only user-initiated
+       evaluations write: a boot seed must not rewrite the URL. */
+    const shareBtn = root.querySelector<HTMLButtonElement>('#spl-share');
+    let lastWrittenHash: string | null = null;
+
+    function writeHash(value: string | null): void {
+      const target = value ? buildIpHash(value) : '';
+      if (target === lastWrittenHash) return;
+      // Safari throttles replaceState (~100/30s) and throws — never let that
+      // break typing.
+      try {
+        if (value) {
+          history.replaceState(null, '', target);
+        } else {
+          history.replaceState(null, '', location.pathname + location.search);
+        }
+        lastWrittenHash = target;
+      } catch {
+        /* ignore */
+      }
+    }
+
+    function hideShare(): void {
+      if (!shareBtn) return;
+      shareBtn.hidden = true;
+      shareBtn.dataset.copy = '';
+    }
+
+    function showShare(value: string): void {
+      if (!shareBtn) return;
+      shareBtn.hidden = false;
+      shareBtn.dataset.copy =
+        location.origin + location.pathname + location.search + buildIpHash(value);
+    }
+
+    if (shareBtn) {
+      const shareLabel = shareBtn.querySelector<HTMLElement>('.spl-copy-label');
+      const copyIcon = shareBtn.querySelector<HTMLElement>('.spl-copy-icon');
+      const checkIcon = shareBtn.querySelector<HTMLElement>('.spl-check-icon');
+      shareBtn.addEventListener('click', () => {
+        const url = shareBtn.dataset.copy ?? '';
+        if (!url) return;
+        void copyTextToClipboard(url).then((ok) => {
+          if (!ok) return;
+          shareBtn.classList.add('spl-copy--copied');
+          copyIcon?.classList.add('hidden');
+          checkIcon?.classList.remove('hidden');
+          if (shareLabel) shareLabel.textContent = 'Copied';
+          window.setTimeout(() => {
+            shareBtn.classList.remove('spl-copy--copied');
+            copyIcon?.classList.remove('hidden');
+            checkIcon?.classList.add('hidden');
+            if (shareLabel) shareLabel.textContent = 'Copy link';
+          }, 1500);
+        });
+      });
+    }
+
+    function evaluate(userInitiated = false): void {
       clearFieldErrors();
       const parent = parentInput!.value;
       if (parent.trim().length === 0) {
         renderEmpty(resultsBox!, summaryEl!);
+        hideShare();
+        if (userInitiated) writeHash(null);
         return;
       }
       const prefixRaw = prefixInput!.value.trim();
@@ -680,6 +829,8 @@ import { examples as prerenderedExamples } from '../lib/subnet-splitter/examples
               summaryEl!,
               `The new prefix (/${newPrefix}) must be larger than the parent prefix (/${parentPrefix}). For a /${parentPrefix} parent, try /${suggested} or smaller.`,
             );
+            hideShare();
+            if (userInitiated) writeHash(null);
             return;
           }
         }
@@ -690,6 +841,8 @@ import { examples as prerenderedExamples } from '../lib/subnet-splitter/examples
         result = engine.split(parent, allocatedInput!.value, newPrefix);
       } catch {
         renderError(resultsBox!, summaryEl!, 'Unexpected error while splitting the parent block.');
+        hideShare();
+        if (userInitiated) writeHash(null);
         return;
       }
       if (!result || result.valid === false) {
@@ -700,16 +853,20 @@ import { examples as prerenderedExamples } from '../lib/subnet-splitter/examples
           markFieldError(parentInput!);
         }
         renderError(resultsBox!, summaryEl!, result?.error ?? 'Enter a valid parent CIDR.');
+        hideShare();
+        if (userInitiated) writeHash(null);
         return;
       }
       renderResult(resultsBox!, summaryEl!, result);
+      showShare(parent.trim());
+      if (userInitiated) writeHash(parent.trim());
       recordToolLastInput('subnet-splitter', parent.trim());
     }
 
     let timer: number | undefined;
     function scheduleEvaluate(): void {
       window.clearTimeout(timer);
-      timer = window.setTimeout(evaluate, DEBOUNCE_MS);
+      timer = window.setTimeout(() => evaluate(true), DEBOUNCE_MS);
     }
 
     function onUserInput(): void {
@@ -720,6 +877,15 @@ import { examples as prerenderedExamples } from '../lib/subnet-splitter/examples
     parentInput.addEventListener('input', onUserInput);
     prefixInput.addEventListener('input', onUserInput);
     allocatedInput.addEventListener('input', onUserInput);
+
+    const runNow = (): void => {
+      window.clearTimeout(timer);
+      evaluate(true);
+    };
+    wireRunKeys(parentInput, runNow);
+    wireRunKeys(prefixInput, runNow);
+    // The allocated-blocks field is one CIDR per line, so Enter must insert.
+    wireRunKeys(allocatedInput, runNow, { enter: 'insert-then-run' });
     chips.forEach((chip) => {
       chip.addEventListener('click', () => {
         const idx = Number(chip.dataset.exampleIdx);
@@ -730,7 +896,7 @@ import { examples as prerenderedExamples } from '../lib/subnet-splitter/examples
         allocatedInput.value = ex.allocated;
         setActiveChip(idx);
         window.clearTimeout(timer);
-        evaluate();
+        evaluate(true);
       });
     });
 
@@ -746,7 +912,7 @@ import { examples as prerenderedExamples } from '../lib/subnet-splitter/examples
         allocatedInput!.value = '';
         setActiveChip(null);
         window.clearTimeout(timer);
-        evaluate();
+        evaluate(true);
       },
     });
 
