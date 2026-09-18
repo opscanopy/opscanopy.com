@@ -1,0 +1,101 @@
+name: Publish container
+
+# Build the self-hosting image and push it to GHCR.
+#
+# Self-hosting is the one distribution channel this project already had the
+# machinery for — Dockerfile, compose file and an nginx config that carries the
+# production CSP — but with no published image, "self-host it" meant "clone the
+# repo and build it yourself", which almost nobody does.
+#
+# Runs on a version tag, plus manually. Deliberately NOT on every push to main:
+# the tag is the thing people pin to, and a :latest that moves on every commit
+# is worse than no :latest at all.
+#
+# No secrets needed — GITHUB_TOKEN can push to this repo's own package.
+# The package starts out private: make it public once in the repo's Packages
+# settings, or `docker pull` will ask strangers for credentials.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish as (in addition to the commit SHA). Leave blank for edge.'
+        type: string
+        default: 'edge'
+
+concurrency:
+  group: docker-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The build runs gen-tool-meta.mjs and gen-lastmod.mjs, which derive
+          # dates from commit history — a shallow clone makes every page look
+          # the same age.
+          fetch-depth: 0
+
+      # arm64 matters here: a good share of self-hosters are on a Pi or an
+      # Apple-silicon machine, and emulated startup is the difference between
+      # "works" and "why is this so slow".
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=${{ inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' && inputs.tag != '' }}
+            type=sha,format=long
+          labels: |
+            org.opencontainers.image.title=OpsCanopy
+            org.opencontainers.image.description=Free, private, browser-based tools for platform and DevOps engineers. No server, no account.
+            org.opencontainers.image.url=https://opscanopy.com
+            org.opencontainers.image.licenses=MIT
+
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The image is a static site behind nginx, so "it serves the homepage and
+      # a tool page" is the whole contract. Catches a broken build before anyone
+      # pulls the tag.
+      - name: Smoke test the published image
+        run: |
+          set -euo pipefail
+          IMAGE=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
+          docker run -d --name oc-smoke -p 8080:8080 "$IMAGE"
+          for i in $(seq 1 30); do
+            if curl -fsS -o /dev/null http://localhost:8080/; then break; fi
+            sleep 1
+          done
+          curl -fsS -o /dev/null -w 'home   %{http_code}\n' http://localhost:8080/
+          curl -fsS -o /dev/null -w 'tool   %{http_code}\n' http://localhost:8080/subnet-calculator/
+          curl -fsS http://localhost:8080/ | grep -q 'OpsCanopy'
+          docker rm -f oc-smoke

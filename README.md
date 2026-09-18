@@ -4,6 +4,11 @@
 
 🌐 **[opscanopy.com](https://opscanopy.com)** · 39 tools · no signup · no servers · MIT licensed
 
+[![Deploy](https://github.com/opscanopy/opscanopy.com/actions/workflows/deploy.yml/badge.svg)](https://github.com/opscanopy/opscanopy.com/actions/workflows/deploy.yml)
+[![CodeQL](https://github.com/opscanopy/opscanopy.com/actions/workflows/codeql.yml/badge.svg)](https://github.com/opscanopy/opscanopy.com/actions/workflows/codeql.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![Container](https://img.shields.io/badge/ghcr.io-opscanopy-2496ed?logo=docker&logoColor=white)](https://github.com/opscanopy/opscanopy.com/pkgs/container/opscanopy.com)
+
 OpsCanopy is a growing collection of focused utilities for DevOps and SRE work —
 validators, converters, testers and linters. Every tool runs **100% client-side**
 in your browser using JavaScript and (where it helps) WebAssembly. There is no
@@ -139,10 +144,23 @@ policy that says internal config does not get pasted into a page loaded from the
 internet at all.
 
 ```bash
+docker run -d --name opscanopy -p 8080:8080 \
+  --read-only --tmpfs /var/cache/nginx --tmpfs /var/run \
+  --security-opt no-new-privileges:true \
+  ghcr.io/opscanopy/opscanopy.com:latest
+```
+
+Then open <http://localhost:8080>. Multi-arch (amd64 and arm64), so it runs on a
+Raspberry Pi or an Apple-silicon machine as-is.
+
+With Compose — uncomment the `image:` line in `docker-compose.yml` to pull
+instead of building:
+
+```bash
 docker compose up -d     # http://localhost:8080
 ```
 
-or without Compose:
+Or build it yourself from source:
 
 ```bash
 docker build -t opscanopy .
@@ -175,6 +193,15 @@ All commands run from the project root:
 Issues and pull requests are welcome — bug reports, new tool ideas, translations
 and fixes. Tools are engineered against real specifications and test vectors, so
 PRs that add or change behavior should include tests.
+
+**[CONTRIBUTING.md](./CONTRIBUTING.md)** covers the four-file shape every tool
+takes, the commands that gate a PR, and the rule that page copy ships to all five
+locales together. Translation fixes are a good first contribution.
+
+- [Open an issue](https://github.com/opscanopy/opscanopy.com/issues/new/choose) — bug, tool request or translation
+- [Discussions](https://github.com/opscanopy/opscanopy.com/discussions) — questions and ideas
+- [Code of Conduct](./CODE_OF_CONDUCT.md)
+- [What changed lately](https://opscanopy.com/changelog/)
 
 ## Privacy
 
