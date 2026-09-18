@@ -65,10 +65,11 @@ on a command intended as a preview. Dry-run first, read it, then re-run with
 | 2026-08-31 | 2 | 2 | Normal. 6-day gap both. First of the error-string posts — blog-sized, so 2 rather than 1. |
 | 2026-09-02 | 1 | 2 | Normal. 2-day gap both. Last error-string post; held the two guides back on Show HN day. |
 | 2026-09-07 | 1 | 1 | AIF-C01 study guide (guide + its 65-q mock). 5-day gap. Targeted via --only, not queue order. |
+| 2026-09-18 | 1 | 2 | Networking guide. 11-day gap. dev.to queue down to 1 (DevOps Projects). |
 
 ## Current state
 
-**dev.to — 34 published, 2 still queued (Networking, DevOps Projects)**
+**dev.to — 35 published, 1 still queued (DevOps Projects) — the queue is nearly exhausted**
 
 Syndicated on 2026-07-27: 7 Common .gitlab-ci.yml Mistakes · How to Convert a docker
 run Command · Why Isn't My Alert Reaching the Right Receiver · Why Did Prometheus
