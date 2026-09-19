@@ -232,7 +232,7 @@ export function techArticleLd(o: {
   dateModified?: string;
   keywords?: string;
   proficiencyLevel?: 'Beginner' | 'Intermediate' | 'Advanced';
-  author?: { name: string; url?: string };
+  author?: { name: string; url?: string; sameAs?: readonly string[] };
   isPartOfCourse?: { name: string; url: string };
 }): Record<string, unknown> {
   return {
@@ -246,7 +246,14 @@ export function techArticleLd(o: {
     keywords: o.keywords,
     mainEntityOfPage: { '@type': 'WebPage', '@id': o.url },
     author: o.author
-      ? { '@type': 'Person', name: o.author.name, url: o.author.url }
+      ? {
+          '@type': 'Person',
+          name: o.author.name,
+          url: o.author.url,
+          // Undefined keys drop out of JSON.stringify, so an author with no
+          // profiles omits sameAs rather than emitting an empty array.
+          sameAs: o.author.sameAs?.length ? [...o.author.sameAs] : undefined,
+        }
       : { '@type': 'Organization', name: site.name, url: site.url },
     publisher: { '@type': 'Organization', name: site.name, url: site.url },
     isPartOf: o.isPartOfCourse

@@ -29,6 +29,12 @@ export const site = {
   person: {
     name: 'Pushkar Kumar',
     url: 'https://opscanopy.com/about/',
+    /**
+     * Profiles that are demonstrably the same person. `url` above is a page on
+     * a site we control, so it asserts nothing on its own; `sameAs` is what
+     * lets a search engine resolve the byline to an identity with a history.
+     */
+    sameAs: ['https://github.com/PushkarMandark'],
   },
 } as const;
 
