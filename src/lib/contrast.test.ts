@@ -14,6 +14,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
+import { categories, categoryHue, categoryToSlug } from '../data/tools';
 
 // ---------------------------------------------------------------------------
 // CSS parsing helpers
@@ -24,6 +25,9 @@ import { join } from 'node:path';
  * This file lives at src/lib/contrast.test.ts, so the CSS is at
  * src/styles/global.css — one directory up from src/lib/, then into styles/.
  */
+/** The light block is `@theme static { … }` (static: emit every token). */
+const THEME_BLOCK = /@theme(?:\s+static)?\s*\{/;
+
 const CSS_PATH = join(fileURLToPath(new URL('.', import.meta.url)), '../styles/global.css');
 
 function readCss(): string {
@@ -111,6 +115,33 @@ function contrastRatio(fg: string, bg: string): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
+/** CIE L* (perceptual lightness, 0–100) from relative luminance, D65 white. */
+function cielabL(hex: string): number {
+  const y = luminance(hex);
+  return y > 0.008856 ? 116 * Math.cbrt(y) - 16 : 903.3 * y;
+}
+
+/**
+ * The surface ladder must read as tiers, not one sheet: every adjacent step in
+ * canvas → canvas-soft → canvas-soft-2 → canvas-soft-3 is >= minStep L* apart
+ * and the sequence is monotonic (paper gets darker, charcoal gets lighter).
+ * `card` is checked separately against canvas-soft (the body background) — it
+ * deliberately sits between steps in the dark theme.
+ */
+function assertLadder(tokens: Record<string, string>, direction: 'darker' | 'lighter', minStep: number, label: string): void {
+  const chain = ['--color-canvas', '--color-canvas-soft', '--color-canvas-soft-2', '--color-canvas-soft-3'];
+  const ls = chain.map((t) => cielabL(tokens[t]));
+  for (let i = 1; i < ls.length; i++) {
+    const delta = direction === 'darker' ? ls[i - 1] - ls[i] : ls[i] - ls[i - 1];
+    expect(
+      delta,
+      `${label}: ${chain[i - 1]} → ${chain[i]} should step ${direction} by >= ${minStep} L*, got ${delta.toFixed(2)}`,
+    ).toBeGreaterThanOrEqual(minStep);
+  }
+  const cardDelta = Math.abs(cielabL(tokens['--color-card']) - cielabL(tokens['--color-canvas-soft']));
+  expect(cardDelta, `${label}: card vs canvas-soft (body) should differ by >= ${minStep} L*, got ${cardDelta.toFixed(2)}`).toBeGreaterThanOrEqual(minStep);
+}
+
 // ---------------------------------------------------------------------------
 // Shared assertion helper
 // ---------------------------------------------------------------------------
@@ -146,7 +177,7 @@ describe('WCAG contrast ratio math', () => {
 describe('CSS token extraction', () => {
   it('parses at least the expected tokens from the @theme block', () => {
     const css = readCss();
-    const light = extractTokensFromBlock(css, /@theme\s*\{/);
+    const light = extractTokensFromBlock(css, THEME_BLOCK);
     const required = [
       '--color-canvas',
       '--color-canvas-soft',
@@ -174,6 +205,9 @@ describe('CSS token extraction', () => {
       '--color-inverse-fg',
       '--color-inverse-brand',
       '--color-inverse-accent',
+      '--color-inverse-mute',
+      '--color-inverse-error',
+      '--color-card',
     ];
     for (const token of required) {
       expect(light[token], `missing light token ${token}`).toBeDefined();
@@ -210,6 +244,9 @@ describe('CSS token extraction', () => {
       '--color-inverse-fg',
       '--color-inverse-brand',
       '--color-inverse-accent',
+      '--color-inverse-mute',
+      '--color-inverse-error',
+      '--color-card',
     ];
     for (const token of required) {
       expect(dark[token], `missing dark token ${token}`).toBeDefined();
@@ -220,7 +257,7 @@ describe('CSS token extraction', () => {
 describe('WCAG AA contrast — light theme tokens', () => {
   const css = readCss();
   // Light tokens come from the @theme block; the dark overrides don't apply.
-  const light = extractTokensFromBlock(css, /@theme\s*\{/);
+  const light = extractTokensFromBlock(css, THEME_BLOCK);
 
   const canvas = () => light['--color-canvas'];
   const canvasSoft3 = () => light['--color-canvas-soft-3'];
@@ -271,6 +308,28 @@ describe('WCAG AA contrast — light theme tokens', () => {
 
   it('inverse-brand (leaf) on inverse slab >= 4.5:1 (AA)', () => {
     assertContrast(light['--color-inverse-brand'], light['--color-inverse'], 4.5, 'light: inverse-brand on inverse');
+  });
+
+  it('inverse-mute (slab caption) on inverse slab >= 4.5:1 (AA)', () => {
+    assertContrast(light['--color-inverse-mute'], light['--color-inverse'], 4.5, 'light: inverse-mute on inverse');
+  });
+
+  it('inverse-error on inverse slab >= 4.5:1 (AA)', () => {
+    assertContrast(light['--color-inverse-error'], light['--color-inverse'], 4.5, 'light: inverse-error on inverse');
+  });
+
+  // Surface ladder — widened on 2026-09-19 (card had sat 0.37 L* off canvas).
+  it('body text on canvas-soft-3 >= 4.5:1 (AA)', () => {
+    assertContrast(light['--color-body'], canvasSoft3(), 4.5, 'light: body on canvas-soft-3');
+  });
+  it('ink on card >= 7:1 (AAA-level)', () => {
+    assertContrast(light['--color-ink'], light['--color-card'], 7, 'light: ink on card');
+  });
+  it('accent-ink (amber) on canvas-soft >= 4.5:1 (AA)', () => {
+    assertContrast(light['--color-accent-ink'], light['--color-canvas-soft'], 4.5, 'light: accent-ink on canvas-soft');
+  });
+  it('surface ladder steps >= 3 L* and gets darker', () => {
+    assertLadder(light, 'darker', 3, 'light');
   });
 
   // JWT playground status surfaces (validity pill, trust banner, verify
@@ -359,6 +418,27 @@ describe('WCAG AA contrast — dark theme tokens', () => {
     assertContrast(dark['--color-inverse-brand'], dark['--color-inverse'], 4.5, 'dark: inverse-brand on inverse');
   });
 
+  it('inverse-mute (slab caption) on inverse slab >= 4.5:1 (AA)', () => {
+    assertContrast(dark['--color-inverse-mute'], dark['--color-inverse'], 4.5, 'dark: inverse-mute on inverse');
+  });
+
+  it('inverse-error on inverse slab >= 4.5:1 (AA)', () => {
+    assertContrast(dark['--color-inverse-error'], dark['--color-inverse'], 4.5, 'dark: inverse-error on inverse');
+  });
+
+  it('body text on canvas-soft-3 >= 4.5:1 (AA)', () => {
+    assertContrast(dark['--color-body'], canvasSoft3(), 4.5, 'dark: body on canvas-soft-3');
+  });
+  it('ink on card >= 7:1 (AAA-level)', () => {
+    assertContrast(dark['--color-ink'], dark['--color-card'], 7, 'dark: ink on card');
+  });
+  it('accent-ink (amber) on canvas-soft >= 4.5:1 (AA)', () => {
+    assertContrast(dark['--color-accent-ink'], dark['--color-canvas-soft'], 4.5, 'dark: accent-ink on canvas-soft');
+  });
+  it('surface ladder steps >= 3 L* and gets lighter', () => {
+    assertLadder(dark, 'lighter', 3, 'dark');
+  });
+
   // JWT playground status surfaces — see the light-theme block for rationale.
   it('brand-strong on brand-soft >= 4.5:1 (AA — pill/banner valid state)', () => {
     assertContrast(dark['--color-brand-strong'], dark['--color-brand-soft'], 4.5, 'dark: brand-strong on brand-soft');
@@ -387,5 +467,52 @@ describe('WCAG AA contrast — dark theme tokens', () => {
   });
   it('primary (active tab fill) on canvas >= 3:1 (UI component)', () => {
     assertContrast(dark['--color-primary'], dark['--color-canvas'], 3, 'dark: primary on canvas');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Category hues — `--color-cat-<slug>` tokens (dots + 8% art tint, never text).
+// The registry map `categoryHue` in src/data/tools.ts is the source of truth
+// (the OG generator reads its hex); the CSS tokens must equal it, exist in BOTH
+// theme blocks for every live category, and clear SC 1.4.11's 3:1 non-text bar
+// on the two surfaces the dot actually sits on (card, canvas-soft).
+// ---------------------------------------------------------------------------
+
+describe('Category hue tokens', () => {
+  const css = readCss();
+  const light = extractTokensFromBlock(css, THEME_BLOCK);
+  const dark = extractTokensFromBlock(css, /html\[data-theme=['"]dark['"]\]\s*\{/);
+
+  it('every live category has a hue in the registry map', () => {
+    for (const c of categories) {
+      expect(categoryHue[c.category], `categoryHue missing "${c.category}"`).toBeDefined();
+    }
+  });
+
+  for (const category of Object.keys(categoryHue)) {
+    const token = `--color-cat-${categoryToSlug(category)}`;
+
+    it(`${token} exists in both theme blocks and matches categoryHue`, () => {
+      expect(light[token], `missing light token ${token}`).toBeDefined();
+      expect(dark[token], `missing dark token ${token}`).toBeDefined();
+      expect(light[token]).toBe(categoryHue[category].light.toLowerCase());
+      expect(dark[token]).toBe(categoryHue[category].dark.toLowerCase());
+    });
+
+    it(`${token} >= 3:1 on card and canvas-soft in both themes`, () => {
+      assertContrast(light[token], light['--color-card'], 3, `light: ${token} on card`);
+      assertContrast(light[token], light['--color-canvas-soft'], 3, `light: ${token} on canvas-soft`);
+      assertContrast(dark[token], dark['--color-card'], 3, `dark: ${token} on card`);
+      assertContrast(dark[token], dark['--color-canvas-soft'], 3, `dark: ${token} on canvas-soft`);
+    });
+  }
+
+  it('hues sit at one perceptual lightness per theme (spread <= 4 L*)', () => {
+    const spread = (pick: 'light' | 'dark') => {
+      const ls = Object.values(categoryHue).map((h) => cielabL(h[pick]));
+      return Math.max(...ls) - Math.min(...ls);
+    };
+    expect(spread('light'), 'light-tier L* spread').toBeLessThanOrEqual(4);
+    expect(spread('dark'), 'dark-tier L* spread').toBeLessThanOrEqual(4);
   });
 });

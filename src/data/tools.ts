@@ -899,28 +899,40 @@ export const accentEdgeClass: Record<ToolAccent, string> = {
 };
 
 /**
- * Semantic category color system — color now MEANS category. Each category in
- * the registry maps to one muted -600/-700 hue, used (via inline style) for
- * both the card's solid top accent bar and the dot inside the category pill.
- * This replaces the decorative develop/preview/ship gradient for those grids,
- * so a card's color tells you what kind of tool it is at a glance. The dot
- * carries the hue while the pill label stays in dark text for AA legibility.
+ * Semantic category colour system — colour MEANS category. Every hue sits at
+ * the same OKLCH lightness and chroma (L 0.50 / C 0.09 on warm paper, L 0.76 /
+ * C 0.10 on charcoal) so the twelve dots read as one set; only the hue varies.
+ *
+ * This map is the SOURCE OF TRUTH for the `--color-cat-<slug>` tokens in
+ * src/styles/global.css — the OG-image generator (librsvg, no CSS variables)
+ * needs raw hex, so the values live here and contrast.test.ts asserts the CSS
+ * tokens equal them. DOM consumers never read the hex: they call
+ * `categoryAccentVar()` so the dot re-themes with the page.
  * Keep this keyed by the EXACT `category` strings used above.
  */
-export const categoryAccent: Record<string, string> = {
-  Networking: '#3f6ea5',
-  Security: '#b0503f',
-  Encoding: '#a8721f',
-  Kubernetes: '#5560a8',
-  Observability: '#7a5aa0',
-  'CI/CD': '#2f7d82',
-  Scheduling: '#b0562e',
-  Logs: '#a2456b',
-  Config: '#35786a',
-  Docker: '#3b82b8',
-  Utilities: '#7a6e52',
-  IaC: '#667a33',
+export const categoryHue: Record<string, { light: string; dark: string }> = {
+  Networking: { light: '#386695', dark: '#7fb6ee' }, // hue 250
+  Security: { light: '#904d49', dark: '#ea9891' }, // hue 25
+  Encoding: { light: '#845922', dark: '#daa668' }, // hue 70
+  Kubernetes: { light: '#595d96', dark: '#a4aaf0' }, // hue 280
+  Observability: { light: '#6f558c', dark: '#c0a1e4' }, // hue 305
+  'CI/CD': { light: '#0f736f', dark: '#59c5bf' }, // hue 190
+  Scheduling: { light: '#8d5136', dark: '#e79d7b' }, // hue 45
+  Logs: { light: '#874d6f', dark: '#df97c0' }, // hue 345
+  Config: { light: '#237356', dark: '#6fc5a1' }, // hue 165
+  Docker: { light: '#116d8a', dark: '#63bfe1' }, // hue 225
+  Utilities: { light: '#73621c', dark: '#c5b164' }, // hue 95
+  IaC: { light: '#576c2f', dark: '#a2bc75' }, // hue 125
 };
+
+/**
+ * The themed CSS colour for a category, for inline `style` attributes:
+ * `var(--color-cat-networking, var(--color-mute))`. Resolves through the
+ * `@theme static` tokens in global.css, so it follows the light/dark switch.
+ */
+export function categoryAccentVar(category: string): string {
+  return `var(--color-cat-${categoryToSlug(category)}, var(--color-mute))`;
+}
 
 /* ─── Category landing pages ──────────────────────────────────────────────
  * Slug ⇄ category mapping + per-category metadata that drives the static

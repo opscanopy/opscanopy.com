@@ -29,20 +29,35 @@ accents, never as a fill under white text. Amber (`--color-accent-ink`) is the
 annotation ink: figure numbers, callouts, leader lines. Decoupled from
 `--color-warning*`, which stays a live diagnostic semantic.
 
-**Light (`@theme`):** canvas `#fdfcfa` · soft `#f7f5f0` · soft-2 `#f0ede6` ·
-soft-3 `#e7e3d8` · card `#fffdf9` · ink `#211e19` · body `#524f48` · mute
+**Light (`@theme static`):** canvas `#fdfcfa` · soft `#f4f1ea` · soft-2 `#ebe7de` ·
+soft-3 `#e0dbcf` · card `#fffdf9` · ink `#211e19` · body `#524f48` · mute
 `#5d5950` · hairline `#e6e1d6`/`#cfc9bb`/`#9c968a` · inverse `#1b1915` · brand
 `#4a8c3f` (fill/graphic only) · brand-strong/link `#33652c` (the only green for
 white-on-green) · accent-ink `#a85a06` · focus `#1d5fd6`.
 
-**Dark (`[data-theme='dark']`):** canvas `#141310` · soft `#1a1814` · soft-2
-`#221f1a` · soft-3 `#2c2921` · card `#1c1a15` · ink `#f0ede5` · body `#aca69a` ·
-mute `#9a9488` · inverse `#232019` · brand=brand-strong=link=success `#8fc97a`
-(four explicit declarations — the contrast test reads only this block) ·
-accent-ink `#e0a458` · focus `#7fb0ff`.
+The surface ladder canvas → soft → soft-2 → soft-3 steps by >= 3 L* (CIE) in both
+themes, and `card` sits >= 3 L* off `canvas-soft` (the body background);
+`contrast.test.ts` gates the ladder, not only the text pairs. Before 2026-09-19
+the steps were ~2.4 L* and card was 0.37 L* off canvas — one sheet of paper.
 
-Category accents (`categoryAccent` in `src/data/tools.ts`) are warm-shifted,
-OKLCH-uniform hues — one per tool category, used as dots + tinted art backdrops.
+**Dark (`[data-theme='dark']`):** canvas `#141310` · soft `#1c1a16` · soft-2
+`#272319` · soft-3 `#302b22` · card `#24211a` · ink `#f0ede5` · body `#aca69a` ·
+mute `#9a9488` · inverse `#2c2822` (slab > card > soft > canvas) ·
+brand=brand-strong=link=success `#8fc97a` (four explicit declarations — the
+contrast test reads only this block) · accent-ink `#e0a458` · focus `#7fb0ff`.
+
+**Slab inks** (identical in both blocks, because the slab is dark in both):
+`inverse-fg #f4f1ea` · `inverse-mute #b8b2a4` · `inverse-brand #8fc97a` ·
+`inverse-accent #e0a458` · `inverse-error #ff9d95` · `inverse-hairline #ffffff1f`
+· dots `#e0685f / #e0b23f / #63c079`.
+
+Category hues (`categoryHue` in `src/data/tools.ts` → `--color-cat-<slug>` tokens)
+are OKLCH-uniform: L 0.50 / C 0.09 on paper, L 0.76 / C 0.10 on charcoal, only
+the hue varies, so the twelve dots read as one set. Consumed from inline styles
+via `categoryAccentVar()` (which is why the theme block is `@theme static`).
+They are dots + 8% art tints, never text; the gate holds them to 3:1 on card
+and canvas-soft in both themes and to the registry hex (the OG generator reads
+the hex directly).
 
 ## Typography
 
@@ -59,14 +74,21 @@ IBM Plex superfamily — Plex Sans Variable (UI/body/display) + Plex Mono static
 ## Shape & depth — instrument panel
 
 Squared radii: `xs 2 · sm 4 · md 6 · lg 8 · xl 10` (`--radius-pill` re-pointed to
-6px). Depth is flat: the inset-ring shadow carries the edge; drop shadows are
-reserved for things that truly float (menus, modal, hover lift). Buttons are
-squared with a 1px border; badges are mono tags (`radius-xs`), except
-`.badge-info` (dates/status) which stays 12px sentence-case for legibility.
+6px). Depth has three tiers, each with one job — **L0 rest** (`shadow-hairline`,
+inset ring only: rows, chips, `.card-soft`, `.badge`), **L1 card**
+(`shadow-subtle`, ring + 2px drop: `.card`, grouping), **L2 instrument**
+(`shadow-float`, ring + 8px drop: `.instrument`, menus, hover lift) — plus modal.
+One L2 object per viewport. Buttons are squared with a 1px border; badges are
+mono tags (`radius-xs`), except `.badge-info` (dates/status) which stays 12px
+sentence-case for legibility; `Badge variant="new"` is the one amber badge.
 
 **Instrument-slab rule:** `HeroDemo`, `TerminalPlay`, `ErrorTerminal`,
-`CodeBlock`, and privacy panels render on `--color-inverse` in BOTH themes, with
-a 1px `#ffffff1f` ring + mono caption bar. Because the surface is dark in both
+`CodeBlock`, the Mission 90 terminals, the privacy panel and the tool result
+panels render through the shared `.instrument` class (`.instrument-flush` when
+nested in a card) on `--color-inverse` in BOTH themes, with the
+`--color-inverse-hairline` ring and a `FigureCap` caption bar (three dots + a
+mono `fig. NN — slug · category` label; the figure number is the tool's position
+in the registry). Ten uses of one detail is a brand; the cap is that detail. Because the surface is dark in both
 themes, so are its inks: the only legal text colours on a slab are
 `--color-inverse-fg`, `--color-inverse-brand` (leaf) and `--color-inverse-accent`
 (amber) — never `brand`, `brand-strong` or `accent-ink`, whose light-theme values
@@ -79,7 +101,11 @@ padding` (chips in cards, code in slabs, art in card caps).
 ## Composition (kills the "AI skeleton")
 
 - Numbered mono section rail / `fig. NN` figure indices where content is a real
-  sequence.
+  sequence. Numbers line up: `font-variant-numeric: tabular-nums` is set once in
+  global.css (`#playground`, `dl`, `output`, `time`, `.badge`, `code-mono`,
+  `eyebrow`) — never per component.
+- Type stays on the integer scale (`type-scale.test.ts` walks every component):
+  no half-pixel sizes, nothing under 11px.
 - Asymmetric 5/7–7/5 splits; avoid centered-text sections except the closing CTA.
 - Tool registries read as dense index rows, not uniform card grids, where it fits.
 - Motion carries information only (live demos, self-typing terminals) — no

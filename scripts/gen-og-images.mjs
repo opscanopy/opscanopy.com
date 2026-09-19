@@ -14,7 +14,7 @@ import sharp from 'sharp';
 import { readdir, mkdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { liveTools, categoryAccent, accentGradients } from '../src/data/tools.ts';
+import { liveTools, categoryHue, accentGradients } from '../src/data/tools.ts';
 
 const publicDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const heroSrcDirs = [join(publicDir, 'blog'), join(publicDir, 'mission-90'), join(publicDir, 'verify-ai')];
@@ -71,7 +71,7 @@ function truncate(text, maxChars) {
 /** Build a dark, branded 1200x630 OG card SVG for one live tool. */
 function toolOgSvg(tool) {
   const [g1, g2] = accentGradients[tool.accent];
-  const dot = categoryAccent[tool.category] ?? '#4a8c3f';
+  const dot = categoryHue[tool.category]?.dark ?? '#4a8c3f';
   const nameLines = wrapText(tool.name, 22, 2);
   const tagline = truncate(tool.tagline, 68);
 
