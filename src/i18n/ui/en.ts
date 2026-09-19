@@ -49,7 +49,6 @@ const en = {
 
   // Footer
   'footer.copyright': 'Free & open.',
-  'footer.builtBy': 'Built by',
   'footer.openSource': 'Open source — read exactly what each tool computes.',
   'footer.disclaimer.lead': 'Not affiliated with or endorsed by Grafana Labs.',
   'footer.disclaimer.trademark': 'and',

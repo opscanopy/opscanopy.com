@@ -39,7 +39,6 @@ const es: Partial<UiDict> = {
 
   // Footer
   'footer.copyright': 'Gratis y abierto.',
-  'footer.builtBy': 'Hecho por',
   'footer.openSource': 'Código abierto — lee exactamente qué calcula cada herramienta.',
   'footer.disclaimer.lead': 'No está afiliado a Grafana Labs ni cuenta con su respaldo.',
   'footer.disclaimer.trademark': 'y',

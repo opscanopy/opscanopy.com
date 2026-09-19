@@ -39,7 +39,6 @@ const ptBr: Partial<UiDict> = {
 
   // Footer
   'footer.copyright': 'Gratuito e aberto.',
-  'footer.builtBy': 'Feito por',
   'footer.openSource': 'Código aberto — leia exatamente o que cada ferramenta calcula.',
   'footer.disclaimer.lead': 'Sem afiliação ou endosso da Grafana Labs.',
   'footer.disclaimer.trademark': 'e',
