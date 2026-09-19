@@ -145,10 +145,16 @@ internet at all.
 
 ```bash
 docker run -d --name opscanopy -p 8080:8080 \
-  --read-only --tmpfs /var/cache/nginx --tmpfs /var/run \
+  --read-only \
+  --tmpfs /var/cache/nginx:uid=101,gid=101 \
+  --tmpfs /var/run:uid=101,gid=101 \
   --security-opt no-new-privileges:true \
   ghcr.io/opscanopy/opscanopy.com:latest
 ```
+
+The `uid=101,gid=101` is not optional: the image runs nginx unprivileged, and a
+tmpfs mounts root-owned, which would otherwise mask the image's ownership and
+stop nginx creating its scratch directories.
 
 Then open <http://localhost:8080>. Multi-arch (amd64 and arm64), so it runs on a
 Raspberry Pi or an Apple-silicon machine as-is.

@@ -86,16 +86,33 @@ jobs:
       # The image is a static site behind nginx, so "it serves the homepage and
       # a tool page" is the whole contract. Catches a broken build before anyone
       # pulls the tag.
+      #
+      # Run it with the SAME hardening the README and compose file document, not
+      # a bare `docker run`. A plain run passes even when the documented command
+      # crash-loops: a tmpfs mounts root-owned 0755 and masks the image's
+      # `chown nginx`, which is exactly how `docker compose up -d` came to be
+      # broken while nothing noticed. If the flags here and in the docs ever
+      # drift apart again, this step stops being evidence.
       - name: Smoke test the published image
         run: |
           set -euo pipefail
           IMAGE=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
-          docker run -d --name oc-smoke -p 8080:8080 "$IMAGE"
+          docker run -d --name oc-smoke -p 8080:8080 \
+            --read-only \
+            --tmpfs /var/cache/nginx:uid=101,gid=101 \
+            --tmpfs /var/run:uid=101,gid=101 \
+            --security-opt no-new-privileges:true \
+            "$IMAGE"
           for i in $(seq 1 30); do
             if curl -fsS -o /dev/null http://localhost:8080/; then break; fi
             sleep 1
           done
+          # If nginx died on boot the loop above just times out, which reads as
+          # a confusing curl failure — surface the container's own log instead.
+          docker ps --filter name=oc-smoke --filter status=running | grep -q oc-smoke \
+            || { echo '::error::container is not running'; docker logs oc-smoke; exit 1; }
           curl -fsS -o /dev/null -w 'home   %{http_code}\n' http://localhost:8080/
           curl -fsS -o /dev/null -w 'tool   %{http_code}\n' http://localhost:8080/subnet-calculator/
+          curl -fsS -o /dev/null -w 'locale %{http_code}\n' http://localhost:8080/de/
           curl -fsS http://localhost:8080/ | grep -q 'OpsCanopy'
           docker rm -f oc-smoke
