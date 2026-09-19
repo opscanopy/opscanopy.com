@@ -27,6 +27,15 @@ COPY . .
 # modulepreload hints, generates the service worker, and — critically here —
 # replaces the CSP script-hash marker. A build that skipped it would ship an
 # invalid Content-Security-Policy.
+#
+# .dockerignore excludes .git (rightly — it is most of the context), so the
+# build cannot ask git which commit it is. Without this ARG, gen-sw.mjs falls
+# back to BUILD_ID 'dev' and every image version shares one service-worker
+# cache name — a self-hoster who upgrades keeps serving stale precached pages.
+# CI passes the commit in; a bare local `docker build` still gets 'dev', which
+# is fine for a throwaway image.
+ARG BUILD_ID=dev
+ENV BUILD_ID=$BUILD_ID
 RUN npm run build
 
 # _headers is Cloudflare syntax; translate it into something nginx honours so the

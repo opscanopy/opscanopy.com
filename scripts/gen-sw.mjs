@@ -13,6 +13,11 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = join(ROOT, 'dist');
 
 function buildId() {
+  // An explicit BUILD_ID wins: the Docker build has no .git (see .dockerignore)
+  // and is handed the commit as a build-arg instead. Accept a full SHA and
+  // shorten it so the two paths produce the same shape.
+  const fromEnv = process.env.BUILD_ID?.trim();
+  if (fromEnv && fromEnv !== 'dev') return fromEnv.slice(0, 7);
   try {
     return execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
       cwd: ROOT,
