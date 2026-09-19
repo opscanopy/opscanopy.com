@@ -20,7 +20,7 @@ npm run dev      # http://localhost:4321
 | `npm run build` | Production build to `dist/` (never run `astro build` bare — the postbuild chain builds the search index, the service worker and the CSP hashes) |
 | `npm run preview` | Serve the production build |
 | `npm run test` | Every engine test, plus the colour-contrast gate |
-| `npm run check` | Types across `.astro` and `.ts`. **Must stay at zero errors — it is a CI gate.** |
+| `npm run check` | Types across `.astro` and `.ts`. **Must stay at zero errors — it is a CI gate.** Runs the `prebuild` generators first (`precheck`), because `src/pages/blog/tag/[tag].astro` imports a gitignored generated file that TypeScript must be able to resolve — on a fresh clone, `astro check` alone fails with `ts(2307)`. |
 
 Run a single test file:
 
