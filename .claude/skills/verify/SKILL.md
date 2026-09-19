@@ -37,12 +37,22 @@ npm run dev        # READ THE PORT from output — stale dev/preview processes
 ## Drive interactively (CDP) — for anything a DOM dump cannot see
 
 Keyboard contracts, `location.hash` after a debounce, computed colours, focus:
-launch Chrome with `--remote-debugging-port=9223 --user-data-dir=$(mktemp -d)` as a
-background task and drive it from a Node script over the DevTools protocol. `ws` is
+launch Chrome with `--remote-debugging-port=9223 --remote-allow-origins=* --user-data-dir=$(mktemp -d)`
+as a background task and drive it from a Node script over the DevTools protocol. `ws` is
 in `node_modules`, but a script outside the repo must `require()` it by absolute
 path. Dispatch real `KeyboardEvent`s, read `getComputedStyle(el).color`, poll
 `location.hash`. This is how the Ctrl+Enter contract and the slab contrast fix were
 confirmed on 2026-09-18 — a `--dump-dom` cannot observe either.
+
+Recipe that signed off the 2026-09-19 design pass (53 checks): one `Target.createTarget`
+per URL, `Page.addScriptToEvaluateOnNewDocument` with `localStorage.setItem('theme','light')`
+to force the light theme (the no-flash script reads it before paint) plus
+`Emulation.setEmulatedMedia` for `prefers-color-scheme` / `prefers-reduced-motion`,
+`Emulation.setDeviceMetricsOverride` for 1280 and 390 widths, `Page.captureScreenshot`
+for the record, and `Runtime.evaluate` with `awaitPromise` for assertions. To exercise
+a playground, set `input.value` and dispatch `new Event('input', {bubbles:true})`, then
+**poll** for the state you expect (e.g. `[data-changed]` count) instead of sleeping a
+fixed interval — the lazy engine import makes timing vary between visits.
 
 ## Drive (headless Chrome, no Playwright needed)
 
@@ -74,6 +84,11 @@ ud=$(mktemp -d)   # fresh profile per run avoids lock clashes
 - Grep dumps for exact user-facing strings (verdicts, summary line, glosses).
 
 ## Gotchas
+
+- Playgrounds restore the visitor's last input (`tool-state`), so the second visit to a
+  tool in the same Chrome profile seeds what the first visit typed. A driver that types
+  the same value twice sees no changed rows and no hash write; use a distinct value per
+  visit or a fresh profile.
 
 - Run vitest from PowerShell (`C:/` capital drive). A lowercase-`c:/` cwd breaks
   Vitest 4 collection ("reading 'config'" at every describe).

@@ -180,7 +180,7 @@ New or reworked playgrounds should follow the conventions these three tools shar
 - **Copy/share**: per-row copy buttons (icon-swap, execCommand fallback, 44px coarse targets), a "Copy all" button carrying `data-copy-all`, and a "Copy link" share button hidden until valid. The `result_copied` analytics listener in `Layout.astro` fires on `[data-copy]`/`[data-copy-all]`/`[data-copy-link]` clicks inside `#playground`.
 - **XSS**: every injected value goes through `escapeHtml()` (`src/lib/escape-html.ts`).
 
-**`src/components/CidrCheckerPlayground.astro` is the reference implementation to port these patterns from** (`SubnetCalculatorPlayground.astro` is equally compliant). Both satisfy every bullet above: example chips at `var(--radius-pill)` with a 44px coarse-pointer target, the exact hint line, per-row copy + `data-copy-all` + `data-copy-link`, an sr-only `role="status"` copy-status span, and a results container that is **not** `aria-live`.
+**`src/components/CidrCheckerPlayground.astro` is the reference implementation to port these patterns from** (`SubnetCalculatorPlayground.astro` is equally compliant, and is the reference for the instrument result panel + figure cap + changed-value tick described under the design system). Both satisfy every bullet above: example chips at `var(--radius-pill)` with a 44px coarse-pointer target, the exact hint line, per-row copy + `data-copy-all` + `data-copy-link`, an sr-only `role="status"` copy-status span, and a results container that is **not** `aria-live`.
 
 Do NOT copy `IpConverterPlayground.astro` for these patterns — it predates the contract and violates two of its own bullets (it uses a `<select id="ipc-example">` for examples, and has no hint line). Its `.ipc-chip` classes are cross-tool *link* chips, an unrelated feature. It was cited here as the reference until 2026-07-29, so anything modelled on it is likely non-compliant.
 
@@ -210,9 +210,9 @@ Tool and blog pages have hand-translated copies under `src/pages/{de,es,fr,pt-br
 
 ### Tests
 
-Tests live at `src/lib/<tool>/engine.test.ts`, run with `vitest` in `node` environment (no DOM needed — engines are pure functions). Only engines have tests; playgrounds do not. New engines should be test-driven with real RFC/NIST vectors where they exist.
+Tests live at `src/lib/<tool>/engine.test.ts`, run with `vitest` in `node` environment (no DOM needed — engines are pure functions). Playgrounds have no tests, but three repo-level gates sit beside the engines in `src/lib/`: `contrast.test.ts` (palette, surface ladder, category hues), `type-scale.test.ts` (walks every component for off-scale font sizes) and `mark-changed.test.ts` (the changed-value tick, against DOM-shaped fakes). New engines should be test-driven with real RFC/NIST vectors where they exist.
 
-For runtime verification of playground changes (tests can't see the DOM), `.claude/skills/verify/SKILL.md` documents the headless-Chrome drive protocol: dev server + `--dump-dom`/`--screenshot` with a virtual-time budget, asserting on rendered result strings and deep-link behavior.
+For runtime verification of playground changes (tests can't see the DOM), `.claude/skills/verify/SKILL.md` documents the headless-Chrome drive protocol: serve `dist/`, then either `--dump-dom`/`--screenshot` with a virtual-time budget, or a DevTools-protocol driver for anything that needs both themes, typing, computed colours or a timed state such as `[data-changed]` (the 2026-09-19 design pass was signed off with 53 such checks).
 
 ### Site config
 

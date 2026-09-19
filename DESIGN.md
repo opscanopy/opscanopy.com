@@ -106,7 +106,10 @@ padding` (chips in cards, code in slabs, art in card caps).
   `eyebrow`) — never per component.
 - Type stays on the integer scale (`type-scale.test.ts` walks every component):
   no half-pixel sizes, nothing under 11px.
-- Asymmetric 5/7–7/5 splits; avoid centered-text sections except the closing CTA.
+- One hero object per screen: the homepage stacks a display-xl caption over the
+  full-width HeroDemo instrument (the 5/7 split was retired 2026-09-19); tool pages
+  put the dark result panel directly under the input. Elsewhere, asymmetric 5/7–7/5
+  splits; avoid centered-text sections except the closing CTA.
 - Tool registries read as dense index rows, not uniform card grids, where it fits.
 - Motion carries information only (live demos, self-typing terminals) — no
   decorative scroll-reveals. Interaction states only on interactive elements.
