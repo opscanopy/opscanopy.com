@@ -13,10 +13,36 @@ if the seed evaluated and the results markup is present, the whole chain
 
 ## Launch
 
-```powershell
-npm run dev        # background; READ THE PORT from output — stale dev/preview
-                   # processes often occupy 4321-4323, so it may bind 4324+
+Prefer serving the **production build** — it is what deploys, and the dev server
+cannot be started from an agent harness: the background-task runner kills it with
+"Dev server failed to start within 30s" before Astro finishes warming up, and a
+Bash `&` does not survive between tool calls.
+
+```bash
+npm run build                                   # never bare `astro build`
+cd dist && python -m http.server 4332 --bind 127.0.0.1   # as a background task
 ```
+
+`_headers` and `_redirects` are Cloudflare-applied and NOT served this way — for
+CSP, cache-control or redirect behaviour, point the same checks at
+`https://opscanopy.com` instead.
+
+Interactive from a terminal, the dev server still works:
+
+```powershell
+npm run dev        # READ THE PORT from output — stale dev/preview processes
+                   # often occupy 4321-4323, so it may bind 4324+
+```
+
+## Drive interactively (CDP) — for anything a DOM dump cannot see
+
+Keyboard contracts, `location.hash` after a debounce, computed colours, focus:
+launch Chrome with `--remote-debugging-port=9223 --user-data-dir=$(mktemp -d)` as a
+background task and drive it from a Node script over the DevTools protocol. `ws` is
+in `node_modules`, but a script outside the repo must `require()` it by absolute
+path. Dispatch real `KeyboardEvent`s, read `getComputedStyle(el).color`, poll
+`location.hash`. This is how the Ctrl+Enter contract and the slab contrast fix were
+confirmed on 2026-09-18 — a `--dump-dom` cannot observe either.
 
 ## Drive (headless Chrome, no Playwright needed)
 

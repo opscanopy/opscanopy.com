@@ -10,11 +10,32 @@ npm run build        # production build → dist/ (postbuild auto-runs Pagefind 
 npm run preview      # preview the production build
 npm run test         # run all engine tests once (vitest run)
 npm run test:watch   # watch mode
-npm run check         # astro check (types across .astro + .ts) — see the note below
-npm run deploy       # wrangler deploy — publishes dist/ to Cloudflare Static Assets
+npm run check        # precheck (the prebuild generators) + astro check — see the note below
+npm audit --omit=dev --audit-level=high   # the third CI gate; drifts silently as advisories publish
+npm run deploy       # wrangler deploy — manual fallback; CI deploys on push to main (see below)
 ```
 
-Deploys are direct via wrangler (`wrangler.jsonc`, no Worker script — assets only). Pushing to GitHub does **not** deploy; always `npm run build` before `npm run deploy`. `npm run build` triggers the npm `postbuild` hook (`pagefind --site dist`), which writes the site-search index to `dist/pagefind/` — shipped by the same wrangler deploy and consumed at runtime by `/search`. Never invoke `astro build` bare when the output will be served (it skips the hook and `/search` shows its "index missing" state). On this machine run vitest from PowerShell with a capital-drive path (`C:/…`) — a lowercase `c:/` cwd breaks Vitest 4 collection.
+**Pushing to `main` deploys.** `deploy.yml` runs Test → Type check → Audit → Build →
+Deploy to Cloudflare → IndexNow/Bing, on every push to `main` (docs-only paths
+ignored — but `.github/`, `scripts/` and `Dockerfile` are NOT ignored, so a tooling
+commit redeploys identical content; harmless). That has been true since 2026-09-19,
+when the two gates that had blocked CI for weeks were cleared — before that, every
+deploy was manual `npm run deploy` from a laptop, and older notes saying "pushing does
+not deploy" describe that era. Treat merging to `main` as shipping. `npm run deploy`
+remains valid as a fallback; the target is Cloudflare Static Assets
+(`wrangler.jsonc`, no Worker script), and wrangler prints "No targets deployed" on
+**success** — verify by `curl -s https://opscanopy.com/sw.js | grep BUILD_ID`, not by
+the log. A green run is a claim; the `BUILD_ID` is the fact.
+
+The local pre-ship ritual is therefore the three CI gates, in CI's order:
+`npm run test`, `npm run check`, `npm audit --omit=dev --audit-level=high` — then
+`npm run build`. `npm run build` triggers the npm `postbuild` hook (`pagefind --site
+dist`, trailing-slash check, CodeMirror modulepreload hints, service worker, CSP hash
+injection); the Pagefind index it writes to `dist/pagefind/` is consumed at runtime by
+`/search`. Never invoke `astro build` bare when the output will be served (it skips the
+hook and `/search` shows its "index missing" state). On this machine run vitest from
+PowerShell with a capital-drive path (`C:/…`) — a lowercase `c:/` cwd breaks Vitest 4
+collection.
 
 **TypeScript must stay on 6.x.** `@astrojs/check` caps its peer range at
 `^5.0.0 || ^6.0.0` (still true at its latest, 0.9.10), so a TypeScript 7 bump makes
@@ -32,8 +53,25 @@ vite strips types without checking them, so `npm run build` passing proves nothi
 about types, which is exactly how a return-shape mismatch reached production in the
 GHA expression tester.
 
-Two patterns account for most of what it used to flag, worth knowing before you
-reintroduce them:
+`check` runs the `prebuild` generators first (`precheck`), and must. `src/pages/blog/
+tag/[tag].astro` imports the gitignored `src/data/thin-tags.generated.json`; the
+import is dynamic and wrapped in try/catch, but that is a *runtime* fallback — TypeScript
+still resolves the specifier at check time. On a fresh clone (which is what CI is) the
+file does not exist and `astro check` fails with `ts(2307)`; locally an earlier build
+had always left it behind, so the failure looked like a Linux-vs-Windows difference for
+three weeks. It was fresh-clone vs dirty-tree. Rule: any generated file that a
+type-checked source imports must be produced before `check`, not only before `build`.
+
+**`npm audit --omit=dev --audit-level=high` is also a CI gate**, and the one most
+likely to go red with no code change, because advisories publish on their own schedule
+(js-yaml did exactly that on 2026-09-19). Run it with `--omit=dev`: a full `npm audit`
+reports `wrangler → miniflare → sharp` highs that are dev-only and do not block. Fix a
+production advisory by moving within the current major and raising the floor in
+`package.json`, then prove the lockfile with `npm ci` (see the TypeScript note above),
+then run the gate itself.
+
+Back to types: two patterns account for most of what `astro check` used to flag, worth
+knowing before you reintroduce them:
 
 - **Narrowing dies inside hoisted `function` declarations.** `const btn = el(...)`
   guarded by an early `return` is still `T | null` inside a nested
@@ -95,6 +133,7 @@ Brand is the **"Field Manual"** system: warm-paper light theme / warm-charcoal d
 - `--color-link`, `--color-success` ride brand-strong; `--color-accent-ink` (`#a85a06` / `#e0a458`) is the amber annotation/callout/figure-number ink (decoupled from `--color-warning*`)
 - `--color-card` — near-white card fill (`#fffdf9` light) that lifts cards off the cream canvas
 - `--color-inverse / --color-inverse-fg` — dark-stable instrument-slab surface for demos, terminals, code blocks and accent bands (dark in BOTH themes)
+- `--color-inverse-brand` (`#8fc97a`) / `--color-inverse-accent` (`#e0a458`) — the **only** leaf and amber legal as text ON a slab, identical in both themes. The light-theme `brand` (4.27:1) and `accent-ink` (3.45:1) fail AA on charcoal; `contrast.test.ts` gates these pairs since 2026-09-18. Eyebrows on a slab need the `!` form (`!text-inverse-brand`) to beat the `eyebrow` utility's own colour; the tool pages' older `!text-cyan` is the same hex.
 - Radii are squared (`--radius-pill: 6px`); depth is flat (inset-ring shadows). `src/lib/contrast.test.ts` is the palette gate — run `npm run test` after any token edit.
 
 ### Light/dark theming
@@ -122,7 +161,7 @@ Engines are dynamically imported inside the boot closure so the heavy logic code
 New or reworked playgrounds should follow the conventions these three tools share:
 
 - **Example chips**, not a `<select>` — squared chips at `var(--radius-pill)` (6px, the Field Manual radius — not fully-round pills; canvas bg, hairline shadow, brand-strong text; active = brand-soft bg + inset brand ring), 44px min-height on `(pointer: coarse)`.
-- **Live eval + Enter**: single ~130–220ms debounce and the exact hint line "Results update as you type — press Enter to run now." Enter forces an immediate eval (in a textarea, let the newline insert and flush via `setTimeout(evaluate, 0)`; Ctrl/⌘+Enter runs+blurs).
+- **Live eval + Enter**: single ~130–220ms debounce and the exact hint line "Results update as you type — press Enter to run now." Enter forces an immediate eval; Ctrl/⌘+Enter always runs and blurs on a coarse pointer. **Wire this with `wireRunKeys()` from `src/lib/run-keys.ts`, never a hand-written keydown handler** — the `enter` option encodes the three legitimate Enter behaviours (`run` for single-line inputs, `insert-then-run` for textareas so the newline lands first, `ignore`), and it respects IME composition and Shift+Enter, which the hand-written copies all missed. CodeMirror tools express the same contract as a `Mod-Enter` keymap entry placed **before** `defaultKeymap`. Coverage is 39/39 as of 2026-09-18.
 - **Calm errors**: never flash a red border mid-composition — hold the error until ~600ms idle, blur, or Enter, and return *specific* diagnostics from the engine ("Octet 256 is greater than 255."), not a generic "invalid".
 - **Glossary = muted caption** under the jargon term/title (works on touch, SR-visible, zero JS) — no tooltips.
 - **a11y**: results container is NOT `aria-live`; a one-line `role="status"` summary is the sole live region, plus an sr-only copy-status span.
@@ -167,7 +206,9 @@ For runtime verification of playground changes (tests can't see the DOM), `.clau
 
 **Header/footer nav lives in `src/i18n/site/{en,de,es,fr,pt-br}.ts`**, read via `getSiteContent(lang)` (Header.astro / Footer.astro). A nav change must ship to **all five** locale files. Sections that exist only in English (`/learn`, `/mission-90`) are listed in `ENGLISH_ONLY_SECTIONS` in `src/i18n/utils.ts` so `localizeNavHref` links them unprefixed from every locale (no `/de/learn`-style 404s). Tool **category** pages (`/tools/<category>/`) are likewise English-only by design: the MegaMenu deliberately links them unprefixed from every locale (see the comment in `MegaMenu.astro`) — localized category copies were evaluated and rejected as thin near-duplicates. `/search` is NOT in that list — it has a real localized page per locale (see below), so it localizes like any other page.
 
-**`src/data/site.ts`** — brand constants (name, url, twitter, author). Its `navLinks` array is **legacy** — the Header does NOT read it; it only feeds a few in-page links on tool pages. Do not add nav entries there.
+**`src/data/site.ts`** — brand constants (name, url, twitter, author). `site.author` is the Organization byline (`publisher`, and the frontmatter default); `site.person` (name, `/about/` url, `sameAs` → GitHub profile) is who that byline resolves to, and is what `BlogPost.astro`, `GuidePost.astro` and the Mission 90 day pages emit as the JSON-LD `author` — a `Person`, never the Organization, for E-E-A-T. Its `navLinks` array is **legacy** — the Header does NOT read it; it only feeds a few in-page links on tool pages. Do not add nav entries there.
+
+**`src/data/versions.ts`** — vendor versions quoted in page copy (today: `JQ_VERSION`, parsed from the `jq-wasm` pin in `package.json`). Page prose must read a version from here, never type it; the homepage proof strip does. Build-time only — never import it from a playground `<script>`; the jq badge keeps reading `jq.version` off the loaded binary.
 
 **`src/data/tools.ts`** — the tool registry. `liveTools` (filtered view) drives every tool listing. Flip `status: 'planned' → 'live'` when shipping.
 
@@ -176,3 +217,39 @@ For runtime verification of playground changes (tests can't see the DOM), `.clau
 Pagefind indexes `dist/` at build time (npm `postbuild`), building a separate per-`<html lang>` sub-index — so each locale's search only ever searches that locale's own pages, with no extra wiring. `Shell.astro` stamps `data-pagefind-body` on `<main>` — Pagefind semantics: once any page has it, pages **without** it are excluded, so utility pages opt out via Shell's `searchIndex={false}` prop (defaults to `!noindex`; used by `/search` itself and the legal pages). Header/Footer carry `data-pagefind-ignore`.
 
 `/search` is a hand-built UI over the Pagefind JS API (no default UI bundle) — localized into all 5 locales via `src/components/SearchPage.astro` (the ToolsCatalog pattern: one shared component with its script/style, self-detecting locale through `Astro.currentLocale`; each of the 5 page files under `src/pages/{,de/,es/,fr/,pt-br/}search.astro` owns only Shell wiring). The client `<script>` stays 100% locale-agnostic: every translated string it needs is read from `data-i18n-*` attributes on `#ss-results` at boot (never hardcoded English), and the two HTML-bearing states (initial empty state, "index unavailable") reuse server-rendered markup rather than rebuilding translated strings as JS template literals. Still `noindex` and excluded from the sitemap in `astro.config.mjs` regardless of locale — and still `noAlternates` even though real localized copies now exist, since a noindex utility page has no SEO reason to advertise hreflang alternates between them. New UI strings live under the `search.*` key namespace in `src/i18n/ui/*.ts`.
+
+### Container image (self-hosting)
+
+`Dockerfile` (node build stage → `nginx:alpine`, `USER nginx`, port 8080) and
+`docker-compose.yml` are the self-hosting path; `.github/workflows/docker-publish.yml`
+publishes `ghcr.io/opscanopy/opscanopy.com` (public, `linux/amd64,linux/arm64`) on a
+`v*` tag (`:X.Y.Z`, `:X.Y`, `:latest`) or a manual dispatch (`:edge`) — never on plain
+pushes to `main`. `:latest` only exists once a `v*` tag has been pushed. Three things
+about this image were wrong when first published on 2026-09-19 and are now guarded:
+
+- **The hardened run must set the tmpfs owner.** The image runs as `nginx` (uid 101).
+  A tmpfs mounts root-owned 0755 and *masks* the build-time `chown`, so
+  `--read-only --tmpfs /var/cache/nginx` crash-loops on `mkdir client_temp … Permission
+  denied`. `docker run` needs `--tmpfs /var/cache/nginx:uid=101,gid=101` (and the same
+  for `/var/run`); Compose cannot express uid/gid, so `docker-compose.yml` uses long-form
+  volumes with `mode: 0777`. A plain unhardened `docker run` works either way — which is
+  how the broken compose file went unnoticed.
+- **`.dockerignore` excludes `.git`**, so nothing in the build can shell out to git.
+  `gen-sw.mjs` would fall back to `BUILD_ID 'dev'`, giving every image version one
+  service-worker cache name (stale pages after an upgrade). The Dockerfile takes
+  `ARG BUILD_ID`, CI passes `github.sha`, and `gen-sw.mjs` honours the env var. A bare
+  local `docker build` still yields `'dev'`, which is correct for a throwaway image. The
+  date generators (`gen-tool-meta`, `gen-lastmod`) also lose git in the image and degrade
+  to null — cosmetic, not fixed.
+- **The CI smoke test runs the image with the SAME flags the README documents**, then
+  asserts `/`, a tool page, a locale page and that `sw.js` carries the short SHA. It must
+  stay in lockstep with the README's command or it stops being evidence. Never write
+  `curl … | grep -q` under `set -o pipefail` there: grep closes the pipe on first match,
+  curl exits 23, and a healthy container fails the step.
+
+Verify a published image the way a stranger would: `docker logout ghcr.io`, pull, run
+with the README's command, `curl localhost:8080/sw.js | grep BUILD_ID`. A raw `curl` to
+`ghcr.io/v2/…/manifests/…` returns 401 even for a public image (anonymous token
+exchange), so it proves nothing. `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` and
+`.github/ISSUE_TEMPLATE/` exist as of 2026-09-18; keep the four-file tool pattern
+described in CONTRIBUTING in step with this file.
