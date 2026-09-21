@@ -17,6 +17,8 @@
  *     title?; normalized?; summary?; note?; stats; groups }
  */
 import { examples } from '../lib/subnet-calculator/examples';
+import { calculate } from '../lib/subnet-calculator/engine';
+import { resultHtml, EMPTY_HTML } from '../lib/subnet-calculator/render';
 import { getTool, tools } from '../data/tools';
 import FigureCap from './FigureCap.astro';
 
@@ -25,6 +27,21 @@ import FigureCap from './FigureCap.astro';
 const tool = getTool('subnet-calculator');
 const figNo = tool ? String(tools.indexOf(tool) + 1).padStart(2, '0') : '00';
 const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'subnet-calculator';
+
+/**
+ * Server-rendered seed. The client re-computes the same example on boot, so
+ * this is pure progressive enhancement — but it means a visitor with no JS,
+ * and every AI crawler (they do not execute JS), sees a real worked answer
+ * instead of an empty "type something here" panel.
+ *
+ * `calculate` is pure and synchronous, so it runs at build time unchanged.
+ */
+const seedExample = examples[0];
+const seedResult = seedExample ? calculate(seedExample.input) : null;
+const localePrefix = Astro.currentLocale && Astro.currentLocale !== 'en' ? `/${Astro.currentLocale}` : '';
+const seedHtml =
+  seedResult && seedResult.valid ? resultHtml(seedResult, { localePrefix }) : EMPTY_HTML;
+const seedSummary = seedResult && seedResult.valid ? (seedResult.summary ?? '') : '';
 ---
 
 <section class="snc-pg" aria-label="Subnet / CIDR Calculator playground">
@@ -37,7 +54,7 @@ const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'subn
           examples.map((ex) => (
             <button
               type="button"
-              class="snc-chip"
+              class:list={['snc-chip', ex.input === seedExample?.input && 'is-active']}
               data-input={ex.input}
               aria-label={`${ex.label} — ${ex.input}`}
             >
@@ -75,6 +92,7 @@ const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'subn
           autocomplete="off"
           enterkeyhint="done"
           placeholder="192.168.1.0/24"
+          value={seedExample?.input}
           aria-describedby="snc-input-hint snc-input-live"
         />
       </div>
@@ -100,7 +118,7 @@ const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'subn
         figure cap; the live summary reads out in the cap's actions slot. ── */}
     <div class="snc-panel instrument-flush">
       <FigureCap fig={figNo} label={figLabel} tone="traffic">
-        <span id="snc-summary" class="snc-summary code-mono text-inverse-mute" role="status" aria-live="polite"></span>
+        <span id="snc-summary" class="snc-summary code-mono text-inverse-mute" role="status" aria-live="polite">{seedSummary}</span>
       </FigureCap>
       <div class="px-4 py-4 sm:px-5">
       <div class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -189,12 +207,9 @@ const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'subn
           </button>
         </span>
       </div>
-      <div id="snc-results" class="snc-results">
-        <p class="snc-empty body-sm text-inverse-mute">
-          Type an address — with a prefix or a netmask — or tap an example to see its network,
-          range and host counts here.
-        </p>
-      </div>
+      {/* Seeded at build time (see `seedHtml` above) so the answer is in the
+          static HTML; the client replaces it with the same markup on boot. */}
+      <div id="snc-results" class="snc-results" set:html={seedHtml}></div>
       <span id="snc-copy-status" class="sr-only" role="status" aria-live="polite"></span>
       </div>
     </div>
@@ -760,7 +775,12 @@ const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'subn
 </style>
 
 <script>
-  import { escapeHtml } from '../lib/escape-html';
+  import {
+    EMPTY_HTML,
+    errorHtml,
+    resultHtml,
+    buildCopyAll,
+  } from '../lib/subnet-calculator/render';
   import { snapshotValues, markChanged } from '../lib/mark-changed';
   import { wireRunKeys } from '../lib/run-keys';
   import { readIpHash, buildIpHash } from '../lib/ip-hash';
@@ -800,31 +820,10 @@ const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'subn
     return root.querySelector<T>(sel);
   }
 
-  const ALERT_SVG =
-    '<svg class="snc-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-  const COPY_ICON_SVG =
-    '<svg class="snc-copy-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"/></svg>';
-  const CHECK_ICON_SVG =
-    '<svg class="snc-check-icon hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
-
   /** Prefix tool paths with the current locale (e.g. /de) so deep links stay in-locale. */
   function localePath(p: string): string {
     const m = window.location.pathname.match(/^\/(de|es|fr|pt-br)\//);
     return m ? `/${m[1]}${p}` : p;
-  }
-
-  /** Escape, then allow soft breaks after separators so long mono values wrap cleanly. */
-  function monoHtml(s: string): string {
-    return escapeHtml(s).replace(/([.:])/g, '$1<wbr>');
-  }
-
-  function copyBtnHtml(label: string, value: string): string {
-    return (
-      `<button class="snc-copy-btn" type="button" aria-label="Copy ${escapeHtml(label)}" data-copy="${escapeHtml(value)}">` +
-      COPY_ICON_SVG +
-      CHECK_ICON_SVG +
-      '</button>'
-    );
   }
 
   function setSummary(summary: HTMLElement, text: string, isError: boolean): void {
@@ -835,8 +834,7 @@ const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'subn
 
   function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
     setSummary(summary, '', false);
-    container.innerHTML =
-      '<p class="snc-empty body-sm text-inverse-mute">Type an address — with a prefix or a netmask — or tap an example to see its network, range and host counts here.</p>';
+    container.innerHTML = EMPTY_HTML;
   }
 
   function renderError(
@@ -846,99 +844,11 @@ const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'subn
     isAlert = false
   ): void {
     setSummary(summary, `Invalid — ${message}`, true);
-    container.innerHTML =
-      `<div class="snc-error"${isAlert ? ' role="alert"' : ''}>` +
-      ALERT_SVG +
-      '<div><p class="snc-error__title">Could not calculate this subnet</p>' +
-      `<p id="snc-error-detail" class="snc-error__detail">${escapeHtml(message)}</p></div></div>`;
+    container.innerHTML = errorHtml(message, isAlert);
   }
 
   function renderResult(container: HTMLElement, result: Result): void {
-    const version = result.version === 6 ? 'IPv6' : 'IPv4';
-
-    const stats = Array.isArray(result.stats) ? result.stats : [];
-    const statsHtml = stats
-      .map((s, i) => {
-        const value = typeof s.value === 'string' ? s.value : '';
-        const shown = typeof s.display === 'string' && s.display ? s.display : value;
-        const cls =
-          'snc-answer__v' + (i === 0 ? ' is-hero' : '') + (s.mono ? ' is-mono' : '');
-        const shownHtml = s.mono ? monoHtml(shown) : escapeHtml(shown);
-        const caption = s.caption
-          ? `<span class="snc-answer__cap">${escapeHtml(s.caption)}</span>`
-          : '';
-        return (
-          '<div class="snc-answer__tile">' +
-          `<span class="snc-answer__k">${escapeHtml(s.label ?? '')}</span>` +
-          `<span class="${cls}" data-k="stat:${escapeHtml(s.label ?? '')}">${shownHtml}</span>${caption}</div>`
-        );
-      })
-      .join('');
-
-    const noteHtml = result.note
-      ? `<p class="snc-note">${escapeHtml(result.note)}</p>`
-      : '';
-
-    const groups = Array.isArray(result.groups) ? result.groups : [];
-    const groupsHtml = groups
-      .map((g) => {
-        const rowsHtml = (Array.isArray(g.rows) ? g.rows : [])
-          .map((r) => {
-            const value = typeof r.value === 'string' ? r.value : '';
-            const shown = typeof r.display === 'string' && r.display ? r.display : value;
-            const cls = r.mono ? 'snc-row__v is-mono' : 'snc-row__v';
-            const shownHtml = r.mono ? monoHtml(shown) : escapeHtml(shown);
-            const label = r.label ?? '';
-            const gloss = r.gloss
-              ? `<span class="snc-row__gloss">${escapeHtml(r.gloss)}</span>`
-              : '';
-            return (
-              '<div class="snc-row">' +
-              `<dt class="snc-row__k">${escapeHtml(label)}${gloss}</dt>` +
-              `<dd class="snc-row__v-wrap"><span class="${cls}" data-k="row:${escapeHtml(label)}">${shownHtml}</span>${copyBtnHtml(label, value)}</dd>` +
-              '</div>'
-            );
-          })
-          .join('');
-        return (
-          '<section class="snc-group">' +
-          `<h3 class="snc-group__h">${escapeHtml(g.heading ?? '')}</h3>` +
-          `<dl class="snc-group__dl">${rowsHtml}</dl></section>`
-        );
-      })
-      .join('');
-
-    let chipsHtml = '';
-    if (result.normalized) {
-      const hash = buildIpHash(result.normalized);
-      const chip = (href: string, text: string): string =>
-        `<a class="snc-chip" href="${escapeHtml(href)}">${text}</a>`;
-      chipsHtml =
-        '<div class="snc-xchips">' +
-        chip(localePath('/cidr-checker') + hash, 'Check against CIDRs') +
-        chip(localePath('/subnet-splitter') + hash, 'Split this subnet') +
-        chip(localePath('/ip-address-converter') + hash, 'Convert this address') +
-        '</div>';
-    }
-
-    container.innerHTML =
-      '<div>' +
-      '<div class="snc-card">' +
-      `<div class="snc-title"><span class="snc-title__badge">${version}</span><span class="snc-title__net">${monoHtml(result.title ?? '')}</span></div>` +
-      `<div class="snc-answer">${statsHtml}</div>` +
-      noteHtml +
-      groupsHtml +
-      '</div>' +
-      chipsHtml +
-      '</div>';
-  }
-
-  /** "Label: value" lines for the Copy all button. */
-  function buildCopyAll(result: Result): string {
-    const lines: string[] = [`Network: ${result.title ?? ''}`];
-    for (const s of result.stats) lines.push(`${s.label}: ${s.value}`);
-    for (const g of result.groups) for (const r of g.rows) lines.push(`${r.label}: ${r.value}`);
-    return lines.join('\n');
+    container.innerHTML = resultHtml(result, { localePrefix: localePath('') });
   }
 
   async function init(root: HTMLElement): Promise<void> {

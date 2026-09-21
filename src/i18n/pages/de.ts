@@ -78,14 +78,14 @@ const de: Partial<PagesContent> = {
       {
         heading: 'Web-Analyse',
         body: [
-          'Wir verwenden Google Analytics 4, um zu verstehen, welche Tools und Guides tatsächlich nützlich sind: Seitenaufrufe sowie eine Handvoll anonymer Produkt-Ereignisse (zum Beispiel „auf dieser Seite wurde ein Ergebnis kopiert“ oder „ein Mission-90-Tag wurde als abgeschlossen markiert“). Diese Ereignisse enthalten nur den Seitenpfad — niemals etwas, das Sie in ein Tool eingeben oder einfügen.',
+          'Wir verwenden Google Analytics 4, um zu verstehen, welche Tools und Guides tatsächlich nützlich sind: Seitenaufrufe sowie eine Handvoll anonymer Produkt-Ereignisse (zum Beispiel „auf dieser Seite wurde ein Ergebnis kopiert“ oder „ein Mission-90-Tag wurde als abgeschlossen markiert“). Diese Ereignisse enthalten nur den Seitenpfad — niemals etwas, das Sie in ein Tool eingeben oder einfügen. Unser Hoster bindet zusätzlich Cloudflare Web Analytics an der Edge ein; es zählt dieselben Seitenaufrufe ohne Cookies und ohne Geräte-Fingerprint.',
           'Analyse-Cookies erfordern im Europäischen Wirtschaftsraum, im Vereinigten Königreich und in der Schweiz Ihre vorherige Einwilligung. Besuchen Sie uns von dort, läuft die Analyse standardmäßig im cookielosen Modus („Einwilligung verweigert“): Es wird kein Analyse-Cookie gesetzt und keine dauerhafte Kennung auf Ihrem Gerät gespeichert, es sei denn, Sie stimmen über den Schalter unten ausdrücklich zu. Überall sonst wird standardmäßig ein Erstanbieter-Analyse-Cookie (_ga) gesetzt, damit wir Besuche zählen und sehen können, welche Tools genutzt werden — derselbe Schalter schaltet es ab. Ihre Region wird aus Ihrer Netzwerkverbindung abgeleitet und nicht gespeichert. Sie können Ihre Wahl jederzeit auf dieser Seite ändern — die Website funktioniert in beiden Fällen identisch.',
         ],
       },
       {
         heading: 'Dienste von Drittanbietern',
         body: [
-          'Abgesehen vom oben beschriebenen Analyse-Skript halten wir externe Abhängigkeiten auf ein Minimum — Schriftarten werden selbst gehostet, und die Seiten laden keinen weiteren Drittanbieter-Code. Wir binden keine Werbenetzwerke oder Social-Tracking-Pixel ein.',
+          'Abgesehen von den beiden oben beschriebenen Analyse-Skripten halten wir externe Abhängigkeiten auf ein Minimum — Schriftarten werden selbst gehostet, und die Seiten laden keinen weiteren Drittanbieter-Code. Wir binden keine Werbenetzwerke oder Social-Tracking-Pixel ein.',
         ],
       },
       {
@@ -176,8 +176,8 @@ const de: Partial<PagesContent> = {
         heading: 'Die Architektur IST die Garantie',
         body: [
           'OpsCanopy ist eine statische Website. Es gibt keinen Server, der Ihre Eingaben empfängt, keine Datenbank und kein Konto — „wir protokollieren nicht, was Sie einfügen“ ist also keine Richtlinie, die wir stillschweigend ändern könnten, sondern etwas, wofür wir keinen Mechanismus haben.',
-          'Das wird auf Plattformebene erzwungen, nicht nur versprochen. Die Content-Security-Policy setzt `connect-src` auf diesen Ursprung plus Google Analytics und nichts anderes — die Seite darf also keine Daten irgendwohin senden, was wir nicht aufgeführt haben. `frame-ancestors` steht auf `none`, sodass keine andere Website ein Tool einbetten und mitlesen kann. Schriftarten hosten wir selbst; es gibt kein CDN, das kontaktiert wird.',
-          'Sie können das beobachten. Öffnen Sie die Entwicklertools Ihres Browsers, wechseln Sie auf den Netzwerk-Tab, fügen Sie etwas in ein Tool ein und drücken Sie die Schaltfläche. Die einzige Drittanbieter-Anfrage ist das Google-Analytics-Skript — und seine Ereignisse enthalten nur den Seitenpfad. Wir haben das eigens geprüft: ein Tool-Wert, der ins URL-Fragment geschrieben wird, erreicht Analytics nicht, denn Fragmente werden in einer Anfrage niemals mitgesendet.',
+          'Das wird auf Plattformebene erzwungen, nicht nur versprochen. Die Content-Security-Policy setzt `connect-src` auf diesen Ursprung plus zwei Analyse-Endpunkte — Google Analytics und Cloudflare Web Analytics — und nichts anderes — die Seite darf also keine Daten irgendwohin senden, was wir nicht aufgeführt haben. `frame-ancestors` steht auf `none`, sodass keine andere Website ein Tool einbetten und mitlesen kann. Schriftarten hosten wir selbst; es gibt kein CDN, das kontaktiert wird.',
+          'Sie können das beobachten. Öffnen Sie die Entwicklertools Ihres Browsers, wechseln Sie auf den Netzwerk-Tab, fügen Sie etwas in ein Tool ein und drücken Sie die Schaltfläche. Die einzigen Drittanbieter-Anfragen sind das Google-Analytics-Skript und der von unserem Hoster eingebundene Cloudflare-Web-Analytics-Beacon — beide übertragen nur den Seitenpfad. Wir haben das eigens geprüft: ein Tool-Wert, der ins URL-Fragment geschrieben wird, erreicht Analytics nicht, denn Fragmente werden in einer Anfrage niemals mitgesendet.',
         ],
       },
       {

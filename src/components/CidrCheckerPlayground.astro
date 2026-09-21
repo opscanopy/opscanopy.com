@@ -13,6 +13,9 @@
  *   ../lib/cidr-checker/examples → examples: { id; label; input }[]
  */
 import { getTool, tools } from '../data/tools';
+import { examples } from '../lib/cidr-checker/examples';
+import { check } from '../lib/cidr-checker/engine';
+import { resultHtml, summaryText, EMPTY_HTML } from '../lib/cidr-checker/render';
 import FigureCap from './FigureCap.astro';
 
 // Figure number = the tool's position in the registry (append order, so it
@@ -21,13 +24,33 @@ const tool = getTool('cidr-checker');
 const figNo = tool ? String(tools.indexOf(tool) + 1).padStart(2, '0') : '00';
 const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'cidr-checker';
 
+/**
+ * Server-rendered seed — the same example the client seeds on boot, computed
+ * at build time so the in-range verdict is in the static HTML for a no-JS
+ * visitor and for AI crawlers (which never execute JS). `check` is pure and
+ * synchronous. The chips are rendered here too, and the script adopts them
+ * rather than rebuilding them.
+ */
+const seedExample = examples[0];
+const seedResult = seedExample ? check(seedExample.input) : null;
+const seedHtml = seedResult && seedResult.valid ? resultHtml(seedResult) : EMPTY_HTML;
+const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '';
+
 ---
 
 <section class="cdc-pg" aria-label="CIDR / Subnet Checker playground">
   <div class="card shadow-float overflow-hidden rounded-lg">
     <div class="flex flex-col gap-1 border-b border-hairline px-4 py-3 sm:px-5">
       <span class="eyebrow shrink-0">Examples</span>
-      <div id="cdc-chips" class="cdc-chips" role="group" aria-label="Examples"></div>
+      <div id="cdc-chips" class="cdc-chips" role="group" aria-label="Examples">
+        {
+          examples.map((ex, i) => (
+            <button type="button" class="cdc-chip" data-example-idx={String(i)} aria-pressed={i === 0 ? 'true' : 'false'}>
+              {ex.label}
+            </button>
+          ))
+        }
+      </div>
     </div>
 
     <div class="border-b border-hairline px-4 py-4 sm:px-5">
@@ -41,7 +64,7 @@ const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'cidr
         autocomplete="off"
         rows="6"
         placeholder="10.0.0.5&#10;10.0.0.0/24&#10;10.10.0.0/16"
-        aria-describedby="cdc-input-hint"></textarea>
+        aria-describedby="cdc-input-hint">{seedExample?.input}</textarea>
       <p id="cdc-input-hint" class="cdc-hint caption text-mute">
         One IP or CIDR per line. A bare IP (no /prefix) is checked against every CIDR in the list.
         Blank lines and <span class="code-mono">#</span> comments are ignored.
@@ -60,7 +83,7 @@ const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'cidr
         summary reads out in the cap's actions slot. ─────────────────── */}
     <div class="cdc-panel instrument-flush">
       <FigureCap fig={figNo} label={figLabel} tone="traffic">
-        <span id="cdc-summary" class="cdc-summary code-mono text-inverse-mute" role="status" aria-live="polite"></span>
+        <span id="cdc-summary" class="cdc-summary code-mono text-inverse-mute" role="status" aria-live="polite">{seedSummary}</span>
       </FigureCap>
       <div class="px-4 py-4 sm:px-5">
       <div class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -108,12 +131,9 @@ const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'cidr
           </button>
         </span>
       </div>
-      <div id="cdc-results" class="cdc-results">
-        <p class="cdc-empty body-sm text-inverse-mute">
-          Paste an IP plus the CIDRs to check it against — or any list of IPs/CIDRs — to see an
-          in-range verdict, overlaps, and the merged minimal set here.
-        </p>
-      </div>
+      {/* Seeded at build time (see `seedHtml` above) so the verdict is in the
+          static HTML; the client replaces it with the same markup on boot. */}
+      <div id="cdc-results" class="cdc-results" set:html={seedHtml}></div>
       <span id="cdc-copy-status" class="sr-only" role="status" aria-live="polite"></span>
       </div>
     </div>
@@ -621,41 +641,22 @@ const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'cidr
 </style>
 
 <script>
-  import { escapeHtml } from '../lib/escape-html';
+  import {
+    EMPTY_HTML,
+    errorHtml,
+    resultHtml,
+    summaryText,
+  } from '../lib/cidr-checker/render';
+  import type { CheckResult, CheckEntry } from '../lib/cidr-checker/types';
   import { snapshotValues, markChanged } from '../lib/mark-changed';
   import { readIpHash, readListHash, buildListHash } from '../lib/ip-hash';
   import { copyTextToClipboard } from '../lib/clipboard';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
 
-  type Entry = {
-    line: string;
-    ok: boolean;
-    version?: 4 | 6;
-    cidr?: string;
-    role?: 'ip' | 'range';
-    display?: string;
-    type?: string;
-    error?: string;
-    normalizedFrom?: string;
-  };
-  type Membership = {
-    ip: string;
-    version: 4 | 6;
-    status: 'in' | 'not-in' | 'no-ranges';
-    matches: string[];
-    rangeCount: number;
-  };
-  type Overlap = { relation: string; kind: string };
-  type AggGroup = { version: 4 | 6; label: string; cidrs: string[] };
-  type Result = {
-    valid: boolean;
-    error?: string;
-    entries: Entry[];
-    membership: Membership[];
-    overlaps: Overlap[];
-    aggregated: AggGroup[];
-    stats: { ok: number; invalid: number; overlaps: number; blocks: number };
-  };
+  // Types come from the engine (erased at build, so no code-splitting cost) —
+  // a hand-mirrored copy is how a shape drifts out of sync with its engine.
+  type Entry = CheckEntry;
+  type Result = CheckResult;
   type Example = { id: string; label: string; input: string };
   type EngineModule = { check: (input: string) => Result };
 
@@ -693,23 +694,6 @@ const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'cidr
       .filter((e) => e.input.length > 0);
   }
 
-  const ALERT_SVG =
-    '<svg class="cdc-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-  const COPY_ICON_SVG =
-    '<svg class="cdc-copy-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"/></svg>';
-  const CHECK_ICON_SVG =
-    '<svg class="cdc-check-icon hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
-  const OK_ICON_SVG =
-    '<svg class="cdc-line__icon cdc-line__icon--ok" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
-  const BAD_ICON_SVG =
-    '<svg class="cdc-line__icon cdc-line__icon--bad" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
-  const VERDICT_IN_SVG =
-    '<svg class="cdc-verdict__icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M5.2 8.3l2 2 3.6-4.2"/></svg>';
-  const VERDICT_OUT_SVG =
-    '<svg class="cdc-verdict__icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4"/></svg>';
-  const VERDICT_NONE_SVG =
-    '<svg class="cdc-verdict__icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.25" stroke-dasharray="2.4 2.2"/><path d="M6.4 6.3a1.6 1.6 0 1 1 2.3 1.7c-.45.25-.7.55-.7 1.05"/><path d="M8 11.2v.01"/></svg>';
-
   function setSummary(summary: HTMLElement, text: string, isError: boolean): void {
     summary.textContent = text;
     summary.classList.toggle('text-inverse-error', isError);
@@ -718,141 +702,7 @@ const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'cidr
 
   function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
     setSummary(summary, '', false);
-    container.innerHTML =
-      '<p class="cdc-empty body-sm text-inverse-mute">Paste an IP plus the CIDRs to check it against — or any list of IPs/CIDRs — to see an in-range verdict, overlaps, and the merged minimal set here.</p>';
-  }
-
-  function familyLabel(version: 4 | 6): string {
-    return version === 6 ? 'IPv6' : 'IPv4';
-  }
-
-  /** The prominent per-IP verdict card — rendered first when bare IPs exist. */
-  function verdictHtml(membership: Membership[]): string {
-    if (membership.length === 0) return '';
-    const rows = membership
-      .map((m) => {
-        const family = familyLabel(m.version);
-        let cls = '';
-        let icon = '';
-        let main = '';
-        let extra = '';
-        if (m.status === 'in') {
-          cls = 'cdc-verdict__row--in';
-          icon = VERDICT_IN_SVG;
-          main = `<span class="cdc-verdict__ip">${escapeHtml(m.ip)}</span> is inside <span class="cdc-verdict__cidr">${escapeHtml(m.matches[0] ?? '')}</span>`;
-          if (m.matches.length > 1) {
-            extra = `also inside ${m.matches.slice(1).map((c) => escapeHtml(c)).join(', ')}`;
-          }
-        } else if (m.status === 'not-in') {
-          cls = 'cdc-verdict__row--out';
-          icon = VERDICT_OUT_SVG;
-          main = `<span class="cdc-verdict__ip">${escapeHtml(m.ip)}</span> is not in any listed range`;
-          extra = `checked against ${m.rangeCount} ${family} range${m.rangeCount === 1 ? '' : 's'}`;
-        } else {
-          cls = 'cdc-verdict__row--none';
-          icon = VERDICT_NONE_SVG;
-          main = `<span class="cdc-verdict__ip">${escapeHtml(m.ip)}</span> has no ${family} ranges to check against — add some below it`;
-        }
-        return (
-          `<div class="cdc-verdict__row ${cls}">` +
-          icon +
-          `<div class="cdc-verdict__text"><p class="cdc-verdict__main" data-k="verdict:${escapeHtml(m.ip)}">${main}</p>` +
-          (extra ? `<p class="cdc-verdict__extra">${extra}</p>` : '') +
-          '</div></div>'
-        );
-      })
-      .join('');
-    return (
-      '<div class="cdc-block cdc-verdict">' +
-      '<div class="cdc-block__head"><span>IP in range?</span></div>' +
-      '<p class="cdc-block__sub">Each bare IP in your list, checked against every CIDR range listed with it.</p>' +
-      rows +
-      '</div>'
-    );
-  }
-
-  function aggHtml(groups: AggGroup[]): string {
-    return groups
-      .map((g) => {
-        const lines = g.cidrs
-          .map(
-            (c) =>
-              `<div class="cdc-line">` +
-              `<span>${escapeHtml(c)}</span>` +
-              `<button class="cdc-copy" type="button" data-copy="${escapeHtml(c)}" aria-label="Copy ${escapeHtml(c)} to clipboard" title="Copy">` +
-              COPY_ICON_SVG +
-              CHECK_ICON_SVG +
-              `</button>` +
-              `</div>`,
-          )
-          .join('');
-        const n = g.cidrs.length;
-        return (
-          '<div class="cdc-block">' +
-          '<div class="cdc-block__head">' +
-          `<span>Merged ranges — ${escapeHtml(g.label)}</span>` +
-          `<span class="cdc-block__actions"><span class="cdc-line__meta">${n} block${n === 1 ? '' : 's'}</span>` +
-          `<button class="cdc-copy cdc-copy--all" type="button" data-copy-all data-version="${g.version}" data-copy-label="Copy all" aria-label="Copy all ${escapeHtml(g.label)} blocks">` +
-          COPY_ICON_SVG +
-          CHECK_ICON_SVG +
-          '<span class="cdc-copy-label">Copy all</span></button></span>' +
-          '</div>' +
-          '<p class="cdc-block__sub">The fewest CIDR blocks that cover exactly the same addresses — the minimal covering set (supernetting).</p>' +
-          lines +
-          '</div>'
-        );
-      })
-      .join('');
-  }
-
-  function overlapsHtml(overlaps: Overlap[]): string {
-    const head =
-      '<div class="cdc-block__head"><span>Overlaps &amp; containment</span>' +
-      (overlaps.length ? `<span class="cdc-line__meta">${overlaps.length} found</span>` : '') +
-      '</div>' +
-      '<p class="cdc-block__sub">Entries that collide: duplicates, one block inside another, or partial overlaps.</p>';
-    if (overlaps.length === 0) {
-      return (
-        '<div class="cdc-block">' +
-        head +
-        '<p class="cdc-none">No conflicts — no entry overlaps, duplicates, or contains another.</p></div>'
-      );
-    }
-    const rows = overlaps.map((o) => `<p class="cdc-rel">${escapeHtml(o.relation)}</p>`).join('');
-    return '<div class="cdc-block">' + head + rows + '</div>';
-  }
-
-  function entriesHtml(entries: Entry[]): string {
-    const rows = entries
-      .map((e) => {
-        if (!e.ok) {
-          return (
-            '<div class="cdc-line cdc-line--bad">' +
-            BAD_ICON_SVG +
-            `<span>${escapeHtml(e.line)}</span>` +
-            `<span class="cdc-line__meta">${escapeHtml(e.error ?? 'invalid')}</span></div>`
-          );
-        }
-        const shown = e.display ?? e.cidr ?? e.line;
-        const normNote = e.normalizedFrom
-          ? ` <span class="cdc-norm-note">host bits stripped: ${escapeHtml(e.normalizedFrom)} → ${escapeHtml(e.cidr ?? '')}</span>`
-          : '';
-        const meta = e.role === 'ip' ? `IP · ${e.type ?? ''}` : (e.type ?? '');
-        return (
-          '<div class="cdc-line">' +
-          OK_ICON_SVG +
-          `<span>${escapeHtml(shown)}${normNote}</span>` +
-          `<span class="cdc-line__meta">${escapeHtml(meta)}</span></div>`
-        );
-      })
-      .join('');
-    return (
-      '<div class="cdc-block"><div class="cdc-block__head"><span>Parsed input</span>' +
-      `<span class="cdc-line__meta">${entries.length} line${entries.length === 1 ? '' : 's'}</span></div>` +
-      '<p class="cdc-block__sub">How each line was read. A bare IP counts as one address; host bits in a CIDR are stripped to its network.</p>' +
-      rows +
-      '</div>'
-    );
+    container.innerHTML = EMPTY_HTML;
   }
 
   function renderError(
@@ -861,41 +711,12 @@ const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'cidr
     detail: string,
     entries: Entry[],
   ): void {
-    container.innerHTML =
-      '<div class="cdc-error" role="alert">' +
-      ALERT_SVG +
-      `<div><p class="cdc-error__title">${escapeHtml(title)}</p>` +
-      `<p class="cdc-error__detail">${escapeHtml(detail)}</p></div></div>` +
-      (entries.length ? entriesHtml(entries) : '');
-  }
-
-  function summaryText(result: Result): string {
-    const { ok, invalid, overlaps, blocks } = result.stats;
-    const membership = result.membership ?? [];
-    let verdict = '';
-    if (membership.length === 1) {
-      const status = membership[0].status;
-      verdict =
-        status === 'in' ? 'in range' : status === 'not-in' ? 'not in range' : 'nothing to check against';
-    } else if (membership.length > 1) {
-      const inCount = membership.filter((m) => m.status === 'in').length;
-      verdict = `${inCount}/${membership.length} in range`;
-    }
-    let text = verdict ? `${verdict} — ` : '';
-    text += `${ok} valid`;
-    if (invalid) text += ` · ${invalid} invalid`;
-    if (overlaps) text += ` · ${overlaps} overlap${overlaps === 1 ? '' : 's'}`;
-    text += ` · ${blocks} block${blocks === 1 ? '' : 's'}`;
-    return text;
+    container.innerHTML = errorHtml(title, detail, entries);
   }
 
   function renderResult(container: HTMLElement, summary: HTMLElement, result: Result): void {
     setSummary(summary, summaryText(result), false);
-    container.innerHTML =
-      verdictHtml(result.membership ?? []) +
-      aggHtml(result.aggregated ?? []) +
-      overlapsHtml(result.overlaps ?? []) +
-      entriesHtml(result.entries ?? []);
+    container.innerHTML = resultHtml(result);
     // Newlines round-trip badly through HTML attributes — set the multi-line
     // Copy-all payload on the live element instead.
     container.querySelectorAll<HTMLButtonElement>('.cdc-copy--all').forEach((btn) => {
@@ -948,16 +769,19 @@ const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'cidr
       return;
     }
 
-    chipsWrap.innerHTML = '';
-    examples.forEach((ex, i) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'cdc-chip';
-      btn.dataset.exampleIdx = String(i);
-      btn.setAttribute('aria-pressed', 'false');
-      btn.textContent = ex.label;
-      chipsWrap.appendChild(btn);
-    });
+    // The chips are server-rendered (see the frontmatter) so they exist without
+    // JS; only build them here if the markup somehow lacks them.
+    if (chipsWrap.querySelectorAll('.cdc-chip').length === 0) {
+      examples.forEach((ex, i) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'cdc-chip';
+        btn.dataset.exampleIdx = String(i);
+        btn.setAttribute('aria-pressed', 'false');
+        btn.textContent = ex.label;
+        chipsWrap.appendChild(btn);
+      });
+    }
 
     function setActiveChip(idx: number | null): void {
       chipsWrap!.querySelectorAll<HTMLButtonElement>('.cdc-chip').forEach((b) => {

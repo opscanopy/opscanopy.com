@@ -88,14 +88,14 @@ const fr: Partial<PagesContent> = {
       {
         heading: 'Mesure d’audience',
         body: [
-          'Nous utilisons Google Analytics 4 pour comprendre quels outils et guides sont réellement utiles : pages vues et une poignée d’événements produit anonymes (par exemple « un résultat a été copié sur cette page » ou « un jour de Mission 90 a été marqué comme terminé »). Ces événements ne contiennent que le chemin de la page — jamais ce que vous saisissez ou collez dans un outil.',
+          'Nous utilisons Google Analytics 4 pour comprendre quels outils et guides sont réellement utiles : pages vues et une poignée d’événements produit anonymes (par exemple « un résultat a été copié sur cette page » ou « un jour de Mission 90 a été marqué comme terminé »). Ces événements ne contiennent que le chemin de la page — jamais ce que vous saisissez ou collez dans un outil. Notre hébergeur injecte également Cloudflare Web Analytics en périphérie ; il compte les mêmes pages vues sans cookie ni empreinte d’appareil.',
           'Les cookies d’analyse nécessitent votre consentement préalable dans l’Espace économique européen, au Royaume-Uni et en Suisse : si vous nous visitez depuis ces régions, la mesure d’audience fonctionne par défaut en mode sans cookies (« consentement refusé ») — aucun cookie d’analyse n’est déposé et aucun identifiant persistant n’est stocké sur votre appareil, sauf si vous l’acceptez explicitement via l’interrupteur ci-dessous. Partout ailleurs, un cookie d’analyse interne (_ga) est déposé par défaut afin de compter les visites et de voir quels outils sont utilisés ; le même interrupteur le désactive. Votre région est déduite de votre connexion réseau et n’est pas conservée. Vous pouvez changer d’avis à tout moment sur cette page, et le site fonctionne exactement de la même façon dans les deux cas.',
         ],
       },
       {
         heading: 'Services tiers',
         body: [
-          'En dehors du script de mesure d’audience décrit ci-dessus, nous limitons les dépendances externes au strict minimum — les polices sont auto-hébergées et les pages ne chargent aucun autre code tiers. Nous n’intégrons aucun réseau publicitaire ni pixel de suivi des réseaux sociaux.',
+          'En dehors des deux scripts de mesure d’audience décrits ci-dessus, nous limitons les dépendances externes au strict minimum — les polices sont auto-hébergées et les pages ne chargent aucun autre code tiers. Nous n’intégrons aucun réseau publicitaire ni pixel de suivi des réseaux sociaux.',
         ],
       },
       {
@@ -186,8 +186,8 @@ const fr: Partial<PagesContent> = {
         heading: 'L’architecture EST la garantie',
         body: [
           'OpsCanopy est un site statique. Aucun serveur ne reçoit vos données, il n’y a ni base de données ni compte — « nous ne journalisons pas ce que vous collez » n’est donc pas une politique que nous pourrions changer discrètement, c’est une chose que nous n’avons aucun moyen de faire.',
-          'C’est imposé au niveau de la plateforme, pas seulement promis. La Content-Security-Policy fixe `connect-src` à cette origine plus Google Analytics et rien d’autre : la page n’a donc pas le droit d’envoyer de données ailleurs que là où nous l’avons listé. `frame-ancestors` vaut `none`, si bien qu’aucun autre site ne peut intégrer un outil et le lire. Les polices sont hébergées par nous ; il n’y a aucun CDN à appeler.',
-          'Vous pouvez l’observer. Ouvrez les outils de développement de votre navigateur, allez dans l’onglet réseau, collez quelque chose dans un outil et appuyez sur le bouton. La seule requête tierce est le script Google Analytics — et ses événements ne transportent que le chemin de la page. Nous l’avons vérifié spécifiquement : une valeur d’outil écrite dans le fragment d’URL n’atteint pas la mesure d’audience, car les fragments ne sont jamais envoyés dans une requête.',
+          'C’est imposé au niveau de la plateforme, pas seulement promis. La Content-Security-Policy fixe `connect-src` à cette origine plus deux destinations de mesure d’audience — Google Analytics et Cloudflare Web Analytics — et rien d’autre : la page n’a donc pas le droit d’envoyer de données ailleurs que là où nous l’avons listé. `frame-ancestors` vaut `none`, si bien qu’aucun autre site ne peut intégrer un outil et le lire. Les polices sont hébergées par nous ; il n’y a aucun CDN à appeler.',
+          'Vous pouvez l’observer. Ouvrez les outils de développement de votre navigateur, allez dans l’onglet réseau, collez quelque chose dans un outil et appuyez sur le bouton. Les seules requêtes tierces sont le script Google Analytics et la balise Cloudflare Web Analytics injectée par notre hébergeur — et toutes deux ne transportent que le chemin de la page. Nous l’avons vérifié spécifiquement : une valeur d’outil écrite dans le fragment d’URL n’atteint pas la mesure d’audience, car les fragments ne sont jamais envoyés dans une requête.',
         ],
       },
       {

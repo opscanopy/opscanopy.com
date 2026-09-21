@@ -478,6 +478,8 @@ export const tools: Tool[] = [
   {
     slug: 'github-actions-expression-tester',
     name: 'GitHub Actions Expression Tester',
+    /* The title targets "if condition"; the H1 leads with the same keyword while nav/breadcrumbs keep the name. */
+    h1Name: 'GitHub Actions if Condition Tester',
     tagline: 'Evaluate ${{ }} expressions and simulate workflow triggers.',
     description:
       'Test GitHub Actions if: conditions with GitHub’s exact coercion rules, catch the “always true” literal footgun, and simulate which jobs run for a push, PR or tag. Pure client-side.',
@@ -494,6 +496,7 @@ export const tools: Tool[] = [
       'github actions branch filter glob tester',
     ],
     accent: 'ship',
+    related: ['github-actions-validator', 'gitlab-ci-validator'],
   },
   {
     slug: 'docker-run-to-compose',

@@ -88,7 +88,9 @@ ud=$(mktemp -d)   # fresh profile per run avoids lock clashes
 - Playgrounds restore the visitor's last input (`tool-state`), so the second visit to a
   tool in the same Chrome profile seeds what the first visit typed. A driver that types
   the same value twice sees no changed rows and no hash write; use a distinct value per
-  visit or a fresh profile.
+  visit, or send `Storage.clearDataForOrigin` (`local_storage,session_storage`) before
+  each `Page.navigate`. This bites hardest on the SSR-seeded playgrounds, where a
+  restored input makes a correct server-rendered seed look broken.
 
 - Run vitest from PowerShell (`C:/` capital drive). A lowercase-`c:/` cwd breaks
   Vitest 4 collection ("reading 'config'" at every describe).

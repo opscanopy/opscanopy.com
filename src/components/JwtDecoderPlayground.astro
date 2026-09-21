@@ -24,6 +24,29 @@
  * No share links and no auto-restore anywhere in this tool — inputs may be
  * secrets. Snapshots stay opt-in (decode mode only).
  */
+import { examples } from '../lib/jwt-decoder/examples';
+import { decode } from '../lib/jwt-decoder/engine';
+import { resultHtml, summaryText, verifyBlock, EMPTY_HTML } from '../lib/jwt-decoder/render';
+
+/**
+ * Server-rendered seed — the canonical HS256 sample, decoded at build time so
+ * a no-JS visitor and every AI crawler (they do not execute JS) see a real
+ * decoded header, payload and claims table rather than an empty panel.
+ *
+ * `decode()` needs no WebCrypto; signature VERIFICATION does, and is async and
+ * key-dependent, so the server always renders the 'no-key' trust state and the
+ * client upgrades it to pending → valid after boot. `nowMs` is pinned: this
+ * example carries no exp/nbf, so the only clock-dependent string is the "(N
+ * years ago)" suffix on iat, and a fixed instant keeps builds reproducible.
+ */
+const FIXED_NOW = Date.UTC(2026, 0, 1);
+const seedExample = examples[0];
+const seedResult = seedExample ? decode(seedExample.token, FIXED_NOW) : null;
+const seedHtml =
+  seedResult && seedResult.valid
+    ? resultHtml(seedResult, verifyBlock('no-key', 'Add a key or secret to verify this signature.'), 'no-key')
+    : EMPTY_HTML;
+const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '';
 ---
 
 <section class="jwt-pg" aria-label="JWT Decoder & Encoder playground">
@@ -51,7 +74,22 @@
       <div class="jwt-cols__inputs">
       <div class="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:px-5">
         <span class="eyebrow">Examples</span>
-        <div id="jwt-chips" class="jwt-chips" role="group" aria-label="Example tokens"></div>
+        <div id="jwt-chips" class="jwt-chips" role="group" aria-label="Example tokens">
+          {/* Server-rendered so they work without JS; the script adopts them. */}
+          {
+            examples.map((ex, i) => (
+              <button
+                type="button"
+                class="jwt-chip"
+                data-example-idx={String(i)}
+                aria-pressed={i === 0 ? 'true' : 'false'}
+                aria-label={ex.label}
+              >
+                {ex.chip}
+              </button>
+            ))
+          }
+        </div>
       </div>
 
       <div class="border-b border-hairline px-4 py-4 sm:px-5">
@@ -65,7 +103,7 @@
           autocomplete="off"
           rows="5"
           placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
-          aria-describedby="jwt-input-hint jwt-input-live"></textarea>
+          aria-describedby="jwt-input-hint jwt-input-live">{seedExample?.token}</textarea>
         <p id="jwt-input-live" class="jwt-hint caption text-mute">
           Results update as you type — press Enter to run now.
         </p>
@@ -82,7 +120,7 @@
           autocomplete="off"
           rows="2"
           placeholder={'your-256-bit-secret   ·or·   -----BEGIN PUBLIC KEY-----…   ·or·   {"kty":"EC",…}   ·or·   {"keys":[…]}'}
-          aria-describedby="jwt-input-hint"></textarea>
+          aria-describedby="jwt-input-hint">{seedExample?.key}</textarea>
         <label class="jwt-check mt-2">
           <input id="jwt-secret-b64u" type="checkbox" />
           <span>Secret is base64url-encoded <span class="text-mute">(HS256/384/512 only)</span></span>
@@ -113,18 +151,15 @@
       <div class="jwt-cols__results bg-canvas-soft px-4 py-4 sm:px-5">
         <div class="mb-3 flex items-center justify-between gap-3">
           <span class="flex items-center"
-            ><span class="eyebrow">Result</span><span id="jwt-example-tag-slot"></span></span
+            ><span class="eyebrow">Result</span><span id="jwt-example-tag-slot">{seedExample && <span class="jwt-example-tag">Example</span>}</span></span
           >
           <span id="jwt-summary" class="jwt-summary code-mono text-mute" role="status" aria-live="polite"
-          ></span>
+          >{seedSummary}</span>
         </div>
         <p class="caption text-mute mb-3">No share links on this tool — inputs may be secrets.</p>
-        <div id="jwt-results" class="jwt-results">
-          <p class="jwt-empty body-sm text-mute">
-            Paste a JWT or pick an example to see its header, payload, claims, and signature decoded
-            here.
-          </p>
-        </div>
+        {/* Seeded at build time (see `seedHtml` above) so the decoded token is
+            in the static HTML; the client re-renders and then verifies. */}
+        <div id="jwt-results" class="jwt-results" set:html={seedHtml}></div>
       </div>
       </div>
     </div>
@@ -961,6 +996,17 @@
 
 <script>
   import { escapeHtml } from '../lib/escape-html';
+  import type { JwtResult } from '../lib/jwt-decoder/types';
+  import {
+    EMPTY_HTML,
+    errorHtml,
+    copyBtnHtml,
+    jsonBlock,
+    resultHtml,
+    summaryText,
+    trustBanner,
+    verifyBlock,
+  } from '../lib/jwt-decoder/render';
   import { copyTextToClipboard } from '../lib/clipboard';
   import { readHandoffOnce } from '../lib/tool-state/handoff';
   import { wireSnapshotUI } from '../lib/tool-state/wire';
@@ -968,24 +1014,7 @@
   type ClaimTone = 'ok' | 'warn' | 'error';
   type ClaimRow = { label: string; value: string; mono?: boolean; tone?: ClaimTone; caption?: string };
   type Freshness = { state: 'valid' | 'expired' | 'not-yet' | 'none'; detail: string };
-  type JwtResult = {
-    valid: boolean;
-    error?: string;
-    alg?: string;
-    typ?: string;
-    header?: string;
-    payload?: string;
-    signatureB64?: string;
-    claims: ClaimRow[];
-    warnings: string[];
-    freshness?: Freshness;
-    partial?: {
-      header?: string;
-      alg?: string;
-      failedSegment: 'header' | 'payload';
-      segmentError: string;
-    };
-  };
+  // The engine's own shape — a hand-mirrored copy is how a type drifts.
   type VerifyStatus = 'valid' | 'invalid' | 'unsupported' | 'error';
   type VerifyResult = { status: VerifyStatus; detail: string; warning?: string };
   type SignResult = { ok: true; token: string } | { ok: false; error: string };
@@ -1065,237 +1094,13 @@
       .filter((e) => e.token.length > 0);
   }
 
-  const ALERT_SVG =
-    '<svg class="jwt-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-
   function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
     summary.textContent = '';
-    container.innerHTML =
-      '<p class="jwt-empty body-sm text-mute">Paste a JWT or pick an example to see its header, payload, claims, and signature decoded here.</p>';
+    container.innerHTML = EMPTY_HTML;
   }
-
-  function errorHtml(title: string, message: string): string {
-    return (
-      '<div class="jwt-error" role="alert">' +
-      ALERT_SVG +
-      `<div><p class="jwt-error__title">${escapeHtml(title)}</p>` +
-      `<p class="jwt-error__detail">${escapeHtml(message)}</p></div></div>`
-    );
-  }
-
   function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
     summary.textContent = '';
     container.innerHTML = errorHtml('Can’t decode this token', message);
-  }
-
-  /** REQ-1 hero pill: exp/nbf verdict, icon + text + color in every state. */
-  function freshnessPill(f: Freshness | undefined): string {
-    if (!f) return '';
-    const ICONS: Record<Freshness['state'], string> = {
-      valid:
-        '<svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10l4.5 4.5L16 6"/></svg>',
-      expired:
-        '<svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15"/></svg>',
-      'not-yet':
-        '<svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><path d="M10 6v4l2.5 2.5"/></svg>',
-      none:
-        '<svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="3 3" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/></svg>',
-    };
-    const LABELS: Record<Freshness['state'], string> = {
-      valid: 'Valid',
-      expired: 'Expired',
-      'not-yet': 'Not yet valid',
-      none: 'No time claims',
-    };
-    return (
-      `<div class="jwt-pill jwt-pill--${f.state}" role="group" aria-label="Token time validity">` +
-      ICONS[f.state] +
-      `<span class="jwt-pill__label">${escapeHtml(LABELS[f.state])}</span>` +
-      `<span class="jwt-pill__detail">${escapeHtml(f.detail)}</span>` +
-      '</div>'
-    );
-  }
-
-  /** Top-of-results trust banner reflecting verification state. */
-  function trustBanner(state: 'no-key' | 'pending' | VerifyStatus): string {
-    if (state === 'no-key') {
-      return (
-        '<div id="jwt-trust-banner" style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;margin-bottom:12px;border-radius:var(--radius-md);background:var(--color-warning-soft);box-shadow:inset 0 0 0 1px var(--color-warning);color:var(--color-warning-deep);font-size:13px;line-height:18px;">' +
-        '<svg style="flex:0 0 auto;margin-top:1px;" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"/><path d="M10 8v4"/><path d="M10 14.5v.1"/></svg>' +
-        '<span>Decoded — signature not verified. Supply a secret, public key, JWK, or JWKS to verify authenticity.</span>' +
-        '</div>'
-      );
-    }
-    if (state === 'pending') {
-      return (
-        '<div id="jwt-trust-banner" style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;margin-bottom:12px;border-radius:var(--radius-md);background:var(--color-canvas-soft);box-shadow:inset 0 0 0 1px var(--color-hairline-strong);color:var(--color-mute);font-size:13px;line-height:18px;">' +
-        '<svg style="flex:0 0 auto;margin-top:1px;" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"/><path d="M10 6v4l2.5 2.5"/></svg>' +
-        '<span>Verifying signature…</span>' +
-        '</div>'
-      );
-    }
-    if (state === 'valid') {
-      return (
-        '<div id="jwt-trust-banner" style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;margin-bottom:12px;border-radius:var(--radius-md);background:var(--color-brand-soft);box-shadow:inset 0 0 0 1px var(--color-brand);color:var(--color-brand-strong);font-size:13px;line-height:18px;">' +
-        '<svg style="flex:0 0 auto;margin-top:1px;" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10l4.5 4.5L16 6"/></svg>' +
-        '<span>Signature verified ✓</span>' +
-        '</div>'
-      );
-    }
-    if (state === 'invalid') {
-      return (
-        '<div id="jwt-trust-banner" style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;margin-bottom:12px;border-radius:var(--radius-md);background:var(--color-error-soft);box-shadow:inset 0 0 0 1px var(--color-error);color:var(--color-error-deep);font-size:13px;line-height:18px;">' +
-        '<svg style="flex:0 0 auto;margin-top:1px;" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15"/></svg>' +
-        '<span>Signature invalid ✗</span>' +
-        '</div>'
-      );
-    }
-    // unsupported / error
-    return (
-      '<div id="jwt-trust-banner" style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;margin-bottom:12px;border-radius:var(--radius-md);background:var(--color-canvas-soft);box-shadow:inset 0 0 0 1px var(--color-hairline-strong);color:var(--color-mute);font-size:13px;line-height:18px;">' +
-      '<svg style="flex:0 0 auto;margin-top:1px;" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"/><path d="M10 7v4"/><path d="M10 13.5v.1"/></svg>' +
-      `<span>Signature verification ${state === 'unsupported' ? 'not supported for this algorithm / key' : 'encountered an error'}.</span>` +
-      '</div>'
-    );
-  }
-
-  /**
-   * Block-copy button. No inline handler — a single delegated listener in
-   * init() resolves the value (dataset.copy, else the nearest block's
-   * .jwt-code text) and runs it through the shared clipboard helper with the
-   * execCommand fallback + sr-only confirmation (repo copy contract).
-   */
-  function copyBtnHtml(): string {
-    return '<button class="jwt-copy-btn" type="button" data-copy-label="Copy" aria-label="Copy">Copy</button>';
-  }
-
-  function jsonBlock(title: string, json: string, meta?: string, caption?: string): string {
-    const metaHtml = meta ? `<span class="jwt-block__meta">${escapeHtml(meta)}</span>` : '';
-    const captionHtml = caption ? `<p class="jwt-block__caption">${escapeHtml(caption)}</p>` : '';
-    return (
-      '<div class="jwt-block">' +
-      `<div class="jwt-block__head"><span>${escapeHtml(title)}</span><span style="display:flex;align-items:center;gap:8px;">${metaHtml}${copyBtnHtml()}</span></div>` +
-      captionHtml +
-      `<pre class="jwt-code">${escapeHtml(json)}</pre>` +
-      '</div>'
-    );
-  }
-
-  /**
-   * REQ-8, adapted: always-visible muted captions instead of tooltips (the
-   * playground contract bans tooltips — glossary is a muted caption), plus
-   * an anchor link to the page's #reference section for the full legend.
-   */
-  function headerTermsCaption(headerJson: string | undefined): string {
-    if (!headerJson) return '';
-    try {
-      const h = JSON.parse(headerJson) as Record<string, unknown>;
-      const GLOSS: [string, string][] = [
-        ['alg', 'alg = signing algorithm'],
-        ['typ', 'typ = token type'],
-        ['kid', 'kid = which key signed it'],
-      ];
-      const present = GLOSS.filter(([k]) => k in h).map(([, gloss]) => gloss);
-      return present.join(' · ');
-    } catch {
-      return '';
-    }
-  }
-
-  function claimsBlock(claims: ClaimRow[]): string {
-    if (claims.length === 0) {
-      return (
-        '<div class="jwt-block"><div class="jwt-block__head"><span>Registered claims</span></div>' +
-        '<p class="jwt-none">No registered claims (iss/sub/aud/exp/nbf/iat/jti) in the payload.</p></div>'
-      );
-    }
-    const rows = claims
-      .map((c) => {
-        const toneCls = c.tone === 'warn' ? ' jwt-row--warn' : c.tone === 'error' ? ' jwt-row--error' : '';
-        const valueCls = 'jwt-row__value' + (c.mono ? ' jwt-row__value--mono' : '');
-        const caption = c.caption
-          ? `<span class="jwt-row__caption">${escapeHtml(c.caption)}</span>`
-          : '';
-        return (
-          `<div class="jwt-row${toneCls}">` +
-          `<span class="jwt-row__label">${escapeHtml(c.label)}</span>` +
-          `<span class="${valueCls}">${escapeHtml(c.value)}${caption}</span>` +
-          '</div>'
-        );
-      })
-      .join('');
-    return (
-      '<div class="jwt-block">' +
-      `<div class="jwt-block__head"><span>Registered claims</span><span class="jwt-block__meta">${claims.length} claim${claims.length === 1 ? '' : 's'}</span></div>` +
-      rows +
-      '</div>'
-    );
-  }
-
-  function signatureBlock(sig: string | undefined): string {
-    const raw = sig ?? '';
-    const body = raw.length
-      ? `<div class="jwt-sig">${escapeHtml(raw)}</div>`
-      : '<p class="jwt-none">Empty — this token carries no signature segment.</p>';
-    return (
-      '<div class="jwt-block"><div class="jwt-block__head"><span>Signature (base64url)</span></div>' +
-      body +
-      '</div>'
-    );
-  }
-
-  function warningsBlock(warnings: string[]): string {
-    if (!warnings.length) return '';
-    const rows = warnings
-      .map(
-        (w) =>
-          '<div class="jwt-warn"><span class="jwt-warn__dot"></span>' +
-          `<span>${escapeHtml(w)}</span></div>`,
-      )
-      .join('');
-    return (
-      '<div class="jwt-block"><div class="jwt-block__head"><span>Warnings</span>' +
-      `<span class="jwt-block__meta">${warnings.length}</span></div>` +
-      rows +
-      '</div>'
-    );
-  }
-
-  /** Verification block; `state` controls the badge while an async check resolves. */
-  function verifyBlock(state: 'no-key' | 'pending' | VerifyStatus, detail: string, warning?: string): string {
-    let badgeCls = 'jwt-badge--muted';
-    let badgeText = 'no key';
-    if (state === 'no-key') {
-      badgeCls = 'jwt-badge--muted';
-      badgeText = 'no key';
-    } else if (state === 'pending') {
-      badgeCls = 'jwt-badge--muted';
-      badgeText = 'checking…';
-    } else if (state === 'valid') {
-      badgeCls = 'jwt-badge--valid';
-      badgeText = 'valid';
-    } else if (state === 'invalid') {
-      badgeCls = 'jwt-badge--invalid';
-      badgeText = 'invalid';
-    } else if (state === 'unsupported') {
-      badgeCls = 'jwt-badge--muted';
-      badgeText = 'unsupported';
-    } else {
-      badgeCls = 'jwt-badge--muted';
-      badgeText = 'error';
-    }
-    const warnHtml = warning
-      ? `<p class="jwt-verify-warning">⚠ ${escapeHtml(warning)}</p>`
-      : '';
-    return (
-      '<div class="jwt-block"><div class="jwt-block__head"><span>Signature verification</span></div>' +
-      '<div class="jwt-verify">' +
-      `<span class="jwt-badge ${badgeCls}"><span class="jwt-badge__dot"></span>${escapeHtml(badgeText)}</span>` +
-      `<span class="jwt-verify__detail">${escapeHtml(detail)}</span>` +
-      '</div>' +
-      warnHtml +
-      '</div>'
-    );
   }
 
   function renderResult(
@@ -1305,25 +1110,8 @@
     verifyHtml: string,
     bannerState: 'no-key' | 'pending' | VerifyStatus,
   ): void {
-    const bits: string[] = [];
-    if (result.alg) bits.push(result.alg);
-    if (result.typ) bits.push(result.typ);
-    summary.textContent = bits.join(' · ');
-    container.innerHTML =
-      freshnessPill(result.freshness) +
-      trustBanner(bannerState) +
-      jsonBlock('Header', result.header ?? '{}', result.alg, headerTermsCaption(result.header)) +
-      jsonBlock('Payload', result.payload ?? '{}') +
-      claimsBlock(result.claims ?? []) +
-      '<div class="jwt-ref-row"><a class="jwt-chip" href="#reference">What do these claims mean? Token reference ↓</a></div>' +
-      signatureBlock(result.signatureB64) +
-      warningsBlock(result.warnings ?? []) +
-      verifyHtml +
-      '<div class="jwt-actions">' +
-      '<button type="button" class="jwt-action-btn jwt-copy-btn" data-copy-all data-copy-label="Copy decoded JSON">Copy decoded JSON</button>' +
-      '<button type="button" class="jwt-action-btn jwt-copy-btn" data-copy-label="Copy Bearer header" data-jwt-copy-bearer>Copy Bearer header</button>' +
-      '<button type="button" class="jwt-action-btn" data-jwt-open-encoder>Edit in encoder →</button>' +
-      '</div>';
+    summary.textContent = summaryText(result);
+    container.innerHTML = resultHtml(result, verifyHtml, bannerState);
   }
 
   async function init(root: HTMLElement): Promise<void> {

@@ -147,14 +147,14 @@ const en: PagesContent = {
       {
         heading: 'Analytics',
         body: [
-          'We use Google Analytics 4 to understand which tools and guides are actually useful: page views plus a handful of anonymous product events (for example “a result was copied on this page” or “a Mission 90 day was marked complete”). These events carry only the page path — they never include anything you type or paste into a tool.',
+          'We use Google Analytics 4 to understand which tools and guides are actually useful: page views plus a handful of anonymous product events (for example “a result was copied on this page” or “a Mission 90 day was marked complete”). These events carry only the page path — they never include anything you type or paste into a tool. Our host also injects Cloudflare Web Analytics at the edge, which counts the same page views without cookies and without a device fingerprint.',
           'Analytics cookies need your prior consent in the European Economic Area, the United Kingdom and Switzerland, so if you visit from there analytics runs in cookieless “consent denied” mode by default: no analytics cookie is set and no persistent identifier is stored on your device unless you explicitly opt in with the toggle below. Everywhere else a first-party analytics cookie (_ga) is set by default so we can count visits and see which tools get used, and the same toggle switches it off. Your region is inferred from your network connection and is not stored. You can change your choice at any time on this page, and the site works identically either way.',
         ],
       },
       {
         heading: 'Third-party services',
         body: [
-          'Beyond the analytics script described above, we keep external dependencies to a minimum — fonts are self-hosted and pages load no other third-party code. We do not embed advertising networks or social tracking pixels.',
+          'Beyond the two analytics scripts described above, we keep external dependencies to a minimum — fonts are self-hosted and pages load no other third-party code. We do not embed advertising networks or social tracking pixels.',
         ],
       },
       {
@@ -246,8 +246,8 @@ const en: PagesContent = {
         heading: 'The architecture IS the guarantee',
         body: [
           'OpsCanopy is a static site. There is no server that receives your input, no database, and no account — so "we do not log what you paste" is not a policy we could quietly change, it is a thing we have no mechanism to do.',
-          'That is enforced at the platform level, not just promised. The Content-Security-Policy sets `connect-src` to this origin plus Google Analytics and nothing else, so the page is not permitted to send data anywhere we have not listed. `frame-ancestors` is `none`, so no other site can embed a tool and read it. Fonts are self-hosted; there is no CDN to phone.',
-          'You can watch this. Open your browser devtools, switch to the network tab, paste something into any tool, and press the button. The only third-party request is the Google Analytics script — and its events carry the page path only. We checked that specifically: a tool value written into the URL fragment does not reach analytics, because fragments are never sent in a request.',
+          'That is enforced at the platform level, not just promised. The Content-Security-Policy sets `connect-src` to this origin plus two analytics endpoints — Google Analytics and Cloudflare Web Analytics — and nothing else, so the page is not permitted to send data anywhere we have not listed. `frame-ancestors` is `none`, so no other site can embed a tool and read it. Fonts are self-hosted; there is no CDN to phone.',
+          'You can watch this. Open your browser devtools, switch to the network tab, paste something into any tool, and press the button. The only third-party requests are the Google Analytics script and the Cloudflare Web Analytics beacon our host injects — and both carry the page path only. We checked that specifically: a tool value written into the URL fragment does not reach analytics, because fragments are never sent in a request.',
         ],
       },
       {

@@ -78,14 +78,14 @@ const ptBr: Partial<PagesContent> = {
       {
         heading: 'Análise de uso (analytics)',
         body: [
-          'Usamos o Google Analytics 4 para entender quais ferramentas e guias são realmente úteis: visualizações de página e um punhado de eventos de produto anônimos (por exemplo, “um resultado foi copiado nesta página” ou “um dia do Mission 90 foi marcado como concluído”). Esses eventos carregam apenas o caminho da página — nunca incluem nada do que você digita ou cola em uma ferramenta.',
+          'Usamos o Google Analytics 4 para entender quais ferramentas e guias são realmente úteis: visualizações de página e um punhado de eventos de produto anônimos (por exemplo, “um resultado foi copiado nesta página” ou “um dia do Mission 90 foi marcado como concluído”). Esses eventos carregam apenas o caminho da página — nunca incluem nada do que você digita ou cola em uma ferramenta. Nosso provedor de hospedagem também injeta o Cloudflare Web Analytics na borda, que conta as mesmas visualizações de página sem cookies e sem impressão digital do dispositivo.',
           'Cookies de análise exigem o seu consentimento prévio no Espaço Econômico Europeu, no Reino Unido e na Suíça; se você nos visita de lá, a análise roda por padrão em modo sem cookies (“consentimento negado”): nenhum cookie de análise é definido e nenhum identificador persistente é armazenado no seu dispositivo, a menos que você aceite explicitamente no controle abaixo. No restante do mundo, um cookie de análise próprio (_ga) é definido por padrão para contarmos visitas e vermos quais ferramentas são usadas, e o mesmo controle o desativa. Sua região é deduzida da sua conexão de rede e não é armazenada. Você pode mudar sua escolha a qualquer momento nesta página, e o site funciona exatamente igual nos dois casos.',
         ],
       },
       {
         heading: 'Serviços de terceiros',
         body: [
-          'Além do script de análise descrito acima, mantemos as dependências externas no mínimo — as fontes são hospedadas por nós mesmos e as páginas não carregam nenhum outro código de terceiros. Não incorporamos redes de publicidade nem pixels de rastreamento social.',
+          'Além dos dois scripts de análise descritos acima, mantemos as dependências externas no mínimo — as fontes são hospedadas por nós mesmos e as páginas não carregam nenhum outro código de terceiros. Não incorporamos redes de publicidade nem pixels de rastreamento social.',
         ],
       },
       {
@@ -176,8 +176,8 @@ const ptBr: Partial<PagesContent> = {
         heading: 'A arquitetura É a garantia',
         body: [
           'O OpsCanopy é um site estático. Não existe servidor que receba a sua entrada, nem banco de dados, nem conta — então “não registramos o que você cola” não é uma política que poderíamos mudar silenciosamente, é algo para o qual não temos mecanismo nenhum.',
-          'Isso é imposto no nível da plataforma, não apenas prometido. A Content-Security-Policy define `connect-src` como esta origem mais o Google Analytics e nada além disso, então a página não tem permissão para enviar dados a nenhum lugar que não tenhamos listado. `frame-ancestors` é `none`, então nenhum outro site pode embutir uma ferramenta e ler o conteúdo. As fontes são hospedadas por nós; não há CDN nenhum para chamar.',
-          'Você pode ver isso acontecendo. Abra as ferramentas de desenvolvedor do navegador, vá até a aba de rede, cole algo em qualquer ferramenta e aperte o botão. A única requisição de terceiros é o script do Google Analytics — e os eventos dele carregam apenas o caminho da página. Verificamos isso especificamente: um valor de ferramenta escrito no fragmento da URL não chega à análise, porque fragmentos nunca são enviados em uma requisição.',
+          'Isso é imposto no nível da plataforma, não apenas prometido. A Content-Security-Policy define `connect-src` como esta origem mais dois destinos de análise — Google Analytics e Cloudflare Web Analytics — e nada além disso, então a página não tem permissão para enviar dados a nenhum lugar que não tenhamos listado. `frame-ancestors` é `none`, então nenhum outro site pode embutir uma ferramenta e ler o conteúdo. As fontes são hospedadas por nós; não há CDN nenhum para chamar.',
+          'Você pode ver isso acontecendo. Abra as ferramentas de desenvolvedor do navegador, vá até a aba de rede, cole algo em qualquer ferramenta e aperte o botão. As únicas requisições de terceiros são o script do Google Analytics e o beacon do Cloudflare Web Analytics injetado pelo nosso provedor de hospedagem — e ambos carregam apenas o caminho da página. Verificamos isso especificamente: um valor de ferramenta escrito no fragmento da URL não chega à análise, porque fragmentos nunca são enviados em uma requisição.',
         ],
       },
       {

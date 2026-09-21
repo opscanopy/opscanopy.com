@@ -37,6 +37,9 @@
  * sentence-case, weight 600.
  */
 import { getTool, tools } from '../data/tools';
+import { examples } from '../lib/cron-tester/examples';
+import { explain } from '../lib/cron-tester/engine';
+import { descCardHtml, runsSkeletonHtml, EMPTY_HTML } from '../lib/cron-tester/render';
 import FigureCap from './FigureCap.astro';
 
 // Figure number = the tool's position in the registry (append order, so it
@@ -44,6 +47,25 @@ import FigureCap from './FigureCap.astro';
 const tool = getTool('cron-expression-tester');
 const figNo = tool ? String(tools.indexOf(tool) + 1).padStart(2, '0') : '00';
 const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'cron-expression-tester';
+
+/**
+ * Server-rendered seed — the DETERMINISTIC half of the result only.
+ *
+ * `description` and the parsed fields depend on the expression alone, so they
+ * are baked into the static HTML for no-JS visitors and AI crawlers. Next-run
+ * times are a function of `new Date()` and the reader's timezone, so the
+ * server emits a skeleton and the browser fills in real times on boot —
+ * shipping a frozen "in 5 minutes" to every reader would be a lie.
+ *
+ * The zone is pinned to UTC here so the build host cannot leak into the HTML.
+ */
+const seedExample = examples[0];
+const seedResult = seedExample ? explain(seedExample.expr, { timeZone: 'UTC' }) : null;
+const seedHtml =
+  seedResult && seedResult.valid
+    ? descCardHtml(seedResult.description, seedResult.fields) + runsSkeletonHtml()
+    : EMPTY_HTML;
+const seedSummary = seedResult && seedResult.valid ? 'Valid' : '';
 
 ---
 
@@ -61,7 +83,14 @@ const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'cron
           role="group"
           aria-labelledby="cron-examples-label"
         >
-          {/* Chips injected by the hydration script from `examples`. */}
+          {/* Server-rendered so they work without JS; the script adopts them. */}
+          {
+            examples.map((ex, i) => (
+              <button type="button" class="cron-chip" data-example-idx={String(i)} aria-pressed={i === 0 ? 'true' : 'false'}>
+                {ex.label}
+              </button>
+            ))
+          }
         </div>
       </div>
 
@@ -145,6 +174,7 @@ const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'cron
           autocorrect="off"
           autocomplete="off"
           placeholder="*/5 * * * *"
+          value={seedExample?.expr}
           aria-describedby="cron-input-hint"
         />
       </div>
@@ -195,7 +225,7 @@ const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'cron
         its figure cap; the live summary reads out in the cap's actions slot. */}
     <div class="cron-panel instrument-flush">
       <FigureCap fig={figNo} label={figLabel} tone="traffic">
-        <span id="cron-summary" class="cron-summary code-mono text-inverse-mute" role="status" aria-live="polite"></span>
+        <span id="cron-summary" class="cron-summary code-mono text-inverse-mute" role="status" aria-live="polite">{seedSummary}</span>
       </FigureCap>
       <div class="px-4 py-4 sm:px-5">
       <div class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -260,12 +290,9 @@ const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'cron
         </span>
       </div>
 
-      <div id="cron-results" class="cron-results">
-        <p class="cron-empty body-sm text-inverse-mute">
-          Type a cron expression or pick an example to see a plain-English
-          description and the next run times here.
-        </p>
-      </div>
+      {/* Seeded at build time (see `seedHtml` above): the plain-English reading
+          is in the static HTML, the run times arrive on hydration. */}
+      <div id="cron-results" class="cron-results" set:html={seedHtml}></div>
 
       {/* Sole announcement channel for copy outcomes — the results container
           above is deliberately NOT a live region. */}
@@ -887,11 +914,18 @@ const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'cron
 
 <script>
   import { escapeHtml } from '../lib/escape-html';
+  import {
+    CLOCK_SVG,
+    EMPTY_HTML,
+    chainsHtml,
+    descCardHtml,
+    errorHtml,
+  } from '../lib/cron-tester/render';
   import { snapshotValues, markChanged } from '../lib/mark-changed';
   // Static: it is a few hundred bytes of Intl wrapper, and the DST advisory
   // needs it on the very first render, before any lazy chunk resolves.
   import { zoneOffsetMinutes } from '../lib/cron-tester/wall-clock';
-  import { createHashState, buildHashValue } from '../lib/hash-state';
+  import { createHashState } from '../lib/hash-state';
   import { copyTextToClipboard } from '../lib/clipboard';
   import { buildMarkdownBlock } from '../lib/share-md';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
@@ -978,49 +1012,18 @@ const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'cron
 
   /* ---- Result rendering ----------------------------------------------------- */
 
-  const ALERT_SVG =
-    '<svg class="cron-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-  const CLOCK_SVG =
-    '<svg class="cron-runs__head-icon" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7.25"></circle><path d="M10 5.75V10l2.75 1.75"></path></svg>';
-
-  const FIELD_LABELS: Array<[keyof CronFields, string]> = [
-    ['minute', 'Minute'],
-    ['hour', 'Hour'],
-    ['dayOfMonth', 'Day of month'],
-    ['month', 'Month'],
-    ['dayOfWeek', 'Day of week'],
-  ];
-
   function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
     summary.textContent = '';
     summary.classList.remove('text-inverse-error');
     summary.classList.add('text-inverse-mute');
-    container.innerHTML =
-      '<p class="cron-empty body-sm text-inverse-mute">Type a cron expression or pick an example to see a plain-English description and the next run times here.</p>';
+    container.innerHTML = EMPTY_HTML;
   }
 
   function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
     summary.textContent = 'Invalid';
     summary.classList.remove('text-inverse-mute');
     summary.classList.add('text-inverse-error');
-    container.innerHTML =
-      '<div class="cron-error" role="alert">' +
-      ALERT_SVG +
-      '<div class="cron-error__body"><p class="cron-error__title">Could not parse this expression</p>' +
-      `<p class="cron-error__detail">${escapeHtml(message)}</p></div></div>`;
-  }
-
-  function fieldsHtml(fields: CronFields): string {
-    const cells = FIELD_LABELS.map(([key, label]) => {
-      const raw = fields[key];
-      const val = typeof raw === 'string' && raw.length > 0 ? raw : '—';
-      return (
-        '<div class="cron-field">' +
-        `<span class="cron-field__label">${escapeHtml(label)}</span>` +
-        `<span class="cron-field__val" data-k="field:${key}">${escapeHtml(val)}</span></div>`
-      );
-    }).join('');
-    return `<div class="cron-fields">${cells}</div>`;
+    container.innerHTML = errorHtml(message);
   }
 
   /**
@@ -1087,18 +1090,6 @@ const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'cron
     return m ? `/${m[1]}${p}` : p;
   }
 
-  function chainsHtml(expr: string, firstRunEpoch: number | undefined): string {
-    const chips: string[] = [
-      `<a class="cron-chip" href="${escapeHtml(localePath('/cron-to-systemd/') + buildHashValue('cron', expr))}">Convert to systemd timer</a>`,
-    ];
-    if (typeof firstRunEpoch === 'number') {
-      chips.push(
-        `<a class="cron-chip" href="${escapeHtml(localePath('/timestamp-converter/') + buildHashValue('t', String(firstRunEpoch)))}">View next run in Timestamp Converter</a>`
-      );
-    }
-    return `<div class="cron-chips">${chips.join('')}</div>`;
-  }
-
   function renderResult(
     container: HTMLElement,
     summary: HTMLElement,
@@ -1123,12 +1114,9 @@ const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'cron
       dayOfWeek: '',
     };
     container.innerHTML =
-      '<div class="cron-desc">' +
-      `<p class="cron-desc__text">${escapeHtml(desc)}</p>` +
-      fieldsHtml(fields) +
-      '</div>' +
+      descCardHtml(desc, fields) +
       runsHtml(runs, result.timeZone ?? '', dstNearby) +
-      chainsHtml(expr, firstRunEpoch);
+      chainsHtml(expr, firstRunEpoch, localePath(''));
   }
 
   /* ---- Instance init -------------------------------------------------------- */
@@ -1195,16 +1183,19 @@ const figLabel = tool ? `${tool.slug} · ${tool.category.toLowerCase()}` : 'cron
     }
 
     // Example chips — the UX contract's picker, not a <select>.
-    chipsWrap.innerHTML = '';
-    examples.forEach((ex, i) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'cron-chip';
-      btn.dataset.exampleIdx = String(i);
-      btn.setAttribute('aria-pressed', 'false');
-      btn.textContent = ex.label;
-      chipsWrap!.appendChild(btn);
-    });
+    // Server-rendered (see the frontmatter) so they work without JS; only
+    // build them here if the markup somehow lacks them.
+    if (chipsWrap.querySelectorAll('.cron-chip').length === 0) {
+      examples.forEach((ex, i) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'cron-chip';
+        btn.dataset.exampleIdx = String(i);
+        btn.setAttribute('aria-pressed', 'false');
+        btn.textContent = ex.label;
+        chipsWrap!.appendChild(btn);
+      });
+    }
 
     function setActiveChip(idx: number | null): void {
       chipsWrap!.querySelectorAll<HTMLButtonElement>('.cron-chip').forEach((b) => {
