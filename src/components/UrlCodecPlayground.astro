@@ -33,8 +33,35 @@
  * code-splits away from the page shell):
  *   ../lib/url-codec/engine → run(input, mode, opts) | paramLines(params)
  *   ../lib/url-codec/hash   → buildUrlCodecHash | readUrlCodecHash | MAX_HASH_LEN
+ *
+ * The HTML builders themselves are NOT lazy: they live in
+ * `../lib/url-codec/render`, are imported by this frontmatter AND by the
+ * `<script>`, and depend on nothing but `escapeHtml` — so the server-rendered
+ * seed and every client repaint come from one implementation.
  */
 import { examples } from '../lib/url-codec/examples';
+import { run } from '../lib/url-codec/engine';
+import { EMPTY_HTML, MODE_COPY, resultHtml } from '../lib/url-codec/render';
+
+/**
+ * Server-rendered seed. `run()` is pure, synchronous, and reads no clock, key
+ * or randomness, so the first example's components card and decoded parameter
+ * table are computed at build time and land in the static HTML — which is all
+ * an AI crawler (no JS) ever sees. The client re-runs the same example on boot
+ * and repaints identical markup.
+ *
+ * `resultHtml` also returns the per-row copy payloads; the server ignores them
+ * (they cannot ride in an attribute — see the render module's header) and the
+ * client rebinds them after its own render.
+ */
+const seedExample = examples[0];
+const seedResult = seedExample ? run(seedExample.input, seedExample.mode, {}) : null;
+const seedOk = seedResult && seedResult.ok ? seedResult : null;
+const seedHtml = seedOk ? resultHtml(seedOk).html : EMPTY_HTML;
+const seedSummary = seedOk ? seedOk.summary : '';
+const seedInput = seedOk && seedExample ? seedExample.input : '';
+const seedMode = seedOk && seedExample ? seedExample.mode : 'parse';
+const seedChrome = MODE_COPY[seedMode];
 ---
 
 <section class="uc-pg" aria-label="URL encoder, decoder and query-string parser playground">
@@ -44,10 +71,10 @@ import { examples } from '../lib/url-codec/examples';
       <span class="eyebrow">Examples</span>
       <div id="uc-chips" class="uc-chips" role="group" aria-label="Examples">
         {
-          examples.map((ex) => (
+          examples.map((ex, i) => (
             <button
               type="button"
-              class="uc-chip"
+              class:list={['uc-chip', { 'is-active': i === 0 && seedOk !== null }]}
               data-input={ex.input}
               data-mode={ex.mode}
               aria-label={`${ex.label} — ${ex.mode} mode`}
@@ -66,15 +93,24 @@ import { examples } from '../lib/url-codec/examples';
       <div class="flex min-w-0 flex-col gap-1">
         <span class="eyebrow">Mode</span>
         <div id="uc-mode" class="uc-seg" role="group" aria-label="Mode">
-          <button type="button" class="uc-seg__btn is-active" aria-pressed="true" data-mode="parse">
-            Parse
-          </button>
-          <button type="button" class="uc-seg__btn" aria-pressed="false" data-mode="decode">
-            Decode
-          </button>
-          <button type="button" class="uc-seg__btn" aria-pressed="false" data-mode="encode">
-            Encode
-          </button>
+          {
+            (
+              [
+                ['parse', 'Parse'],
+                ['decode', 'Decode'],
+                ['encode', 'Encode'],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                type="button"
+                class:list={['uc-seg__btn', { 'is-active': value === seedMode }]}
+                aria-pressed={value === seedMode ? 'true' : 'false'}
+                data-mode={value}
+              >
+                {label}
+              </button>
+            ))
+          }
         </div>
       </div>
 
@@ -116,9 +152,7 @@ import { examples } from '../lib/url-codec/examples';
 
     {/* ── Input ───────────────────────────────────────────────────────── */}
     <div class="border-b border-hairline px-4 py-4 sm:px-5">
-      <label id="uc-input-label" class="eyebrow mb-2 block" for="uc-input">
-        URL or query string
-      </label>
+      <label id="uc-input-label" class="eyebrow mb-2 block" for="uc-input">{seedChrome.label}</label>
       <textarea
         id="uc-input"
         class="uc-input code-mono"
@@ -128,8 +162,8 @@ import { examples } from '../lib/url-codec/examples';
         autocomplete="off"
         enterkeyhint="done"
         rows="3"
-        placeholder="https://example.com/path?a=1&amp;b=two%20words"
-        aria-describedby="uc-input-hint uc-run-hint"></textarea>
+        placeholder={seedChrome.placeholder}
+        aria-describedby="uc-input-hint uc-run-hint">{seedInput}</textarea>
       <p id="uc-input-hint" class="uc-hint caption text-mute">
         Paste a full URL, a bare query string starting with <span class="code-mono">?</span>, or a
         form body like <span class="code-mono">a=1&amp;b=2</span>. Nothing is uploaded — the whole
@@ -232,14 +266,11 @@ import { examples } from '../lib/url-codec/examples';
             <span class="uc-copy-label">Copy all</span>
           </button>
         </span>
-        <span id="uc-summary" class="uc-summary code-mono text-mute" role="status" aria-live="polite"></span>
+        <span id="uc-summary" class="uc-summary code-mono text-mute" role="status" aria-live="polite"
+          >{seedSummary}</span
+        >
       </div>
-      <div id="uc-results" class="uc-results">
-        <p class="uc-empty body-sm text-mute">
-          Paste a URL to see its components and every query parameter decoded — or switch to Decode
-          or Encode to work on one value at a time.
-        </p>
-      </div>
+      <div id="uc-results" class="uc-results" set:html={seedHtml}></div>
       <span id="uc-copy-status" class="sr-only" role="status" aria-live="polite"></span>
     </div>
   </div>
@@ -848,44 +879,29 @@ import { examples } from '../lib/url-codec/examples';
 </style>
 
 <script>
-  import { escapeHtml } from '../lib/escape-html';
   import { copyTextToClipboard } from '../lib/clipboard';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  // The pure HTML builders, shared with this component's frontmatter so the
+  // server-rendered seed and every client repaint come from one implementation.
+  import {
+    EMPTY_HTML,
+    LOAD_ERROR_HTML,
+    MODE_COPY,
+    TYPING_HTML,
+    copyAllText,
+    invalidHtml,
+    resultHtml,
+  } from '../lib/url-codec/render';
+  // Result shapes are imported, never hand-mirrored: a hand-copied type that
+  // drifts from the engine is a documented past bug on this site.
+  import type { QueryParam, RunOptions, RunResult, UrlCodecMode as Mode } from '../lib/url-codec/types';
 
-  type Mode = 'parse' | 'decode' | 'encode';
-  type Level = 'error' | 'warning' | 'info';
-  type Diagnostic = { level: Level; code: string; message: string; at?: number; where?: string };
-  type Component = { label: string; value: string; raw?: string; gloss?: string };
-  type Param = {
-    index: number;
-    rawKey: string;
-    key: string;
-    rawValue: string | null;
-    value: string;
-    hasValue: boolean;
-    isDuplicate: boolean;
-    doubleEncoded: boolean;
-  };
-  type Result = {
-    mode: Mode;
-    ok: boolean;
-    input: string;
-    summary: string;
-    diagnostics: Diagnostic[];
-    output?: string;
-    jsEquivalent?: string | null;
-    doubleEncoded?: boolean;
-    decodedTwice?: string;
-    plusAsSpace?: boolean;
-    components?: Component[];
-    params?: Param[];
-    rawQuery?: string;
-    queryOnly?: boolean;
-    href?: string | null;
-  };
+  /* ---- Engine contract ------------------------------------------------------
+     What stays here is the shape of the LAZY module handles, which have no
+     engine counterpart. */
   type EngineModule = {
-    run: (input: string, mode: Mode, opts: Record<string, unknown>) => Result;
-    paramLines: (params: Param[]) => string;
+    run: (input: string, mode: Mode, opts: RunOptions) => RunResult;
+    paramLines: (params: QueryParam[]) => string;
   };
   type HashModule = {
     buildUrlCodecHash: (input: string, mode: Mode) => string;
@@ -897,8 +913,6 @@ import { examples } from '../lib/url-codec/examples';
   const SLUG = 'url-encoder-decoder';
   const DEBOUNCE_MS = 180;
   const ERROR_HOLD_MS = 600;
-  /** Rendered query rows. Past this the DOM, not the parse, is what stalls the tab. */
-  const MAX_RENDERED_PARAMS = 500;
   const RESET_MS = 1800;
 
   function boot(): void {
@@ -912,35 +926,6 @@ import { examples } from '../lib/url-codec/examples';
   function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
     return root.querySelector<T>(sel);
   }
-
-  const ALERT_SVG =
-    '<svg class="uc-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-  const WARN_SVG =
-    '<svg class="uc-note__icon" width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-  const INFO_SVG =
-    '<svg class="uc-note__icon" width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7.5"></circle><path d="M10 9v4.5"></path><path d="M10 6.4v.01"></path></svg>';
-  const COPY_ICON_SVG =
-    '<svg class="uc-copy-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"/></svg>';
-  const CHECK_ICON_SVG =
-    '<svg class="uc-check-icon hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
-
-  const MODE_COPY: Record<Mode, { label: string; placeholder: string; eyebrow: string }> = {
-    parse: {
-      label: 'URL or query string',
-      placeholder: 'https://example.com/path?a=1&b=two%20words',
-      eyebrow: 'Components & parameters',
-    },
-    decode: {
-      label: 'Percent-encoded text',
-      placeholder: 'name=Ada+Lovelace&note=100%25',
-      eyebrow: 'Decoded',
-    },
-    encode: {
-      label: 'Text to encode',
-      placeholder: 'https://app.example.com/callback?next=/settings',
-      eyebrow: 'Encoded',
-    },
-  };
 
   async function init(root: HTMLElement): Promise<void> {
     const input = el<HTMLTextAreaElement>(root, '#uc-input');
@@ -1033,19 +1018,9 @@ import { examples } from '../lib/url-codec/examples';
       }
     }
 
-    function copyBtnHtml(label: string, payload: string): string {
-      const ref = payloads.push(payload) - 1;
-      return (
-        `<button class="uc-copy" type="button" data-copy="" data-copy-ref="${ref}" ` +
-        `aria-label="Copy ${escapeHtml(label)}" title="Copy">` +
-        COPY_ICON_SVG +
-        CHECK_ICON_SVG +
-        '</button>'
-      );
-    }
-
     /* ------------------------------------------------------------------ */
-    /* Rendering                                                           */
+    /* Rendering — every builder lives in ../lib/url-codec/render, which    */
+    /* the frontmatter uses for the server-rendered seed.                  */
     /* ------------------------------------------------------------------ */
 
     function setSummary(text: string, isError: boolean): void {
@@ -1057,214 +1032,20 @@ import { examples } from '../lib/url-codec/examples';
     function renderEmpty(): void {
       setSummary('', false);
       payloads = [];
-      resultsBox!.innerHTML =
-        '<p class="uc-empty body-sm text-mute">Paste a URL to see its components and every query ' +
-        'parameter decoded — or switch to Decode or Encode to work on one value at a time.</p>';
-    }
-
-    function noteHtml(d: Diagnostic): string {
-      const icon = d.level === 'warning' ? WARN_SVG : INFO_SVG;
-      const where =
-        d.where || typeof d.at === 'number'
-          ? `<span class="uc-note__where">${escapeHtml(
-              [d.where, typeof d.at === 'number' ? `index ${d.at}` : ''].filter(Boolean).join(' · '),
-            )}</span>`
-          : '';
-      return (
-        `<div class="uc-note uc-note--${d.level}">` +
-        icon +
-        `<span>${escapeHtml(d.message)}${where}</span></div>`
-      );
-    }
-
-    function notesBlockHtml(diagnostics: Diagnostic[]): string {
-      const notes = diagnostics.filter((d) => d.level !== 'error');
-      if (notes.length === 0) return '';
-      const warnings = notes.filter((d) => d.level === 'warning').length;
-      const label = warnings > 0 ? `Notes — ${warnings} warning${warnings === 1 ? '' : 's'}` : 'Notes';
-      return (
-        '<div class="uc-block">' +
-        `<div class="uc-block__head"><span>${escapeHtml(label)}</span>` +
-        `<span class="uc-block__actions"><span class="uc-meta">${notes.length} item${notes.length === 1 ? '' : 's'}</span></span></div>` +
-        notes.map(noteHtml).join('') +
-        '</div>'
-      );
-    }
-
-    function errorCardHtml(diagnostics: Diagnostic[], isAlert: boolean): string {
-      const errors = diagnostics.filter((d) => d.level === 'error');
-      if (errors.length === 0) return '';
-      const extra =
-        errors.length > 1
-          ? `<p class="uc-error__more">${escapeHtml(
-              `${errors.length - 1} more problem${errors.length === 2 ? '' : 's'}: ` +
-                errors
-                  .slice(1)
-                  .map((d) => d.message)
-                  .join(' '),
-            )}</p>`
-          : '';
-      return (
-        `<div class="uc-error"${isAlert ? ' role="alert"' : ''}>` +
-        ALERT_SVG +
-        '<div><p class="uc-error__title">This input is not valid yet</p>' +
-        `<p id="uc-error-detail" class="uc-error__detail">${escapeHtml(errors[0].message)}</p>` +
-        extra +
-        '</div></div>'
-      );
+      resultsBox!.innerHTML = EMPTY_HTML;
     }
 
     /**
-     * One key/value row. `display` is what the user reads (may be a placeholder
-     * like "(empty value)"); `copyValue` is what the copy button puts on the
-     * clipboard (the real value, which for a placeholder row is `''`).
+     * Write a rendered panel, then adopt its copy payloads. The builders return
+     * the payload array instead of pushing into a closure, so the frontmatter
+     * can call exactly the same function and simply drop them.
      */
-    function rowHtml(
-      key: string,
-      keyExtra: string,
-      display: string,
-      copyValue: string,
-      copyLabel: string,
-      quiet: boolean,
-    ): string {
-      return (
-        '<div class="uc-row">' +
-        `<div class="uc-row__k">${escapeHtml(key)}${keyExtra}</div>` +
-        `<div class="uc-row__v-wrap"><span class="uc-row__v${quiet ? ' is-quiet' : ''}">${escapeHtml(display)}</span>` +
-        copyBtnHtml(copyLabel, copyValue) +
-        '</div></div>'
-      );
-    }
-
-    function componentsHtml(components: Component[]): string {
-      const rows = components
-        .map((c) => {
-          const gloss = c.gloss ? `<span class="uc-row__gloss">${escapeHtml(c.gloss)}</span>` : '';
-          const raw =
-            c.raw && c.raw !== c.value
-              ? `<span class="uc-row__raw">raw: ${escapeHtml(c.raw)}</span>`
-              : '';
-          return rowHtml(c.label, gloss + raw, c.value, c.value, c.label, false);
-        })
-        .join('');
-      return (
-        '<div class="uc-block">' +
-        '<div class="uc-block__head"><span>URL components</span>' +
-        '<span class="uc-block__actions"><span class="uc-meta">as browsers see it</span></span></div>' +
-        '<p class="uc-block__sub">The WHATWG-normalized value of each part, with the raw text you ' +
-        'pasted underneath wherever normalization changed it — punycode hosts, dropped default ' +
-        'ports, resolved paths.</p>' +
-        rows +
-        '</div>'
-      );
-    }
-
-    function badgesHtml(p: Param): string {
-      const badges: string[] = [];
-      if (p.isDuplicate) badges.push('<span class="uc-badge uc-badge--warn">duplicate</span>');
-      if (!p.hasValue) badges.push('<span class="uc-badge">bare key</span>');
-      else if (p.value === '') badges.push('<span class="uc-badge">empty</span>');
-      if (p.key.endsWith('[]')) badges.push('<span class="uc-badge">array-style</span>');
-      if (p.doubleEncoded) badges.push('<span class="uc-badge uc-badge--warn">double-encoded</span>');
-      if (p.rawValue !== null && p.rawValue !== p.value)
-        badges.push('<span class="uc-badge uc-badge--ok">decoded</span>');
-      return badges.length ? `<span class="uc-badges">${badges.join('')}</span>` : '';
-    }
-
-    function paramsHtml(params: Param[], rawQuery: string): string {
-      const head =
-        '<div class="uc-block__head"><span>Query parameters</span>' +
-        `<span class="uc-block__actions"><span class="uc-meta">${params.length} row${params.length === 1 ? '' : 's'} · read-only</span></span></div>` +
-        '<p class="uc-block__sub">Split on <span class="code-mono">&amp;</span> exactly the way ' +
-        '<span class="code-mono">URLSearchParams</span> does, then percent-decoded. Repeated keys ' +
-        'stay as separate rows — nothing here picks a winner for you.</p>';
-      if (params.length === 0) {
-        const message = rawQuery.length
-          ? 'The query string is present but produced no parameters.'
-          : 'No query string — nothing after a “?”.';
-        return `<div class="uc-block">${head}<p class="uc-none">${escapeHtml(message)}</p></div>`;
-      }
-      // Cap rendered rows. 4 000 params built ~3.8 MB of innerHTML and 4 006 copy buttons,
-      // blocking the main thread for ~2 s — the engine was linear; the DOM was the problem.
-      // Same affordance as SubnetSplitterPlayground's "Showing first N of M".
-      const shown = params.slice(0, MAX_RENDERED_PARAMS);
-      const truncated =
-        params.length > MAX_RENDERED_PARAMS
-          ? `<p class="uc-none">Showing the first ${MAX_RENDERED_PARAMS} of ${params.length} parameters. Copy all still copies every row.</p>`
-          : '';
-      const rows = shown
-        .map((p) => {
-          const raw =
-            p.rawValue === null
-              ? `<span class="uc-row__raw">raw: ${escapeHtml(p.rawKey)}</span>`
-              : `<span class="uc-row__raw">raw: ${escapeHtml(p.rawKey)}=${escapeHtml(p.rawValue)}</span>`;
-          const quiet = !p.hasValue || p.value === '';
-          const display = p.hasValue
-            ? p.value === ''
-              ? '(empty value)'
-              : p.value
-            : '(no value — bare key)';
-          const keyLabel = p.key === '' ? '(empty name)' : p.key;
-          return rowHtml(
-            keyLabel,
-            badgesHtml(p) + raw,
-            display,
-            p.value,
-            `the value of ${keyLabel}`,
-            quiet,
-          );
-        })
-        .join('');
-      return `<div class="uc-block">${head}${rows}${truncated}</div>`;
-    }
-
-    function outputCardHtml(result: Result): string {
-      const value = result.output ?? '';
-      const isDecode = result.mode === 'decode';
-      const meta: string[] = [];
-      if (isDecode) {
-        meta.push(result.plusAsSpace ? '+ read as space' : '+ kept literal');
-      } else if (result.jsEquivalent) {
-        meta.push(`matches ${result.jsEquivalent}()`);
-      } else {
-        meta.push('stricter than encodeURIComponent()');
-      }
-      const again =
-        isDecode && result.doubleEncoded
-          ? '<button class="uc-again" type="button" data-again>Decode again →</button>'
-          : '';
-      const quiet = value.length === 0;
-      const sub = isDecode
-        ? 'Percent-decoding — every <span class="code-mono">%XX</span> escape turned back into the ' +
-          'byte it stands for, then read as UTF-8.'
-        : 'Percent-encoding — replacing a byte with <span class="code-mono">%</span> plus its two ' +
-          'hex digits, so it survives inside a URL.';
-      return (
-        '<div class="uc-block">' +
-        `<div class="uc-block__head"><span>${escapeHtml(MODE_COPY[result.mode].eyebrow)}</span>` +
-        `<span class="uc-block__actions"><span class="uc-meta">${escapeHtml(meta.join(' · '))}</span>` +
-        copyBtnHtml('the result', value) +
-        '</span></div>' +
-        `<p class="uc-block__sub">${sub}</p>` +
-        '<div class="uc-out">' +
-        `<p class="uc-out__value${quiet ? ' is-quiet' : ''}">${quiet ? 'Empty result.' : escapeHtml(value)}</p>` +
-        '</div>' +
-        again +
-        '</div>'
-      );
-    }
-
-    function bindPayloads(): void {
+    function paint(rendered: { html: string; payloads: string[] }): void {
+      resultsBox!.innerHTML = rendered.html;
+      payloads = rendered.payloads;
       resultsBox!.querySelectorAll<HTMLButtonElement>('[data-copy-ref]').forEach((btn) => {
         btn.dataset.copy = payloads[Number(btn.dataset.copyRef)] ?? '';
       });
-    }
-
-    function copyAllPayload(result: Result, engine: EngineModule): string {
-      if (result.mode !== 'parse') return result.output ?? '';
-      const params = result.params ?? [];
-      if (params.length > 0) return engine.paramLines(params);
-      return (result.components ?? []).map((c) => `${c.label}: ${c.value}`).join('\n');
     }
 
     /* ------------------------------------------------------------------ */
@@ -1282,12 +1063,7 @@ import { examples } from '../lib/url-codec/examples';
       hashLib = hashMod as unknown as HashModule;
     } catch (err) {
       setSummary('', true);
-      resultsBox.innerHTML =
-        '<div class="uc-error" role="alert">' +
-        ALERT_SVG +
-        '<div><p class="uc-error__title">Tool unavailable</p>' +
-        '<p class="uc-error__detail">The URL engine failed to load. Reload the page to try ' +
-        'again — nothing you typed was sent anywhere.</p></div></div>';
+      resultsBox.innerHTML = LOAD_ERROR_HTML;
       console.error('[UrlCodec] engine import failed:', err);
       return;
     }
@@ -1298,7 +1074,14 @@ import { examples } from '../lib/url-codec/examples';
 
     type State = 'empty' | 'valid' | 'pending' | 'invalid';
     let state: State = 'empty';
-    let mode: Mode = 'parse';
+    // Seeded from the server-rendered segmented control, so the client's idea of
+    // the mode is the one the static HTML already shows.
+    const seededMode = modeGroup.querySelector<HTMLButtonElement>('.uc-seg__btn.is-active')?.dataset
+      .mode;
+    let mode: Mode =
+      seededMode === 'decode' || seededMode === 'encode' || seededMode === 'parse'
+        ? seededMode
+        : 'parse';
     /** The last decoded output, so "Decode again" has something to feed back. */
     let lastOutput = '';
     let plusTouched = false;
@@ -1313,7 +1096,7 @@ import { examples } from '../lib/url-codec/examples';
       window.clearTimeout(errTimer);
     }
 
-    function options(): Record<string, unknown> {
+    function options(): RunOptions {
       if (mode === 'encode') {
         return { form: formBox!.checked, scope: scopeBox!.checked ? 'full-url' : 'component' };
       }
@@ -1391,46 +1174,20 @@ import { examples } from '../lib/url-codec/examples';
       if (userInitiated) writeHash(null);
     }
 
-    function renderInvalid(result: Result, isAlert: boolean): void {
-      payloads = [];
-      const body =
-        result.mode === 'parse'
-          ? errorCardHtml(result.diagnostics, isAlert) +
-            notesBlockHtml(result.diagnostics) +
-            ((result.params ?? []).length > 0
-              ? paramsHtml(result.params ?? [], result.rawQuery ?? '')
-              : '')
-          : errorCardHtml(result.diagnostics, isAlert) + notesBlockHtml(result.diagnostics);
-      resultsBox!.innerHTML = body;
-      bindPayloads();
-    }
-
-    function showError(result: Result, isAlert: boolean, userInitiated: boolean): void {
+    function showError(result: RunResult, isAlert: boolean, userInitiated: boolean): void {
       state = 'invalid';
       clearTimers();
       setErrorState(true);
       hideActions();
       setSummary(result.summary, true);
-      renderInvalid(result, isAlert);
+      paint(invalidHtml(result, isAlert));
       chips.forEach((chip) => chip.classList.remove('is-active'));
       if (userInitiated) writeHash(null);
     }
 
-    function renderValid(result: Result): void {
-      payloads = [];
-      lastOutput = result.output ?? '';
-      let body = '';
-      if (result.mode === 'parse') {
-        if (!result.queryOnly && (result.components ?? []).length > 0) {
-          body += componentsHtml(result.components ?? []);
-        }
-        body += paramsHtml(result.params ?? [], result.rawQuery ?? '');
-      } else {
-        body += outputCardHtml(result);
-      }
-      body += notesBlockHtml(result.diagnostics);
-      resultsBox!.innerHTML = body;
-      bindPayloads();
+    function renderValid(result: RunResult): void {
+      lastOutput = result.mode === 'parse' ? '' : result.output;
+      paint(resultHtml(result));
     }
 
     function evaluate(source: 'type' | 'bulk' | 'commit' | 'seed'): void {
@@ -1445,7 +1202,7 @@ import { examples } from '../lib/url-codec/examples';
       const result = engine.run(value, mode, options());
 
       // Keep the untouched "+ is a space" checkbox honest about what auto chose.
-      if (!plusTouched && mode !== 'encode') {
+      if (!plusTouched && result.mode !== 'encode') {
         plusBox!.checked = result.plusAsSpace === true;
       }
 
@@ -1454,7 +1211,7 @@ import { examples } from '../lib/url-codec/examples';
         setErrorState(false);
         setSummary(result.summary, false);
         renderValid(result);
-        const all = copyAllPayload(result, engine);
+        const all = copyAllText(result, engine.paramLines);
         copyAllBtn!.hidden = all.length === 0;
         copyAllBtn!.dataset.copy = all;
         const hash = hashLib.buildUrlCodecHash(value, mode);
@@ -1491,9 +1248,7 @@ import { examples } from '../lib/url-codec/examples';
       setSummary('', false);
       if (wasInvalid) {
         payloads = [];
-        resultsBox!.innerHTML =
-          '<p class="uc-empty body-sm text-mute">Still typing — results appear once the value ' +
-          'parses.</p>';
+        resultsBox!.innerHTML = TYPING_HTML;
       }
       if (!/[%:/&=?]$|%[0-9A-Fa-f]$/.test(value)) {
         errTimer = window.setTimeout(() => showError(result, false, true), ERROR_HOLD_MS);
@@ -1610,14 +1365,19 @@ import { examples } from '../lib/url-codec/examples';
 
     /* ------------------------------------------------------------------ */
     /* First load: typed value → #in= deep link → restored last input →    */
-    /* first example. Seeding never writes the hash — only user actions do. */
+    /* first example. Seeding never writes the hash, never records the last */
+    /* input, and never fires the amber tick — only user actions do.        */
     /* ------------------------------------------------------------------ */
 
     syncModeUi();
     const shared = hashLib.readUrlCodecHash();
     const restored = getRestoredLastInput(SLUG);
 
-    if (input.value.trim()) {
+    // Typed-before-hydration wins, but the textarea is SERVER-SEEDED with
+    // examples[0] — compare against `defaultValue` (the seeded text), because a
+    // bare non-emptiness test always wins once the server fills it in, which
+    // silently kills the #in= deep link and the restored last input.
+    if (input.value.trim() && input.value !== input.defaultValue) {
       evaluate('seed');
     } else if (shared) {
       input.value = shared.input;

@@ -31,6 +31,59 @@
 // `data-example-idx`, so this adds nothing to the client bundle.
 // The From/To pickers stay <select>s — they are format pickers, not examples.
 import { examples as prerenderedExamples } from '../lib/cve-ignore/examples';
+import { convert } from '../lib/cve-ignore/engine';
+import { FORMATS } from '../lib/cve-ignore/types';
+import {
+  EMPTY_HTML,
+  errorHtml,
+  filenameFor,
+  outputText,
+  warningsHtml,
+  warningsSummaryText,
+} from '../lib/cve-ignore/render';
+
+/**
+ * Server-rendered seed. The client re-converts the same example on boot, so
+ * this is pure progressive enhancement — but it means a no-JS visitor, and
+ * every AI crawler (they do not execute JS), sees the real converted Snyk
+ * policy and all three lossy-conversion notes instead of two empty editors and
+ * a pair of "Loading…" selects.
+ *
+ * `convert` is pure and synchronous — no clock, no random, no network — so it
+ * runs unchanged at build time. Both documents go into
+ * `<pre data-cm-fallback>` elements inside the CodeMirror hosts; CM appends its
+ * editor to the host, so the script removes every fallback once mounted.
+ *
+ * NOT seeded, because it is not knowable at build time: the `#s=` share URL
+ * (built from `window.location`), so both share buttons stay hidden until the
+ * client converts.
+ */
+const seedExample = prerenderedExamples[0];
+const seedResult = seedExample ? convert(seedExample.from, seedExample.to, seedExample.text) : null;
+const seedInput = seedExample ? seedExample.text : '';
+const seedOutput = seedResult ? outputText(seedResult) : '';
+const seedWarnings = seedResult && !seedResult.error ? seedResult.warnings : [];
+const seedMessagesHtml = !seedResult
+  ? EMPTY_HTML
+  : seedResult.error
+    ? errorHtml(seedResult.error)
+    : warningsHtml(seedWarnings);
+const seedSummary = !seedResult
+  ? ''
+  : seedResult.error
+    ? 'Error'
+    : warningsSummaryText(seedWarnings);
+const seedSummaryTone = !seedResult
+  ? 'text-mute'
+  : seedResult.error
+    ? 'text-error'
+    : seedWarnings.length > 0
+      ? 'text-warning-deep'
+      : 'text-mute';
+const seedFrom = seedExample ? seedExample.from : FORMATS[0].value;
+const seedTo = seedExample ? seedExample.to : FORMATS[1].value;
+const seedInputName = filenameFor(FORMATS, seedFrom);
+const seedOutputName = filenameFor(FORMATS, seedTo);
 ---
 
 <section class="cv-pg" aria-label="CVE-Ignore Converter playground">
@@ -44,8 +97,16 @@ import { examples as prerenderedExamples } from '../lib/cve-ignore/examples';
           <label class="eyebrow" for="cv-from">From</label>
           <div class="cv-select-wrap relative min-w-0">
             <select id="cv-from" class="cv-select code-mono" autocomplete="off">
-              {/* Options injected by the hydration script from `FORMATS`. */}
-              <option value="">Loading…</option>
+              {/* Server-rendered from `FORMATS` (the script refills the same
+                  list on boot) so the static HTML names the real ecosystems
+                  instead of "Loading…". */}
+              {
+                FORMATS.map((f) => (
+                  <option value={f.value} selected={f.value === seedFrom}>
+                    {f.label}
+                  </option>
+                ))
+              }
             </select>
             <svg
               class="cv-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
@@ -80,7 +141,13 @@ import { examples as prerenderedExamples } from '../lib/cve-ignore/examples';
           <label class="eyebrow" for="cv-to">To</label>
           <div class="cv-select-wrap relative min-w-0">
             <select id="cv-to" class="cv-select code-mono" autocomplete="off">
-              <option value="">Loading…</option>
+              {
+                FORMATS.map((f) => (
+                  <option value={f.value} selected={f.value === seedTo}>
+                    {f.label}
+                  </option>
+                ))
+              }
             </select>
             <svg
               class="cv-select-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute"
@@ -214,13 +281,14 @@ import { examples as prerenderedExamples } from '../lib/cve-ignore/examples';
             <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
             <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
           </span>
-          <span id="cv-input-name" class="code-mono text-white/45">input</span>
+          <span id="cv-input-name" class="code-mono text-white/45">{seedInputName}</span>
         </div>
         <div
           id="cv-editor-input"
           class="cv-editor min-h-72"
           aria-label="Source suppression policy"
         >
+          <pre class="cv-cm-fallback code-mono" data-cm-fallback>{seedInput}</pre>
         </div>
         <p class="text-xs text-mute mt-1" style="padding: 0 16px 8px;">Tip: press <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd> to release focus.</p>
         <div class="cv-snap-row mt-3 flex flex-wrap items-center gap-2" style="padding: 0 16px 12px;">
@@ -245,7 +313,7 @@ import { examples as prerenderedExamples } from '../lib/cve-ignore/examples';
               <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
               <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
             </span>
-            <span id="cv-output-name" class="code-mono truncate text-white/45">output</span>
+            <span id="cv-output-name" class="code-mono truncate text-white/45">{seedOutputName}</span>
           </div>
           <span class="code-mono shrink-0 text-white/30">read-only</span>
         </div>
@@ -255,6 +323,7 @@ import { examples as prerenderedExamples } from '../lib/cve-ignore/examples';
           role="region"
           aria-label="Converted suppression policy (read-only)"
         >
+          <pre class="cv-cm-fallback code-mono" data-cm-fallback>{seedOutput}</pre>
         </div>
       </div>
     </div>
@@ -305,18 +374,16 @@ import { examples as prerenderedExamples } from '../lib/cve-ignore/examples';
         </span>
         <span
           id="cv-summary"
-          class="cv-summary code-mono text-mute"
+          class:list={['cv-summary code-mono', seedSummaryTone]}
           role="status"
           aria-live="polite"
-        ></span>
+        >{seedSummary}</span>
       </div>
 
-      <div id="cv-messages" class="cv-messages">
-        <p class="cv-empty body-sm text-mute">
-          Pick a source format, paste a suppression file, then convert to see the
-          translated policy and any lossy-conversion notes here.
-        </p>
-      </div>
+      {/* Seeded at build time (see `seedMessagesHtml` above) so the lossy-
+          conversion notes are in the static HTML; the client replaces it with
+          the same markup on boot. */}
+      <div id="cv-messages" class="cv-messages" set:html={seedMessagesHtml}></div>
     </div>
   </div>
 
@@ -517,6 +584,19 @@ import { examples as prerenderedExamples } from '../lib/cve-ignore/examples';
   /* CodeMirror host — fills the dark pane, scrolls internally. */
   .cv-editor {
     overflow: hidden;
+  }
+  /* Build-time text stand-in for each editor, sized like the CM content so the
+     pane does not jump when the script swaps it out. Removed on mount. */
+  .cv-cm-fallback {
+    margin: 0;
+    padding: 14px 16px 16px;
+    max-height: 360px;
+    overflow: auto;
+    color: #e6e6e6;
+    font-size: 13px;
+    line-height: 20px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
   .cv-editor :global(.cm-editor) {
     height: 100%;
@@ -819,8 +899,17 @@ import { examples as prerenderedExamples } from '../lib/cve-ignore/examples';
   import { copyTextToClipboard as copyText } from '../lib/clipboard';
   import { buildMarkdownBlock } from '../lib/share-md';
   import type { EditorView } from '@codemirror/view';
-  import { escapeHtml } from '../lib/escape-html';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  // The same pure builders the frontmatter used for the SSR seed — one
+  // implementation, so the seeded panel and every later conversion agree.
+  import {
+    EMPTY_HTML,
+    LOADING_HTML,
+    errorHtml,
+    filenameFor,
+    warningsHtml,
+    warningsSummaryText,
+  } from '../lib/cve-ignore/render';
 
   /* ---- Types mirrored from the engine contract (structural, not imported). -- */
   type Format = string;
@@ -888,48 +977,30 @@ import { examples as prerenderedExamples } from '../lib/cve-ignore/examples';
       .filter((e) => e.text.length > 0 || e.from || e.to);
   }
 
-  /** Filename for a format value, for the editor chrome label. */
-  function filenameFor(formats: FormatDescriptor[], value: Format): string {
-    const f = formats.find((x) => x.value === value);
-    return f?.filename || f?.label || value || 'output';
-  }
-
-  /* ---- Message rendering (warnings / errors / success / empty) -------------- */
-
-  const WARN_SVG =
-    '<svg class="cv-warn__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-  const ALERT_SVG =
-    '<svg class="cv-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-  const CHECK_SVG =
-    '<svg class="cv-ok__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"></circle><path d="M6.5 10.5l2.4 2.4 4.6-5"></path></svg>';
+  /* ---- Message rendering (warnings / errors / success / empty) --------------
+     The HTML itself is built by ../lib/cve-ignore/render, which the Astro
+     frontmatter also calls for the SSR seed. Only the DOM writes and the
+     summary's tone classes live here. */
 
   function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
     summary.textContent = '';
     summary.classList.remove('text-error', 'text-warning-deep');
     summary.classList.add('text-mute');
-    container.innerHTML =
-      '<p class="cv-empty body-sm text-mute">Pick a source format, paste a suppression file, then convert to see the translated policy and any lossy-conversion notes here.</p>';
+    container.innerHTML = EMPTY_HTML;
   }
 
   function renderLoading(container: HTMLElement, summary: HTMLElement): void {
     summary.textContent = '';
     summary.classList.remove('text-error', 'text-warning-deep');
     summary.classList.add('text-mute');
-    container.innerHTML =
-      '<div class="cv-loading"><span class="cv-loading__dot"></span>' +
-      '<span class="cv-loading__dot"></span><span class="cv-loading__dot"></span>' +
-      '<span>Converting…</span></div>';
+    container.innerHTML = LOADING_HTML;
   }
 
   function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
     summary.textContent = 'Error';
     summary.classList.remove('text-mute', 'text-warning-deep');
     summary.classList.add('text-error');
-    container.innerHTML =
-      '<div class="cv-error" role="alert">' +
-      ALERT_SVG +
-      '<div class="cv-error__body"><p class="cv-error__title">Could not convert</p>' +
-      `<p class="cv-error__detail">${escapeHtml(message)}</p></div></div>`;
+    container.innerHTML = errorHtml(message);
   }
 
   function renderWarnings(
@@ -937,30 +1008,15 @@ import { examples as prerenderedExamples } from '../lib/cve-ignore/examples';
     summary: HTMLElement,
     warnings: string[]
   ): void {
+    summary.textContent = warningsSummaryText(warnings);
     if (warnings.length === 0) {
-      summary.textContent = 'Converted';
       summary.classList.remove('text-error', 'text-warning-deep');
       summary.classList.add('text-mute');
-      container.innerHTML =
-        '<div class="cv-ok">' +
-        CHECK_SVG +
-        '<span class="cv-ok__text">Converted with no lossy changes. Output is on the right.</span></div>';
-      return;
+    } else {
+      summary.classList.remove('text-error', 'text-mute');
+      summary.classList.add('text-warning-deep');
     }
-    const n = warnings.length;
-    summary.textContent = `${n} ${n === 1 ? 'note' : 'notes'}`;
-    summary.classList.remove('text-error', 'text-mute');
-    summary.classList.add('text-warning-deep');
-    const items = warnings
-      .map((w) => `<li class="cv-warn__item">${escapeHtml(w)}</li>`)
-      .join('');
-    container.innerHTML =
-      '<div class="cv-warn">' +
-      WARN_SVG +
-      '<div class="cv-warn__body">' +
-      `<p class="cv-warn__title">${n === 1 ? 'Lossy conversion note' : 'Lossy conversion notes'}</p>` +
-      `<ul class="cv-warn__list">${items}</ul>` +
-      '</div></div>';
+    container.innerHTML = warningsHtml(warnings);
   }
 
   /* ---- Clipboard ------------------------------------------------------------ */
@@ -1221,6 +1277,10 @@ import { examples as prerenderedExamples } from '../lib/cve-ignore/examples';
         : seed?.text ?? '';
     const inputView = makeInputEditor(inputHost, seedText);
     const outputView = makeOutputEditor(outputHost, '');
+    // The build-time text stand-ins have done their job (no-JS visitors and
+    // crawlers); CodeMirror appended its editors beside them, so drop them —
+    // a fallback left behind renders the document twice.
+    root.querySelectorAll('[data-cm-fallback]').forEach((node) => node.remove());
     let lastWarnings: string[] = [];
 
     function hideShare(): void {

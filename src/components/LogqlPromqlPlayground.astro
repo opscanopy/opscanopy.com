@@ -35,6 +35,39 @@
 // crawlers and no-JS visitors would otherwise be served. It adds nothing to
 // the client bundle.
 import { examples as prerenderedExamples } from '../lib/logql-promql/examples';
+import { convert } from '../lib/logql-promql/engine';
+import { DIRECTIONS } from '../lib/logql-promql/types';
+import { EMPTY_HTML, errorHtml, filesFor, notesHtml, notesSummaryText, outputText } from '../lib/logql-promql/render';
+
+/**
+ * Server-rendered seed. The client re-converts the same example on boot, so
+ * this is pure progressive enhancement — but it means a no-JS visitor, and
+ * every AI crawler (they do not execute JS), sees the real translated query
+ * and the notes on what did not map, instead of two empty editors and a
+ * "Loading…" direction toggle.
+ *
+ * `convert` is pure and synchronous — no clock, no random, no network — so it
+ * runs unchanged at build time. The translated query goes into a
+ * `<pre data-cm-fallback>` inside each CodeMirror host; CM appends its editor
+ * to the host, so the script removes every fallback once mounted.
+ *
+ * NOT seeded, because neither is knowable at build time: the `#s=` share URL
+ * and the "Explain this query" chip (both built from `window.location`), which
+ * stay hidden until the client converts.
+ */
+const seedExample = prerenderedExamples[0];
+const seedDirection = seedExample ? seedExample.direction : 'logql-to-promql';
+const seedResult = seedExample ? convert(seedDirection, seedExample.query) : null;
+const seedOutput = seedResult ? outputText(seedResult) : '';
+const seedNotes = seedResult && !seedResult.error ? seedResult.notes : [];
+const seedNotesHtml = !seedResult
+  ? EMPTY_HTML
+  : seedResult.error
+    ? errorHtml(seedResult.error)
+    : notesHtml(seedNotes);
+const seedSummary = !seedResult ? '' : seedResult.error ? 'Error' : notesSummaryText(seedNotes);
+const seedSummaryTone = seedResult && seedResult.error ? 'text-error' : 'text-mute';
+const seedFiles = filesFor(seedDirection);
 ---
 
 <section class="lp-pg" aria-label="LogQL to PromQL helper playground">
@@ -46,14 +79,31 @@ import { examples as prerenderedExamples } from '../lib/logql-promql/examples';
       <div class="flex flex-wrap items-end gap-3">
         <div class="flex min-w-0 flex-col gap-1.5">
           <span class="eyebrow" id="lp-dir-label">Direction</span>
-          {/* Segmented direction toggle; options injected by the script. */}
+          {/* Segmented direction toggle — server-rendered from the engine's
+              own DIRECTIONS list (it used to be injected by the script, so
+              crawlers and no-JS visitors saw only "Loading…"). The hydration
+              script adopts these buttons by their data-dir and never rebuilds
+              them. */}
           <div
             id="lp-direction"
             class="lp-seg"
             role="tablist"
             aria-labelledby="lp-dir-label"
           >
-            <span class="lp-seg-loading code-mono text-mute">Loading…</span>
+            {
+              DIRECTIONS.map((d) => (
+                <button
+                  type="button"
+                  class:list={['lp-seg__btn lp-tap', { 'is-active': d.value === seedDirection }]}
+                  data-dir={d.value}
+                  role="tab"
+                  aria-selected={d.value === seedDirection ? 'true' : 'false'}
+                  tabindex={d.value === seedDirection ? 0 : -1}
+                >
+                  {d.label}
+                </button>
+              ))
+            }
           </div>
         </div>
 
@@ -65,7 +115,7 @@ import { examples as prerenderedExamples } from '../lib/logql-promql/examples';
             {prerenderedExamples.map((ex, i) => (
               <button
                 type="button"
-                class="lp-chip lp-tap"
+                class:list={['lp-chip lp-tap', { 'is-active': i === 0 }]}
                 data-example-idx={i}
                 aria-pressed={i === 0 ? 'true' : 'false'}
               >
@@ -180,13 +230,14 @@ import { examples as prerenderedExamples } from '../lib/logql-promql/examples';
             <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
             <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
           </span>
-          <span id="lp-input-name" class="code-mono text-white/45">query.logql</span>
+          <span id="lp-input-name" class="code-mono text-white/45">{seedFiles.input}</span>
         </div>
         <div
           id="lp-editor-input"
           class="lp-editor min-h-72"
           aria-label="Source query to convert"
         >
+          <pre class="lp-cm-fallback code-mono" data-cm-fallback>{seedExample?.query}</pre>
         </div>
         <p class="text-xs text-mute mt-1 px-4 pb-2">Tip: press <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd> to release focus.</p>
       </div>
@@ -204,7 +255,7 @@ import { examples as prerenderedExamples } from '../lib/logql-promql/examples';
               <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
               <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
             </span>
-            <span id="lp-output-name" class="code-mono truncate text-white/45">query.promql</span>
+            <span id="lp-output-name" class="code-mono truncate text-white/45">{seedFiles.output}</span>
           </div>
           <span class="code-mono shrink-0 text-white/30">read-only</span>
         </div>
@@ -214,6 +265,7 @@ import { examples as prerenderedExamples } from '../lib/logql-promql/examples';
           role="region"
           aria-label="Converted query (read-only)"
         >
+          <pre class="lp-cm-fallback code-mono" data-cm-fallback>{seedOutput}</pre>
         </div>
       </div>
     </div>
@@ -265,18 +317,16 @@ import { examples as prerenderedExamples } from '../lib/logql-promql/examples';
         </span>
         <span
           id="lp-summary"
-          class="lp-summary code-mono text-mute"
+          class:list={['lp-summary code-mono', seedSummaryTone]}
           role="status"
           aria-live="polite"
-        ></span>
+        >{seedSummary}</span>
       </div>
 
-      <div id="lp-notes" class="lp-notes">
-        <p class="lp-empty body-sm text-mute">
-          Pick a direction, paste or load a query, then convert to see the
-          translated query and notes on what does and does not map here.
-        </p>
-      </div>
+      {/* Seeded at build time (see `seedNotesHtml` above) so the conversion
+          notes are in the static HTML; the client replaces it with the same
+          markup on boot. */}
+      <div id="lp-notes" class="lp-notes" set:html={seedNotesHtml}></div>
     </div>
   </div>
 
@@ -302,14 +352,8 @@ import { examples as prerenderedExamples } from '../lib/logql-promql/examples';
     background: var(--color-canvas-soft-2);
     box-shadow: var(--shadow-hairline);
   }
-  .lp-seg-loading {
-    display: inline-flex;
-    align-items: center;
-    height: 32px;
-    padding: 0 12px;
-    font-size: 13px;
-  }
-  /* Segment buttons are injected at runtime → style via :global. */
+  /* Segment buttons are server-rendered now, but the :global() form is kept —
+     it matches both the SSR markup and anything the script ever re-creates. */
   :global(.lp-seg__btn) {
     display: inline-flex;
     align-items: center;
@@ -479,6 +523,19 @@ import { examples as prerenderedExamples } from '../lib/logql-promql/examples';
   /* CodeMirror host — fills the dark pane, scrolls internally. */
   .lp-editor {
     overflow: hidden;
+  }
+  /* Build-time text stand-in for each editor, sized like the CM content so the
+     pane does not jump when the script swaps it out. Removed on mount. */
+  .lp-cm-fallback {
+    margin: 0;
+    padding: 14px 16px 16px;
+    max-height: 360px;
+    overflow: auto;
+    color: #e6e6e6;
+    font-size: 13px;
+    line-height: 20px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
   .lp-editor :global(.cm-editor) {
     height: 100%;
@@ -801,8 +858,17 @@ import { examples as prerenderedExamples } from '../lib/logql-promql/examples';
   import { buildMarkdownBlock } from '../lib/share-md';
   import { buildHashValue } from '../lib/hash-state';
   import type { EditorView } from '@codemirror/view';
-  import { escapeHtml } from '../lib/escape-html';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  // The same pure builders the frontmatter used for the SSR seed — one
+  // implementation, so the seeded panel and every later conversion agree.
+  import {
+    EMPTY_HTML,
+    LOADING_HTML,
+    errorHtml,
+    filesFor,
+    notesHtml,
+    notesSummaryText,
+  } from '../lib/logql-promql/render';
 
   // CodeMirror is loaded via dynamic import inside init() so its ~200KB runtime
   // code-splits into its own chunk instead of shipping in the page's initial JS.
@@ -845,13 +911,6 @@ import { examples as prerenderedExamples } from '../lib/logql-promql/examples';
     return v === 'logql-to-promql' || v === 'promql-to-logql';
   }
 
-  /** Filenames for the dark editor chrome, per direction. */
-  function filesFor(direction: Direction): { input: string; output: string } {
-    return direction === 'logql-to-promql'
-      ? { input: 'query.logql', output: 'query.promql' }
-      : { input: 'query.promql', output: 'query.logql' };
-  }
-
   /** Normalise the sibling examples list defensively. */
   function normaliseExamples(raw: unknown): Example[] {
     if (!Array.isArray(raw)) return [];
@@ -870,42 +929,30 @@ import { examples as prerenderedExamples } from '../lib/logql-promql/examples';
       .filter((e) => e.query.length > 0);
   }
 
-  /* ---- Note rendering (mapping notes / errors / success / empty) ------------ */
-
-  const NOTE_SVG =
-    '<svg class="lp-note__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"></circle><path d="M10 9v4.5"></path><path d="M10 6.4v.01"></path></svg>';
-  const ALERT_SVG =
-    '<svg class="lp-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-  const CHECK_SVG =
-    '<svg class="lp-ok__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"></circle><path d="M6.5 10.5l2.4 2.4 4.6-5"></path></svg>';
+  /* ---- Note rendering (mapping notes / errors / success / empty) ------------
+     The HTML itself is built by ../lib/logql-promql/render, which the Astro
+     frontmatter also calls for the SSR seed. Only the DOM writes and the
+     summary's tone classes live here. */
 
   function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
     summary.textContent = '';
     summary.classList.remove('text-error');
     summary.classList.add('text-mute');
-    container.innerHTML =
-      '<p class="lp-empty body-sm text-mute">Pick a direction, paste or load a query, then convert to see the translated query and notes on what does and does not map here.</p>';
+    container.innerHTML = EMPTY_HTML;
   }
 
   function renderLoading(container: HTMLElement, summary: HTMLElement): void {
     summary.textContent = '';
     summary.classList.remove('text-error');
     summary.classList.add('text-mute');
-    container.innerHTML =
-      '<div class="lp-loading"><span class="lp-loading__dot"></span>' +
-      '<span class="lp-loading__dot"></span><span class="lp-loading__dot"></span>' +
-      '<span>Converting…</span></div>';
+    container.innerHTML = LOADING_HTML;
   }
 
   function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
     summary.textContent = 'Error';
     summary.classList.remove('text-mute');
     summary.classList.add('text-error');
-    container.innerHTML =
-      '<div class="lp-error" role="alert">' +
-      ALERT_SVG +
-      '<div class="lp-error__body"><p class="lp-error__title">Could not convert</p>' +
-      `<p class="lp-error__detail">${escapeHtml(message)}</p></div></div>`;
+    container.innerHTML = errorHtml(message);
   }
 
   function renderNotes(
@@ -913,30 +960,10 @@ import { examples as prerenderedExamples } from '../lib/logql-promql/examples';
     summary: HTMLElement,
     notes: string[]
   ): void {
-    if (notes.length === 0) {
-      summary.textContent = 'Converted';
-      summary.classList.remove('text-error');
-      summary.classList.add('text-mute');
-      container.innerHTML =
-        '<div class="lp-ok">' +
-        CHECK_SVG +
-        '<span class="lp-ok__text">Converted with a clean mapping. The translated query is on the right.</span></div>';
-      return;
-    }
-    const n = notes.length;
-    summary.textContent = `${n} ${n === 1 ? 'note' : 'notes'}`;
+    summary.textContent = notesSummaryText(notes);
     summary.classList.remove('text-error');
     summary.classList.add('text-mute');
-    const items = notes
-      .map((w) => `<li class="lp-note__item">${escapeHtml(w)}</li>`)
-      .join('');
-    container.innerHTML =
-      '<div class="lp-note">' +
-      NOTE_SVG +
-      '<div class="lp-note__body">' +
-      `<p class="lp-note__title">${n === 1 ? 'Conversion note' : 'Conversion notes'}</p>` +
-      `<ul class="lp-note__list">${items}</ul>` +
-      '</div></div>';
+    container.innerHTML = notesHtml(notes);
   }
 
   /* ---- Clipboard ------------------------------------------------------------ */
@@ -1114,18 +1141,12 @@ import { examples as prerenderedExamples } from '../lib/logql-promql/examples';
         ? (restoredState as ShareState).direction
         : seed?.direction ?? 'logql-to-promql';
 
-    // Build the segmented direction toggle.
-    dirGroup.innerHTML = '';
-    const dirButtons: HTMLButtonElement[] = DIRECTIONS.map((d) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'lp-seg__btn lp-tap';
-      btn.dataset.dir = d.value;
-      btn.setAttribute('role', 'tab');
-      btn.textContent = d.label;
-      dirGroup.appendChild(btn);
-      return btn;
-    });
+    // The direction toggle is server-rendered from the engine's own DIRECTIONS
+    // list, so adopt the existing buttons — rebuilding them here is what used
+    // to leave crawlers and no-JS visitors with a bare "Loading…".
+    const dirButtons = Array.from(
+      dirGroup.querySelectorAll<HTMLButtonElement>('.lp-seg__btn')
+    );
 
     /** Reflect the active direction across the toggle + editor chrome. */
     function syncDirection(): void {
@@ -1167,6 +1188,10 @@ import { examples as prerenderedExamples } from '../lib/logql-promql/examples';
           : seed?.query ?? ''
     );
     const outputView = makeOutputEditor(outputHost, '');
+    // The build-time text stand-ins have done their job (no-JS visitors and
+    // crawlers); CodeMirror appended its editors beside them, so drop them —
+    // a fallback left behind renders the document twice.
+    root.querySelectorAll('[data-cm-fallback]').forEach((node) => node.remove());
 
     syncDirection();
 
