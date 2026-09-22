@@ -1,14 +1,14 @@
 ---
 title: "AWS AI Practitioner (AIF-C01): 14-Day Study Plan, Exam Guide, and Free Mock"
-description: "How to pass the AWS Certified AI Practitioner exam: cost and vouchers, the five domains, how hard it is, AI vs Cloud Practitioner, a 14-day plan, a services cheat sheet, and a free 65-question mock."
+description: "How to pass the AWS Certified AI Practitioner exam: cost and vouchers, the five domains, how hard it is, AI vs Cloud Practitioner, a 14-day plan, a services cheat sheet, and two free 65-question mocks."
 track: aws
 order: 2
 difficulty: beginner
 estMinutes: 25
-updatedDate: 2026-09-06
+updatedDate: 2026-09-23
 tags: ["aws", "certification", "aif-c01", "ai-practitioner", "generative-ai", "bedrock"]
 seoTitle: "AWS AI Practitioner (AIF-C01) 14-Day Study Plan"
-metaDescription: "AIF-C01 in 14 days: exam cost and vouchers, the five domains, difficulty, AI vs Cloud Practitioner, a daily plan, cheat sheet, and a free 65-question mock."
+metaDescription: "AIF-C01 in 14 days: exam cost and vouchers, the five domains, difficulty, AI vs Cloud Practitioner, a daily plan, cheat sheet, and two free 65-question mocks."
 faqs:
   - q: "What is the passing score for the AWS AI Practitioner exam?"
     a: "700 on a scaled range of 100 to 1,000. AWS does not publish a raw-percentage equivalent, because scaling adjusts for differences between exam forms. Scoring consistently above 80% on practice tests is a safe margin."
@@ -28,9 +28,9 @@ faqs:
     a: "Neither is a prerequisite for the other. Take Cloud Practitioner first if you are new to AWS and want a general cloud role. Take AI Practitioner first if you already know AWS basics or your work is AI-focused. Until 30 September 2026, passing AIF-C01 earns a free Cloud Practitioner voucher, which makes AI first the cheaper order."
 ---
 
-A study plan for the AWS Certified AI Practitioner exam written for someone with no AI, ML, or AWS background, at one to one and a half hours a day. One main course, one question bank, this guide, and a free full-length mock. Everything here follows **exam guide version 1.1, published 30 April 2026**, which added agentic AI, Amazon Bedrock AgentCore, Kiro, Strands Agents, and Amazon Nova to the syllabus and dropped several services that older study material still teaches. If a resource you are using does not mention agents or AgentCore, it predates the current exam.
+A study plan for the AWS Certified AI Practitioner exam written for someone with no AI, ML, or AWS background, at one to one and a half hours a day. One main course, one question bank, this guide, and two free full-length mocks. Everything here follows **exam guide version 1.1, published 30 April 2026**, which added agentic AI, Amazon Bedrock AgentCore, Kiro, Strands Agents, and Amazon Nova to the syllabus and dropped several services that older study material still teaches. If a resource you are using does not mention agents or AgentCore, it predates the current exam.
 
-When you are ready to test yourself, the [free 65-question AIF-C01 mock](/tests/aws-ai-practitioner/) on this site follows the real domain weighting and explains every answer.
+When you are ready to test yourself, the [two free 65-question AIF-C01 mocks](/tests/aws-ai-practitioner/) on this site follow the real domain weighting and explain every answer. Sit one as a baseline and keep the second back for a few days later, so the retake measures what you have learned rather than what you have memorised.
 
 ## Exam at a glance
 
@@ -134,11 +134,11 @@ Week one is concepts, week two is practice. The plan assumes Stephane Maarek's U
 
 | Day | Focus | What to do |
 |---|---|---|
-| **8** | **Practice test 1** (baseline) | Take the [free 65-question mock](/tests/aws-ai-practitioner/) on this site. Set a 90-minute timer yourself; the runner does not enforce one. Ignore the score. Read the explanation for every wrong *and* every guessed answer. Write a weak-topics list. |
+| **8** | **Practice test 1** (baseline) | Take the [Full Mock Exam](/tests/aws-ai-practitioner/aif-c01-full-mock-exam/) on this site — the first of the two. Set a 90-minute timer yourself; the runner does not enforce one. Ignore the score. Read the explanation for every wrong *and* every guessed answer. Write a weak-topics list. |
 | **9** | Revise | Re-watch the course sections for your weak topics at 1.5× speed. Read the services cheat sheet below twice. |
 | **10** | **Practice test 2** | A Tutorials Dojo timed set, or the 20 official questions on AWS Skill Builder. Target 75%+. Which domain keeps failing? |
 | **11** | Revise | Bedrock deep dive, agentic AI, and responsible AI again. Read the glossary. |
-| **12** | **Practice test 3** | Another Tutorials Dojo set, or retake the mock here and compare against day 8. Target 80%+. Below 80%, move the exam three or four days out; there is no rush. |
+| **12** | **Practice test 3** | Take [Mock Exam 2](/tests/aws-ai-practitioner/aif-c01-mock-exam-2/) here — a different 65 questions, so the score reflects what you know rather than what you remember from day 8. Target 80%+. Below 80%, move the exam three or four days out; there is no rush. |
 | **13** | Final light revision | Notes, cheat sheet, glossary only. No new content. Confirm exam time, ID, and the Pearson system check if testing online. Sleep early. |
 | **14** | **Exam day** | Arrive or log in 30 minutes early. Flag and move on. Watch for the qualifier words. |
 
@@ -405,7 +405,7 @@ Few resources, fully used. One course, one question bank, and the free official 
 | Resource | Cost | Notes |
 |---|---|---|
 | **Stephane Maarek: Ultimate AWS Certified AI Practitioner** (Udemy), the main course | About USD 10–15 on sale | About 10 hours, exam-focused, beginner-friendly, quiz after each section. Udemy is almost always on sale; never pay full price. Confirm the version you buy covers the 2026 additions. [udemy.com/course/aws-ai-practitioner-certified](https://www.udemy.com/course/aws-ai-practitioner-certified/) |
-| **OpsCanopy free AIF-C01 mock**, your day 8 baseline | Free | 65 original questions in the real domain weighting, every answer explained, written against exam guide v1.1. Use it timed on day 8 and again on day 12. [Take the mock](/tests/aws-ai-practitioner/) |
+| **OpsCanopy free AIF-C01 mocks**, your day 8 baseline and day 12 retest | Free | Two sets of 65 original questions in the real domain weighting, every answer explained, written against exam guide v1.1. They share no scenario, so sit the Full Mock Exam on day 8 and Mock Exam 2 on day 12. [Take a mock](/tests/aws-ai-practitioner/) |
 | **Tutorials Dojo (Jon Bonso): AIF-C01 Practice Exams**, the question bank | About USD 15 | Closest to real exam difficulty, with detailed explanations for every option. Those explanations *are* your revision. Timed mode and review mode. [portal.tutorialsdojo.com](https://portal.tutorialsdojo.com/product/aws-certified-ai-practitioner-aif-c01-practice-exams/) |
 | **Official exam guide** (v1.1) | Free | Skim on day 1, re-read on day 13. It contains every task statement and the in-scope services list; this *is* the syllabus. [docs.aws.amazon.com exam guide](https://docs.aws.amazon.com/aws-certification/latest/ai-practitioner-01/ai-practitioner-01.html) |
 | **AWS Skill Builder: exam-prep plan and official practice question set** | Free (account required) | AWS's own prep course and 20 official practice questions. The best way to learn the question *style*. Do it on day 10 or 11. [skillbuilder.aws](https://skillbuilder.aws/) |
@@ -433,9 +433,11 @@ Few resources, fully used. One course, one question bank, and the free official 
 
 **Confidence.** This is a foundational exam. If you understand the concepts and service selection, you will pass. If in doubt, push the exam back three days, but do not over-prepare.
 
-## Take the free 65-question mock
+## Take the two free 65-question mocks
 
-The [OpsCanopy AIF-C01 Full Mock Exam](/tests/aws-ai-practitioner/) has 65 original questions in the real domain weighting (13 / 16 / 18 / 9 / 9), with about a dozen on the 2026 additions: agentic AI, MCP, AgentCore, Kiro, Strands Agents, distillation, prompt caching, context engineering, LLM-as-a-judge, and the Generative AI Security Scoping Matrix. Every answer explains why each wrong option fails. Take it timed on day 8, read every explanation, and retake it on day 12 to measure the difference. If you prefer to read rather than click, the [answers-explained page](/tests/aws-ai-practitioner/aif-c01-full-mock-exam/review/) lays out all 65 questions as prose.
+There are two, and they share no scenario between them. The [Full Mock Exam](/tests/aws-ai-practitioner/aif-c01-full-mock-exam/) and [Mock Exam 2](/tests/aws-ai-practitioner/aif-c01-mock-exam-2/) each carry 65 original questions in the real domain weighting (13 / 16 / 18 / 9 / 9), with about a dozen apiece on the 2026 additions: agentic AI, MCP, AgentCore, Kiro, Strands Agents, distillation, prompt caching, context engineering, LLM-as-a-judge, and the Generative AI Security Scoping Matrix. Every answer explains why each wrong option fails.
+
+Sit the first timed on day 8 and read every explanation. Sit the second on day 12. Retaking one paper mostly measures what you remember of it; two independent papers tell you whether the gap actually closed. If you prefer to read rather than click, the answers-explained pages lay all the questions out as prose — [Full Mock Exam](/tests/aws-ai-practitioner/aif-c01-full-mock-exam/review/) and [Mock Exam 2](/tests/aws-ai-practitioner/aif-c01-mock-exam-2/review/).
 
 The runner uses multiple-choice and multiple-response items only; the real exam adds ordering and matching, whose content is covered here in multiple-choice form.
 

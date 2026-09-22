@@ -212,6 +212,76 @@ Only registry days with `status:'live'` build day pages, and only `status:'live'
 
 Components live in **`src/components/mission90/`**. JSON-LD uses the new `courseLd` helper in `src/lib/jsonld.ts`; `techArticleLd` gained an optional Person `author` and `isPartOfCourse`. The `/mission-90/` OG card rasterizes from `public/mission-90/mission-90-hero.svg` via `scripts/gen-og-images.mjs` (same pipeline as blog heroes).
 
+### Practice tests (`/tests/`)
+
+Certification question banks, a peer of Tools/Learn/Blog with its own nav item.
+English-only (`/tests` is in `ENGLISH_ONLY_SECTIONS`), so no locale copies.
+
+Structure and bodies are split, the same way Mission 90 splits registry from
+content:
+
+- **`src/data/tests.ts`** — `TestCategory` (one per certification) and
+  `PracticeTest` (one per set: `passThreshold`, optional display-only `minutes`,
+  `status`). `validateRegistry()` runs at import and **throws**, so a duplicate
+  slug or a live test under a draft category fails the build rather than
+  rendering wrong.
+- **`src/data/tests-copy.ts`** — per-category prose: `examCode`,
+  `metaDescription`, `intro[]`, and the exam's own `domains` with the weightings
+  the vendor publishes. New sets should distribute questions across those
+  weightings; that is the only place they are written down.
+- **`practiceTestQuestions` collection** — one JSON file per set at
+  `src/content/tests/<category>__<test>.json`. **The double underscore is load-
+  bearing**: `src/lib/tests/static-paths.ts` cross-checks registry ↔ files in
+  both directions and throws on a filename mismatch, an orphan file, or a live
+  test with no file.
+
+A question is `{ id, prompt: string[], options, correctAnswers, explanation }`.
+`correctAnswers` holds **zero-based indices**, and how many to pick is derived
+from its length — never stored. The last `prompt` paragraph is the question
+sentence (used as the `<legend>`); earlier ones are the scenario.
+
+Adding a set = a registry entry plus the JSON file. Everything else derives:
+hub counts, category pages, both `getStaticPaths`, sitemap, JSON-LD, `llms.txt`.
+Note the runner at `/tests/<cat>/<test>/` is **noindex**; the indexable SEO
+surface is the `/review/` page, which renders every question as prose.
+
+**`src/lib/tests/content.test.ts` is the editorial gate** (added 2026-09-22,
+~2,600 assertions). Zod proves a file is structurally valid; this proves it is
+written the way the site writes questions — scenario plus a question sentence,
+three more options than correct answers, multi-select stems that state the
+count, no "all/none of the above", no negative stems, third person, no links, an
+explanation long enough to tear down every distractor, and no explanation that
+cites a letter it does not have or calls its own key wrong. Its thresholds are
+calibrated against the shipped corpus, not guessed (the explanation floor is 400
+because the shortest real one is 406). Two rules carry deliberate exemptions
+with the reason in a comment: a stem may end `? (Select TWO.)`, and quoted text
+may say "your" so a prompt-injection question can quote the attack.
+
+Two gate rules exist because of real defects:
+
+- **Answer-position balance** (sets of 20+): no option index may hold more than
+  35% of the single-answer keys. The AIF mock shipped with option B correct in
+  40 of 54 — always picking B beat studying — and was rebalanced in `e1cd8b8`.
+  Assign key positions *before* writing, so balance is by construction.
+- **Cross-set stem similarity** within a category must stay under 0.45 Jaccard
+  (the closest real pair scores 0.23). Two sets for one exam are written months
+  apart from the same objectives; duplicates are easy and embarrassing.
+
+House style, which the gate cannot check: scenarios are third-person and carry
+concrete invented specifics (a pipeline named `prod-encoder`, `ap-south-1`, a
+1,500-word system prompt); the difficulty lives in a lowercase qualifier ("with
+the least operational overhead"); every distractor is a real approach that fails
+that qualifier for a nameable reason. **The DOP sets use American spelling and
+name distractors descriptively; the AIF sets use British spelling and name them
+by letter** — match the set you are editing. Questions must be original, never
+reproduced exam items: the category copy promises that in writing.
+
+Facts age faster than anything else here. Independent review of the 2026-09-22
+sets found Amazon Kendra, Bedrock Agents (now Agents Classic) and SageMaker A2I
+had all closed to new customers mid-2026, which changed one answer key outright.
+**Re-derive keys independently from a copy with the keys and explanations
+stripped**, and check any service name against current docs before shipping.
+
 ### Localized pages
 
 Tool and blog pages have hand-translated copies under `src/pages/{de,es,fr,pt-br}/` that import the **same** playground components (playground UI strings are English in every locale — that's intentional). Any page-copy change (H1, lead, FAQ, JSON-LD) must ship to all 5 locales in the same commit, translated in each file's existing register, or the localized pages contradict the tool.
@@ -272,6 +342,16 @@ about this image were wrong when first published on 2026-09-19 and are now guard
   stay in lockstep with the README's command or it stops being evidence. Never write
   `curl … | grep -q` under `set -o pipefail` there: grep closes the pipe on first match,
   curl exits 23, and a healthy container fails the step.
+
+`docker/build-push-action` went to **v7.4.0** on 2026-09-22 (Dependabot, merged
+unreviewed). v7's breaking changes are the Node 24 runtime (needs Actions Runner
+2.327.1+, which `ubuntu-latest` has), the removal of `DOCKER_BUILD_NO_SUMMARY`
+and `DOCKER_BUILD_EXPORT_RETENTION_DAYS`, and dropping the legacy export-build
+tool. This workflow sets none of those and every input it passes (`context`,
+`platforms`, `push`, `build-args`, `tags`, `labels`, `cache-from`, `cache-to`)
+is unchanged in v7, so the bump was assessed as compatible on inspection — but
+**it has never actually run**, because the workflow only fires on a `v*` tag or
+a manual dispatch. Expect the next tagged release to be the first real test.
 
 Verify a published image the way a stranger would: `docker logout ghcr.io`, pull, run
 with the README's command, `curl localhost:8080/sw.js | grep BUILD_ID`. A raw `curl` to
