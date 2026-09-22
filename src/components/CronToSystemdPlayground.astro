@@ -34,6 +34,30 @@
 // examples module at hydration and addresses each chip by its
 // `data-example-idx`, so this adds nothing to the client bundle.
 import { examples as prerenderedExamples } from '../lib/cron-systemd/examples';
+import { convert } from '../lib/cron-systemd/engine';
+import { notesHtml, notesSummaryText, onCalendarText, EMPTY_HTML } from '../lib/cron-systemd/render';
+
+/**
+ * Server-rendered seed. The client re-converts the same example on boot, so
+ * this is pure progressive enhancement — but it means a visitor with no JS,
+ * and every AI crawler (they do not execute JS), sees the real `OnCalendar=`
+ * expression, both unit files and the migration notes instead of empty panes.
+ *
+ * `convert` is pure and synchronous and emits a calendar EXPRESSION, never a
+ * next-run time, so it runs at build time unchanged. The unit name is the
+ * script's default for an empty "Unit name" field. The two unit bodies go into
+ * `<pre data-cm-fallback>` elements inside the CodeMirror hosts — CM appends
+ * its editor to the host, so the script removes every fallback once mounted.
+ */
+const seedExample = prerenderedExamples[0];
+const seedResult = seedExample ? convert(seedExample.cron, { unitName: 'cron-job' }) : null;
+const seedOk = seedResult && seedResult.valid ? seedResult : null;
+const seedOnCalendar = seedResult ? onCalendarText(seedResult) : '—';
+const seedTimerUnit = seedOk ? seedOk.timerUnit : '';
+const seedServiceUnit = seedOk ? seedOk.serviceUnit : '';
+const seedNotesHtml = seedOk ? notesHtml(seedOk.notes) : EMPTY_HTML;
+const seedSummary = seedOk ? notesSummaryText(seedOk.notes) : '';
+const seedSummaryTone = seedOk && seedOk.notes.length > 0 ? 'text-warning-deep' : 'text-mute';
 ---
 
 <section class="cs-pg" aria-label="Cron to systemd converter playground">
@@ -126,6 +150,7 @@ import { examples as prerenderedExamples } from '../lib/cron-systemd/examples';
         class="cs-editor cs-editor--input"
         aria-label="Crontab line"
       >
+        <pre class="cs-cm-fallback code-mono" data-cm-fallback>{seedExample?.cron}</pre>
       </div>
       <p class="text-xs text-mute mt-1 px-4 pb-2">Tip: press <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd> to release focus.</p>
       <div class="cs-snap-row flex flex-wrap items-center gap-2 px-4 pb-3">
@@ -145,7 +170,7 @@ import { examples as prerenderedExamples } from '../lib/cron-systemd/examples';
       <code
         id="cs-oncalendar"
         class="cs-oncalendar code-mono"
-      >—</code>
+      >{seedOnCalendar}</code>
     </div>
 
     {/* ── Mobile tab switch (single output pane on small screens) ───────── */}
@@ -195,7 +220,7 @@ import { examples as prerenderedExamples } from '../lib/cron-systemd/examples';
               <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
               <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
             </span>
-            <span id="cs-timer-name" class="code-mono truncate text-white/45">timer.timer</span>
+            <span id="cs-timer-name" class="code-mono truncate text-white/45">cron-job.timer</span>
           </div>
           <button
             id="cs-copy-timer"
@@ -227,6 +252,7 @@ import { examples as prerenderedExamples } from '../lib/cron-systemd/examples';
           role="region"
           aria-label="Generated systemd timer unit (read-only)"
         >
+          <pre class="cs-cm-fallback code-mono" data-cm-fallback>{seedTimerUnit}</pre>
         </div>
       </div>
 
@@ -243,7 +269,7 @@ import { examples as prerenderedExamples } from '../lib/cron-systemd/examples';
               <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
               <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
             </span>
-            <span id="cs-service-name" class="code-mono truncate text-white/45">service.service</span>
+            <span id="cs-service-name" class="code-mono truncate text-white/45">cron-job.service</span>
           </div>
           <button
             id="cs-copy-service"
@@ -275,6 +301,7 @@ import { examples as prerenderedExamples } from '../lib/cron-systemd/examples';
           role="region"
           aria-label="Generated systemd service unit (read-only)"
         >
+          <pre class="cs-cm-fallback code-mono" data-cm-fallback>{seedServiceUnit}</pre>
         </div>
       </div>
     </div>
@@ -285,19 +312,15 @@ import { examples as prerenderedExamples } from '../lib/cron-systemd/examples';
         <span class="eyebrow">Notes</span>
         <span
           id="cs-summary"
-          class="cs-summary code-mono text-mute"
+          class:list={['cs-summary code-mono', seedSummaryTone]}
           role="status"
           aria-live="polite"
-        ></span>
+        >{seedSummary}</span>
       </div>
 
-      <div id="cs-notes" class="cs-notes">
-        <p class="cs-empty body-sm text-mute">
-          Paste a crontab line, then convert to see the equivalent systemd
-          <code class="code-mono">.timer</code> and <code class="code-mono">.service</code>
-          units, plus any migration notes here.
-        </p>
-      </div>
+      {/* Seeded at build time (see `seedNotesHtml` above) so the notes are in
+          the static HTML; the client replaces it with the same markup on boot. */}
+      <div id="cs-notes" class="cs-notes" set:html={seedNotesHtml}></div>
     </div>
   </div>
 
@@ -527,6 +550,19 @@ import { examples as prerenderedExamples } from '../lib/cron-systemd/examples';
   /* CodeMirror host — fills the dark pane, scrolls internally. */
   .cs-editor {
     overflow: hidden;
+  }
+  /* Build-time text stand-in for each editor, sized like the CM content so
+     the pane does not jump when the script swaps it out. Removed on mount. */
+  .cs-cm-fallback {
+    margin: 0;
+    padding: 14px 16px 16px;
+    max-height: 360px;
+    overflow: auto;
+    color: #e6e6e6;
+    font-size: 13px;
+    line-height: 20px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
   .cs-editor :global(.cm-editor) {
     height: 100%;
@@ -797,23 +833,24 @@ import { examples as prerenderedExamples } from '../lib/cron-systemd/examples';
 <script>
   import { copyTextToClipboard as copyText } from '../lib/clipboard';
   import type { EditorView } from '@codemirror/view';
-  import { escapeHtml } from '../lib/escape-html';
   import { createHashState } from '../lib/hash-state';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  // The HTML builders are shared with the frontmatter's build-time seed —
+  // one implementation, so the no-JS markup and the live markup never drift.
+  import {
+    notesHtml,
+    notesSummaryText,
+    onCalendarText,
+    errorHtml,
+    EMPTY_HTML,
+    LOADING_HTML,
+  } from '../lib/cron-systemd/render';
+  import type { SystemdResult } from '../lib/cron-systemd/types';
 
   // CodeMirror is loaded via dynamic import inside init() so its ~200KB runtime
   // code-splits into its own chunk instead of shipping in the page's initial JS.
   // The `EditorView` type above is erased at build time and ships no runtime code.
 
-  /* ---- Types mirrored from the engine contract (structural, not imported). -- */
-  type SystemdResult = {
-    valid: boolean;
-    error?: string;
-    onCalendar: string;
-    timerUnit: string;
-    serviceUnit: string;
-    notes: string[];
-  };
   type EngineModule = {
     convert: (cronLine: string, opts?: { unitName?: string }) => SystemdResult | Promise<SystemdResult>;
   };
@@ -863,17 +900,6 @@ import { examples as prerenderedExamples } from '../lib/cron-systemd/examples';
 
   /* ---- Note rendering (notes / error / success / empty) --------------------- */
 
-  const NOTE_SVG =
-    '<svg class="cs-note__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"></circle><path d="M10 9v4.5"></path><path d="M10 6.4v.01"></path></svg>';
-  const ALERT_SVG =
-    '<svg class="cs-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-  const CHECK_SVG =
-    '<svg class="cs-ok__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"></circle><path d="M6.5 10.5l2.4 2.4 4.6-5"></path></svg>';
-
-  const EMPTY_HTML =
-    '<p class="cs-empty body-sm text-mute">Paste a crontab line, then convert to see the equivalent systemd ' +
-    '<code class="code-mono">.timer</code> and <code class="code-mono">.service</code> units, plus any migration notes here.</p>';
-
   function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
     summary.textContent = '';
     summary.classList.remove('text-error', 'text-warning-deep');
@@ -885,48 +911,26 @@ import { examples as prerenderedExamples } from '../lib/cron-systemd/examples';
     summary.textContent = '';
     summary.classList.remove('text-error', 'text-warning-deep');
     summary.classList.add('text-mute');
-    container.innerHTML =
-      '<div class="cs-loading"><span class="cs-loading__dot"></span>' +
-      '<span class="cs-loading__dot"></span><span class="cs-loading__dot"></span>' +
-      '<span>Converting…</span></div>';
+    container.innerHTML = LOADING_HTML;
   }
 
   function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
     summary.textContent = 'Error';
     summary.classList.remove('text-mute', 'text-warning-deep');
     summary.classList.add('text-error');
-    container.innerHTML =
-      '<div class="cs-error" role="alert">' +
-      ALERT_SVG +
-      '<div class="cs-error__body"><p class="cs-error__title">Could not convert</p>' +
-      `<p class="cs-error__detail">${escapeHtml(message)}</p></div></div>`;
+    container.innerHTML = errorHtml(message);
   }
 
   function renderNotes(container: HTMLElement, summary: HTMLElement, notes: string[]): void {
+    summary.textContent = notesSummaryText(notes);
     if (notes.length === 0) {
-      summary.textContent = 'Converted';
       summary.classList.remove('text-error', 'text-warning-deep');
       summary.classList.add('text-mute');
-      container.innerHTML =
-        '<div class="cs-ok">' +
-        CHECK_SVG +
-        '<span class="cs-ok__text">Converted cleanly. Install the units below with systemctl.</span></div>';
-      return;
+    } else {
+      summary.classList.remove('text-error', 'text-mute');
+      summary.classList.add('text-warning-deep');
     }
-    const n = notes.length;
-    summary.textContent = `${n} ${n === 1 ? 'note' : 'notes'}`;
-    summary.classList.remove('text-error', 'text-mute');
-    summary.classList.add('text-warning-deep');
-    const items = notes
-      .map((note) => `<li class="cs-note__item">${escapeHtml(note)}</li>`)
-      .join('');
-    container.innerHTML =
-      '<div class="cs-note">' +
-      NOTE_SVG +
-      '<div class="cs-note__body">' +
-      `<p class="cs-note__title">${n === 1 ? 'Migration note' : 'Migration notes'}</p>` +
-      `<ul class="cs-note__list">${items}</ul>` +
-      '</div></div>';
+    container.innerHTML = notesHtml(notes);
   }
 
   /* ---- Clipboard ------------------------------------------------------------ */
@@ -1067,6 +1071,9 @@ import { examples as prerenderedExamples } from '../lib/cron-systemd/examples';
     const inputView = makeInputEditor(inputHost, hashValue ?? restored ?? seed?.cron ?? '');
     const timerView = makeOutputEditor(timerHost, '');
     const serviceView = makeOutputEditor(serviceHost, '');
+    // The build-time text stand-ins have done their job (no-JS visitors and
+    // crawlers); CodeMirror appended its editors beside them, so drop them.
+    root.querySelectorAll('[data-cm-fallback]').forEach((node) => node.remove());
 
     // The example chips are server-rendered from the same module; wire them by
     // index. `-1` is the old "Custom input" sentinel: no chip active — which is
@@ -1230,10 +1237,7 @@ import { examples as prerenderedExamples } from '../lib/cron-systemd/examples';
         copyTimerBtn!.disabled = timerUnit.length === 0;
         copyServiceBtn!.disabled = serviceUnit.length === 0;
         if (userInitiated) recordToolLastInput('cron-to-systemd', cronLine);
-        if (onCalendarEl) {
-          onCalendarEl.textContent =
-            typeof result.onCalendar === 'string' && result.onCalendar ? result.onCalendar : '—';
-        }
+        if (onCalendarEl) onCalendarEl.textContent = onCalendarText(result);
         const notes = Array.isArray(result.notes)
           ? result.notes.filter((note): note is string => typeof note === 'string' && note.length > 0)
           : [];

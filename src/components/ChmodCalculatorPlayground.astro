@@ -18,6 +18,23 @@
  * closure.
  */
 import { examples } from '../lib/chmod-calculator/examples';
+import { parseOctal } from '../lib/chmod-calculator/engine';
+import { resultHtml, summaryText, EMPTY_HTML } from '../lib/chmod-calculator/render';
+
+/**
+ * Server-rendered seed. The client re-computes the same example on boot, so
+ * this is pure progressive enhancement — but it means a visitor with no JS,
+ * and every AI crawler (they do not execute JS), sees a real worked answer
+ * instead of an empty "toggle the matrix" panel. The matrix checkboxes and
+ * both text fields are pre-filled the same way the client's `commit` does.
+ *
+ * `parseOctal` is pure and synchronous, so it runs at build time unchanged.
+ */
+const seedExample = examples[0];
+const seedResult = seedExample ? parseOctal(seedExample.octal) : null;
+const seedState = seedResult && seedResult.valid ? seedResult.state : undefined;
+const seedHtml = seedResult && seedResult.valid ? resultHtml(seedResult) : EMPTY_HTML;
+const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '';
 
 const ROWS = [
   { key: 'user', label: 'Owner' },
@@ -46,7 +63,7 @@ const SPECIAL = [
           examples.map((ex) => (
             <button
               type="button"
-              class="chmod-chip"
+              class:list={['chmod-chip', ex.octal === seedExample?.octal && 'is-active']}
               data-octal={ex.octal}
               aria-label={`${ex.label}`}
             >
@@ -74,6 +91,7 @@ const SPECIAL = [
                     class="chmod-box"
                     data-who={r.key}
                     data-bit={c.key}
+                    checked={Boolean(seedState?.[r.key]?.[c.key])}
                     aria-label={`${r.label} ${c.label}`}
                   />
                 </div>
@@ -86,7 +104,13 @@ const SPECIAL = [
         {
           SPECIAL.map((s) => (
             <label class="chmod-check" for={`chmod-${s.key}`}>
-              <input id={`chmod-${s.key}`} type="checkbox" class="chmod-box chmod-box--sm" data-special={s.key} />
+              <input
+                id={`chmod-${s.key}`}
+                type="checkbox"
+                class="chmod-box chmod-box--sm"
+                data-special={s.key}
+                checked={Boolean(seedState?.special?.[s.key])}
+              />
               <span class="chmod-check__label">{s.label}</span>
             </label>
           ))
@@ -111,6 +135,7 @@ const SPECIAL = [
             autocomplete="off"
             enterkeyhint="done"
             placeholder="755"
+            value={seedExample?.octal}
             aria-label="Octal permission value"
             aria-describedby="chmod-input-hint chmod-input-live"
           />
@@ -127,6 +152,7 @@ const SPECIAL = [
             autocomplete="off"
             enterkeyhint="done"
             placeholder="rwxr-xr-x"
+            value={seedResult?.valid ? seedResult.symbolic : undefined}
             aria-label="Symbolic permission value"
             aria-describedby="chmod-input-hint chmod-input-live"
           />
@@ -227,14 +253,11 @@ const SPECIAL = [
             <span class="chmod-copy-label">Copy all</span>
           </button>
         </span>
-        <span id="chmod-summary" class="chmod-summary code-mono text-mute" role="status"></span>
+        <span id="chmod-summary" class="chmod-summary code-mono text-mute" role="status">{seedSummary}</span>
       </div>
-      <div id="chmod-results" class="chmod-results">
-        <p class="chmod-empty body-sm text-mute">
-          Toggle the matrix or type an octal or symbolic value to see the octal, symbolic,
-          <span class="code-mono">ls -l</span> and <span class="code-mono">chmod</span> forms here.
-        </p>
-      </div>
+      {/* Seeded at build time (see `seedHtml` above) so the answer is in the
+          static HTML; the client replaces it with the same markup on boot. */}
+      <div id="chmod-results" class="chmod-results" set:html={seedHtml}></div>
       <span id="chmod-copy-status" class="sr-only" role="status" aria-live="polite"></span>
     </div>
   </div>
@@ -613,23 +636,18 @@ const SPECIAL = [
 </style>
 
 <script>
-  import { escapeHtml } from '../lib/escape-html';
+  import {
+    EMPTY_HTML,
+    errorHtml,
+    resultHtml,
+    buildCopyAll,
+    summaryText,
+  } from '../lib/chmod-calculator/render';
   import { wireRunKeys } from '../lib/run-keys';
   import { copyTextToClipboard } from '../lib/clipboard';
   import { createHashState } from '../lib/hash-state';
+  import type { Perm, Special, ChmodState, ChmodResult } from '../lib/chmod-calculator/types';
 
-  type Perm = { read: boolean; write: boolean; execute: boolean };
-  type Special = { setuid: boolean; setgid: boolean; sticky: boolean };
-  type ChmodState = { special: Special; user: Perm; group: Perm; other: Perm };
-  type ChmodResult = {
-    valid: boolean;
-    error?: string;
-    state?: ChmodState;
-    octal?: string;
-    symbolic?: string;
-    lsStyle?: string;
-    command?: string;
-  };
   type EngineModule = {
     parseOctal: (input: string) => ChmodResult;
     parseSymbolic: (input: string) => ChmodResult;
@@ -653,59 +671,20 @@ const SPECIAL = [
     return root.querySelector<T>(sel);
   }
 
-  const ALERT_SVG =
-    '<svg class="chmod-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-  const COPY_ICON_SVG =
-    '<svg class="chmod-copy-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"/></svg>';
-  const CHECK_ICON_SVG =
-    '<svg class="chmod-check-icon hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
-
-  function copyBtnHtml(label: string, value: string): string {
-    return (
-      `<button class="chmod-copy-btn" type="button" aria-label="Copy ${escapeHtml(label)}" data-copy="${escapeHtml(value)}">` +
-      COPY_ICON_SVG +
-      CHECK_ICON_SVG +
-      '</button>'
-    );
-  }
-
   function setSummary(summary: HTMLElement, text: string, isError: boolean): void {
     summary.textContent = text;
     summary.classList.toggle('text-error-deep', isError);
     summary.classList.toggle('text-mute', !isError);
   }
 
-  const EMPTY_HTML =
-    '<p class="chmod-empty body-sm text-mute">Toggle the matrix or type an octal or symbolic value to see the octal, symbolic, <span class="code-mono">ls -l</span> and <span class="code-mono">chmod</span> forms here.</p>';
-
   function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
     setSummary(summary, `Invalid — ${message}`, true);
-    container.innerHTML =
-      '<div class="chmod-error">' +
-      ALERT_SVG +
-      '<div><p class="chmod-error__title">Could not read that value</p>' +
-      `<p id="chmod-error-detail" class="chmod-error__detail">${escapeHtml(message)}</p></div></div>`;
+    container.innerHTML = errorHtml(message);
   }
 
   function renderResult(container: HTMLElement, summary: HTMLElement, result: ChmodResult): void {
-    const octal = result.octal ?? '';
-    const symbolic = result.symbolic ?? '';
-    const lsStyle = result.lsStyle ?? '';
-    const command = result.command ?? '';
-    setSummary(summary, `${octal} · ${symbolic} · file`, false);
-
-    const row = (label: string, value: string): string =>
-      '<div class="chmod-row">' +
-      `<span class="chmod-row__k">${escapeHtml(label)}</span>` +
-      `<span class="chmod-row__v-wrap"><span class="chmod-row__v">${escapeHtml(value)}</span>${copyBtnHtml(label, value)}</span></div>`;
-
-    container.innerHTML =
-      '<div class="chmod-card">' +
-      row('Octal', octal) +
-      row('Symbolic', symbolic) +
-      row('ls -l', lsStyle) +
-      row('Command', command) +
-      '</div>';
+    setSummary(summary, summaryText(result), false);
+    container.innerHTML = resultHtml(result);
   }
 
   async function init(root: HTMLElement): Promise<void> {
@@ -863,12 +842,7 @@ const SPECIAL = [
       shareBtn!.dataset.copy =
         location.origin + location.pathname + location.search + hashState.build(result.octal!);
       copyAllBtn!.hidden = false;
-      copyAllBtn!.dataset.copy = [
-        `octal:    ${result.octal}`,
-        `symbolic: ${result.symbolic}`,
-        `ls -l:    ${result.lsStyle}`,
-        `command:  ${result.command}`,
-      ].join('\n');
+      copyAllBtn!.dataset.copy = buildCopyAll(result);
 
       if (userInitiated) writeHash(result.octal ?? null);
     }

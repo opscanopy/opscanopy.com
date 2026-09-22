@@ -18,6 +18,26 @@
  * mono chips; the engine is imported dynamically inside the boot closure.
  */
 import { examples } from '../lib/slugify/examples';
+import { slugify } from '../lib/slugify/engine';
+import { resultHtml, summaryText, EMPTY_HTML } from '../lib/slugify/render';
+import type { SlugifyOptions } from '../lib/slugify/types';
+
+/**
+ * Server-rendered seed. The client re-computes the same example on boot, so
+ * this is pure progressive enhancement — but it means a visitor with no JS,
+ * and every AI crawler (they do not execute JS), sees a real worked answer
+ * instead of an empty "type something here" panel.
+ *
+ * SEED_OPTS mirrors the option controls' markup defaults below (sep "-",
+ * max 60, lowercase on) — what `currentOptions()` reads on first boot.
+ * `slugify` is pure and synchronous, so it runs at build time unchanged.
+ */
+const SEED_OPTS: SlugifyOptions = { separator: '-', maxLength: 60, lowercase: true };
+const seedExample = examples[0];
+const seedResult = seedExample ? slugify(seedExample.input, SEED_OPTS) : null;
+const seedHtml = seedResult && seedResult.valid ? resultHtml(seedResult, SEED_OPTS) : EMPTY_HTML;
+const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult, SEED_OPTS) : '';
+const seedHasSlug = !!(seedResult && seedResult.valid && seedResult.slug.length > 0);
 ---
 
 <section class="slug-pg" aria-label="Slugify playground">
@@ -30,7 +50,7 @@ import { examples } from '../lib/slugify/examples';
           examples.map((ex) => (
             <button
               type="button"
-              class="slug-chip"
+              class:list={['slug-chip', ex.input === seedExample?.input && 'is-active']}
               data-input={ex.input}
               aria-label={`${ex.label} — ${ex.input}`}
             >
@@ -54,7 +74,7 @@ import { examples } from '../lib/slugify/examples';
         autocomplete="off"
         enterkeyhint="done"
         placeholder="Hello, World! — A Café Guide (2026)"
-        aria-describedby="slug-input-hint slug-input-live"></textarea>
+        aria-describedby="slug-input-hint slug-input-live">{seedExample?.input}</textarea>
       <p id="slug-input-hint" class="slug-hint caption text-mute">
         Accented characters are transliterated (<span class="code-mono">café → cafe</span>);
         punctuation is dropped and runs of separators are collapsed.
@@ -106,9 +126,9 @@ import { examples } from '../lib/slugify/examples';
             type="button"
             class="slug-copy-btn slug-copy-btn--labeled"
             data-copy-all
-            data-copy=""
+            data-copy={seedHasSlug && seedResult ? seedResult.slug : ''}
             data-copy-label="Copy slug"
-            hidden
+            hidden={!seedHasSlug}
           >
             <svg class="slug-copy-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <rect x="5" y="5" width="9" height="9" rx="1.5"></rect>
@@ -139,13 +159,13 @@ import { examples } from '../lib/slugify/examples';
             <span class="slug-copy-label">Copy link</span>
           </button>
         </span>
-        <span id="slug-summary" class="slug-summary code-mono text-mute" role="status" aria-live="polite"></span>
+        <span id="slug-summary" class="slug-summary code-mono text-mute" role="status" aria-live="polite"
+          >{seedSummary}</span
+        >
       </div>
-      <div id="slug-results" class="slug-results">
-        <p class="slug-empty body-sm text-mute">
-          Type a title or pick an example to see its URL-safe slug here.
-        </p>
-      </div>
+      {/* Seeded at build time (see `seedHtml` above) so the slug is in the
+          static HTML; the script re-renders it into this same node. */}
+      <div id="slug-results" class="slug-results" set:html={seedHtml}></div>
       <noscript>
         <p class="slug-hint caption text-mute">
           This tool runs entirely in your browser — enable JavaScript to use it.
@@ -545,31 +565,19 @@ import { examples } from '../lib/slugify/examples';
 </style>
 
 <script>
-  import { escapeHtml } from '../lib/escape-html';
   import { copyTextToClipboard } from '../lib/clipboard';
+  import { resultHtml, errorHtml, summaryText, EMPTY_HTML } from '../lib/slugify/render';
+  import type { SlugifyOptions, SlugifyResult } from '../lib/slugify/types';
 
   type Sep = '-' | '_' | '.';
-  type Result = {
-    valid: boolean;
-    error?: string;
-    slug: string;
-    truncated?: boolean;
-    notes?: string[];
-  };
-  type Options = { separator: string; maxLength: number; lowercase: boolean };
+  type Result = SlugifyResult;
+  type Options = SlugifyOptions;
   type EngineModule = { slugify: (input: string, opts: Options) => Result };
 
   const ROOT_SEL = '.slug-pg';
   const DEBOUNCE_MS = 140;
   const RESET_MS = 1800;
   const ALLOWED_SEPS: readonly Sep[] = ['-', '_', '.'];
-
-  const ALERT_SVG =
-    '<svg class="slug-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-  const COPY_ICON_SVG =
-    '<svg class="slug-copy-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"/></svg>';
-  const CHECK_ICON_SVG =
-    '<svg class="slug-check-icon hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
 
   function boot(): void {
     document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
@@ -668,8 +676,7 @@ import { examples } from '../lib/slugify/examples';
 
     function renderEmpty(): void {
       setSummary('', false);
-      resultsBox!.innerHTML =
-        '<p class="slug-empty body-sm text-mute">Type a title or pick an example to see its URL-safe slug here.</p>';
+      resultsBox!.innerHTML = EMPTY_HTML;
     }
 
     function hideActions(): void {
@@ -680,34 +687,10 @@ import { examples } from '../lib/slugify/examples';
     }
 
     function renderResultCard(result: Result, opts: Options): void {
-      const sep = opts.separator;
-      const max = opts.maxLength;
-      const budget = max > 0 ? `${result.slug.length} / ${max} chars` : `${result.slug.length} chars`;
-      setSummary(`${budget} · sep "${sep}"`, false);
-
-      if (result.slug.length === 0) {
-        // Valid input but nothing slug-worthy survived (e.g. only symbols).
-        resultsBox!.innerHTML =
-          '<div class="slug-card"><div class="slug-note">No slug characters — the title has no letters or digits.</div></div>';
-        hideActions();
-        return;
-      }
-
-      const noteHtml =
-        Array.isArray(result.notes) && result.notes.length
-          ? result.notes
-              .map((n) => `<div class="slug-note">${escapeHtml(n)}</div>`)
-              .join('')
-          : '';
-
-      resultsBox!.innerHTML =
-        '<div class="slug-card">' +
-        '<div class="slug-slug-row">' +
-        `<span class="slug-slug-row__v">${escapeHtml(result.slug)}</span>` +
-        `<button class="slug-copy-icon-btn" type="button" aria-label="Copy slug" data-copy="${escapeHtml(result.slug)}">${COPY_ICON_SVG}${CHECK_ICON_SVG}</button>` +
-        '</div>' +
-        noteHtml +
-        '</div>';
+      setSummary(summaryText(result, opts), false);
+      resultsBox!.innerHTML = resultHtml(result, opts);
+      // Valid input but nothing slug-worthy survived (e.g. only symbols).
+      if (result.slug.length === 0) hideActions();
     }
 
     function renderError(
@@ -719,10 +702,7 @@ import { examples } from '../lib/slugify/examples';
       summary.textContent = 'Invalid input';
       summary.classList.add('text-error-deep');
       summary.classList.remove('text-mute');
-      container.innerHTML =
-        `<div class="slug-error"${isAlert ? ' role="alert"' : ''}>` +
-        ALERT_SVG +
-        `<p class="slug-error__detail">${escapeHtml(message)}</p></div>`;
+      container.innerHTML = errorHtml(message, isAlert);
     }
 
     /* --- Copy plumbing -------------------------------------------------- */

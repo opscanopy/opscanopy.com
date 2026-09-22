@@ -19,7 +19,25 @@
 // wires click handlers onto these already-rendered buttons — it never rebuilds
 // them — so this adds nothing to the client bundle and cannot drift.
 import { examples as prerenderedExamples } from '../lib/subnet-splitter/examples';
+import { split } from '../lib/subnet-splitter/engine';
+import { resultHtml, summaryText, EMPTY_HTML } from '../lib/subnet-splitter/render';
 
+/**
+ * Server-rendered seed. The client re-computes the same example on boot, so
+ * this is pure progressive enhancement — but it means a visitor with no JS,
+ * and every AI crawler (they do not execute JS), sees a real worked answer
+ * instead of an empty "type something here" panel.
+ *
+ * `split` is pure and synchronous, so it runs at build time unchanged.
+ */
+const seedExample = prerenderedExamples[0];
+const seedResult = seedExample
+  ? split(seedExample.parent, seedExample.allocated, seedExample.newPrefix)
+  : null;
+const seedHtml = seedResult && seedResult.valid ? resultHtml(seedResult) : EMPTY_HTML;
+const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '';
+const seedPrefix =
+  seedExample && seedExample.newPrefix !== null ? String(seedExample.newPrefix) : undefined;
 ---
 
 <section class="spl-pg" aria-label="Subnet Splitter playground">
@@ -55,6 +73,7 @@ import { examples as prerenderedExamples } from '../lib/subnet-splitter/examples
             autocorrect="off"
             autocomplete="off"
             placeholder="10.0.0.0/24"
+            value={seedExample?.parent}
             aria-describedby="spl-input-hint"
           />
         </div>
@@ -70,6 +89,7 @@ import { examples as prerenderedExamples } from '../lib/subnet-splitter/examples
             step="1"
             autocomplete="off"
             placeholder="optional"
+            value={seedPrefix}
           />
         </div>
       </div>
@@ -86,7 +106,7 @@ import { examples as prerenderedExamples } from '../lib/subnet-splitter/examples
         autocomplete="off"
         rows="5"
         placeholder="10.0.0.0/26&#10;10.0.0.128/26"
-        aria-describedby="spl-input-hint"></textarea>
+        aria-describedby="spl-input-hint">{seedExample?.allocated}</textarea>
       <p id="spl-input-hint" class="spl-hint caption text-mute">
         Enter a parent block, then list the CIDRs already in use. Blank lines and
         <span class="code-mono">#</span> comments are ignored. Add a "split into /N" to see every
@@ -146,14 +166,11 @@ import { examples as prerenderedExamples } from '../lib/subnet-splitter/examples
             <span class="spl-copy-label">Copy link</span>
           </button>
         </span>
-        <span id="spl-summary" class="spl-summary code-mono text-mute" role="status" aria-live="polite"></span>
+        <span id="spl-summary" class="spl-summary code-mono text-mute" role="status" aria-live="polite">{seedSummary}</span>
       </div>
-      <div id="spl-results" class="spl-results">
-        <p class="spl-empty body-sm text-mute">
-          Enter a parent CIDR or pick an example to see the free space, an equal-size split, and a
-          parsed breakdown of your allocations here.
-        </p>
-      </div>
+      {/* Seeded at build time (see `seedHtml` above) so the answer is in the
+          static HTML; the client replaces it with the same markup on boot. */}
+      <div id="spl-results" class="spl-results" set:html={seedHtml}></div>
     </div>
   </div>
 </section>
@@ -521,7 +538,7 @@ import { examples as prerenderedExamples } from '../lib/subnet-splitter/examples
 </style>
 
 <script>
-  import { escapeHtml } from '../lib/escape-html';
+  import { EMPTY_HTML, errorHtml, resultHtml, summaryText } from '../lib/subnet-splitter/render';
   import { wireRunKeys } from '../lib/run-keys';
   import { buildIpHash, readIpHash } from '../lib/ip-hash';
   import { copyTextToClipboard } from '../lib/clipboard';
@@ -531,14 +548,7 @@ import { examples as prerenderedExamples } from '../lib/subnet-splitter/examples
   // boot() and does not join this page's initial chunk. These were previously
   // hand-mirrored here and drifted — the local SplitSection had lost `total`, which
   // the render code reads, so the checker contradicted working runtime code.
-  import type {
-    SplitAllocation as Allocation,
-    SplitSubnet as Subnet,
-    SplitSection,
-    SplitStats as Stats,
-    SplitResult as Result,
-    SplitExample as Example,
-  } from '../lib/subnet-splitter/types';
+  import type { SplitResult as Result, SplitExample as Example } from '../lib/subnet-splitter/types';
   type EngineModule = { split: (parent: string, allocated: string, newPrefix: number | null) => Result };
 
   const ROOT_SEL = '.spl-pg';
@@ -573,108 +583,19 @@ import { examples as prerenderedExamples } from '../lib/subnet-splitter/examples
       .filter((e) => e.parent.length > 0);
   }
 
-  const ALERT_SVG =
-    '<svg class="spl-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-
   function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
     summary.textContent = '';
-    container.innerHTML =
-      '<p class="spl-empty body-sm text-mute">Enter a parent CIDR or pick an example to see the free space, an equal-size split, and a parsed breakdown of your allocations here.</p>';
+    container.innerHTML = EMPTY_HTML;
   }
 
   function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
     summary.textContent = '';
-    container.innerHTML =
-      '<div class="spl-error" role="alert">' +
-      ALERT_SVG +
-      '<div><p class="spl-error__title">Nothing to split</p>' +
-      `<p class="spl-error__detail">${escapeHtml(message)}</p></div></div>`;
-  }
-
-  function freeHtml(freeCidrs: string[]): string {
-    if (freeCidrs.length === 0) {
-      return (
-        '<div class="spl-block"><div class="spl-block__head"><span>Free space (minimal CIDRs)</span></div>' +
-        '<p class="spl-none">None — the parent is fully allocated.</p></div>'
-      );
-    }
-    const lines = freeCidrs
-      .map((c) => `<div class="spl-line"><span class="spl-dot"></span><span>${escapeHtml(c)}</span></div>`)
-      .join('');
-    return (
-      '<div class="spl-block">' +
-      `<div class="spl-block__head"><span>Free space (minimal CIDRs)</span><span class="spl-line__meta">${freeCidrs.length} block${freeCidrs.length === 1 ? '' : 's'}</span></div>` +
-      lines +
-      '</div>'
-    );
-  }
-
-  function splitHtml(split: SplitSection, nextFree: string | null | undefined): string {
-    const note =
-      `<p class="spl-block__note">Next free: ${escapeHtml(nextFree ?? 'none')}</p>`;
-    const rows = split.subnets
-      .map((s) => {
-        const cls =
-          s.status === 'used' ? 'spl-dot--used' : s.status === 'partial' ? 'spl-dot--partial' : 'spl-dot--free';
-        return (
-          '<div class="spl-line">' +
-          `<span class="spl-dot ${cls}"></span>` +
-          `<span>${escapeHtml(s.cidr)}</span>` +
-          `<span class="spl-line__meta">${escapeHtml(s.status)}</span></div>`
-        );
-      })
-      .join('');
-    // `split.total` is the REAL count; `split.subnets.length` is the capped
-    // render list and reported 256 for a 512-subnet split in both places.
-    const shownCount = split.subnets.length;
-    const totalLabel = split.total;
-    const truncatedBanner = split.truncated
-      ? `<div class="mt-3 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-700 px-4 py-2.5 text-sm text-amber-800 dark:text-amber-300">Showing first ${escapeHtml(String(shownCount))} of ${escapeHtml(totalLabel)} subnets — narrow your prefix to see all results.</div>`
-      : '';
-    const head =
-      `<div class="spl-block__head"><span>Split into /${escapeHtml(String(split.prefix))}</span>` +
-      `<span class="spl-line__meta">${escapeHtml(totalLabel)} subnet${totalLabel === '1' ? '' : 's'}</span></div>`;
-    return '<div class="spl-block">' + head + note + rows + truncatedBanner + '</div>';
-  }
-
-  function allocatedHtml(allocated: Allocation[]): string {
-    if (allocated.length === 0) {
-      return (
-        '<div class="spl-block"><div class="spl-block__head"><span>Allocations</span></div>' +
-        '<p class="spl-none">None — add allocated CIDRs above to track used space.</p></div>'
-      );
-    }
-    const rows = allocated
-      .map((a) => {
-        if (!a.ok) {
-          return (
-            '<div class="spl-line spl-line--bad"><span class="spl-dot spl-dot--bad"></span>' +
-            `<span>${escapeHtml(a.cidr)}</span>` +
-            `<span class="spl-line__meta">${escapeHtml(a.note ?? 'invalid')}</span></div>`
-          );
-        }
-        return (
-          '<div class="spl-line"><span class="spl-dot spl-dot--ok"></span>' +
-          `<span>${escapeHtml(a.cidr)}</span>` +
-          `<span class="spl-line__meta">${escapeHtml(a.note ?? '')}</span></div>`
-        );
-      })
-      .join('');
-    return (
-      '<div class="spl-block"><div class="spl-block__head"><span>Allocations</span>' +
-      `<span class="spl-line__meta">${allocated.length} line${allocated.length === 1 ? '' : 's'}</span></div>` +
-      rows +
-      '</div>'
-    );
+    container.innerHTML = errorHtml(message);
   }
 
   function renderResult(container: HTMLElement, summary: HTMLElement, result: Result): void {
-    const stats = result.stats;
-    summary.textContent = stats ? `used ${stats.usedPct}% · ${stats.free} free` : '';
-    container.innerHTML =
-      freeHtml(result.freeCidrs ?? []) +
-      (result.split ? splitHtml(result.split, result.nextFree) : '') +
-      allocatedHtml(result.allocated ?? []);
+    summary.textContent = summaryText(result);
+    container.innerHTML = resultHtml(result);
   }
 
   async function init(root: HTMLElement): Promise<void> {

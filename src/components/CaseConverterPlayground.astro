@@ -15,6 +15,21 @@
  * Example chips are imported statically in the frontmatter so they render SSR.
  */
 import { examples } from '../lib/case-converter/examples';
+import { convertCases } from '../lib/case-converter/engine';
+import { resultHtml, summaryText, EMPTY_HTML } from '../lib/case-converter/render';
+
+/**
+ * Server-rendered seed. The client re-computes the same example on boot, so
+ * this is pure progressive enhancement — but it means a visitor with no JS,
+ * and every AI crawler (they do not execute JS), sees a real worked answer
+ * instead of an empty "type something here" panel.
+ *
+ * `convertCases` is pure and synchronous, so it runs at build time unchanged.
+ */
+const seedExample = examples[0];
+const seedResult = seedExample ? convertCases(seedExample.input) : null;
+const seedHtml = seedResult && seedResult.valid ? resultHtml(seedResult) : EMPTY_HTML;
+const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '';
 ---
 
 <section class="cc-pg" aria-label="Case Converter playground">
@@ -25,7 +40,12 @@ import { examples } from '../lib/case-converter/examples';
       <div id="cc-chips" class="cc-chips" role="group" aria-label="Examples">
         {
           examples.map((ex) => (
-            <button type="button" class="cc-chip" data-input={ex.input} aria-label={ex.label}>
+            <button
+              type="button"
+              class:list={['cc-chip', ex.input === seedExample?.input && 'is-active']}
+              data-input={ex.input}
+              aria-label={ex.label}
+            >
               {ex.label}
             </button>
           ))
@@ -45,7 +65,7 @@ import { examples } from '../lib/case-converter/examples';
         autocorrect="off"
         autocomplete="off"
         placeholder="userProfileID"
-        aria-describedby="cc-input-hint cc-input-live"></textarea>
+        aria-describedby="cc-input-hint cc-input-live">{seedExample?.input}</textarea>
       <p id="cc-input-hint" class="cc-hint caption text-mute">
         Word boundaries are detected from spaces, hyphens, underscores and camelCase humps —
         <span class="code-mono">getHTTPResponse</span> splits into
@@ -143,14 +163,11 @@ import { examples } from '../lib/case-converter/examples';
             <span class="cc-copy-label">Copy all</span>
           </button>
         </span>
-        <span id="cc-summary" class="cc-summary code-mono text-mute" role="status" aria-live="polite"></span>
+        <span id="cc-summary" class="cc-summary code-mono text-mute" role="status" aria-live="polite">{seedSummary}</span>
       </div>
-      <div id="cc-results" class="cc-results">
-        <p class="cc-empty body-sm text-mute">
-          Type or paste any identifier — or tap an example — to see it in camelCase, snake_case,
-          kebab-case and more, each with a Copy button.
-        </p>
-      </div>
+      {/* Seeded at build time (see `seedHtml` above) so the answer is in the
+          static HTML; the client replaces it with the same markup on boot. */}
+      <div id="cc-results" class="cc-results" set:html={seedHtml}></div>
       <span class="privacy-note caption text-mute">
         Conversion runs entirely in your browser — nothing is uploaded.
       </span>
@@ -427,25 +444,18 @@ import { examples } from '../lib/case-converter/examples';
 </style>
 
 <script>
-  import { escapeHtml } from '../lib/escape-html';
+  import {
+    EMPTY_HTML,
+    errorHtml,
+    resultHtml,
+    buildCopyAll,
+    summaryText,
+  } from '../lib/case-converter/render';
   import { wireRunKeys } from '../lib/run-keys';
   import { copyTextToClipboard } from '../lib/clipboard';
   import { createHashState } from '../lib/hash-state';
+  import type { CaseResult as Result } from '../lib/case-converter/types';
 
-  type CaseKind =
-    | 'camel'
-    | 'pascal'
-    | 'snake'
-    | 'screamingSnake'
-    | 'kebab'
-    | 'train'
-    | 'title'
-    | 'sentence'
-    | 'constant'
-    | 'dot'
-    | 'path';
-  type Row = { kind: CaseKind; label: string; value: string };
-  type Result = { valid: boolean; error?: string; rows: Row[] };
   type EngineModule = { convertCases: (input: string) => Result };
 
   const ROOT_SEL = '.cc-pg';
@@ -465,22 +475,6 @@ import { examples } from '../lib/case-converter/examples';
     return root.querySelector<T>(sel);
   }
 
-  const ALERT_SVG =
-    '<svg class="cc-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-  const COPY_ICON_SVG =
-    '<svg class="cc-copy-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"/></svg>';
-  const CHECK_ICON_SVG =
-    '<svg class="cc-check-icon hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
-
-  function copyBtnHtml(label: string, value: string): string {
-    return (
-      `<button class="cc-copy-btn" type="button" aria-label="Copy ${escapeHtml(label)}" data-copy="${escapeHtml(value)}">` +
-      COPY_ICON_SVG +
-      CHECK_ICON_SVG +
-      '</button>'
-    );
-  }
-
   function setSummary(summary: HTMLElement, text: string, isError: boolean): void {
     summary.textContent = text;
     summary.classList.toggle('text-error-deep', isError);
@@ -489,39 +483,16 @@ import { examples } from '../lib/case-converter/examples';
 
   function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
     setSummary(summary, '', false);
-    container.innerHTML =
-      '<p class="cc-empty body-sm text-mute">Type or paste any identifier — or tap an example — to see it in camelCase, snake_case, kebab-case and more, each with a Copy button.</p>';
+    container.innerHTML = EMPTY_HTML;
   }
 
   function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
     setSummary(summary, 'No output', true);
-    container.innerHTML =
-      '<div class="cc-error" role="alert">' +
-      ALERT_SVG +
-      '<div><p class="cc-error__title">Nothing to convert</p>' +
-      `<p class="cc-error__detail">${escapeHtml(message)}</p></div></div>`;
+    container.innerHTML = errorHtml(message);
   }
 
   function renderResult(container: HTMLElement, result: Result): void {
-    const rows = Array.isArray(result.rows) ? result.rows : [];
-    const rowsHtml = rows
-      .map((r) => {
-        const label = r.label ?? '';
-        const value = typeof r.value === 'string' ? r.value : '';
-        return (
-          '<div class="cc-row">' +
-          `<span class="cc-row__k">${escapeHtml(label)}</span>` +
-          `<span class="cc-row__v-wrap"><span class="cc-row__v">${escapeHtml(value)}</span>${copyBtnHtml(label, value)}</span>` +
-          '</div>'
-        );
-      })
-      .join('');
-    container.innerHTML = '<div class="cc-card">' + rowsHtml + '</div>';
-  }
-
-  /** "Label: value" lines for the Copy all button. */
-  function buildCopyAll(result: Result): string {
-    return result.rows.map((r) => `${r.label}: ${r.value}`).join('\n');
+    container.innerHTML = resultHtml(result);
   }
 
   async function init(root: HTMLElement): Promise<void> {
@@ -664,8 +635,7 @@ import { examples } from '../lib/case-converter/examples';
 
       if (result && result.valid !== false) {
         renderResult(resultsBox!, result);
-        const wordCount = result.rows.length ? result.rows[2].value.split('_').length : 0;
-        setSummary(summaryEl!, `${result.rows.length} cases · ${wordCount} words`, false);
+        setSummary(summaryEl!, summaryText(result), false);
         shareBtn!.hidden = false;
         shareBtn!.dataset.copy =
           location.origin + location.pathname + location.search + hashState.build(value);

@@ -23,7 +23,27 @@
 // rebuilds them — it only reads each chip's `data-example-idx` into the lazily
 // imported array — so this adds nothing to the client bundle and cannot drift.
 import { examples as prerenderedExamples } from '../lib/base64-codec/examples';
+import { convert } from '../lib/base64-codec/engine';
+import { resultHtml, summaryText, EMPTY_HTML } from '../lib/base64-codec/render';
 
+/**
+ * Server-rendered seed. The client re-computes the same example on boot, so
+ * this is pure progressive enhancement — but it means a visitor with no JS,
+ * and every AI crawler (they do not execute JS), sees a real worked answer
+ * instead of an empty "type something here" panel. The mode segment, the
+ * URL-safe switch and the input/output labels are set exactly as the client's
+ * `applyMode(seed.mode)` would set them.
+ *
+ * `convert` is pure and synchronous, so it runs at build time unchanged.
+ */
+const seedExample = prerenderedExamples[0];
+const seedResult = seedExample
+  ? convert(seedExample.input, seedExample.mode, seedExample.urlSafe)
+  : null;
+const seedValid = !!(seedResult && seedResult.valid);
+const seedHtml = seedValid && seedResult ? resultHtml(seedResult, seedExample.input) : EMPTY_HTML;
+const seedSummary = seedValid && seedResult ? summaryText(seedResult) : '';
+const seedEncoding = (seedExample?.mode ?? 'encode') === 'encode';
 ---
 
 <section class="b64-pg" aria-label="Base64 encoder and decoder playground">
@@ -63,16 +83,16 @@ import { examples as prerenderedExamples } from '../lib/base64-codec/examples';
         >
           <button
             type="button"
-            class="b64-seg__btn is-active"
-            aria-pressed="true"
+            class:list={['b64-seg__btn', seedEncoding && 'is-active']}
+            aria-pressed={seedEncoding ? 'true' : 'false'}
             data-mode="encode"
           >
             Encode
           </button>
           <button
             type="button"
-            class="b64-seg__btn"
-            aria-pressed="false"
+            class:list={['b64-seg__btn', !seedEncoding && 'is-active']}
+            aria-pressed={seedEncoding ? 'false' : 'true'}
             data-mode="decode"
           >
             Decode
@@ -80,7 +100,13 @@ import { examples as prerenderedExamples } from '../lib/base64-codec/examples';
         </div>
 
         <label class="b64-check" for="b64-urlsafe">
-          <input id="b64-urlsafe" type="checkbox" class="b64-check__box" autocomplete="off" />
+          <input
+            id="b64-urlsafe"
+            type="checkbox"
+            class="b64-check__box"
+            autocomplete="off"
+            checked={seedExample?.urlSafe === true}
+          />
           <span class="b64-check__label">URL-safe</span>
         </label>
       </div>
@@ -89,7 +115,9 @@ import { examples as prerenderedExamples } from '../lib/base64-codec/examples';
     {/* ── Input ────────────────────────────────────────────────────────── */}
     <div class="border-b border-hairline px-4 py-4 sm:px-5">
       <div class="mb-2 flex items-center justify-between gap-3">
-        <label id="b64-input-label" class="eyebrow" for="b64-input">Text to encode</label>
+        <label id="b64-input-label" class="eyebrow" for="b64-input"
+          >{seedEncoding ? 'Text to encode' : 'Base64 to decode'}</label
+        >
         <button
           id="b64-clear"
           type="button"
@@ -105,8 +133,8 @@ import { examples as prerenderedExamples } from '../lib/base64-codec/examples';
         autocorrect="off"
         autocomplete="off"
         rows="4"
-        placeholder="hello world"
-        aria-describedby="b64-input-hint"></textarea>
+        placeholder={seedEncoding ? 'hello world' : 'aGVsbG8gd29ybGQ='}
+        aria-describedby="b64-input-hint">{seedExample?.input}</textarea>
       <p id="b64-input-hint" class="b64-hint caption text-mute">
         UTF-8 safe both ways. Decoding accepts standard <span class="code-mono">+/</span> or url-safe
         <span class="code-mono">-_</span> alphabets, with or without <span class="code-mono">=</span>
@@ -124,16 +152,18 @@ import { examples as prerenderedExamples } from '../lib/base64-codec/examples';
     {/* ── Output ───────────────────────────────────────────────────────── */}
     <div class="bg-canvas-soft px-4 py-4 sm:px-5">
       <div class="mb-3 flex items-center justify-between gap-3">
-        <span id="b64-output-label" class="eyebrow">Base64</span>
+        <span id="b64-output-label" class="eyebrow">{seedEncoding ? 'Base64' : 'Decoded text'}</span>
         <div class="flex shrink-0 items-center gap-3">
-          <span id="b64-summary" class="b64-summary code-mono text-mute" role="status" aria-live="polite"></span>
+          <span id="b64-summary" class="b64-summary code-mono text-mute" role="status" aria-live="polite"
+            >{seedSummary}</span
+          >
           <button
             id="b64-copy"
             type="button"
             class="b64-copy"
             data-default-label="Copy"
-            aria-label="Copy result"
-            disabled
+            aria-label={seedEncoding ? 'Copy base64' : 'Copy decoded text'}
+            disabled={!(seedValid && seedResult && seedResult.output.length > 0)}
           >
             <svg
               class="h-3.5 w-3.5 shrink-0"
@@ -153,12 +183,9 @@ import { examples as prerenderedExamples } from '../lib/base64-codec/examples';
         </div>
       </div>
       <p class="caption text-mute mb-3">No share links on this tool — inputs may be secrets.</p>
-      <div id="b64-output" class="b64-output">
-        <p class="b64-empty body-sm text-mute">
-          Type or paste on the left, then flip Encode / Decode — the result appears here, ready to
-          copy.
-        </p>
-      </div>
+      {/* Seeded at build time (see `seedHtml` above) so the encoded answer is
+          in the static HTML; the script re-renders it into this same node. */}
+      <div id="b64-output" class="b64-output" set:html={seedHtml}></div>
     </div>
   </div>
 
@@ -553,13 +580,14 @@ import { examples as prerenderedExamples } from '../lib/base64-codec/examples';
 
 <script>
   import { copyTextToClipboard as copyText } from '../lib/clipboard';
-  import { escapeHtml } from '../lib/escape-html';
+  import { resultHtml, errorHtml, summaryText, EMPTY_HTML } from '../lib/base64-codec/render';
   import { wireRunKeys } from '../lib/run-keys';
   import { writeHandoff, readHandoffOnce } from '../lib/tool-state/handoff';
   import { wireSnapshotUI } from '../lib/tool-state/wire';
+  import type { Base64Result } from '../lib/base64-codec/types';
 
   type Mode = 'encode' | 'decode';
-  type Result = { valid: boolean; error?: string; output: string; bytes?: number; note?: string };
+  type Result = Base64Result;
   type Example = { id: string; label: string; input: string; mode: Mode; urlSafe: boolean };
   type EngineModule = { convert: (input: string, mode: Mode, urlSafe: boolean) => Result };
 
@@ -595,34 +623,10 @@ import { examples as prerenderedExamples } from '../lib/base64-codec/examples';
       .filter((e) => e.input.length > 0);
   }
 
-  const ALERT_SVG =
-    '<svg class="b64-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-
-  const EMPTY_HTML =
-    '<p class="b64-empty body-sm text-mute">Type or paste on the left, then flip Encode / Decode — the result appears here, ready to copy.</p>';
-
-  /**
-   * Secret-safe handoff chains (never a #-fragment — a JWT or arbitrary text
-   * here may be a secret, which is exactly why this tool is excluded from
-   * URL-hash sharing; see src/lib/tool-state/handoff.ts).
-   */
-  const JWT_SHAPE = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/;
-
+  /** The hand-off chips carry bare paths (see render.ts); localize on click. */
   function localePath(p: string): string {
     const m = window.location.pathname.match(/^\/(de|es|fr|pt-br)\//);
     return m ? `/${m[1]}${p}` : p;
-  }
-
-  function chainsHtml(rawInput: string): string {
-    const trimmed = rawInput.trim();
-    const chips: string[] = [];
-    if (JWT_SHAPE.test(trimmed)) {
-      chips.push('<button type="button" class="b64-chip" data-handoff-to="/jwt-decoder/">Decode as JWT &rarr;</button>');
-    }
-    if (trimmed.length > 0) {
-      chips.push('<button type="button" class="b64-chip" data-handoff-to="/hash-generator/">Hash this text &rarr;</button>');
-    }
-    return chips.length > 0 ? `<div class="b64-chips">${chips.join('')}</div>` : '';
   }
 
   async function init(root: HTMLElement): Promise<void> {
@@ -718,29 +722,10 @@ import { examples as prerenderedExamples } from '../lib/base64-codec/examples';
     function renderResult(result: Result, rawInput: string): void {
       const out = typeof result.output === 'string' ? result.output : '';
       lastOutput = out;
-      const bytes = typeof result.bytes === 'number' ? result.bytes : null;
-      const noun = bytes === 1 ? 'byte' : 'bytes';
-      summaryEl!.textContent = bytes === null ? '' : `${bytes} ${noun}`;
+      summaryEl!.textContent = summaryText(result);
       summaryEl!.classList.remove('text-error');
       summaryEl!.classList.add('text-mute');
-
-      const isEmptyText = out.length === 0;
-      const bodyCls = isEmptyText ? 'b64-result__body is-empty-text' : 'b64-result__body';
-      const bodyText = isEmptyText ? '(empty result)' : out;
-
-      const metaBits: string[] = [];
-      if (bytes !== null) metaBits.push(`<span>${bytes} ${noun}</span>`);
-      if (result.note) metaBits.push(`<span class="b64-result__note">${escapeHtml(result.note)}</span>`);
-      const meta = metaBits.length
-        ? `<div class="b64-result__meta">${metaBits.join('')}</div>`
-        : '';
-
-      outputBox!.innerHTML =
-        '<div class="b64-result">' +
-        `<pre class="${bodyCls}"><code>${escapeHtml(bodyText)}</code></pre>` +
-        meta +
-        '</div>' +
-        chainsHtml(rawInput);
+      outputBox!.innerHTML = resultHtml(result, rawInput);
       setOutputEnabled(out.length > 0);
     }
 
@@ -937,11 +922,7 @@ import { examples as prerenderedExamples } from '../lib/base64-codec/examples';
     summary.textContent = 'Invalid';
     summary.classList.remove('text-mute');
     summary.classList.add('text-error');
-    container.innerHTML =
-      '<div class="b64-error" role="alert">' +
-      ALERT_SVG +
-      '<div><p class="b64-error__title">Could not convert that input</p>' +
-      `<p class="b64-error__detail">${escapeHtml(message)}</p></div></div>`;
+    container.innerHTML = errorHtml(message);
     copyBtn.disabled = true;
   }
 
