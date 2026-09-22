@@ -1459,3 +1459,40 @@ describe('summaryLine', () => {
     expect(summaryLine(lintDashboard('{'))).toBe('Could not lint');
   });
 });
+
+/* ── the pinned clock ─────────────────────────────────────────────────────── */
+
+describe('lintDashboard({ now })', () => {
+  // `time-range-absurd` is the one rule that reads a clock: a relative bound is
+  // resolved against "now", so the same dashboard can be fine, backwards or
+  // absurdly long depending on when it is linted. The playground's build-time
+  // seed pins `now` so the static HTML is reproducible; this proves the pin is
+  // honoured and changes the verdict deterministically.
+  const dashboard = mutated((d) => {
+    d.time = { from: 'now-6h', to: '2020-01-01T00:00:00.000Z' };
+  });
+
+  it('defaults to the wall clock, which is past the absolute bound, so the range runs backwards', () => {
+    expect(one(lint(dashboard), 'time-range-absurd').message).toContain('runs backwards');
+  });
+
+  it('accepts the range when `now` is pinned a few hours before the absolute bound', () => {
+    const now = Date.UTC(2019, 11, 31, 20);
+    expect(ids(lintDashboard(JSON.stringify(dashboard), { now }))).toEqual([]);
+  });
+
+  it('calls the range longer than a year when `now` is pinned a decade earlier', () => {
+    const now = Date.UTC(2010, 0, 1);
+    expect(one(lintDashboard(JSON.stringify(dashboard), { now }), 'time-range-absurd').message).toContain(
+      'longer than a year',
+    );
+  });
+
+  it('gives the same answer twice for the same pinned `now`', () => {
+    const now = Date.UTC(2026, 0, 1);
+    const a = lintDashboard(examples[0].json, { now });
+    const b = lintDashboard(examples[0].json, { now });
+    expect(a).toEqual(b);
+    expect(one(a, 'time-range-absurd').message).toContain('"now-5y" to "now"');
+  });
+});

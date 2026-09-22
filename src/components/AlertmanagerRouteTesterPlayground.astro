@@ -38,6 +38,24 @@
 // rebuilds them — it only reads each chip's `data-example-idx` into the lazily
 // imported array — so this adds nothing to the client bundle and cannot drift.
 import { examples as prerenderedExamples } from '../lib/alertmanager-route-tester/examples';
+import { matchRoute } from '../lib/alertmanager-route-tester/engine';
+import { resultHtml, resultSummaryText, EMPTY_HTML } from '../lib/alertmanager-route-tester/render';
+
+/**
+ * Server-rendered seed. `matchRoute` is pure and synchronous, so the walk of
+ * the first example's route tree runs at build time and lands in the static
+ * HTML — which is all an AI crawler (no JS) ever sees. The client re-runs the
+ * same example on boot and repaints the identical markup.
+ *
+ * The two documents go into `<pre data-cm-fallback>` elements inside the
+ * CodeMirror hosts; CM appends its editor to the host, so `init` removes them
+ * once mounted.
+ */
+const seedExample = prerenderedExamples[0];
+const seedResult = seedExample ? matchRoute(seedExample.config, seedExample.labels) : null;
+const seedOk = seedResult && seedResult.ok !== false && !seedResult.error ? seedResult : null;
+const seedHtml = seedOk ? resultHtml(seedOk) : EMPTY_HTML;
+const seedSummary = seedOk ? resultSummaryText(seedOk) : '';
 
 ---
 
@@ -156,6 +174,7 @@ import { examples as prerenderedExamples } from '../lib/alertmanager-route-teste
           class="amr-editor min-h-72"
           aria-label="Alertmanager route configuration (YAML)"
         >
+          <pre class="amr-cm-fallback code-mono" data-cm-fallback>{seedExample?.config}</pre>
         </div>
       </div>
 
@@ -170,6 +189,7 @@ import { examples as prerenderedExamples } from '../lib/alertmanager-route-teste
           class="amr-editor min-h-72"
           aria-label="Alert labels (key=value per line)"
         >
+          <pre class="amr-cm-fallback code-mono" data-cm-fallback>{seedExample?.labels}</pre>
         </div>
       </div>
     </div>
@@ -184,7 +204,7 @@ import { examples as prerenderedExamples } from '../lib/alertmanager-route-teste
           class="amr-summary code-mono text-mute"
           role="status"
           aria-live="polite"
-        ></span>
+        >{seedSummary}</span>
       </div>
       <div class="amr-snap-row mb-3 flex flex-wrap items-center gap-2">
         <button id="amr-snap-save" type="button" class="amr-snap-btn">Save snapshot</button>
@@ -194,12 +214,9 @@ import { examples as prerenderedExamples } from '../lib/alertmanager-route-teste
         <button id="amr-snap-delete" type="button" class="amr-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
       </div>
 
-      <div id="amr-results" class="amr-results">
-        <p class="amr-empty body-sm text-mute">
-          Load an example or paste a route tree and an alert’s labels, then run to see which
-          receiver(s) the alert reaches.
-        </p>
-      </div>
+      {/* Seeded at build time (see `seedHtml` above) so the matched receivers are
+          in the static HTML; the script repaints this same node on every run. */}
+      <div id="amr-results" class="amr-results" set:html={seedHtml}></div>
     </div>
   </div>
 
@@ -215,6 +232,20 @@ import { examples as prerenderedExamples } from '../lib/alertmanager-route-teste
   }
 
   /* The example picker: squared mono chips (playground UX contract). */
+  /* Build-time text stand-in for each CodeMirror document: what a no-JS
+     visitor and every AI crawler read. `init` removes it once CM mounts. */
+  .amr-cm-fallback {
+    margin: 0;
+    padding: 14px 16px 16px;
+    max-height: 360px;
+    overflow: auto;
+    color: #e6e6e6;
+    font-size: 13px;
+    line-height: 20px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
   .amr-chips {
     display: flex;
     flex-wrap: wrap;
@@ -607,31 +638,21 @@ import { examples as prerenderedExamples } from '../lib/alertmanager-route-teste
 <script>
   import { copyTextToClipboard as copyText } from '../lib/clipboard';
   import type { EditorView } from '@codemirror/view';
-  import { escapeHtml } from '../lib/escape-html';
   import { base64UrlEncode, base64UrlDecode } from '../lib/codec';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  import {
+    EMPTY_HTML,
+    LOADING_HTML,
+    errorHtml,
+    resultHtml,
+    resultSummaryText,
+  } from '../lib/alertmanager-route-tester/render';
 
-  /* ---- Types mirrored from the engine contract (structural, not imported). -- */
-  type Matcher = { name: string; op: string; value: string };
-  type Grouping = {
-    group_by?: string[];
-    group_wait?: string;
-    group_interval?: string;
-    repeat_interval?: string;
-  };
-  type RouteMatch = {
-    receiver: string;
-    path: string[];
-    grouping: Grouping;
-    viaContinue: boolean;
-    matchers: Matcher[];
-  };
-  type MatchRouteResult = {
-    ok: boolean;
-    error?: string;
-    matches?: RouteMatch[];
-    warnings?: string[];
-  };
+  /* ---- Engine contract ------------------------------------------------------
+     Imported, never hand-mirrored: a copied shape drifts silently when the
+     engine gains a field the render code reads (`import type` is erased at
+     build time, so it does not affect code-splitting). */
+  import type { MatchRouteResult } from '../lib/alertmanager-route-tester/types';
 
   type EngineModule = {
     matchRoute: (
@@ -685,102 +706,29 @@ import { examples as prerenderedExamples } from '../lib/alertmanager-route-teste
 
   /* ---- Icons ---------------------------------------------------------------- */
 
-  const ICON_CHECK =
-    '<svg class="amr-match__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"></circle><path d="M6.5 10.2l2.4 2.4 4.6-5"></path></svg>';
-  const ICON_WARN =
-    '<svg class="amr-warn__icon" width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-  const ICON_ALERT =
-    '<svg class="amr-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-
-  /* ---- Result rendering ----------------------------------------------------- */
+  /* ---- Result rendering --------------------------------------------------
+     The pure HTML builders live in `../lib/alertmanager-route-tester/render`,
+     imported above and ALSO used by this component's frontmatter, so the
+     server-rendered seed and every client repaint come from one
+     implementation. Only the DOM writes stay here. */
 
   function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
     summary.textContent = '';
     summary.classList.remove('text-error');
     summary.classList.add('text-mute');
-    container.innerHTML =
-      '<p class="amr-empty body-sm text-mute">Load an example or paste a route tree and an alert’s labels, then run to see which receiver(s) the alert reaches.</p>';
+    container.innerHTML = EMPTY_HTML;
   }
 
   function renderLoading(container: HTMLElement, summary: HTMLElement): void {
     summary.textContent = '';
-    container.innerHTML =
-      '<div class="amr-loading"><span class="amr-loading__dot"></span>' +
-      '<span class="amr-loading__dot"></span><span class="amr-loading__dot"></span>' +
-      '<span>Walking the route tree…</span></div>';
+    container.innerHTML = LOADING_HTML;
   }
 
   function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
     summary.textContent = 'Error';
     summary.classList.add('text-error');
     summary.classList.remove('text-mute');
-    container.innerHTML =
-      '<div class="amr-error" role="alert">' +
-      ICON_ALERT +
-      '<div class="amr-error__body"><p class="amr-error__title">Could not evaluate the route</p>' +
-      `<p class="amr-error__detail">${escapeHtml(message)}</p></div></div>`;
-  }
-
-  function warningsHtml(warnings: string[]): string {
-    if (!warnings.length) return '';
-    const items = warnings
-      .map((w) => `<div class="amr-warn">${ICON_WARN}<span>${escapeHtml(w)}</span></div>`)
-      .join('');
-    return `<div class="amr-warns">${items}</div>`;
-  }
-
-  function pathHtml(path: string[]): string {
-    if (!path.length) return '';
-    const crumbs = path
-      .map((seg, i) => {
-        const last = i === path.length - 1;
-        const cls = last ? 'amr-crumb amr-crumb--last' : 'amr-crumb';
-        const sep = i > 0 ? '<span class="amr-sep" aria-hidden="true">→</span>' : '';
-        return `${sep}<span class="${cls}">${escapeHtml(seg)}</span>`;
-      })
-      .join('');
-    return `<div class="amr-path">${crumbs}</div>`;
-  }
-
-  function groupingHtml(g: Grouping): string {
-    const items: string[] = [];
-    const add = (k: string, v: string | undefined) => {
-      if (v !== undefined && v !== '') {
-        items.push(
-          `<span class="amr-group__item"><span class="amr-group__k">${escapeHtml(k)}</span> <span class="amr-group__v">${escapeHtml(v)}</span></span>`,
-        );
-      }
-    };
-    const gb = Array.isArray(g.group_by) ? g.group_by.join(', ') : undefined;
-    add('group_by', gb !== undefined ? `[${gb}]` : undefined);
-    add('group_wait', g.group_wait);
-    add('group_interval', g.group_interval);
-    add('repeat_interval', g.repeat_interval);
-    if (!items.length) return '';
-    return `<div class="amr-group">${items.join('')}</div>`;
-  }
-
-  function matchHtml(m: RouteMatch, index: number, total: number): string {
-    const rx = m.receiver.trim() === '' ? '(no receiver)' : m.receiver;
-    const ordinal =
-      total > 1 ? `<span class="amr-pill">#${index + 1}</span>` : '';
-    const cont = m.viaContinue
-      ? '<span class="amr-pill amr-pill--continue">via continue</span>'
-      : '';
-    return (
-      '<div class="amr-match">' +
-      `<div class="amr-match__head">${ICON_CHECK}` +
-      `<span class="amr-match__rx">${escapeHtml(rx)}</span>${ordinal}${cont}</div>` +
-      pathHtml(m.path) +
-      groupingHtml(m.grouping) +
-      '</div>'
-    );
-  }
-
-  function summaryText(matches: RouteMatch[]): string {
-    const names = matches.map((m) => (m.receiver.trim() === '' ? '(none)' : m.receiver));
-    const n = matches.length;
-    return `${n} receiver${n === 1 ? '' : 's'} · ${names.join(', ')}`;
+    container.innerHTML = errorHtml(message);
   }
 
   function renderResults(
@@ -788,36 +736,13 @@ import { examples as prerenderedExamples } from '../lib/alertmanager-route-teste
     summary: HTMLElement,
     result: MatchRouteResult,
   ): void {
-    if (!result || result.ok === false || result.error) {
-      renderError(
-        container,
-        summary,
-        result?.error ?? 'Unknown error while evaluating the route.',
-      );
-      return;
-    }
-
-    const matches = Array.isArray(result.matches) ? result.matches : [];
-    const warnings = Array.isArray(result.warnings) ? result.warnings : [];
-
-    if (matches.length === 0) {
-      // Structurally this should not happen (the root always matches), but be safe.
-      summary.textContent = 'No match';
-      summary.classList.remove('text-error');
-      summary.classList.add('text-mute');
-      container.innerHTML =
-        '<p class="amr-empty body-sm text-mute">The route tree produced no terminal match. Check that the root route is well-formed.</p>' +
-        warningsHtml(warnings);
-      return;
-    }
-
-    summary.textContent = summaryText(matches);
-    summary.classList.remove('text-error');
-    summary.classList.add('text-mute');
-
-    const rows = matches.map((m, i) => matchHtml(m, i, matches.length)).join('');
-    container.innerHTML = rows + warningsHtml(warnings);
+    const failed = !result || result.ok === false || Boolean(result.error);
+    summary.textContent = resultSummaryText(result);
+    summary.classList.toggle('text-error', failed);
+    summary.classList.toggle('text-mute', !failed);
+    container.innerHTML = resultHtml(result);
   }
+
 
   /* ---- Clipboard ------------------------------------------------------------ */
 
@@ -1001,6 +926,10 @@ import { examples as prerenderedExamples } from '../lib/alertmanager-route-teste
 
     const configView = makeEditor(configHost, seedConfig);
     const labelsView = makeEditor(labelsHost, seedLabels);
+
+    // The build-time text stand-ins have done their job (no-JS visitors and
+    // crawlers); CodeMirror appended its editors beside them, so drop them.
+    root.querySelectorAll('[data-cm-fallback]').forEach((node) => node.remove());
 
     // The example chips are server-rendered from the same `examples` module,
     // so a chip's data-example-idx indexes straight into the array above.

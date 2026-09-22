@@ -30,7 +30,31 @@ import {
   triggerExamples as prerenderedTriggerExamples,
 } from '../lib/github-actions-expression-tester/examples';
 
+import { defaultContext, evaluateIfCondition } from '../lib/github-actions-expression-tester/engine';
+import { exprResultHtml, exprSummaryText, EXPR_EMPTY_HTML } from '../lib/github-actions-expression-tester/render';
+
 const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
+
+/**
+ * Server-rendered seed for TAB 1 only (the `if:` evaluator). `defaultContext()`
+ * is a frozen literal and `evaluateIfCondition` is pure, so the verdict, the
+ * returned value and the token breakdown are all deterministic and land in the
+ * static HTML — which is all an AI crawler (no JS) ever sees. The client
+ * re-evaluates the same example on boot and repaints the identical markup.
+ *
+ * Tab 2 (the trigger simulator) stays client-only: it is behind an inactive
+ * tab panel, so a crawler gains nothing from it.
+ *
+ * The expression goes into a `<pre data-cm-fallback>` inside the CodeMirror
+ * host; CM appends its editor to the host, so `init` removes it once mounted.
+ */
+const seedExprExample = prerenderedExpressionExamples[0];
+const seedCtxJson = JSON.stringify(defaultContext(), null, 2);
+const seedExprResult = seedExprExample
+  ? evaluateIfCondition(seedExprExample.expression, defaultContext())
+  : null;
+const seedExprHtml = seedExprResult ? exprResultHtml(seedExprResult) : EXPR_EMPTY_HTML;
+const seedExprSummary = seedExprResult ? exprSummaryText(seedExprResult) : '';
 ---
 
 <section class="ga-pg" aria-label="GitHub Actions expression and trigger playground">
@@ -107,7 +131,9 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
             <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true"><span class="h-2.5 w-2.5 rounded-full bg-white/15"></span><span class="h-2.5 w-2.5 rounded-full bg-white/15"></span><span class="h-2.5 w-2.5 rounded-full bg-white/15"></span></span>
             <span class="code-mono text-white/45">if-condition</span>
           </div>
-          <div id="ga-expr-editor" class="ga-editor min-h-32" aria-label="GitHub Actions if condition or expression"></div>
+          <div id="ga-expr-editor" class="ga-editor min-h-32" aria-label="GitHub Actions if condition or expression">
+            <pre class="ga-cm-fallback code-mono" data-cm-fallback>{seedExprExample?.expression}</pre>
+          </div>
         </div>
         <div class="flex min-w-0 flex-col bg-inverse">
           <div class="flex flex-wrap items-center gap-2 border-b border-white/10 px-4 py-2">
@@ -116,7 +142,9 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
             <button type="button" class="ga-preset" data-preset="pull_request">pull_request</button>
             <button type="button" class="ga-preset" data-preset="tag">tag</button>
           </div>
-          <div id="ga-ctx-editor" class="ga-editor min-h-32" aria-label="Editable mock evaluation context (JSON)"></div>
+          <div id="ga-ctx-editor" class="ga-editor min-h-32" aria-label="Editable mock evaluation context (JSON)">
+            <pre class="ga-cm-fallback code-mono" data-cm-fallback>{seedCtxJson}</pre>
+          </div>
         </div>
       </div>
       <p class="caption px-4 py-2 text-mute">
@@ -128,11 +156,11 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
       <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
         <div class="mb-3 flex items-center justify-between gap-3">
           <span class="eyebrow">Result</span>
-          <span id="ga-expr-summary" class="ga-summary code-mono text-mute" role="status" aria-live="polite"></span>
+          <span id="ga-expr-summary" class="ga-summary code-mono text-mute" role="status" aria-live="polite">{seedExprSummary}</span>
         </div>
-        <div id="ga-expr-results" class="ga-results">
-          <p class="ga-empty body-sm text-mute">Load an example or write an <span class="code-mono">if:</span> condition, then Evaluate to see whether it is true, the returned value, and a token-by-token breakdown.</p>
-        </div>
+        {/* Seeded at build time (see `seedExprHtml` above) so the verdict and the
+            token breakdown are in the static HTML; the script repaints this node. */}
+        <div id="ga-expr-results" class="ga-results" set:html={seedExprHtml}></div>
       </div>
     </div>
 
@@ -269,6 +297,20 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
      "⚠ The always-true footgun (runner#1173)", and an unconstrained chip would
      push past the viewport and give the whole PAGE a horizontal scrollbar —
      the same failure the old <select> needed `width: 100%` to avoid. */
+  /* Build-time text stand-in for each CodeMirror document: what a no-JS
+     visitor and every AI crawler read. `init` removes it once CM mounts. */
+  .ga-cm-fallback {
+    margin: 0;
+    padding: 14px 16px 16px;
+    max-height: 360px;
+    overflow: auto;
+    color: #e6e6e6;
+    font-size: 13px;
+    line-height: 20px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
   .ga-chips {
     display: flex;
     flex-wrap: wrap;
@@ -480,6 +522,14 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
   import { copyTextToClipboard } from '../lib/clipboard';
   import { base64UrlEncode, base64UrlDecode } from '../lib/codec';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  // Tab 1's pure HTML builders, shared with this component's frontmatter so the
+  // server-rendered seed and every client repaint come from one implementation.
+  import {
+    evalErrorHtml,
+    exprResultHtml,
+    exprSummaryText,
+    warnHtml,
+  } from '../lib/github-actions-expression-tester/render';
 
   // CodeMirror is loaded via dynamic import inside init() so its ~200KB runtime
   // code-splits into its own chunk instead of shipping in the page's initial JS.
@@ -643,6 +693,10 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
     const ctxView = makeEditor(ctxHost, JSON.stringify(engine.defaultContext(), null, 2), {
       onChange: () => onExprInput(),
     });
+
+    // The build-time text stand-ins have done their job (no-JS visitors and
+    // crawlers); CodeMirror appended its editors beside them, so drop them.
+    root.querySelectorAll('[data-cm-fallback]').forEach((node) => node.remove());
     const wfView = makeEditor(wfHost, examples.triggerExamples[0]?.workflow ?? '', {
       yaml: true,
       onChange: () => onSimInput(),
@@ -772,30 +826,16 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
     const trigResults = el<HTMLElement>(root, '#ga-trig-results')!;
     const trigSummary = el<HTMLElement>(root, '#ga-trig-summary')!;
 
-    function warnHtml(w: { id: string; severity: string; message: string }): string {
-      const isInfo = w.severity === 'info';
-      const title = w.id === 'literal-if-always-true' ? 'Always-true footgun (runner#1173)' : (isInfo ? 'Note' : 'Warning');
-      return `<div class="ga-warn ${isInfo ? 'is-info' : ''}" role="${isInfo ? 'note' : 'alert'}">${WARN_SVG}<div class="ga-warn__body"><p class="ga-warn__title">${escapeHtml(title)}</p><p>${escapeHtml(w.message)}</p></div></div>`;
-    }
 
     function runExpr(): void {
       const raw = exprView.state.doc.toString();
       const parsed = engine.parseContext(ctxView.state.doc.toString());
       let result;
       try { result = engine.evaluateIfCondition(raw, parsed.ctx); }
-      catch (err) { exprResults.innerHTML = `<div class="ga-error" role="alert">${WARN_SVG}<div><p class="ga-warn__title">Could not evaluate</p><p class="ga-error__detail">${escapeHtml(String(err))}</p></div></div>`; return; }
+      catch (err) { exprResults.innerHTML = evalErrorHtml('Could not evaluate', String(err)); return; }
 
-      exprSummary.textContent = result.truthy ? 'true' : 'false';
-      const badge = `<span class="ga-verdict__badge ${result.truthy ? 'is-true' : 'is-false'}">${result.truthy ? 'TRUE' : 'FALSE'}</span>`;
-      const renderedTxt = result.value === null ? 'null (an empty string)' : result.rendered;
-      const verdict = `<div class="ga-verdict">${badge}<div class="ga-verdict__text">An <code class="code-mono">if:</code> using this would <strong>${result.truthy ? 'RUN' : 'SKIP'}</strong> the step. Returned value: <span class="ga-rendered">${escapeHtml(renderedTxt)}</span>.</div></div>`;
-      const ctxErr = parsed.error ? warnHtml({ id: 'ctx', severity: 'info', message: parsed.error + ' Using the default context.' }) : '';
-      const warns = result.warnings.map(warnHtml).join('');
-      const explanation = `<p class="ga-explanation">${escapeHtml(result.explanation)}</p>`;
-      const breakdown = result.breakdown.length
-        ? `<ul class="ga-breakdown">${result.breakdown.map((p) => `<li class="ga-part"><code class="ga-part__token">${escapeHtml(p.token)}</code><span class="ga-part__meaning">${escapeHtml(p.meaning)}</span></li>`).join('')}</ul>`
-        : '';
-      exprResults.innerHTML = verdict + ctxErr + warns + explanation + breakdown;
+      exprSummary.textContent = exprSummaryText(result);
+      exprResults.innerHTML = exprResultHtml(result, { contextError: parsed.error });
       recordToolLastInput(SLUG, JSON.stringify({ t: 'expr', e: raw, c: ctxView.state.doc.toString() }));
     }
 

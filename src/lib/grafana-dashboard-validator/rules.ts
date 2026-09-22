@@ -52,11 +52,22 @@ import {
 
 export type Emit = (diagnostic: Diagnostic) => void;
 
+/**
+ * Per-run inputs a rule may read besides the parsed context. `now` is the ONE
+ * clock in this rule set: `time-range-absurd` resolves relative bounds against
+ * it. The engine fills it from `Date.now()` unless the caller pins it — the
+ * playground's build-time seed does, so the static HTML is reproducible.
+ */
+export interface RuleOptions {
+  /** Epoch milliseconds that `now` means for this run. */
+  now: number;
+}
+
 export interface Rule {
   id: RuleId;
   /** The severity the catalog advertises. A few rules pick a lower one at runtime. */
   severity: Severity;
-  run: (ctx: DashboardContext, emit: Emit) => void;
+  run: (ctx: DashboardContext, emit: Emit, options?: RuleOptions) => void;
 }
 
 /* ── shared phrasing helpers ─────────────────────────────────────────────── */
@@ -773,13 +784,15 @@ function timeText(value: unknown): string {
 const timeRangeAbsurd: Rule = {
   id: 'time-range-absurd',
   severity: 'warning',
-  run: (ctx, emit) => {
+  run: (ctx, emit, options) => {
     const time = ctx.dashboard.time;
     if (!isPlainObject(time)) return;
     const { from, to } = time;
     if (from === undefined || to === undefined || from === null || to === null) return;
 
-    const nowMs = Date.now();
+    // The only clock read in the rule set. Pinned by the caller when the result
+    // has to be reproducible (the playground's server-rendered seed).
+    const nowMs = options?.now ?? Date.now();
     const fromSeconds = resolveTime(from, nowMs, 'from');
     const toSeconds = resolveTime(to, nowMs, 'to');
     const fromLabel = timeText(from);

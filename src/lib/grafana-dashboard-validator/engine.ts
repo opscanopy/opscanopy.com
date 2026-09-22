@@ -37,7 +37,7 @@
  * └──────────────────────────────────────────────────────────────────────────┘
  */
 import { buildContext, parseDashboardText } from './parse';
-import { RULES } from './rules';
+import { RULES, type RuleOptions } from './rules';
 import {
   GRAFANA_RULES_VERSION,
   RULE_IDS,
@@ -177,8 +177,19 @@ class Collector {
   }
 }
 
+/** Knobs a caller may pin. Everything else about a lint is a pure function of the text. */
+export interface LintOptions {
+  /**
+   * Epoch milliseconds for "now". `time-range-absurd` resolves relative bounds
+   * such as `now-6h` against it, so the SAME dashboard can pass or fail
+   * depending on when it is linted. Defaults to `Date.now()`; the playground's
+   * build-time seed pins it so the static HTML is reproducible.
+   */
+  now?: number;
+}
+
 /** Lint a Grafana dashboard JSON. Never throws — see the contract in the header. */
-export function lintDashboard(input: string): LintResult {
+export function lintDashboard(input: string, options: LintOptions = {}): LintResult {
   if (typeof input !== 'string' || input.trim() === '') {
     return fatal('Paste a Grafana dashboard JSON to lint.');
   }
@@ -214,9 +225,10 @@ export function lintDashboard(input: string): LintResult {
   }
 
   const collector = new Collector();
+  const ruleOptions: RuleOptions = { now: options.now ?? Date.now() };
   for (const rule of RULES) {
     try {
-      rule.run(context, collector.add);
+      rule.run(context, collector.add, ruleOptions);
     } catch (err) {
       // One rule tripping must never lose the other twenty-one.
       collector.add({

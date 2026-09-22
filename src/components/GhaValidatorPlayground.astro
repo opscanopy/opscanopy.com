@@ -38,7 +38,30 @@
 // final markup — hydration only attaches click handlers and moves the active
 // state — so this adds nothing to the client bundle and cannot drift.
 import { examples as prerenderedExamples } from '../lib/gha-validator/examples';
+import { validate } from '../lib/gha-validator/engine';
+import { resultsHtml, resultSummary, EMPTY_HTML } from '../lib/gha-validator/render';
 
+/**
+ * Server-rendered seed. The client re-validates the same example on boot, so
+ * this is pure progressive enhancement — but it means a visitor with no JS,
+ * and every AI crawler (they do not execute JS), sees the real findings for
+ * the first workflow instead of "load an example, then validate".
+ *
+ * `validate` is pure, synchronous and clock-free, so it runs at build time
+ * unchanged. The workflow YAML itself goes into a `<pre data-cm-fallback>`
+ * inside the CodeMirror host — CM appends its editor to the host, so the
+ * script removes the fallback once mounted.
+ */
+const seedExample = prerenderedExamples[0];
+const seedYaml = seedExample?.yaml ?? '';
+const seedResult = seedExample ? validate(seedYaml) : null;
+// A bundled example that fails to parse would be a bug, not a finding — fall
+// back to the shared empty state rather than server-rendering a parse error.
+const seedOk = seedResult && seedResult.ok !== false && !seedResult.error ? seedResult : null;
+const seedHtml = seedOk ? resultsHtml(seedOk) : EMPTY_HTML;
+const seedSummary = seedOk ? resultSummary(seedOk).text : '';
+const seedSummaryTone =
+  seedOk && resultSummary(seedOk).tone === 'error' ? 'text-error' : 'text-mute';
 ---
 
 <section class="gha" aria-label="GitHub Actions Validator playground">
@@ -154,6 +177,7 @@ import { examples as prerenderedExamples } from '../lib/gha-validator/examples';
         class="gha-editor min-h-80"
         aria-label="GitHub Actions workflow (YAML)"
       >
+        <pre class="gha-cm-fallback code-mono" data-cm-fallback>{seedYaml}</pre>
       </div>
       <p class="text-xs text-mute mt-1">Results update as you type — press Enter to run now.</p>
       <p class="text-xs text-mute mt-1">Tip: press <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd> to release keyboard focus from the editor.</p>
@@ -172,21 +196,19 @@ import { examples as prerenderedExamples } from '../lib/gha-validator/examples';
         <span class="eyebrow">Results</span>
         <span
           id="gha-summary"
-          class="gha-summary code-mono text-mute"
+          class:list={['gha-summary code-mono', seedSummaryTone]}
           role="status"
           aria-live="polite"
-        ></span>
+        >{seedSummary}</span>
       </div>
 
       {/* NOT a live region: with live eval the whole findings list would be
           re-announced on every keystroke pause. `#gha-summary` (role="status")
-          is the sole live region — the playground a11y contract. */}
-      <div id="gha-results" class="gha-results">
-        <p class="gha-empty body-sm text-mute">
-          Load an example or paste a workflow, then validate to see YAML errors
-          and security checks here.
-        </p>
-      </div>
+          is the sole live region — the playground a11y contract.
+
+          Seeded at build time (see `seedHtml` above) so the findings are in the
+          static HTML; the client rebuilds the same markup on boot. */}
+      <div id="gha-results" class="gha-results" set:html={seedHtml}></div>
     </div>
   </div>
 
@@ -249,6 +271,19 @@ import { examples as prerenderedExamples } from '../lib/gha-validator/examples';
   /* CodeMirror host — fills the dark pane, scrolls internally. */
   .gha-editor {
     overflow: hidden;
+  }
+  /* Build-time text stand-in for the editor, sized like the CM content so the
+     pane does not jump when the script swaps it out. Removed on mount. */
+  .gha-cm-fallback {
+    margin: 0;
+    padding: 14px 16px 16px;
+    max-height: 360px;
+    overflow: auto;
+    color: #e6e6e6;
+    font-size: 13px;
+    line-height: 20px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
   .gha-editor :global(.cm-editor) {
     height: 100%;
@@ -676,31 +711,21 @@ import { examples as prerenderedExamples } from '../lib/gha-validator/examples';
 <script>
   import { copyTextToClipboard as copyText } from '../lib/clipboard';
   import type { EditorView } from '@codemirror/view';
-  import { escapeHtml } from '../lib/escape-html';
   import { base64UrlEncode, base64UrlDecode } from '../lib/codec';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  // The HTML builders are shared with the frontmatter's build-time seed —
+  // one implementation, so the no-JS markup and the live markup never drift.
+  import {
+    resultsHtml,
+    resultSummary,
+    errorHtml,
+    LOADING_HTML,
+  } from '../lib/gha-validator/render';
+  import type { ValidateResult } from '../lib/gha-validator/types';
 
   // CodeMirror is loaded via dynamic import inside init() so its ~200KB runtime
   // code-splits into its own chunk instead of shipping in the page's initial JS.
   // The `EditorView` type above is erased at build time and ships no runtime code.
-
-  /* ---- Types mirrored from the engine contract (structural, not imported). -- */
-  type Severity = 'error' | 'warning' | 'info';
-  type Finding = {
-    id: string;
-    severity: Severity | string;
-    title: string;
-    detail: string;
-    line?: number;
-    remediation?: string;
-  };
-  type ValidateSummary = { errors: number; warnings: number; infos: number };
-  type ValidateResult = {
-    ok: boolean;
-    error?: string;
-    findings?: Finding[];
-    summary?: ValidateSummary;
-  };
 
   type EngineModule = {
     validate: (yamlText: string) => ValidateResult | Promise<ValidateResult>;
@@ -748,62 +773,11 @@ import { examples as prerenderedExamples } from '../lib/gha-validator/examples';
     return root.querySelector<T>(sel);
   }
 
-  /** Render remediation text, escaping HTML but rendering `code` spans inline. */
-  function remediationHtml(text: string): string {
-    return escapeHtml(text).replace(
-      /`([^`]+)`/g,
-      (_m, code: string) => `<code>${code}</code>`
-    );
-  }
-
-  const SEV_ORDER: Severity[] = ['error', 'warning', 'info'];
-  const SEV_LABEL: Record<Severity, string> = {
-    error: 'Errors',
-    warning: 'Warnings',
-    info: 'Info',
-  };
-
-  function normSeverity(s: string): Severity {
-    return s === 'error' || s === 'warning' || s === 'info' ? s : 'info';
-  }
-
-  /* ---- Severity icons (explicit width/height; decorative) ------------------- */
-
-  const ICON_ERROR =
-    '<svg class="gha-row__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"></circle><path d="M7.2 7.2l5.6 5.6M12.8 7.2l-5.6 5.6"></path></svg>';
-  const ICON_WARNING =
-    '<svg class="gha-row__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-  const ICON_INFO =
-    '<svg class="gha-row__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"></circle><path d="M10 9v4.5"></path><path d="M10 6.4v.01"></path></svg>';
-  const ICON_FIX =
-    '<svg class="gha-fix__icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 2.5a3 3 0 0 0 3.8 3.8l-7 7a1.8 1.8 0 0 1-2.6-2.6z"></path></svg>';
-  const ICON_ALERT =
-    '<svg class="gha-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-  const ICON_CHECK =
-    '<svg class="gha-success__icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"></circle><path d="M7.5 12.5l3 3 6-6.5"></path></svg>';
-
-  function severityIcon(sev: Severity): string {
-    if (sev === 'error') return ICON_ERROR;
-    if (sev === 'warning') return ICON_WARNING;
-    return ICON_INFO;
-  }
-
-  /* ---- Result rendering ----------------------------------------------------- */
-
-  function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
-    summary.textContent = '';
-    summary.classList.remove('text-error');
-    summary.classList.add('text-mute');
-    container.innerHTML =
-      '<p class="gha-empty body-sm text-mute">Load an example or paste a workflow, then validate to see YAML errors and security checks here.</p>';
-  }
+  /* ---- Result rendering (DOM writes over the shared pure builders) --------- */
 
   function renderLoading(container: HTMLElement, summary: HTMLElement): void {
     summary.textContent = '';
-    container.innerHTML =
-      '<div class="gha-loading"><span class="gha-loading__dot"></span>' +
-      '<span class="gha-loading__dot"></span><span class="gha-loading__dot"></span>' +
-      '<span>Validating…</span></div>';
+    container.innerHTML = LOADING_HTML;
   }
 
   function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
@@ -812,64 +786,7 @@ import { examples as prerenderedExamples } from '../lib/gha-validator/examples';
     summary.classList.remove('text-mute');
     // No role="alert": `#gha-summary` (role="status") already announces
     // "Parse error", and an assertive alert would interrupt on every debounce.
-    container.innerHTML =
-      '<div class="gha-error">' +
-      ICON_ALERT +
-      '<div class="gha-error__body"><p class="gha-error__title">Could not parse workflow</p>' +
-      `<p class="gha-error__detail">${escapeHtml(message)}</p></div></div>`;
-  }
-
-  function renderSuccess(container: HTMLElement, summary: HTMLElement): void {
-    summary.textContent = 'No issues';
-    summary.classList.remove('text-error');
-    summary.classList.add('text-mute');
-    container.innerHTML =
-      '<div class="gha-success">' +
-      ICON_CHECK +
-      '<div><p class="gha-success__title">No issues found.</p>' +
-      '<p class="gha-success__sub">This workflow passed every YAML and security check.</p></div></div>';
-  }
-
-  /** Pluralised "N errors · M warnings · K info", omitting zero buckets. */
-  function summaryText(s: ValidateSummary): string {
-    const parts: string[] = [];
-    if (s.errors > 0) parts.push(`${s.errors} ${s.errors === 1 ? 'error' : 'errors'}`);
-    if (s.warnings > 0)
-      parts.push(`${s.warnings} ${s.warnings === 1 ? 'warning' : 'warnings'}`);
-    if (s.infos > 0) parts.push(`${s.infos} info`);
-    return parts.length ? parts.join(' · ') : 'No issues';
-  }
-
-  function findingHtml(f: Finding): string {
-    const sev = normSeverity(String(f.severity));
-    const icon = severityIcon(sev);
-    const srLabel =
-      sev === 'error'
-        ? 'Error: '
-        : sev === 'warning'
-          ? 'Warning: '
-          : 'Info: ';
-    const pill = `<span class="gha-pill gha-pill--${sev}">${sev}</span>`;
-    const line =
-      typeof f.line === 'number' && Number.isFinite(f.line)
-        ? `<span class="gha-line">Line ${f.line}</span>`
-        : '';
-    const detail = f.detail
-      ? `<p class="gha-row__detail">${escapeHtml(f.detail)}</p>`
-      : '';
-    const fix = f.remediation
-      ? '<div class="gha-fix">' +
-        ICON_FIX +
-        '<div><span class="gha-fix__label">Fix</span>' +
-        `<p class="gha-fix__text">${remediationHtml(f.remediation)}</p></div></div>`
-      : '';
-    return (
-      `<div class="gha-row gha-row--${sev}">${icon}` +
-      '<div class="gha-row__body">' +
-      `<div class="gha-row__head">${pill}` +
-      `<span class="gha-row__title"><span class="sr-only">${srLabel}</span>${escapeHtml(f.title)}</span>` +
-      `${line}</div>${detail}${fix}</div></div>`
-    );
+    container.innerHTML = errorHtml(message);
   }
 
   function renderResults(
@@ -877,47 +794,11 @@ import { examples as prerenderedExamples } from '../lib/gha-validator/examples';
     summary: HTMLElement,
     result: ValidateResult
   ): void {
-    if (!result || result.ok === false || result.error) {
-      renderError(
-        container,
-        summary,
-        result?.error ?? 'Unknown error while validating the workflow.'
-      );
-      return;
-    }
-
-    const findings = Array.isArray(result.findings) ? result.findings : [];
-    if (findings.length === 0) {
-      renderSuccess(container, summary);
-      return;
-    }
-
-    const s =
-      result.summary ?? {
-        errors: findings.filter((f) => normSeverity(String(f.severity)) === 'error').length,
-        warnings: findings.filter((f) => normSeverity(String(f.severity)) === 'warning')
-          .length,
-        infos: findings.filter((f) => normSeverity(String(f.severity)) === 'info').length,
-      };
-    summary.textContent = summaryText(s);
-    summary.classList.toggle('text-error', s.errors > 0);
-    summary.classList.toggle('text-mute', s.errors === 0);
-
-    // Group + sort by severity (error → warning → info), preserving input order within.
-    const buckets: Record<Severity, Finding[]> = { error: [], warning: [], info: [] };
-    for (const f of findings) buckets[normSeverity(String(f.severity))].push(f);
-
-    const groups = SEV_ORDER.filter((sev) => buckets[sev].length > 0).map((sev) => {
-      const rows = buckets[sev].map(findingHtml).join('');
-      const count = buckets[sev].length;
-      return (
-        '<div class="gha-group">' +
-        `<p class="gha-group__head">${SEV_LABEL[sev]} <span aria-hidden="true">·</span> ${count}</p>` +
-        rows +
-        '</div>'
-      );
-    });
-    container.innerHTML = groups.join('');
+    const { text, tone } = resultSummary(result);
+    summary.textContent = text;
+    summary.classList.toggle('text-error', tone === 'error');
+    summary.classList.toggle('text-mute', tone !== 'error');
+    container.innerHTML = resultsHtml(result);
   }
 
   /* ---- Clipboard ------------------------------------------------------------ */
@@ -1111,6 +992,11 @@ import { examples as prerenderedExamples } from '../lib/gha-validator/examples';
     }
 
     const view = makeEditor(editorHost, seedYaml);
+    // The build-time text stand-in has done its job (no-JS visitors and
+    // crawlers); CodeMirror appended its editor beside it, so drop it. The
+    // share/restore tiers above already resolved, so the seed never wins over
+    // a deep link or a remembered input.
+    root.querySelectorAll('[data-cm-fallback]').forEach((node) => node.remove());
 
     // Example chips are server-rendered from the same `examples` module, in the
     // same order, so `data-example-idx` indexes this array directly.
@@ -1146,7 +1032,11 @@ import { examples as prerenderedExamples } from '../lib/gha-validator/examples';
     // `live: true` marks a debounced keystroke-driven run: no spinner, no
     // loading flash and no history write (Safari rate-limits replaceState), so
     // typing stays smooth while the panel still tracks the editor.
-    type RunOpts = { live?: boolean; showErrors?: boolean };
+    // `seed: true` marks the one boot-time run over the server-rendered seed:
+    // it re-validates so client state is consistent, but the seed is NOT user
+    // input — no spinner over the already-painted panel, no hash write and no
+    // last-input record.
+    type RunOpts = { live?: boolean; showErrors?: boolean; seed?: boolean };
     let running = false;
     let rerun: RunOpts | null = null;
     const runLabel = runBtn.querySelector<HTMLElement>('.gha-run-label');
@@ -1156,6 +1046,9 @@ import { examples as prerenderedExamples } from '../lib/gha-validator/examples';
       // discards that narrowing inside a hoisted function declaration.
       if (!runBtn) return;
       const live = opts.live === true;
+      const seeded = opts.seed === true;
+      // Both the debounced live run and the boot seed skip the busy chrome.
+      const quiet = live || seeded;
       if (running) {
         // Never drop a deliberate run behind an in-flight one: queue it.
         rerun = opts;
@@ -1163,7 +1056,7 @@ import { examples as prerenderedExamples } from '../lib/gha-validator/examples';
       }
       running = true;
 
-      if (!live) {
+      if (!quiet) {
         runBtn.classList.add('is-busy');
         // Keep focus put for keyboard users: mark busy (not disabled) + swap glyph.
         runBtn.setAttribute('aria-disabled', 'true');
@@ -1199,7 +1092,8 @@ import { examples as prerenderedExamples } from '../lib/gha-validator/examples';
       try {
         const doc = view.state.doc.toString();
         const result = await Promise.resolve(engine.validate(doc));
-        recordToolLastInput('github-actions-validator', doc);
+        // The server-rendered seed is not something the visitor typed.
+        if (!seeded) recordToolLastInput('github-actions-validator', doc);
 
         const failed = !result || result.ok === false || Boolean(result.error);
         if (live && failed && opts.showErrors !== true) {
@@ -1211,7 +1105,7 @@ import { examples as prerenderedExamples } from '../lib/gha-validator/examples';
           );
         } else {
           renderResults(resultsBox!, summaryEl!, result);
-          if (!live) {
+          if (!live && !seeded) {
             // Persist current state into the URL hash without a history entry.
             try {
               window.history.replaceState(null, '', encodeShare(doc));
@@ -1308,9 +1202,11 @@ import { examples as prerenderedExamples } from '../lib/gha-validator/examples';
       },
     });
 
-    // Initial results state — then auto-validate the loaded content immediately.
-    renderEmpty(resultsBox, summaryEl);
-    void run();
+    // The results panel is already server-rendered from `examples[0]`, so there
+    // is nothing to clear — re-validate whatever the editor ended up holding (a
+    // #gha= deep link, a restored input, or that same seed) so the client state
+    // matches the markup.
+    void run({ seed: true });
     // Only now may keystrokes drive the panel (seed dispatches must not).
     liveReady = true;
   }

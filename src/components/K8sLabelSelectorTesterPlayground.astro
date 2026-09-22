@@ -40,6 +40,30 @@
  * attributes entirely.
  */
 import { examples } from '../lib/kubernetes-label-selector-tester/examples';
+import { testSelector } from '../lib/kubernetes-label-selector-tester/engine';
+import { canonicalHtml, resultHtml, EMPTY_HTML } from '../lib/kubernetes-label-selector-tester/render';
+
+/**
+ * Server-rendered seed. `testSelector` is pure and synchronous, so the first
+ * example's per-resource verdicts are computed at build time and land in the
+ * static HTML — which is all an AI crawler (no JS) ever sees. The client
+ * re-runs the same example on boot and repaints the identical markup.
+ *
+ * `resultHtml` also returns the per-row copy payloads; the server ignores them
+ * (the client rebinds them after its own render) and only takes the html.
+ *
+ * The resources YAML goes into a `<pre data-cm-fallback>` inside the
+ * CodeMirror host; CM appends its editor to the host, so `init` removes it
+ * once mounted.
+ */
+const seedExample = examples[0];
+const seedResult = seedExample
+  ? testSelector(seedExample.resources, seedExample.selector, seedExample.mode)
+  : null;
+const seedOk = seedResult && seedResult.ok ? seedResult : null;
+const seedHtml = seedOk ? resultHtml(seedOk).html : EMPTY_HTML;
+const seedSummary = seedOk ? seedOk.summary : '';
+const seedCanonicalHtml = seedOk ? canonicalHtml(seedOk) : '';
 ---
 
 <section class="klt-pg" aria-label="Kubernetes Label Selector Tester playground">
@@ -50,7 +74,12 @@ import { examples } from '../lib/kubernetes-label-selector-tester/examples';
       <div id="klt-chips" class="klt-chips" role="group" aria-label="Examples">
         {
           examples.map((ex, i) => (
-            <button type="button" class="klt-chip" data-example-idx={String(i)} aria-pressed="false">
+            <button
+              type="button"
+              class:list={['klt-chip', { 'is-active': i === 0 }]}
+              data-example-idx={String(i)}
+              aria-pressed={i === 0 ? 'true' : 'false'}
+            >
               {ex.label}
             </button>
           ))
@@ -106,6 +135,7 @@ import { examples } from '../lib/kubernetes-label-selector-tester/examples';
           autocomplete="off"
           placeholder="app=web,tier=frontend"
           aria-describedby="klt-run-hint"
+          value={seedExample?.mode === 'yaml' ? '' : (seedExample?.selector ?? '')}
         />
         <label class="eyebrow sr-only" id="klt-selector-yaml-label" for="klt-selector-yaml"
           >Selector YAML</label
@@ -121,7 +151,7 @@ import { examples } from '../lib/kubernetes-label-selector-tester/examples';
           placeholder="matchLabels:&#10;  app: web&#10;matchExpressions:&#10;  - key: env&#10;    operator: NotIn&#10;    values: [dev]"
           aria-describedby="klt-run-hint"
           hidden></textarea>
-        <p id="klt-canonical" class="klt-canonical caption text-mute"></p>
+        <p id="klt-canonical" class="klt-canonical caption text-mute" set:html={seedCanonicalHtml}></p>
       </div>
     </div>
 
@@ -136,7 +166,9 @@ import { examples } from '../lib/kubernetes-label-selector-tester/examples';
         <span class="klt-pane__name code-mono">resources.yaml</span>
         <span class="klt-pane__tag code-mono">input</span>
       </div>
-      <div id="klt-input" class="klt-editor"></div>
+      <div id="klt-input" class="klt-editor">
+        <pre class="klt-cm-fallback code-mono" data-cm-fallback>{seedExample?.resources}</pre>
+      </div>
     </div>
 
     {/* ── Hints + snapshots ────────────────────────────────────────────── */}
@@ -259,14 +291,11 @@ import { examples } from '../lib/kubernetes-label-selector-tester/examples';
           </button>
         </span>
         <span id="klt-summary" class="klt-summary code-mono text-mute" role="status" aria-live="polite"
-        ></span>
+        >{seedSummary}</span>
       </div>
-      <div id="klt-results" class="klt-results">
-        <p class="klt-empty body-sm text-mute">
-          Paste the resources above — or tap an example — to see, per resource, whether the selector
-          matches it and which clause decided.
-        </p>
-      </div>
+      {/* Seeded at build time (see `seedHtml` above) so every per-resource verdict
+          is in the static HTML; the script repaints this same node on each run. */}
+      <div id="klt-results" class="klt-results" set:html={seedHtml}></div>
       <span id="klt-copy-status" class="sr-only" role="status" aria-live="polite"></span>
     </div>
   </div>
@@ -276,6 +305,20 @@ import { examples } from '../lib/kubernetes-label-selector-tester/examples';
   @reference "../styles/global.css";
 
   /* ── Example chips ───────────────────────────────────────────────────── */
+  /* Build-time text stand-in for the CodeMirror document: what a no-JS visitor
+     and every AI crawler read. `init` removes it once CM mounts. */
+  .klt-cm-fallback {
+    margin: 0;
+    padding: 14px 16px 16px;
+    max-height: 360px;
+    overflow: auto;
+    color: #e6e6e6;
+    font-size: 13px;
+    line-height: 20px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
   .klt-chips {
     display: flex;
     flex-wrap: wrap;
@@ -951,66 +994,40 @@ import { examples } from '../lib/kubernetes-label-selector-tester/examples';
 </style>
 
 <script>
-  import { escapeHtml } from '../lib/escape-html';
   import { copyTextToClipboard } from '../lib/clipboard';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
   import type { EditorView } from '@codemirror/view';
+  // The pure HTML/text builders, shared with this component's frontmatter so the
+  // server-rendered seed and every client repaint come from one implementation.
+  import {
+    EMPTY_HTML,
+    canonicalHtml,
+    errorHtml,
+    reportText,
+    resultHtml,
+  } from '../lib/kubernetes-label-selector-tester/render';
+  import type {
+    Diagnostic,
+    SelectorTestResult as Result,
+  } from '../lib/kubernetes-label-selector-tester/types';
 
-  /* ---- Engine contract, mirrored structurally (never statically imported) -- */
+  /* ---- Engine contract ------------------------------------------------------
+     Result shapes are imported above, never hand-mirrored. What stays here is
+     the shape of the LAZY module handle and of the values this island owns
+     (the share payload, the example rows), which have no engine counterpart. */
   type SelectorMode = 'expr' | 'yaml';
-  type Requirement = { key: string; op: string; values: string[]; written: string; display: string };
-  type ClauseTrace = {
-    requirement: Requirement;
-    holds: boolean;
-    reason: string;
-    keyAbsent: boolean;
-    absentKeyMatch: boolean;
-    undecided: boolean;
-  };
-  type LabelIssue = { key: string; message: string };
-  type ResourceVerdict = {
-    kind: string;
-    name: string;
-    namespace?: string;
-    labels: Record<string, string>;
-    labelsPath: string;
-    matches: boolean;
-    clauses: ClauseTrace[];
-    labelIssues: LabelIssue[];
-    unreadableLabels: Record<string, string>;
-  };
-  type Diagnostic = {
-    severity: 'error' | 'warning' | 'note';
-    message: string;
-    where: 'selector' | 'resources' | 'result';
-    line?: number;
-  };
-  type Result = {
-    ok: boolean;
-    mode: SelectorMode;
-    requirements: Requirement[];
-    canonical: string;
-    empty: boolean;
-    verdicts: ResourceVerdict[];
-    matchCount: number;
-    resourceCount: number;
-    totalResources: number;
-    truncated: boolean;
-    diagnostics: Diagnostic[];
-    summary: string;
-  };
-  type ShareState = { resources: string; selector: string; mode: SelectorMode };
-  type EngineModule = {
-    testSelector: (resources: string, selector: string, mode: SelectorMode) => Result;
-    encodeState: (state: ShareState) => string;
-    decodeState: (hash?: string) => ShareState | null;
-  };
   type Example = {
     id: string;
     label: string;
     resources: string;
     selector: string;
     mode: SelectorMode;
+  };
+  type ShareState = { resources: string; selector: string; mode: SelectorMode };
+  type EngineModule = {
+    testSelector: (resources: string, selector: string, mode: SelectorMode) => Result;
+    encodeState: (state: ShareState) => string;
+    decodeState: (hash: string) => ShareState | null;
   };
 
   const ROOT_SEL = '.klt-pg';
@@ -1026,11 +1043,6 @@ import { examples } from '../lib/kubernetes-label-selector-tester/examples';
   const MAX_HASH_LEN = 2000;
   /* DOM caps. The engine is linear and already caps at 500 resources; rendering
      500 cards × 100 clauses is what freezes the tab. Every cap states itself. */
-  const MAX_CARDS = 60;
-  const MAX_CLAUSES_PER_CARD = 24;
-  const MAX_LABEL_CHIPS = 14;
-  const MAX_ISSUES_PER_CARD = 4;
-  const MAX_DIAG_ROWS = 20;
 
   function boot(): void {
     document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
@@ -1060,248 +1072,11 @@ import { examples } from '../lib/kubernetes-label-selector-tester/examples';
       .filter((e) => e.resources.length > 0);
   }
 
-  /* ---- Icons (decorative) ------------------------------------------------- */
+  /* ---- Result rendering --------------------------------------------------
+     The pure builders live in
+     `../lib/kubernetes-label-selector-tester/render`, imported above. Only the
+     DOM writes and the copy-payload bindings stay here. */
 
-  const ALERT_SVG =
-    '<svg class="klt-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-  const COPY_ICON_SVG =
-    '<svg class="klt-copy-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"/></svg>';
-  const CHECK_ICON_SVG =
-    '<svg class="klt-check-icon hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
-
-  /* ---- Pure render helpers ------------------------------------------------ */
-
-  function plural(n: number, word: string): string {
-    return `${n} ${word}${n === 1 ? '' : 's'}`;
-  }
-
-  /** `app=web, tier=frontend` — the label set as plain text. */
-  /**
-   * The label set as it should be SHOWN: the readable string labels, plus every
-   * key whose YAML value was not a string. The second group is flagged, never
-   * dropped — dropping it made the card claim the key was absent.
-   */
-  function labelEntries(
-    verdict: ResourceVerdict,
-  ): { key: string; text: string; unreadable: boolean }[] {
-    return [
-      ...Object.entries(verdict.labels).map(([key, value]) => ({
-        key,
-        text: value === '' ? '""' : value,
-        unreadable: false,
-      })),
-      ...Object.entries(verdict.unreadableLabels ?? {}).map(([key, kind]) => ({
-        key,
-        text: `(${kind}, not a string)`,
-        unreadable: true,
-      })),
-    ];
-  }
-
-  function labelsText(verdict: ResourceVerdict): string {
-    const entries = labelEntries(verdict);
-    if (entries.length === 0) return '(no labels)';
-    return entries.map((entry) => `${entry.key}=${entry.text}`).join(', ');
-  }
-
-  /** One resource's whole verdict as plain text, fit for a PR comment. */
-  function verdictText(verdict: ResourceVerdict): string {
-    const lines = [
-      `${verdict.matches ? 'MATCH' : 'NO MATCH'} — ${verdict.kind}/${verdict.name}${
-        verdict.namespace ? ` (namespace ${verdict.namespace})` : ''
-      }`,
-      `  ${verdict.labelsPath}: ${labelsText(verdict)}`,
-    ];
-    for (const clause of verdict.clauses) {
-      lines.push(`  [${clause.holds ? 'ok' : 'no'}] ${clause.requirement.display} — ${clause.reason}`);
-    }
-    for (const issue of verdict.labelIssues) lines.push(`  ! ${issue.message}`);
-    if (verdict.clauses.length === 0) {
-      lines.push('  (empty selector — every resource matches)');
-    }
-    return lines.join('\n');
-  }
-
-  function labelsHtml(verdict: ResourceVerdict): string {
-    // Unreadable keys are listed too: they ARE in the document, and a card that
-    // showed "no labels at all" for a pod with `released: 2024-06-01` would be
-    // making the same false claim the clause reasons no longer make.
-    const entries = labelEntries(verdict);
-    const shown = entries.slice(0, MAX_LABEL_CHIPS);
-    const chips = shown
-      .map(
-        (entry) =>
-          `<span class="klt-label${entry.unreadable ? ' klt-label--unreadable' : ''}">${escapeHtml(
-            entry.key,
-          )}=${escapeHtml(entry.text)}</span>`,
-      )
-      .join('');
-    const more =
-      entries.length > shown.length
-        ? `<span class="klt-label klt-label--none">+${escapeHtml(
-            String(entries.length - shown.length),
-          )} more</span>`
-        : '';
-    const none =
-      entries.length === 0
-        ? '<span class="klt-label klt-label--none">no labels at all</span>'
-        : '';
-    return (
-      '<div class="klt-labels">' +
-      chips +
-      more +
-      none +
-      `<span class="klt-path">${escapeHtml(verdict.labelsPath)}</span>` +
-      '</div>'
-    );
-  }
-
-  function clauseHtml(clause: ClauseTrace): string {
-    const state = clause.holds ? 'hold' : 'fail';
-    const annotation = clause.absentKeyMatch
-      ? '<span class="klt-annot">Matches <em>because</em> the key is absent. ' +
-        'NotIn and != are satisfied by a resource that carries no such label at all — the one ' +
-        'label-selector rule that is most often answered backwards.</span>'
-      : clause.undecided
-        ? '<span class="klt-annot">Not decided — the key <em>is</em> in the document, but YAML ' +
-          'did not read its value as a string, so there is nothing to compare. This is not an ' +
-          'absent key: kubectl apply would reject the manifest outright.</span>'
-        : '';
-    return (
-      `<li class="klt-clause klt-clause--${state}">` +
-      `<span class="klt-clause__mark" aria-hidden="true">${clause.holds ? '✓' : '✗'}</span>` +
-      '<span class="klt-clause__body">' +
-      `<span class="sr-only">${
-        clause.undecided ? 'Not decided: ' : clause.holds ? 'Holds: ' : 'Fails: '
-      }</span>` +
-      `<span class="klt-req">${escapeHtml(clause.requirement.display)}</span>` +
-      `<span class="klt-reason">${escapeHtml(clause.reason)}</span>` +
-      annotation +
-      '</span></li>'
-    );
-  }
-
-  function cardHtml(verdict: ResourceVerdict, index: number): string {
-    const shown = verdict.clauses.slice(0, MAX_CLAUSES_PER_CARD);
-    const clauses = shown.map(clauseHtml).join('');
-    const clauseCap =
-      verdict.clauses.length > shown.length
-        ? `<p class="klt-note">Showing the first ${escapeHtml(
-            String(shown.length),
-          )} of ${escapeHtml(String(verdict.clauses.length))} clauses on this resource.</p>`
-        : '';
-    const empty =
-      verdict.clauses.length === 0
-        ? '<p class="klt-note">The selector has no clauses, so it matches this resource — and every other one.</p>'
-        : '';
-    const issuesShown = verdict.labelIssues.slice(0, MAX_ISSUES_PER_CARD);
-    const issues =
-      issuesShown.map((issue) => `<p class="klt-issue">${escapeHtml(issue.message)}</p>`).join('') +
-      (verdict.labelIssues.length > issuesShown.length
-        ? `<p class="klt-issue">…and ${escapeHtml(
-            String(verdict.labelIssues.length - issuesShown.length),
-          )} more label problems on this resource.</p>`
-        : '');
-    const name =
-      escapeHtml(`${verdict.kind}/${verdict.name}`) +
-      (verdict.namespace
-        ? ` <span class="klt-ns">· ${escapeHtml(verdict.namespace)}</span>`
-        : '');
-    return (
-      '<div class="klt-card">' +
-      '<div class="klt-card__head">' +
-      `<span class="klt-verdict klt-verdict--${verdict.matches ? 'match' : 'miss'}">${
-        verdict.matches ? 'match' : 'no match'
-      }</span>` +
-      `<span class="klt-name">${name}</span>` +
-      '<span class="klt-card__actions">' +
-      // The accessible name is a STATIC sr-only span, not an aria-label built
-      // from the resource name. Nothing user-supplied may enter an attribute
-      // inside this container: `innerHTML` serialization does NOT re-escape `<`
-      // in attribute values, so a payload that is correctly escaped into an
-      // attribute still reappears as literal markup in the serialized string.
-      // Text nodes are safe; attributes are not.
-      `<button class="klt-copy" type="button" data-klt-row="${index}" data-copy="" ` +
-      'data-copy-label="Copy this verdict" title="Copy">' +
-      COPY_ICON_SVG +
-      CHECK_ICON_SVG +
-      '<span class="sr-only klt-copy-label">Copy this verdict</span>' +
-      '</button></span>' +
-      '</div>' +
-      labelsHtml(verdict) +
-      (clauses ? `<ul class="klt-clauses">${clauses}</ul>` : '') +
-      clauseCap +
-      empty +
-      issues +
-      '</div>'
-    );
-  }
-
-  const DIAG_WORD: Record<Diagnostic['severity'], string> = {
-    error: 'error',
-    warning: 'warning',
-    note: 'note',
-  };
-
-  function diagnosticsHtml(diagnostics: Diagnostic[]): string {
-    if (diagnostics.length === 0) return '';
-    const shown = diagnostics.slice(0, MAX_DIAG_ROWS);
-    const rows = shown
-      .map(
-        (diagnostic) =>
-          '<div class="klt-diag">' +
-          `<span class="klt-diag__pill klt-diag__pill--${diagnostic.severity}">${escapeHtml(
-            DIAG_WORD[diagnostic.severity],
-          )}</span>` +
-          `<p class="klt-diag__text">${escapeHtml(diagnostic.message)}</p></div>`,
-      )
-      .join('');
-    const cap =
-      diagnostics.length > shown.length
-        ? `<p class="klt-note">…and ${escapeHtml(
-            String(diagnostics.length - shown.length),
-          )} more diagnostics.</p>`
-        : '';
-    return `<div class="klt-card"><p class="klt-group__head"><span>What the tester noticed</span></p>${rows}${cap}</div>`;
-  }
-
-  function errorCardHtml(diagnostic: Diagnostic, isAlert: boolean): string {
-    const title =
-      diagnostic.where === 'selector'
-        ? 'This selector could not be read'
-        : 'These resources could not be read';
-    return (
-      `<div class="klt-error"${isAlert ? ' role="alert"' : ''}>` +
-      ALERT_SVG +
-      `<div><p class="klt-error__title">${escapeHtml(title)}</p>` +
-      `<p id="klt-error-detail" class="klt-error__detail">${escapeHtml(diagnostic.message)}</p></div></div>`
-    );
-  }
-
-  /** The plain-text report behind "Copy report". */
-  function reportText(result: Result, selectorText: string): string {
-    const lines = [
-      `Kubernetes Label Selector Tester — ${result.summary}`,
-      `selector: ${result.empty ? '(empty — matches everything)' : result.canonical}`,
-      `as written: ${selectorText.trim().length === 0 ? '(empty)' : selectorText.trim()}`,
-      '',
-    ];
-    for (const verdict of result.verdicts) {
-      lines.push(verdictText(verdict), '');
-    }
-    // No truncation line here: `resourceCount` counts VERDICT ROWS (a Deployment
-    // yields two) while `totalResources` counts DOCUMENTS, so mixing them read
-    // "only the first 1000 resources were evaluated; 600 were found". The
-    // engine's own warning — in documents, and correct — is printed below.
-    for (const diagnostic of result.diagnostics) {
-      lines.push(`${DIAG_WORD[diagnostic.severity]}: ${diagnostic.message}`);
-    }
-    lines.push(
-      '',
-      'Checked client-side at opscanopy.com/kubernetes-label-selector-tester/ — 0 bytes uploaded.',
-    );
-    return lines.join('\n');
-  }
 
   /* ---- Instance init ----------------------------------------------------- */
 
@@ -1456,7 +1231,7 @@ import { examples } from '../lib/kubernetes-label-selector-tester/examples';
       ({ oneDark } = themeMod);
     } catch (err) {
       summaryEl.textContent = '';
-      resultsBox.innerHTML = errorCardHtml(
+      resultsBox.innerHTML = errorHtml(
         {
           severity: 'error',
           where: 'resources',
@@ -1635,18 +1410,7 @@ import { examples } from '../lib/kubernetes-label-selector-tester/examples';
     }
 
     function setCanonical(result: Result | null): void {
-      if (result === null || !result.ok) {
-        canonicalEl!.textContent = '';
-        return;
-      }
-      if (result.empty) {
-        canonicalEl!.textContent = 'Empty selector — it matches every resource.';
-        return;
-      }
-      canonicalEl!.innerHTML =
-        `Reads as <span class="code-mono">${escapeHtml(result.canonical)}</span> · ` +
-        escapeHtml(plural(result.requirements.length, 'clause')) +
-        ', ANDed.';
+      canonicalEl!.innerHTML = result === null ? '' : canonicalHtml(result);
     }
 
     function applyModeChrome(): void {
@@ -1701,24 +1465,15 @@ import { examples } from '../lib/kubernetes-label-selector-tester/examples';
       hideActions();
       setSummary('', false);
       setCanonical(null);
-      resultsBox!.innerHTML =
-        '<p class="klt-empty body-sm text-mute">Paste the resources above — or tap an example — to ' +
-        'see, per resource, whether the selector matches it and which clause decided.</p>';
+      resultsBox!.innerHTML = EMPTY_HTML;
     }
 
     function renderResult(result: Result): void {
-      const shown = result.verdicts.slice(0, MAX_CARDS);
-      const cards = shown.map((verdict, index) => cardHtml(verdict, index)).join('');
-      const cardCap =
-        result.verdicts.length > shown.length
-          ? `<div class="klt-card"><p class="klt-note">Showing the first ${escapeHtml(
-              String(shown.length),
-            )} of ${escapeHtml(String(result.verdicts.length))} resources. ${escapeHtml(
-              String(result.matchCount),
-            )} of them match in total — trim the paste to read the rest.</p></div>`
-          : '';
-      resultsBox!.innerHTML = diagnosticsHtml(result.diagnostics) + cards + cardCap;
-      rowPayloads = shown.map(verdictText);
+      // The builder returns the per-row copy payloads alongside the markup, so
+      // the two can never fall out of step (the server ignores the payloads).
+      const rendered = resultHtml(result);
+      resultsBox!.innerHTML = rendered.html;
+      rowPayloads = rendered.payloads;
       reportPayload = reportText(result, selectorText());
       copyAllBtn!.hidden = false;
     }
@@ -1738,8 +1493,7 @@ import { examples } from '../lib/kubernetes-label-selector-tester/examples';
       setSummary(result.summary, true);
       setCanonical(null);
       const rest = result.diagnostics.filter((d) => d !== first);
-      resultsBox!.innerHTML =
-        errorCardHtml(first, source === 'commit') + diagnosticsHtml(rest);
+      resultsBox!.innerHTML = errorHtml(first, source === 'commit', rest);
       if (source !== 'seed') writeHash(null);
     }
 
@@ -1865,6 +1619,10 @@ import { examples } from '../lib/kubernetes-label-selector-tester/examples';
     }
 
     const view = makeEditor(editorHost, seedResources);
+
+    // The build-time text stand-in has done its job (no-JS visitors and
+    // crawlers); CodeMirror appended its editor beside it, so drop it.
+    root.querySelectorAll('[data-cm-fallback]').forEach((node) => node.remove());
     applyModeChrome();
     setActiveChip(seedChip);
 

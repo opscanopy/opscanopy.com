@@ -29,7 +29,25 @@
 // clicks and reads `data-example-idx` into the lazily-imported `examples`, so
 // the queries themselves stay out of HTML attributes and off the shell path.
 import { examples as prerenderedExamples } from '../lib/promql-explainer/examples';
+import { explain } from '../lib/promql-explainer/engine';
+import { resultHtml, summaryText, EMPTY_HTML } from '../lib/promql-explainer/render';
 
+/**
+ * Server-rendered seed. The client re-explains the same example on boot, so
+ * this is pure progressive enhancement — but it means a visitor with no JS,
+ * and every AI crawler (they do not execute JS), sees the real plain-English
+ * reading and the token breakdown instead of an empty "load an example" panel.
+ *
+ * `explain` is pure, synchronous and clock-free, so it runs at build time
+ * unchanged. The query itself goes into a `<pre data-cm-fallback>` inside the
+ * CodeMirror host — CM appends its editor to the host, so the script removes
+ * the fallback once mounted.
+ */
+const seedExample = prerenderedExamples[0];
+const seedResult = seedExample ? explain(seedExample.query) : null;
+const seedOk = seedResult && !seedResult.error ? seedResult : null;
+const seedHtml = seedOk ? resultHtml(seedOk) : EMPTY_HTML;
+const seedSummary = seedOk ? summaryText(seedOk) : '';
 ---
 
 <section class="pq-pg" aria-label="PromQL Explainer playground">
@@ -100,6 +118,7 @@ import { examples as prerenderedExamples } from '../lib/promql-explainer/example
         class="pq-editor min-h-40"
         aria-label="PromQL query"
       >
+        <pre class="pq-cm-fallback code-mono" data-cm-fallback>{seedExample?.query}</pre>
       </div>
       <p class="text-xs text-mute mt-1" style="padding: 0 16px 8px;">Tip: press <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd> to release focus.</p>
       <div class="pq-snap-row flex flex-wrap items-center gap-2" style="padding: 0 16px 12px;">
@@ -160,15 +179,12 @@ import { examples as prerenderedExamples } from '../lib/promql-explainer/example
           class="pq-summary code-mono text-mute"
           role="status"
           aria-live="polite"
-        ></span>
+        >{seedSummary}</span>
       </div>
 
-      <div id="pq-results" class="pq-results">
-        <p class="pq-empty body-sm text-mute">
-          Load an example or paste your own PromQL query, then explain it to see
-          a plain-English summary and a token-by-token breakdown here.
-        </p>
-      </div>
+      {/* Seeded at build time (see `seedHtml` above) so the explanation is in
+          the static HTML; the client replaces it with the same markup on boot. */}
+      <div id="pq-results" class="pq-results" set:html={seedHtml}></div>
     </div>
   </div>
 </section>
@@ -232,6 +248,19 @@ import { examples as prerenderedExamples } from '../lib/promql-explainer/example
   /* CodeMirror host — fills the dark pane, scrolls internally. */
   .pq-editor {
     overflow: hidden;
+  }
+  /* Build-time text stand-in for the editor, sized like the CM content so the
+     pane does not jump when the script swaps it out. Removed on mount. */
+  .pq-cm-fallback {
+    margin: 0;
+    padding: 14px 16px 16px;
+    max-height: 320px;
+    overflow: auto;
+    color: #e6e6e6;
+    font-size: 13px;
+    line-height: 20px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
   .pq-editor :global(.cm-editor) {
     height: 100%;
@@ -564,15 +593,22 @@ import { examples as prerenderedExamples } from '../lib/promql-explainer/example
 
 <script>
   import type { EditorView } from '@codemirror/view';
-  import { escapeHtml } from '../lib/escape-html';
   import { createHashState } from '../lib/hash-state';
   import { copyTextToClipboard } from '../lib/clipboard';
   import { buildMarkdownBlock } from '../lib/share-md';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  // The HTML builders are shared with the frontmatter's build-time seed —
+  // one implementation, so the no-JS markup and the live markup never drift.
+  import {
+    resultHtml,
+    summaryText,
+    normaliseBreakdown,
+    errorHtml,
+    EMPTY_HTML,
+    LOADING_HTML,
+  } from '../lib/promql-explainer/render';
+  import type { ExplainResult } from '../lib/promql-explainer/types';
 
-  /* ---- Types mirrored from the engine contract (structural, not imported). -- */
-  type ExplainPart = { token: string; meaning: string };
-  type ExplainResult = { error?: string; explanation: string; breakdown?: ExplainPart[] };
   type EngineModule = {
     explain: (query: string) => ExplainResult | Promise<ExplainResult>;
   };
@@ -610,62 +646,27 @@ import { examples as prerenderedExamples } from '../lib/promql-explainer/example
       .filter((e) => e.query.length > 0);
   }
 
-  /** Normalise an ExplainResult's breakdown into a clean part list. */
-  function normaliseBreakdown(raw: unknown): ExplainPart[] {
-    if (!Array.isArray(raw)) return [];
-    return raw
-      .map((item) => {
-        const o = (item ?? {}) as Record<string, unknown>;
-        return {
-          token: typeof o.token === 'string' ? o.token : '',
-          meaning: typeof o.meaning === 'string' ? o.meaning : '',
-        } satisfies ExplainPart;
-      })
-      .filter((p) => p.token.length > 0 || p.meaning.length > 0);
-  }
-
-  /* ---- Result rendering ----------------------------------------------------- */
-
-  const ALERT_SVG =
-    '<svg class="pq-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  /* ---- Result rendering (DOM writes over the shared pure builders) --------- */
 
   function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
     summary.textContent = '';
     summary.classList.remove('text-error');
     summary.classList.add('text-mute');
-    container.innerHTML =
-      '<p class="pq-empty body-sm text-mute">Load an example or paste your own PromQL query, then explain it to see a plain-English summary and a token-by-token breakdown here.</p>';
+    container.innerHTML = EMPTY_HTML;
   }
 
   function renderLoading(container: HTMLElement, summary: HTMLElement): void {
     summary.textContent = '';
     summary.classList.remove('text-error');
     summary.classList.add('text-mute');
-    container.innerHTML =
-      '<div class="pq-loading"><span class="pq-loading__dot"></span>' +
-      '<span class="pq-loading__dot"></span><span class="pq-loading__dot"></span>' +
-      '<span>Explaining…</span></div>';
+    container.innerHTML = LOADING_HTML;
   }
 
   function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
     summary.textContent = 'Error';
     summary.classList.remove('text-mute');
     summary.classList.add('text-error');
-    container.innerHTML =
-      '<div class="pq-error" role="alert">' +
-      ALERT_SVG +
-      '<div class="pq-error__body"><p class="pq-error__title">Could not explain this query</p>' +
-      `<p class="pq-error__detail">${escapeHtml(message)}</p></div></div>`;
-  }
-
-  function partHtml(p: ExplainPart): string {
-    const token = p.token
-      ? `<code class="pq-part__token">${escapeHtml(p.token)}</code>`
-      : '';
-    const meaning = p.meaning
-      ? `<span class="pq-part__meaning">${escapeHtml(p.meaning)}</span>`
-      : '';
-    return `<li class="pq-part">${token}${meaning}</li>`;
+    container.innerHTML = errorHtml(message);
   }
 
   function renderResult(
@@ -673,33 +674,11 @@ import { examples as prerenderedExamples } from '../lib/promql-explainer/example
     summary: HTMLElement,
     result: ExplainResult
   ): void {
-    if (!result || result.error) {
-      renderError(container, summary, result?.error ?? 'Unknown error while explaining the query.');
-      return;
-    }
-
-    const breakdown = normaliseBreakdown(result.breakdown);
-    const explanation = typeof result.explanation === 'string' ? result.explanation : '';
-
-    if (!explanation && breakdown.length === 0) {
-      renderEmpty(container, summary);
-      return;
-    }
-
-    const n = breakdown.length;
-    summary.textContent = n > 0 ? `${n} ${n === 1 ? 'part' : 'parts'}` : 'Explained';
-    summary.classList.remove('text-error');
-    summary.classList.add('text-mute');
-
-    const explanationHtml = explanation
-      ? '<div class="pq-explanation">' +
-        `<p class="pq-explanation__text">${escapeHtml(explanation)}</p></div>`
-      : '';
-    const breakdownHtml =
-      breakdown.length > 0
-        ? `<ul class="pq-breakdown">${breakdown.map(partHtml).join('')}</ul>`
-        : '';
-    container.innerHTML = explanationHtml + breakdownHtml;
+    const isError = !result || Boolean(result.error);
+    summary.textContent = summaryText(result);
+    summary.classList.toggle('text-error', isError);
+    summary.classList.toggle('text-mute', !isError);
+    container.innerHTML = resultHtml(result);
   }
 
   /* ---- Instance init -------------------------------------------------------- */
@@ -851,11 +830,17 @@ import { examples as prerenderedExamples } from '../lib/promql-explainer/example
       view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
     }
 
-    // Seed priority: #q= deep link > restored last input > first example.
+    // Seed priority: #q= deep link > restored last input > first example. The
+    // first example is also what the build-time `<pre data-cm-fallback>` holds,
+    // so the deep-link and restore tiers must be resolved BEFORE the fallback
+    // is dropped — they replace the seed, never the other way round.
     const hashValue = hashState.read();
     const restored = getRestoredLastInput('promql-explainer');
     const seedExample = examples[0] ?? { id: 'empty', label: 'Example', query: '' };
     const view = makeEditor(editorHost, hashValue ?? restored ?? seedExample.query);
+    // The build-time text stand-in has done its job (no-JS visitors and
+    // crawlers); CodeMirror appended its editor beside it, so drop it.
+    root.querySelectorAll('[data-cm-fallback]').forEach((node) => node.remove());
 
     // The example chips are already in the static HTML (server-rendered from
     // the same `examples` module); hydration only wires them.

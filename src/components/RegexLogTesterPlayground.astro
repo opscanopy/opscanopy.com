@@ -40,7 +40,34 @@
 // wires click handlers onto these already-rendered buttons — it never rebuilds
 // them — so this adds nothing to the client bundle and cannot drift.
 import { examples as prerenderedExamples } from '../lib/regex-tester/examples';
+import { run as runRegex } from '../lib/regex-tester/engine';
+import { resultsHtml, buildHighlight, summaryText, EMPTY_HTML } from '../lib/regex-tester/render';
 
+/**
+ * Server-rendered seed. The client re-runs the same example on boot, so this
+ * is pure progressive enhancement — but it means a visitor with no JS, and
+ * every AI crawler (they do not execute JS), sees the real matches, their
+ * capture groups and the highlighted log instead of an empty panel.
+ *
+ * `run()` is a RegExp over a fixed string — pure, synchronous, clock-free —
+ * so it runs at build time unchanged. The sample log goes into a
+ * `<pre data-cm-fallback>` inside the CodeMirror host; CM appends its editor
+ * to the host, so the script removes the fallback once mounted.
+ */
+const FLAG_ORDER = ['g', 'i', 'm', 's', 'u'] as const;
+const seedExample = prerenderedExamples[0];
+const seedPattern = seedExample?.pattern ?? '';
+const seedText = seedExample?.text ?? '';
+const seedFlagSet = new Set((seedExample?.flags ?? '').split(''));
+/** Canonical g i m s u order — the same string the script's currentFlags() builds. */
+const seedFlags = FLAG_ORDER.filter((f) => seedFlagSet.has(f)).join('');
+const seedResult = seedExample ? runRegex(seedPattern, seedFlags, seedText) : null;
+// A bundled example whose pattern does not compile would be a bug, not a
+// result — fall back to the shared empty state rather than an error banner.
+const seedOk = seedResult && seedResult.valid !== false ? seedResult : null;
+const seedHtml = seedOk ? resultsHtml(seedOk) : EMPTY_HTML;
+const seedHighlightHtml = buildHighlight(seedText, seedOk ? seedOk.matches : []);
+const seedSummary = seedOk ? summaryText(seedOk) : '';
 ---
 
 <section class="rx-pg" aria-label="Regex Log Tester playground">
@@ -58,6 +85,7 @@ import { examples as prerenderedExamples } from '../lib/regex-tester/examples';
             id="rx-pattern"
             type="text"
             class="rx-pattern code-mono"
+            value={seedPattern}
             autocomplete="off"
             autocapitalize="off"
             autocorrect="off"
@@ -66,7 +94,7 @@ import { examples as prerenderedExamples } from '../lib/regex-tester/examples';
             placeholder="Enter a regular expression…"
             aria-describedby="rx-pattern-hint"
           />
-          <span id="rx-flag-mirror" class="rx-delim rx-delim--flags code-mono" aria-hidden="true">/</span>
+          <span id="rx-flag-mirror" class="rx-delim rx-delim--flags code-mono" aria-hidden="true">{`/${seedFlags}`}</span>
         </div>
         <p id="rx-pattern-hint" class="sr-only">
           JavaScript regular expression syntax. Matching updates as you type.
@@ -85,27 +113,27 @@ import { examples as prerenderedExamples } from '../lib/regex-tester/examples';
           <legend class="eyebrow">Flags</legend>
           <div class="flex flex-wrap gap-1.5" role="group" aria-label="Regular expression flags">
             <label class="rx-flag rx-tap" title="Global — find all matches">
-              <input type="checkbox" class="rx-flag-input sr-only" value="g" checked />
+              <input type="checkbox" class="rx-flag-input sr-only" value="g" checked={seedFlagSet.has('g')} />
               <span class="rx-flag-glyph code-mono" aria-hidden="true">g</span>
               <span class="rx-flag-name">global</span>
             </label>
             <label class="rx-flag rx-tap" title="Ignore case">
-              <input type="checkbox" class="rx-flag-input sr-only" value="i" />
+              <input type="checkbox" class="rx-flag-input sr-only" value="i" checked={seedFlagSet.has('i')} />
               <span class="rx-flag-glyph code-mono" aria-hidden="true">i</span>
               <span class="rx-flag-name">ignore case</span>
             </label>
             <label class="rx-flag rx-tap" title="Multiline — ^ and $ match line breaks">
-              <input type="checkbox" class="rx-flag-input sr-only" value="m" />
+              <input type="checkbox" class="rx-flag-input sr-only" value="m" checked={seedFlagSet.has('m')} />
               <span class="rx-flag-glyph code-mono" aria-hidden="true">m</span>
               <span class="rx-flag-name">multiline</span>
             </label>
             <label class="rx-flag rx-tap" title="Dotall — . matches newlines">
-              <input type="checkbox" class="rx-flag-input sr-only" value="s" />
+              <input type="checkbox" class="rx-flag-input sr-only" value="s" checked={seedFlagSet.has('s')} />
               <span class="rx-flag-glyph code-mono" aria-hidden="true">s</span>
               <span class="rx-flag-name">dotall</span>
             </label>
             <label class="rx-flag rx-tap" title="Unicode">
-              <input type="checkbox" class="rx-flag-input sr-only" value="u" />
+              <input type="checkbox" class="rx-flag-input sr-only" value="u" checked={seedFlagSet.has('u')} />
               <span class="rx-flag-glyph code-mono" aria-hidden="true">u</span>
               <span class="rx-flag-name">unicode</span>
             </label>
@@ -210,6 +238,7 @@ import { examples as prerenderedExamples } from '../lib/regex-tester/examples';
           class="rx-editor min-h-72"
           aria-label="Sample log lines"
         >
+          <pre class="rx-cm-fallback code-mono" data-cm-fallback>{seedText}</pre>
         </div>
         <p class="text-xs text-mute mt-1 px-4 pb-2">Tip: press <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd> to release focus.</p>
       </div>
@@ -231,11 +260,14 @@ import { examples as prerenderedExamples } from '../lib/regex-tester/examples';
           </div>
           <span class="code-mono shrink-0 text-white/30">highlighted</span>
         </div>
+        {/* Seeded at build time (see `seedHighlightHtml` above) so the marked-up
+            log is in the static HTML; the client rebuilds it on boot. */}
         <div
           id="rx-highlight"
           class="rx-highlight"
           role="region"
           aria-label="Sample text with matches highlighted"
+          set:html={seedHighlightHtml}
         >
         </div>
       </div>
@@ -301,15 +333,12 @@ import { examples as prerenderedExamples } from '../lib/regex-tester/examples';
           class="rx-summary code-mono text-mute"
           role="status"
           aria-live="polite"
-        ></span>
+        >{seedSummary}</span>
       </div>
 
-      <div id="rx-results" class="rx-results">
-        <p class="rx-empty body-sm text-mute">
-          Enter a pattern above to see live matches, capture groups and named
-          groups here.
-        </p>
-      </div>
+      {/* Seeded at build time (see `seedHtml` above) so the match table is in
+          the static HTML; the client rebuilds the same markup on boot. */}
+      <div id="rx-results" class="rx-results" set:html={seedHtml}></div>
     </div>
   </div>
 </section>
@@ -564,6 +593,19 @@ import { examples as prerenderedExamples } from '../lib/regex-tester/examples';
   /* CodeMirror host — fills the dark pane, scrolls internally. */
   .rx-editor {
     overflow: hidden;
+  }
+  /* Build-time text stand-in for the editor, sized like the CM content so the
+     pane does not jump when the script swaps it out. Removed on mount. */
+  .rx-cm-fallback {
+    margin: 0;
+    padding: 14px 16px 16px;
+    max-height: 360px;
+    overflow: auto;
+    color: #e6e6e6;
+    font-size: 13px;
+    line-height: 20px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
   .rx-editor :global(.cm-editor) {
     height: 100%;
@@ -931,30 +973,21 @@ import { examples as prerenderedExamples } from '../lib/regex-tester/examples';
 
 <script>
   import type { EditorView } from '@codemirror/view';
-  import { escapeHtml } from '../lib/escape-html';
   import { wireRunKeys } from '../lib/run-keys';
   import { copyTextToClipboard } from '../lib/clipboard';
   import { buildMarkdownBlock } from '../lib/share-md';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  // The HTML builders are shared with the frontmatter's build-time seed —
+  // one implementation, so the no-JS markup and the live markup never drift.
+  import {
+    resultsHtml,
+    buildHighlight,
+    summaryText,
+    errorHtml,
+    EMPTY_HTML,
+  } from '../lib/regex-tester/render';
+  import type { RegexResult, ShareState } from '../lib/regex-tester/types';
 
-  /* ---- Types mirrored from the engine contract (structural, not imported). -- */
-  type RegexMatch = {
-    index: number;
-    length: number;
-    match: string;
-    groups: string[];
-    named: Record<string, string>;
-  };
-  type RegexResult = {
-    valid: boolean;
-    /** Fatal — the pattern/flags did not compile. Nothing to render. */
-    error?: string;
-    /** Non-fatal caveat on a SUCCESSFUL run (scan cap / match cap). */
-    notice?: string;
-    matchCount: number;
-    matches: RegexMatch[];
-  };
-  type ShareState = { pattern: string; flags: string; text: string };
   type EngineModule = {
     run: (pattern: string, flags: string, text: string) => RegexResult;
     encodeState: (pattern: string, flags: string, text: string) => string;
@@ -1004,104 +1037,7 @@ import { examples as prerenderedExamples } from '../lib/regex-tester/examples';
       });
   }
 
-  /* ---- Highlighted-preview construction ------------------------------------ */
-
-  const CHECK_SVG =
-    '<svg class="rx-nomatch__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"></circle><path d="M7 10.2l-.01.01"></path><path d="M10 10.2l-.01.01"></path><path d="M13 10.2l-.01.01"></path></svg>';
-  const ALERT_SVG =
-    '<svg class="rx-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-  const INFO_SVG =
-    '<svg class="rx-notice__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"></circle><path d="M10 9v4.5"></path><path d="M10 6.4v.01"></path></svg>';
-
-  /**
-   * Build the highlighted HTML by walking sorted, clamped, non-overlapping
-   * match ranges. Every text run is escaped; only our own <mark> wrappers are
-   * raw markup, so user content can never inject HTML.
-   */
-  function buildHighlight(text: string, matches: RegexMatch[]): string {
-    if (text.length === 0) {
-      return '<p class="rx-hl-empty">No sample text.</p>';
-    }
-    // Sort by start index; skip ranges that overlap an already-emitted one so
-    // the slicing stays well-formed even if the engine returns odd offsets.
-    const sorted = matches
-      .filter((m) => Number.isFinite(m.index) && m.index >= 0 && m.index <= text.length)
-      .slice()
-      .sort((a, b) => a.index - b.index);
-
-    let html = '';
-    let cursor = 0;
-    let i = 0;
-    sorted.forEach((m) => {
-      const start = Math.max(m.index, cursor);
-      const rawLen = Number.isFinite(m.length) ? Math.max(0, m.length) : 0;
-      const end = Math.min(m.index + rawLen, text.length);
-      if (start < cursor) return; // overlaps a prior match — skip
-      // Emit the unmatched text before this match.
-      if (m.index > cursor) {
-        html += escapeHtml(text.slice(cursor, m.index));
-      }
-      const cls = i % 2 === 0 ? 'rx-mark' : 'rx-mark rx-mark--alt';
-      if (end <= m.index) {
-        // Zero-length match (e.g. anchors / lookarounds) — render a caret marker.
-        html += `<mark class="${cls} rx-mark--empty"></mark>`;
-        cursor = Math.max(cursor, m.index);
-      } else {
-        html += `<mark class="${cls}">${escapeHtml(text.slice(m.index, end))}</mark>`;
-        cursor = end;
-      }
-      i += 1;
-    });
-    if (cursor < text.length) {
-      html += escapeHtml(text.slice(cursor));
-    }
-    return `<pre class="rx-pre">${html}</pre>`;
-  }
-
-  /* ---- Results table -------------------------------------------------------- */
-
-  /** A single group chip (capture index or named). */
-  function groupChip(key: string, value: string | undefined): string {
-    const has = typeof value === 'string';
-    const valHtml = !has
-      ? '<span class="rx-group__val rx-group__val--empty">undefined</span>'
-      : value === ''
-        ? '<span class="rx-group__val rx-group__val--empty">empty</span>'
-        : `<span class="rx-group__val">${escapeHtml(value)}</span>`;
-    return (
-      `<span class="rx-group"><span class="rx-group__key">${escapeHtml(key)}</span>${valHtml}</span>`
-    );
-  }
-
-  function matchRow(m: RegexMatch, n: number): string {
-    const idx = Number.isFinite(m.index) ? m.index : 0;
-    const full =
-      m.match === ''
-        ? '<span class="rx-val rx-val--empty">(empty match)</span>'
-        : `<span class="rx-val">${escapeHtml(m.match)}</span>`;
-
-    const chips: string[] = [];
-    const groups = Array.isArray(m.groups) ? m.groups : [];
-    groups.forEach((g, gi) => {
-      chips.push(groupChip(`$${gi + 1}`, g));
-    });
-    const named = m.named && typeof m.named === 'object' ? m.named : {};
-    Object.keys(named).forEach((name) => {
-      chips.push(groupChip(name, named[name]));
-    });
-    const groupsHtml = chips.length
-      ? `<div class="rx-groups">${chips.join('')}</div>`
-      : '<span class="rx-nogroups">—</span>';
-
-    return (
-      '<tr>' +
-      `<td class="rx-idx">${n}</td>` +
-      `<td class="rx-idx">${idx}</td>` +
-      `<td>${full}</td>` +
-      `<td>${groupsHtml}</td>` +
-      '</tr>'
-    );
-  }
+  /* ---- Result rendering (DOM writes over the shared pure builders) --------- */
 
   function renderResults(
     container: HTMLElement,
@@ -1111,56 +1047,18 @@ import { examples as prerenderedExamples } from '../lib/regex-tester/examples';
     // ONLY `valid === false` is an invalid pattern. A truthy `notice` is a
     // caveat on a perfectly good run (input over the scan cap, matching stopped
     // at the match cap) and must never suppress the real matches below.
-    if (!result || result.valid === false) {
-      summary.textContent = 'Invalid';
-      summary.classList.add('text-error');
-      summary.classList.remove('text-mute');
-      container.innerHTML =
-        '<div class="rx-error" role="alert">' +
-        ALERT_SVG +
-        '<div class="rx-error__body"><p class="rx-error__title">Invalid pattern</p>' +
-        `<p class="rx-error__detail">${escapeHtml(result?.error ?? 'The regular expression could not be compiled.')}</p></div></div>`;
-      return;
-    }
-
-    const count = Number.isFinite(result.matchCount) ? result.matchCount : 0;
-    summary.textContent = count === 1 ? '1 match' : `${count} matches`;
-    summary.classList.remove('text-error');
-    summary.classList.add('text-mute');
-
-    // Informational banner, rendered ABOVE whatever results follow.
-    const notice =
-      typeof result.notice === 'string' && result.notice
-        ? '<div class="rx-notice">' +
-          INFO_SVG +
-          `<span class="rx-notice__text">${escapeHtml(result.notice)}</span></div>`
-        : '';
-
-    const matches = Array.isArray(result.matches) ? result.matches : [];
-    if (matches.length === 0) {
-      container.innerHTML =
-        notice +
-        '<div class="rx-nomatch">' +
-        CHECK_SVG +
-        '<span class="rx-nomatch__text">No matches. Adjust the pattern, flags or sample text.</span></div>';
-      return;
-    }
-
-    const rows = matches.map((m, i) => matchRow(m, i + 1)).join('');
-    container.innerHTML =
-      notice +
-      '<div class="rx-table-wrap"><table class="rx-table">' +
-      '<thead><tr><th scope="col">#</th><th scope="col">Index</th>' +
-      '<th scope="col">Match</th><th scope="col">Groups</th></tr></thead>' +
-      `<tbody>${rows}</tbody></table></div>`;
+    const invalid = !result || result.valid === false;
+    summary.textContent = summaryText(result);
+    summary.classList.toggle('text-error', invalid);
+    summary.classList.toggle('text-mute', !invalid);
+    container.innerHTML = resultsHtml(result);
   }
 
   function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
     summary.textContent = '';
     summary.classList.remove('text-error');
     summary.classList.add('text-mute');
-    container.innerHTML =
-      '<p class="rx-empty body-sm text-mute">Enter a pattern above to see live matches, capture groups and named groups here.</p>';
+    container.innerHTML = EMPTY_HTML;
   }
 
   /* ---- Instance init -------------------------------------------------------- */
@@ -1236,11 +1134,10 @@ import { examples as prerenderedExamples } from '../lib/regex-tester/examples';
       summaryEl.textContent = 'Error';
       summaryEl.classList.add('text-error');
       summaryEl.classList.remove('text-mute');
-      resultsBox.innerHTML =
-        '<div class="rx-error" role="alert">' +
-        ALERT_SVG +
-        '<div class="rx-error__body"><p class="rx-error__title">Could not load the tester</p>' +
-        '<p class="rx-error__detail">The regex engine failed to load. Reload the page to try again.</p></div></div>';
+      resultsBox.innerHTML = errorHtml(
+        'Could not load the tester',
+        'The regex engine failed to load. Reload the page to try again.'
+      );
       // eslint-disable-next-line no-console
       console.error('[RegexLogTester] engine/examples import failed:', err);
       return;
@@ -1468,6 +1365,11 @@ import { examples as prerenderedExamples } from '../lib/regex-tester/examples';
     }
 
     const editorView = makeEditor(editorHost, seed.text, onDocChange);
+    // The build-time text stand-in has done its job (no-JS visitors and
+    // crawlers); CodeMirror appended its editor beside it, so drop it. The
+    // share/restore tiers above already resolved into `seed`, so the
+    // server-rendered example never wins over a deep link or a saved input.
+    root.querySelectorAll('[data-cm-fallback]').forEach((node) => node.remove());
     patternInput.value = seed.pattern;
     const seedFlags = new Set(seed.flags.split(''));
     flagInputs.forEach((c) => {

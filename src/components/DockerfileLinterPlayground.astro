@@ -30,6 +30,29 @@
  * attributes entirely.
  */
 import { examples } from '../lib/dockerfile-linter/examples';
+import { lint, summaryLine } from '../lib/dockerfile-linter/engine';
+import { resultHtml, EMPTY_HTML } from '../lib/dockerfile-linter/render';
+
+/**
+ * Server-rendered seed. The client re-lints the same example on boot, so this
+ * is pure progressive enhancement — but it means a visitor with no JS, and
+ * every AI crawler (they do not execute JS), sees the fifteen real,
+ * line-numbered findings the kitchen-sink example produces instead of an empty
+ * "paste a Dockerfile" panel.
+ *
+ * `lint` is pure and synchronous and reads no clock, so it runs at build time
+ * unchanged. The Dockerfile body goes into a `<pre data-cm-fallback>` inside
+ * the CodeMirror host — CM appends its editor to the host, so the script
+ * removes the fallback once mounted. The per-row copy payloads are NOT seeded:
+ * they are assigned on the live elements after hydration (see `renderResult`).
+ */
+const seedExample = examples[0];
+const seedResult = seedExample ? lint(seedExample.dockerfile) : null;
+const seedOk = seedResult && seedResult.ok ? seedResult : null;
+const seedText = seedExample?.dockerfile ?? '';
+const seedHtml = seedOk ? resultHtml(seedOk) : EMPTY_HTML;
+const seedSummary = seedOk ? summaryLine(seedOk) : '';
+const seedSummaryTone = seedOk && seedOk.summary.errors > 0 ? 'text-error-deep' : 'text-mute';
 ---
 
 <section class="df-pg" aria-label="Dockerfile Linter playground">
@@ -40,7 +63,12 @@ import { examples } from '../lib/dockerfile-linter/examples';
       <div id="df-chips" class="df-chips" role="group" aria-label="Examples">
         {
           examples.map((ex, i) => (
-            <button type="button" class="df-chip" data-example-idx={String(i)} aria-pressed="false">
+            <button
+              type="button"
+              class="df-chip"
+              data-example-idx={String(i)}
+              aria-pressed={i === 0 ? 'true' : 'false'}
+            >
               {ex.label}
             </button>
           ))
@@ -66,7 +94,9 @@ import { examples } from '../lib/dockerfile-linter/examples';
         <span class="df-pane__name code-mono">Dockerfile</span>
         <span class="df-pane__tag code-mono">input</span>
       </div>
-      <div id="df-input" class="df-editor"></div>
+      <div id="df-input" class="df-editor">
+        <pre class="df-cm-fallback code-mono" data-cm-fallback>{seedText}</pre>
+      </div>
     </div>
 
     {/* ── Hints + snapshots ────────────────────────────────────────────── */}
@@ -182,15 +212,17 @@ import { examples } from '../lib/dockerfile-linter/examples';
             <span class="df-copy-label">Copy report</span>
           </button>
         </span>
-        <span id="df-summary" class="df-summary code-mono text-mute" role="status" aria-live="polite"
-        ></span>
+        <span
+          id="df-summary"
+          class:list={['df-summary code-mono', seedSummaryTone]}
+          role="status"
+          aria-live="polite">{seedSummary}</span
+        >
       </div>
-      <div id="df-results" class="df-results">
-        <p class="df-empty body-sm text-mute">
-          Paste a Dockerfile above — or tap an example — to see line-numbered findings here, each
-          with the reason it matters and the fix.
-        </p>
-      </div>
+      {/* Seeded at build time (see `seedHtml` above) so the findings are in the
+          static HTML; the client replaces them with the same markup on boot and
+          binds the per-row copy payloads. */}
+      <div id="df-results" class="df-results" set:html={seedHtml}></div>
       <span id="df-copy-status" class="sr-only" role="status" aria-live="polite"></span>
     </div>
   </div>
@@ -276,6 +308,20 @@ import { examples } from '../lib/dockerfile-linter/examples';
   .df-editor {
     overflow: hidden;
     padding-inline: 4px;
+  }
+  /* Build-time text stand-in for the editor, sized like the CM content so the
+     pane does not jump when the script swaps it out. Removed on mount. */
+  .df-cm-fallback {
+    margin: 0;
+    padding: 14px 16px 16px;
+    min-height: 260px;
+    max-height: 460px;
+    overflow: auto;
+    color: #eae7e0;
+    font-size: 13px;
+    line-height: 20px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
   .df-editor :global(.cm-editor) {
     background: transparent;
@@ -745,31 +791,23 @@ import { examples } from '../lib/dockerfile-linter/examples';
 </style>
 
 <script>
-  import { escapeHtml } from '../lib/escape-html';
   import { copyTextToClipboard } from '../lib/clipboard';
   import { base64UrlDecode, base64UrlEncode } from '../lib/codec';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
   import type { EditorView } from '@codemirror/view';
+  // The HTML builders are shared with the frontmatter's build-time seed —
+  // one implementation, so the no-JS markup and the live markup never drift.
+  // `import type` is erased at build time, so the engine's types cost nothing.
+  import {
+    resultHtml,
+    errorCardHtml,
+    reportText,
+    rowText,
+    plural,
+    EMPTY_HTML,
+  } from '../lib/dockerfile-linter/render';
+  import type { LintResult } from '../lib/dockerfile-linter/types';
 
-  /* ---- Engine contract, mirrored structurally (never statically imported) -- */
-  type Severity = 'error' | 'warning' | 'info';
-  type Finding = {
-    id: string;
-    severity: Severity | string;
-    title: string;
-    detail: string;
-    line?: number;
-    remediation?: string;
-  };
-  type LintResult = {
-    ok: boolean;
-    error?: string;
-    findings: Finding[];
-    summary: { errors: number; warnings: number; infos: number };
-    stats: { lines: number; instructions: number; stages: number };
-    truncatedRules: { ruleId: string; shown: number; total: number }[];
-    truncated: boolean;
-  };
   type EngineModule = {
     lint: (text: string) => LintResult;
     summaryLine: (result: LintResult) => string;
@@ -789,10 +827,6 @@ import { examples } from '../lib/dockerfile-linter/examples';
      chat-client limits), so we neither write it nor offer the share link — the
      linter itself keeps working on files of any size. */
   const MAX_HASH_LEN = 2000;
-  /* DOM cap: a 4,000-line Dockerfile can legitimately produce a hundred findings
-     per severity, and rendering all of them is what freezes the tab — not the
-     engine, which is linear. Each group says what it is hiding. */
-  const MAX_ROWS_PER_GROUP = 50;
 
   function boot(): void {
     document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
@@ -818,174 +852,6 @@ import { examples } from '../lib/dockerfile-linter/examples';
         } satisfies Example;
       })
       .filter((e) => e.dockerfile.length > 0);
-  }
-
-  /* ---- Icons (decorative) ------------------------------------------------- */
-
-  const ALERT_SVG =
-    '<svg class="df-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-  const CHECK_SVG =
-    '<svg class="df-clean__icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"></circle><path d="M7.5 12.5l3 3 6-6.5"></path></svg>';
-  const COPY_ICON_SVG =
-    '<svg class="df-copy-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"/></svg>';
-  const CHECK_ICON_SVG =
-    '<svg class="df-check-icon hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
-
-  /* ---- Pure render helpers ------------------------------------------------ */
-
-  const SEV_ORDER: Severity[] = ['error', 'warning', 'info'];
-  const SEV_GROUP: Record<Severity, string> = {
-    error: 'Errors',
-    warning: 'Warnings',
-    info: 'Notes',
-  };
-  const SEV_WORD: Record<Severity, string> = {
-    error: 'error',
-    warning: 'warning',
-    info: 'note',
-  };
-
-  function normSeverity(value: string): Severity {
-    return value === 'error' || value === 'warning' || value === 'info' ? value : 'info';
-  }
-
-  function plural(n: number, word: string): string {
-    return `${n} ${word}${n === 1 ? '' : 's'}`;
-  }
-
-  /** Rule id → the page catalog anchor, e.g. `DF007` → `#rule-df007`. */
-  function ruleAnchor(id: string): string {
-    return `#rule-${id.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
-  }
-
-  /** Escape, then render `backticks` as inline code — remediation text only. */
-  function remediationHtml(text: string): string {
-    return escapeHtml(text).replace(/`([^`]+)`/g, (_m, code: string) => `<code>${code}</code>`);
-  }
-
-  /** One plain-text line per finding: `L12 DF007: message — fix: hint`. */
-  function rowText(finding: Finding): string {
-    const where = typeof finding.line === 'number' ? `L${finding.line} ` : '';
-    const fix = finding.remediation ? ` — fix: ${finding.remediation}` : '';
-    return `${where}${finding.id}: ${finding.title}${fix}`;
-  }
-
-  function rowHtml(finding: Finding, index: number): string {
-    const sev = normSeverity(String(finding.severity));
-    const hasLine = typeof finding.line === 'number' && Number.isFinite(finding.line);
-    const jump = hasLine
-      ? `<button type="button" class="df-jump" data-df-jump="${escapeHtml(String(finding.line))}" ` +
-        `aria-label="Jump to line ${escapeHtml(String(finding.line))} in the editor">Line ${escapeHtml(
-          String(finding.line),
-        )}</button>`
-      : '';
-    const rule =
-      `<a class="df-rule" href="${escapeHtml(ruleAnchor(finding.id))}" ` +
-      `aria-label="${escapeHtml(finding.id)} reference">${escapeHtml(finding.id)}</a>`;
-    const fix = finding.remediation
-      ? '<div class="df-fix"><span class="df-fix__label">Fix</span>' +
-        `<p class="df-fix__text">${remediationHtml(finding.remediation)}</p></div>`
-      : '';
-    return (
-      `<div class="df-row df-row--${sev}">` +
-      '<div class="df-row__body">' +
-      '<div class="df-row__head">' +
-      `<span class="df-pill df-pill--${sev}">${escapeHtml(SEV_WORD[sev])}</span>` +
-      rule +
-      jump +
-      `<p class="df-row__title">${escapeHtml(finding.title)}</p>` +
-      '</div>' +
-      `<p class="df-row__detail">${escapeHtml(finding.detail)}</p>` +
-      fix +
-      '</div>' +
-      `<button class="df-copy" type="button" data-df-row="${escapeHtml(String(index))}" data-copy="" ` +
-      `aria-label="Copy this ${escapeHtml(SEV_WORD[sev])}" title="Copy">` +
-      COPY_ICON_SVG +
-      CHECK_ICON_SVG +
-      '</button></div>'
-    );
-  }
-
-  function groupHtml(sev: Severity, findings: { finding: Finding; index: number }[]): string {
-    const shown = findings.slice(0, MAX_ROWS_PER_GROUP);
-    const rows = shown.map(({ finding, index }) => rowHtml(finding, index)).join('');
-    const cap =
-      findings.length > shown.length
-        ? `<p class="df-note">Showing the first ${shown.length} of ${findings.length} ` +
-          `${SEV_WORD[sev]}s. Fix these and re-run to see the rest.</p>`
-        : '';
-    return (
-      '<div class="df-group">' +
-      `<p class="df-group__head"><span>${escapeHtml(SEV_GROUP[sev])}</span>` +
-      `<span class="df-group__count">${escapeHtml(String(findings.length))}</span></p>` +
-      rows +
-      cap +
-      '</div>'
-    );
-  }
-
-  /** Engine-level caps, stated rather than hidden. */
-  function truncationHtml(result: LintResult): string {
-    const notes: string[] = [];
-    for (const rule of result.truncatedRules.slice(0, 6)) {
-      notes.push(
-        `${escapeHtml(rule.ruleId)} matched ${escapeHtml(String(rule.total))} places; the first ` +
-          `${escapeHtml(String(rule.shown))} are listed.`,
-      );
-    }
-    if (result.truncatedRules.length > 6) {
-      notes.push(`…and ${escapeHtml(String(result.truncatedRules.length - 6))} more capped rules.`);
-    }
-    if (result.truncated) {
-      notes.push(
-        'This Dockerfile produced more findings than one report can usefully hold, so the list stops here.',
-      );
-    }
-    if (notes.length === 0) return '';
-    return `<div class="df-group"><p class="df-group__head"><span>Limits</span></p>${notes
-      .map((n) => `<p class="df-note">${n}</p>`)
-      .join('')}</div>`;
-  }
-
-  function cleanHtml(result: LintResult): string {
-    return (
-      '<div class="df-clean">' +
-      CHECK_SVG +
-      '<div><p class="df-clean__title">No findings — nice Dockerfile.</p>' +
-      `<p class="df-clean__sub">All 17 rules ran over ${escapeHtml(
-        plural(result.stats.instructions, 'instruction'),
-      )} in ${escapeHtml(plural(result.stats.stages, 'stage'))} and none of them matched. ` +
-      'The rule catalog below lists exactly what was checked — and what this linter deliberately ' +
-      'does not check.</p></div></div>'
-    );
-  }
-
-  function errorCardHtml(message: string, isAlert: boolean): string {
-    return (
-      `<div class="df-error"${isAlert ? ' role="alert"' : ''}>` +
-      ALERT_SVG +
-      '<div><p class="df-error__title">This is not a Dockerfile this linter can read</p>' +
-      `<p id="df-error-detail" class="df-error__detail">${escapeHtml(message)}</p></div></div>`
-    );
-  }
-
-  /** The plain-text report behind "Copy report" — built for a PR comment. */
-  function reportText(result: LintResult, summary: string): string {
-    const lines = [`Dockerfile Linter — ${summary}`, ''];
-    for (const sev of SEV_ORDER) {
-      const group = result.findings.filter((f) => normSeverity(String(f.severity)) === sev);
-      if (group.length === 0) continue;
-      lines.push(`${SEV_GROUP[sev].toUpperCase()} (${group.length})`);
-      for (const finding of group) lines.push(`  ${rowText(finding)}`);
-      lines.push('');
-    }
-    if (result.findings.length === 0) lines.push('No findings.', '');
-    for (const rule of result.truncatedRules) {
-      lines.push(`Note: ${rule.ruleId} matched ${rule.total} places; ${rule.shown} listed.`);
-    }
-    if (result.truncated) lines.push('Note: the finding list was capped.');
-    lines.push('Checked client-side at opscanopy.com/dockerfile-linter/ — 0 bytes uploaded.');
-    return lines.join('\n');
   }
 
   /* ---- Share fragment ----------------------------------------------------- */
@@ -1331,23 +1197,11 @@ import { examples } from '../lib/dockerfile-linter/examples';
       setErrorState(false);
       hideActions();
       setSummary('', false);
-      resultsBox!.innerHTML =
-        '<p class="df-empty body-sm text-mute">Paste a Dockerfile above — or tap an example — to ' +
-        'see line-numbered findings here, each with the reason it matters and the fix.</p>';
+      resultsBox!.innerHTML = EMPTY_HTML;
     }
 
     function renderResult(result: LintResult, summary: string): void {
-      const indexed = result.findings.map((finding, index) => ({ finding, index }));
-      const groups = SEV_ORDER.map((sev) =>
-        indexed.filter(({ finding }) => normSeverity(String(finding.severity)) === sev),
-      );
-      const html =
-        result.findings.length === 0
-          ? cleanHtml(result)
-          : groups
-              .map((group, i) => (group.length > 0 ? groupHtml(SEV_ORDER[i], group) : ''))
-              .join('') + truncationHtml(result);
-      resultsBox!.innerHTML = html;
+      resultsBox!.innerHTML = resultHtml(result);
 
       // Multi-line and quote-bearing payloads round-trip badly through HTML
       // attributes, so per-row copy text is assigned on the live elements.
@@ -1456,6 +1310,11 @@ import { examples } from '../lib/dockerfile-linter/examples';
     }
 
     const view = makeEditor(editorHost, seedText);
+    // The build-time text stand-in has done its job (no-JS visitors and
+    // crawlers); CodeMirror appended its editor beside it, so drop it. The
+    // share-link and restore tiers above already won over the example seed
+    // where they applied, so nothing the fallback held is lost.
+    root.querySelectorAll('[data-cm-fallback]').forEach((node) => node.remove());
     setActiveChip(seedChip);
 
     /* ---- Events ---------------------------------------------------------- */

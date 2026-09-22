@@ -28,7 +28,36 @@
 // examples module at hydration and addresses each chip by its
 // `data-example-idx`, so this adds nothing to the client bundle.
 import { examples as prerenderedExamples } from '../lib/docker-run-to-compose/examples';
+import { runToCompose } from '../lib/docker-run-to-compose/engine';
+import {
+  resultHtml,
+  warningsHtml,
+  statusText,
+  EMPTY_HTML,
+} from '../lib/docker-run-to-compose/render';
 
+/**
+ * Server-rendered seed. The client re-converts the same example on boot, so
+ * this is pure progressive enhancement — but it means a visitor with no JS,
+ * and every AI crawler (they do not execute JS), sees the real Compose YAML
+ * and its migration notes instead of "pick a mode, then convert".
+ *
+ * The seed is always the DEFAULT `run → compose` direction, which is the mode
+ * the markup ships checked. `runToCompose` is pure, synchronous and clock-free,
+ * so it runs at build time unchanged. The command itself goes into a
+ * `<pre data-cm-fallback>` inside the CodeMirror host — CM appends its editor
+ * to the host, so the script removes the fallback once mounted.
+ */
+const seedExample = prerenderedExamples[0];
+const seedInput = seedExample?.run ?? '';
+const seedResult = seedExample ? runToCompose(seedInput) : null;
+// A bundled example that fails to convert would be a bug, not a note — fall
+// back to the shared empty state rather than server-rendering an error banner.
+const seedOk = seedResult && seedResult.ok !== false && !seedResult.error ? seedResult : null;
+const seedHtml = seedOk ? resultHtml('docker-compose.yml', seedOk.yaml ?? '') : EMPTY_HTML;
+const seedWarnings = seedOk ? (seedOk.warnings ?? []) : [];
+const seedWarningsHtml = seedOk ? warningsHtml(seedWarnings) : '';
+const seedStatus = seedOk ? statusText(seedWarnings) : '';
 ---
 
 <section class="drc" aria-label="Docker Run to Compose converter playground">
@@ -120,7 +149,9 @@ import { examples as prerenderedExamples } from '../lib/docker-run-to-compose/ex
         <span class="code-mono text-white/30 ml-auto">input</span>
       </div>
       <p class="body-sm text-mute px-4 pt-2">Runs entirely in your browser — nothing is uploaded.</p>
-      <div id="drc-editor" class="drc-editor min-h-56" aria-label="Converter input"></div>
+      <div id="drc-editor" class="drc-editor min-h-56" aria-label="Converter input">
+        <pre class="drc-cm-fallback code-mono" data-cm-fallback>{seedInput}</pre>
+      </div>
       <p class="text-xs text-mute px-4 pb-2 pt-1">
         Tip: press <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd>
         to release keyboard focus from the editor.
@@ -179,7 +210,7 @@ import { examples as prerenderedExamples } from '../lib/docker-run-to-compose/ex
           </button>
         </span>
         <div class="flex items-center gap-3">
-          <span id="drc-status" class="drc-status code-mono text-mute" role="status" aria-live="polite"></span>
+          <span id="drc-status" class="drc-status code-mono text-mute" role="status" aria-live="polite">{seedStatus}</span>
           <button
             id="drc-copy"
             type="button"
@@ -204,13 +235,18 @@ import { examples as prerenderedExamples } from '../lib/docker-run-to-compose/ex
         </div>
       </div>
 
-      <div id="drc-output" class="drc-output">
-        <p class="drc-empty body-sm text-mute">
-          Pick a mode, load an example or paste your own, then convert to see the result here.
-        </p>
-      </div>
+      {/* Seeded at build time (see `seedHtml` above) so the converted YAML is
+          in the static HTML; the client rebuilds the same markup on boot. */}
+      <div id="drc-output" class="drc-output" set:html={seedHtml}></div>
 
-      <div id="drc-warnings" class="drc-warnings" role="status" aria-live="polite" aria-atomic="false"></div>
+      <div
+        id="drc-warnings"
+        class="drc-warnings"
+        role="status"
+        aria-live="polite"
+        aria-atomic="false"
+        set:html={seedWarningsHtml}
+      ></div>
     </div>
   </div>
 
@@ -353,6 +389,19 @@ import { examples as prerenderedExamples } from '../lib/docker-run-to-compose/ex
   .drc-editor {
     overflow: hidden;
     padding-inline: 4px;
+  }
+  /* Build-time text stand-in for the editor, sized like the CM content so the
+     pane does not jump when the script swaps it out. Removed on mount. */
+  .drc-cm-fallback {
+    margin: 0;
+    padding: 14px 16px 16px;
+    max-height: 320px;
+    overflow: auto;
+    color: #e6e6e6;
+    font-size: 13px;
+    line-height: 20px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
   .drc-editor :global(.cm-editor) {
     height: 100%;
@@ -603,9 +652,17 @@ import { examples as prerenderedExamples } from '../lib/docker-run-to-compose/ex
 <script>
   import { copyTextToClipboard as copyText } from '../lib/clipboard';
   import type { EditorView } from '@codemirror/view';
-  import { escapeHtml } from '../lib/escape-html';
   import { buildMarkdownBlock } from '../lib/share-md';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  // The HTML builders are shared with the frontmatter's build-time seed —
+  // one implementation, so the no-JS markup and the live markup never drift.
+  import {
+    resultHtml,
+    warningsHtml,
+    statusText,
+    errorHtml,
+    EMPTY_HTML,
+  } from '../lib/docker-run-to-compose/render';
 
   /* ---- Types mirrored from the engine contract (structural, not imported). -- */
   type RunResult = { ok: boolean; yaml?: string; warnings?: string[]; error?: string };
@@ -661,26 +718,13 @@ import { examples as prerenderedExamples } from '../lib/docker-run-to-compose/ex
     return root.querySelector<T>(sel);
   }
 
-  /** Render warning text, escaping HTML but rendering `code` spans inline. */
-  function warnHtml(text: string): string {
-    return escapeHtml(text).replace(/`([^`]+)`/g, (_m, code: string) => `<code>${code}</code>`);
-  }
-
-  /* ---- Icons (decorative) --------------------------------------------------- */
-
-  const ICON_ALERT =
-    '<svg class="drc-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-  const ICON_WARN =
-    '<svg class="drc-warn__icon" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-
-  /* ---- Result rendering ----------------------------------------------------- */
+  /* ---- Result rendering (DOM writes over the shared pure builders) --------- */
 
   function renderEmpty(output: HTMLElement, warnings: HTMLElement, status: HTMLElement): void {
     status.textContent = '';
     status.classList.remove('text-error');
     status.classList.add('text-mute');
-    output.innerHTML =
-      '<p class="drc-empty body-sm text-mute">Pick a mode, load an example or paste your own, then convert to see the result here.</p>';
+    output.innerHTML = EMPTY_HTML;
     warnings.innerHTML = '';
   }
 
@@ -693,11 +737,7 @@ import { examples as prerenderedExamples } from '../lib/docker-run-to-compose/ex
     status.textContent = 'Error';
     status.classList.add('text-error');
     status.classList.remove('text-mute');
-    output.innerHTML =
-      '<div class="drc-error" role="alert">' +
-      ICON_ALERT +
-      '<div><p class="drc-error__title">Could not convert</p>' +
-      `<p class="drc-error__detail">${escapeHtml(message)}</p></div></div>`;
+    output.innerHTML = errorHtml(message);
     warnings.innerHTML = '';
   }
 
@@ -709,29 +749,11 @@ import { examples as prerenderedExamples } from '../lib/docker-run-to-compose/ex
     code: string,
     warnings: string[],
   ): void {
-    const dots = '<span class="drc-result__dot"></span>'.repeat(3);
-    output.innerHTML =
-      '<div class="drc-result">' +
-      `<div class="drc-result__bar">${dots}<span class="drc-result__name">${escapeHtml(name)}</span></div>` +
-      `<pre class="drc-result__pre"><code>${escapeHtml(code)}</code></pre>` +
-      '</div>';
-
-    if (warnings.length > 0) {
-      status.textContent = `${warnings.length} ${warnings.length === 1 ? 'note' : 'notes'}`;
-      status.classList.remove('text-error');
-      status.classList.add('text-mute');
-      warningsBox.innerHTML = warnings
-        .map(
-          (w) =>
-            '<div class="drc-warn">' + ICON_WARN + `<p class="drc-warn__text">${warnHtml(w)}</p></div>`,
-        )
-        .join('');
-    } else {
-      status.textContent = 'Converted';
-      status.classList.remove('text-error');
-      status.classList.add('text-mute');
-      warningsBox.innerHTML = '';
-    }
+    output.innerHTML = resultHtml(name, code);
+    status.textContent = statusText(warnings);
+    status.classList.remove('text-error');
+    status.classList.add('text-mute');
+    warningsBox.innerHTML = warningsHtml(warnings);
   }
 
   /* ---- Clipboard ------------------------------------------------------------ */
@@ -908,6 +930,11 @@ import { examples as prerenderedExamples } from '../lib/docker-run-to-compose/ex
     }
 
     const view = makeEditor(editorHost, seedText);
+    // The build-time text stand-in has done its job (no-JS visitors and
+    // crawlers); CodeMirror appended its editor beside it, so drop it. The
+    // share/restore tiers above already resolved, so the seed never wins over
+    // a deep link or a remembered input.
+    root.querySelectorAll('[data-cm-fallback]').forEach((node) => node.remove());
 
     // The example chips are server-rendered from the same module; wire them by
     // index. The old "Custom input" sentinel becomes "no chip active" (-1),
@@ -1217,9 +1244,11 @@ import { examples as prerenderedExamples } from '../lib/docker-run-to-compose/ex
 
     // Initial chrome + auto-convert the seeded example/shared state. Passing
     // `false` here means this first render never rewrites the URL hash — only
-    // subsequent user-initiated conversions do.
+    // subsequent user-initiated conversions do. The output pane is already
+    // server-rendered from `examples[0]` in the default run → compose
+    // direction, so there is nothing to clear first; renderEmpty stays for the
+    // mode/example switches below.
     applyModeChrome();
-    renderEmpty(outputBox, warningsBox, statusEl);
     void run(false);
     // Now that run() exists and the initial convert is queued, enable the
     // debounced live conversion on every subsequent user edit.

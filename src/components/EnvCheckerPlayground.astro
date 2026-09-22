@@ -32,7 +32,32 @@
 // final markup — hydration only attaches click handlers and moves the active
 // state — so this adds nothing to the client bundle and cannot drift.
 import { examples as prerenderedExamples } from '../lib/env-checker/examples';
+import { check } from '../lib/env-checker/engine';
+import { reportHtml, reportSummary, EMPTY_HTML } from '../lib/env-checker/render';
 
+/**
+ * Server-rendered seed. The client re-checks the same example on boot, so this
+ * is pure progressive enhancement — but it means a visitor with no JS, and
+ * every AI crawler (they do not execute JS), sees the real "missing / unused"
+ * verdict instead of an empty "load an example" panel.
+ *
+ * `check` is pure and synchronous, reads no clock and returns sorted arrays,
+ * so it runs at build time unchanged. The two editor bodies go into
+ * `<pre data-cm-fallback>` elements inside the CodeMirror hosts — CM appends
+ * its editor to the host, so the script removes every fallback once mounted.
+ */
+const seedExample = prerenderedExamples[0];
+const seedResult = seedExample ? check(seedExample.code, seedExample.envExample) : null;
+const seedOk = seedResult && !seedResult.error ? seedResult : null;
+const seedHtml = seedOk ? reportHtml(seedOk) : EMPTY_HTML;
+const seedSummaryInfo = seedOk ? reportSummary(seedOk) : null;
+const seedSummary = seedSummaryInfo ? seedSummaryInfo.text : '';
+const seedSummaryTone =
+  seedSummaryInfo?.tone === 'success'
+    ? 'text-success'
+    : seedSummaryInfo?.tone === 'error'
+      ? 'text-error'
+      : 'text-mute';
 ---
 
 <section class="ec-pg" aria-label="Env Example Checker playground">
@@ -152,6 +177,7 @@ import { examples as prerenderedExamples } from '../lib/env-checker/examples';
           class="ec-editor min-h-72"
           aria-label="Your application code"
         >
+          <pre class="ec-cm-fallback code-mono" data-cm-fallback>{seedExample?.code}</pre>
         </div>
       </div>
 
@@ -174,6 +200,7 @@ import { examples as prerenderedExamples } from '../lib/env-checker/examples';
           class="ec-editor min-h-72"
           aria-label="Your .env.example file"
         >
+          <pre class="ec-cm-fallback code-mono" data-cm-fallback>{seedExample?.envExample}</pre>
         </div>
       </div>
     </div>
@@ -186,10 +213,10 @@ import { examples as prerenderedExamples } from '../lib/env-checker/examples';
         <span class="eyebrow">Drift Report</span>
         <span
           id="ec-summary"
-          class="ec-summary code-mono text-mute"
+          class:list={['ec-summary code-mono', seedSummaryTone]}
           role="status"
           aria-live="polite"
-        ></span>
+        >{seedSummary}</span>
       </div>
       <p class="caption text-mute mb-3">No share links on this tool — inputs may be secrets.</p>
       <div class="ec-snap-row mb-3 flex flex-wrap items-center gap-2">
@@ -200,12 +227,9 @@ import { examples as prerenderedExamples } from '../lib/env-checker/examples';
         <button id="ec-snap-delete" type="button" class="ec-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
       </div>
 
-      <div id="ec-report" class="ec-report">
-        <p class="ec-empty body-sm text-mute">
-          Load an example or paste your own code and .env.example, then check to
-          see which variables drifted.
-        </p>
-      </div>
+      {/* Seeded at build time (see `seedHtml` above) so the drift report is in
+          the static HTML; the client replaces it with the same markup on boot. */}
+      <div id="ec-report" class="ec-report" set:html={seedHtml}></div>
     </div>
   </div>
 
@@ -369,6 +393,19 @@ import { examples as prerenderedExamples } from '../lib/env-checker/examples';
   /* CodeMirror host — fills the dark pane, scrolls internally. */
   .ec-editor {
     overflow: hidden;
+  }
+  /* Build-time text stand-in for each editor, sized like the CM content so
+     the pane does not jump when the script swaps it out. Removed on mount. */
+  .ec-cm-fallback {
+    margin: 0;
+    padding: 14px 16px 16px;
+    max-height: 420px;
+    overflow: auto;
+    color: #e6e6e6;
+    font-size: 13px;
+    line-height: 20px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
   .ec-editor :global(.cm-editor) {
     height: 100%;
@@ -800,21 +837,24 @@ import { examples as prerenderedExamples } from '../lib/env-checker/examples';
 <script>
   import { copyTextToClipboard as copyText } from '../lib/clipboard';
   import type { EditorView } from '@codemirror/view';
-  import { escapeHtml } from '../lib/escape-html';
   import { wireSnapshotUI } from '../lib/tool-state/wire';
+  // The HTML builders are shared with the frontmatter's build-time seed —
+  // one implementation, so the no-JS markup and the live markup never drift.
+  import {
+    reportHtml,
+    reportSummary,
+    errorHtml,
+    strList,
+    EMPTY_HTML,
+    LOADING_HTML,
+    type SummaryTone,
+  } from '../lib/env-checker/render';
+  import type { EnvResult } from '../lib/env-checker/types';
 
   // CodeMirror is loaded via dynamic import inside init() so its ~200KB runtime
   // code-splits into its own chunk instead of shipping in the page's initial JS.
   // The `EditorView` type above is erased at build time and ships no runtime code.
 
-  /* ---- Types mirrored from the engine contract (structural, not imported). -- */
-  type EnvResult = {
-    error?: string;
-    usedVars?: string[];
-    exampleVars?: string[];
-    missingInExample?: string[];
-    unusedInExample?: string[];
-  };
   type EngineModule = {
     check: (code: string, envExample: string) => EnvResult | Promise<EnvResult>;
   };
@@ -861,162 +901,38 @@ import { examples as prerenderedExamples } from '../lib/env-checker/examples';
     });
   }
 
-  /** Coerce an unknown into a deduped string array of non-empty keys. */
-  function strList(v: unknown): string[] {
-    if (!Array.isArray(v)) return [];
-    const out: string[] = [];
-    const seen = new Set<string>();
-    for (const x of v) {
-      if (typeof x === 'string' && x.length > 0 && !seen.has(x)) {
-        seen.add(x);
-        out.push(x);
-      }
-    }
-    return out;
+  /* ---- Report rendering (DOM writes over the shared pure builders) --------- */
+
+  function setSummary(summary: HTMLElement, text: string, tone: SummaryTone): void {
+    summary.textContent = text;
+    summary.classList.toggle('text-success', tone === 'success');
+    summary.classList.toggle('text-error', tone === 'error');
+    summary.classList.toggle('text-mute', tone === 'mute');
   }
 
-  /* ---- Clipboard ------------------------------------------------------------ */
-
-  /* ---- Report rendering ----------------------------------------------------- */
-
-  const MISS_SVG =
-    '<svg class="ec-group__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-  const UNUSED_SVG =
-    '<svg class="ec-group__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"></circle><path d="M10 6v4.5"></path><path d="M10 13.6v.01"></path></svg>';
-  const OK_SVG =
-    '<svg class="ec-ok__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"></circle><path d="M6.5 10.5l2.4 2.4 4.6-5"></path></svg>';
-  const ALERT_SVG =
-    '<svg class="ec-error__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
-  const COPY_ICON =
-    '<svg class="ec-copy__icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"></rect><path d="M3.5 10.5h-.5a1 1 0 01-1-1v-6a1 1 0 011-1h6a1 1 0 011 1v.5"></path></svg>';
-  const COPYALL_ICON =
-    '<svg class="ec-copyall__icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"></rect><path d="M3.5 10.5h-.5a1 1 0 01-1-1v-6a1 1 0 011-1h6a1 1 0 011 1v.5"></path></svg>';
-
   function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
-    summary.textContent = '';
-    summary.classList.remove('text-error', 'text-success');
-    summary.classList.add('text-mute');
-    container.innerHTML =
-      '<p class="ec-empty body-sm text-mute">Load an example or paste your own code and .env.example, then check to see which variables drifted.</p>';
+    setSummary(summary, '', 'mute');
+    container.innerHTML = EMPTY_HTML;
   }
 
   function renderLoading(container: HTMLElement, summary: HTMLElement): void {
-    summary.textContent = '';
-    summary.classList.remove('text-error', 'text-success');
-    summary.classList.add('text-mute');
-    container.innerHTML =
-      '<div class="ec-loading"><span class="ec-loading__dot"></span>' +
-      '<span class="ec-loading__dot"></span><span class="ec-loading__dot"></span>' +
-      '<span>Checking…</span></div>';
+    setSummary(summary, '', 'mute');
+    container.innerHTML = LOADING_HTML;
   }
 
   function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
-    summary.textContent = 'Error';
-    summary.classList.remove('text-mute', 'text-success');
-    summary.classList.add('text-error');
-    container.innerHTML =
-      '<div class="ec-error" role="alert">' +
-      ALERT_SVG +
-      '<div class="ec-error__body"><p class="ec-error__title">Could not check</p>' +
-      `<p class="ec-error__detail">${escapeHtml(message)}</p></div></div>`;
+    setSummary(summary, 'Error', 'error');
+    container.innerHTML = errorHtml(message);
   }
 
-  /** Build the "Missing from .env.example" group (copyable KEY= rows). */
-  function missingGroupHtml(keys: string[]): string {
-    const n = keys.length;
-    const items = keys
-      .map((k) => {
-        const safe = escapeHtml(k);
-        return (
-          '<li class="ec-item">' +
-          `<span class="ec-item__key"><span>${safe}</span><span class="ec-item__eq">=</span></span>` +
-          `<button type="button" class="ec-copy ec-tap" data-copy="${safe}=" ` +
-          `aria-label="Copy ${safe}= line">${COPY_ICON}<span class="ec-copy__lbl">Copy</span></button>` +
-          '</li>'
-        );
-      })
-      .join('');
-    return (
-      '<section class="ec-group ec-group--miss">' +
-      '<div class="ec-group__head">' +
-      MISS_SVG +
-      `<h3 class="ec-group__title">Missing from .env.example</h3>` +
-      `<span class="ec-group__count">${n}</span>` +
-      `<button type="button" class="ec-copyall ec-tap" data-copy-all="missing" ` +
-      `aria-label="Copy all missing keys as .env lines">${COPYALL_ICON}<span class="ec-copyall__lbl">Copy all</span></button>` +
-      '</div>' +
-      '<p class="ec-group__hint">Used in code but absent from your example. Add these placeholder lines so teammates know what to set.</p>' +
-      `<ul class="ec-list">${items}</ul>` +
-      '</section>'
-    );
-  }
-
-  /** Build the "Unused in code" group (muted, informational). */
-  function unusedGroupHtml(keys: string[]): string {
-    const n = keys.length;
-    const items = keys
-      .map(
-        (k) =>
-          `<li class="ec-item ec-item--unused"><span class="ec-item__key">${escapeHtml(k)}</span></li>`
-      )
-      .join('');
-    return (
-      '<section class="ec-group ec-group--unused">' +
-      '<div class="ec-group__head">' +
-      UNUSED_SVG +
-      `<h3 class="ec-group__title">Unused in code</h3>` +
-      `<span class="ec-group__count">${n}</span>` +
-      '</div>' +
-      '<p class="ec-group__hint">Declared in .env.example but never read in the code you pasted. Safe to remove if truly unused.</p>' +
-      `<ul class="ec-list">${items}</ul>` +
-      '</section>'
-    );
-  }
-
-  function renderResult(
-    container: HTMLElement,
-    summary: HTMLElement,
-    result: EnvResult
-  ): void {
+  function renderResult(container: HTMLElement, summary: HTMLElement, result: EnvResult): void {
     if (!result || result.error) {
       renderError(container, summary, result?.error ?? 'Unknown error while checking.');
       return;
     }
-
-    const missing = strList(result.missingInExample);
-    const unused = strList(result.unusedInExample);
-    const used = strList(result.usedVars);
-
-    // Summary counts.
-    if (missing.length === 0 && unused.length === 0) {
-      summary.textContent = used.length
-        ? `${used.length} ${used.length === 1 ? 'var' : 'vars'} · in sync`
-        : 'In sync';
-      summary.classList.remove('text-error', 'text-mute');
-      summary.classList.add('text-success');
-    } else {
-      const parts: string[] = [];
-      if (missing.length) parts.push(`${missing.length} missing`);
-      if (unused.length) parts.push(`${unused.length} unused`);
-      summary.textContent = parts.join(' · ');
-      summary.classList.remove('text-success', 'text-mute');
-      summary.classList.toggle('text-error', missing.length > 0);
-      summary.classList.toggle('text-mute', missing.length === 0);
-    }
-
-    if (missing.length === 0 && unused.length === 0) {
-      container.innerHTML =
-        '<div class="ec-ok">' +
-        OK_SVG +
-        '<span class="ec-ok__text">No drift detected. Every variable your code reads is declared in .env.example, with nothing left over.</span>' +
-        '</div>';
-      return;
-    }
-
-    const blocks: string[] = [];
-    if (missing.length) blocks.push(missingGroupHtml(missing));
-    if (unused.length) blocks.push(unusedGroupHtml(unused));
-    container.innerHTML = blocks.join('');
+    const { text, tone } = reportSummary(result);
+    setSummary(summary, text, tone);
+    container.innerHTML = reportHtml(result);
   }
 
   /* ---- Instance init -------------------------------------------------------- */
@@ -1139,6 +1055,11 @@ import { examples as prerenderedExamples } from '../lib/env-checker/examples';
 
     const codeView = makeEditor(codeHost, seed.code, scheduleLive);
     const envView = makeEditor(envHost, seed.envExample, scheduleLive);
+    // The build-time text stand-ins have done their job (no-JS visitors and
+    // crawlers); CodeMirror appended its editors beside them, so drop them.
+    // This tool is hard-excluded from restore-last-input and has no share link,
+    // so the seeded example is always what the editors hold on boot.
+    root.querySelectorAll('[data-cm-fallback]').forEach((node) => node.remove());
 
     // Example chips are server-rendered from the same `examples` module, in the
     // same order, so `data-example-idx` indexes this array directly.
