@@ -22,44 +22,7 @@ const tool = getTool('terraform-plan-summarizer');
 const pagePath = '/terraform-plan-summarizer/';
 const pageUrl = `${site.url}${__l(pagePath, (Astro.currentLocale ?? 'en') as __Locale)}`;
 
-const faqs = [
-  {
-    q: 'Welche Plan-Formate werden akzeptiert?',
-    a: 'Beide — und es wird erkannt, welches Sie eingefügt haben. Das erste ist das lesbare Transkript, das Terraform ausgibt, mit +, ~, - und -/+ am linken Rand, einschließlich der ANSI-Farbcodes und CRLF-Zeilenenden, die beim Kopieren aus einem CI-Log anfallen. Das zweite ist terraform show -json tfplan, das Maschinenformat mit resource_changes, replace_paths, action_reason und output_changes — eine dokumentierte, versionierte Schnittstelle. Das JSON ist verlässlicher und die erste Wahl, wenn Sie eine Plandatei speichern können; der Text ist das, was Sie tatsächlich haben, wenn die Pipeline schon gelaufen ist. Nicht akzeptiert wird terraform show -json Ihres States oder die Ausgabe von terraform validate -json — beides sind häufige Verwechslungen, und beide werden benannt, samt dem Befehl, der das Richtige erzeugt.',
-  },
-  {
-    q: 'Was ist der Unterschied zwischen -/+ und +/- in einem Plan?',
-    a: 'Die Reihenfolge der beiden Operationen — und die entscheidet, ob es einen Ausfall gibt. -/+ heißt zuerst löschen, dann anlegen: das alte Objekt ist weg, bevor das neue existiert, alles Abhängige ist für die Dauer dieser Lücke kaputt — Sekunden bei einer Security-Group-Regel, zwanzig Minuten bei einer RDS-Instanz. +/- heißt zuerst anlegen, dann löschen, und genau das kauft Ihnen lifecycle { create_before_destroy = true }: der Ersatz wird gebaut und erst danach das alte Objekt entfernt. Terraform wählt standardmäßig Löschen-zuerst, +/- erscheint also nur dort, wo jemand es angefordert hat. Diese Seite schreibt beide Reihenfolgen in Worten auf jede Ersetzungszeile, statt Sie ein dreizeichiges Glyph entschlüsseln zu lassen.',
-  },
-  {
-    q: 'Was bedeutet „forces replacement“ konkret?',
-    a: 'Es markiert genau das Attribut, dessen Änderung nicht an der Stelle angewendet werden kann, sodass der Provider das Objekt löschen und ein neues bauen muss. Es ist attributgenau, und das ist der nützliche Teil: engine_version bei einer aws_db_instance ist ein echtes Upgrade, das Sie beabsichtigt haben, während availability_zone oder name aus Versehen — durch eine umbenannte Variable, ein umformatiertes Tag, einen verschobenen Provider-Default — die klassische Überraschungsersetzung ist. Diese Seite holt jeden dieser Attributnamen aus dem Block, zu dem er gehört, und zeigt ihn als Chip an der jeweiligen Ressourcenzeile, damit Sie nie ein 400-zeiliges Diff nach dem Kommentar durchsuchen müssen.',
-  },
-  {
-    q: 'Warum zählt eine Ersetzung sowohl als „add“ als auch als „destroy“?',
-    a: 'Weil Terraform Operationen zählt, nicht Ressourcen — und eine Ersetzung sind zwei Operationen. Ein Plan mit einem reinen Create und einer Ersetzung gibt deshalb „Plan: 2 to add, 0 to change, 1 to destroy“ aus: die Ersetzung geht in beide Zahlen ein. Das ist korrekt, und es ist gleichzeitig die am häufigsten falsch gelesene Zeile der Terraform-Ausgabe, denn „2 to add“ klingt nach zwei neuen Dingen. Diese Seite zeigt stattdessen vier disjunkte Kacheln: „add“ ist direkt angelegt, „replace“ ist gelöscht und neu erstellt, und nichts wird doppelt gezählt. Terraforms eigene Rechnung steht wörtlich darunter, damit man beide vergleichen kann statt sie zu verwechseln.',
-  },
-  {
-    q: 'Ist es sicher, hier einen Plan einzufügen?',
-    a: 'Ja — und genau deshalb existiert diese Seite in dieser Form. Es steht kein Server dahinter: der Parser ist JavaScript, das in Ihren Tab lädt und dort läuft, der Plan verlässt Ihren Rechner also nie. Prüfen können Sie das im Netzwerk-Tab Ihres Browsers oder indem Sie die Seite laden und dann offline gehen. Bei Plan-Ausgabe zählt das mehr als bei fast allem anderen, was man in ein Web-Werkzeug einfügt: ein Plan ist voll von Account-IDs, ARNs, Subnetz- und CIDR-Bereichen, IAM-Policy-Dokumenten, Security-Group-Regeln und internen DNS-Namen. Wer das in einen Chatbot einfügt, übergibt all das einem Dritten — und in den Consumer-Tarifen der meisten Assistenten auch den Trainingsdaten.',
-  },
-  {
-    q: 'Die Zahlen passen nicht zusammen — was bedeutet die Abweichungswarnung?',
-    a: 'Sie bedeutet, dass die Ressourcen, die diese Seite lesen konnte, nicht zu den Summen auf Terraforms eigener Zusammenfassungszeile addieren — und in neun von zehn Fällen ist die Einfügung unvollständig: ein CI-Log-Viewer hat die Mitte eingeklappt, ein Scrollback-Puffer hat sie abgeschnitten, oder die Kopie begann auf halber Strecke. Die Warnung nennt beide Zahlensätze und sagt Ihnen, Terraform zu vertrauen. Der Grund, dass es sie überhaupt gibt: Terraforms lesbare Ausgabe ist ausdrücklich keine stabile Schnittstelle, ein Textparser wird also irgendwann an einer Formatänderung abdriften — und ein Summarizer, der still abdriftet, würde eine selbstsichere falsche Summe ausgeben, was schlimmer ist als gar keine. Dieser Gegencheck ist erst das, was das Parsen eines instabilen Formats vertretbar macht.',
-  },
-  {
-    q: 'Was bedeutet „(known after apply)“, und warum steht dort kein Wert?',
-    a: 'Es bedeutet, dass der Wert noch nicht existiert. Attribute wie ein ARN, eine id, ein generierter DNS-Name oder eine IP-Adresse werden vom Provider beim Anlegen vergeben; zur Planzeit kennt Terraform sie also wirklich nicht und weigert sich zu raten. Das ist kein Fehler und keine Warnung — ein Plan für etwas Neues ist voll davon. Eine praktische Folge hat es doch: eine Ressource, deren Eingabe von einem unbekannten Wert abhängt, kann ebenfalls nicht vollständig ausgewertet werden. Deshalb sehen Sie manchmal eine Data Source als „read during apply“ markiert statt aufgelöst, und deshalb kann ein Apply mehr tun, als der Plan gezeigt hat.',
-  },
-  {
-    q: 'Funktioniert das mit OpenTofu?',
-    a: 'Ja. OpenTofu wurde von Terraform 1.5.x abgezweigt und hat beide Ausgabeformate behalten: das Textformat verwendet die gleichen Symbole und die gleiche Zeile „Plan: N to add, N to change, N to destroy“, und tofu show -json liefert dieselbe format_version-Familie mit derselben resource_changes-Struktur. Alles auf dieser Seite gilt unverändert, und die Versionszeile wird als das Produkt gelesen, das sie ausgegeben hat. Dasselbe gilt für die Wrapper, die Terraform-Ausgabe unverändert durchleiten — Terragrunt, Atlantis, Spacelift — solange der Plantext selbst intakt ist.',
-  },
-  {
-    q: 'Gegen welche Terraform-Versionen ist das getestet?',
-    a: 'Der JSON-Pfad ist gegen format_version 0.1 bis 1.x geschrieben, was Terraform 0.12 bis 1.9 und aktuelles OpenTofu abdeckt; ein Dokument mit unbekannter Major-Version wird akzeptiert, trägt aber eine Warnung, denn ein umbenanntes Feld würde sonst still Nullen erzeugen. Der Textpfad ist gegen die Formen ab 1.5 getestet — dort kam „N to import“ in die Zusammenfassungszeile, und dort erscheinen moved- und import-Blöcke; ältere Ausgabe parst meist, und was nicht parst, fängt der Zahlen-Gegencheck ab, statt es als Tatsache zu melden. Das Einzige, was diese Seite nie tun wird, ist Kosten schätzen: Preise veralten, und eine veraltete Zahl mit Selbstsicherheit ausgegeben ist genau die Art Antwort, die diese Website ersetzen soll.',
-  },
-];
+const faqs = toolFaqs('terraform-plan-summarizer', 'de');
 
 const softwareApp = softwareAppLd({
   name: 'Terraform Plan Summarizer',
@@ -188,6 +151,7 @@ terraform validate -json                    # this is a config check, not a plan
 
 import type { Locale as __Locale } from '../../i18n/config';
 import { localizeKey as __l } from '../../i18n/utils';
+import { toolFaqs } from '../../data/tool-faqs';
 const __lang = (Astro.currentLocale ?? 'en') as __Locale;
 ---
 

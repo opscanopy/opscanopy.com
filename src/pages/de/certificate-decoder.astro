@@ -21,44 +21,7 @@ const tool = getTool('certificate-decoder');
 const pagePath = '/certificate-decoder/';
 const pageUrl = `${site.url}${__l(pagePath, (Astro.currentLocale ?? 'en') as __Locale)}`;
 
-const faqs = [
-  {
-    q: 'Was bedeutet „unable to get local issuer certificate“?',
-    a: 'Es bedeutet, dass die Kette, die Ihr Server sendet, endet, bevor sie etwas erreicht, dem der Client vertraut — fast immer, weil ein Zwischenzertifikat fehlt. Ein Client geht vom Leaf nach oben: Leaf → Intermediate → Root. In seinem Trust-Store liegen nur Roots; fehlt also das Zwischenzertifikat, das beide verbindet, läuft der Weg ins Leere und OpenSSL meldet Fehler 20 mit genau dieser Meldung. Fügen Sie Ihre Kette hier ein, und das fehlende Zwischenzertifikat wird mit seinem exakten Distinguished Name benannt — genau der String, den Sie brauchen, um die richtige Datei zu finden und anzuhängen.',
-  },
-  {
-    q: 'Warum funktioniert mein Zertifikat im Browser, aber nicht in curl oder CI?',
-    a: 'Weil Browser unvollständige Ketten reparieren und Kommandozeilen-Clients nicht. Fehlt ein Zwischenzertifikat, können Chrome, Edge und Safari es über die URL in der Erweiterung authorityInfoAccess nachladen oder eines wiederverwenden, das sie von einer anderen Website gecacht haben — das Schloss erscheint und das Problem bleibt unsichtbar. curl, openssl s_client, Gos crypto/tls, Pythons requests und die meisten Sprach-Runtimes tun nichts davon: sie verwenden genau die Zertifikate, die Sie geschickt haben, und scheitern. Diese Asymmetrie ist der Grund, warum „bei mir im Browser geht es“ kein Beweis ist, und die häufigste Ursache dafür, dass ein Deploy die manuelle Prüfung besteht und einen Webhook zerbricht.',
-  },
-  {
-    q: 'Sollte fullchain.pem das Root-Zertifikat enthalten?',
-    a: 'Nein — und es schadet auch nicht. Ein Client vertraut einem Root, weil dieser Root bereits in seinem eigenen Trust-Store liegt; eine über die Leitung gesendete Kopie beweist nichts, denn ein Angreifer könnte jeden beliebigen Root schicken. Es kostet also nur rund 1–2 KB bei jedem einzelnen Handshake. Enthalten sein muss dagegen zuerst das Leaf und danach jedes Zwischenzertifikat darüber. Dieses Werkzeug beschriftet jedes Zertifikat mit seiner Rolle und sagt Ihnen, in welchem der beiden Fälle Sie stecken: ein Root, der bloß überflüssig ist, oder ein Zwischenzertifikat, das wirklich fehlt.',
-  },
-  {
-    q: 'Was ist der Unterschied zwischen Leaf, Intermediate und Root?',
-    a: 'Das Leaf ist das Zertifikat für Ihren Hostnamen: es trägt die subjectAltName-Liste, hat CA:FALSE in seinen basicConstraints und ist das, was der Server präsentiert. Ein Intermediate ist ein CA-Zertifikat, das im Auftrag eines Roots Leafs signiert; es hat CA:TRUE, meist mit pathlen:0, damit es nicht weiter delegieren kann. Ein Root ist ein CA-Zertifikat, das sich selbst signiert hat — Subject und Issuer sind identisch — und ihm wird nur vertraut, weil er in Betriebssystemen und Browsern mitgeliefert wird. CAs halten Roots offline und signieren über Intermediates, gerade damit ein kompromittierter Signaturschlüssel ersetzt werden kann, ohne den Root neu auszustellen.',
-  },
-  {
-    q: 'Sagt dieses Werkzeug, ob ein Zertifikat vertrauenswürdig ist?',
-    a: 'Bewusst nicht — und das ist die ehrliche Antwort, nicht eine Einschränkung, die man umgehen sollte. „Vertrauenswürdig“ ist eine Eigenschaft des Clients, nicht des Zertifikats: Chrome, Firefox, macOS, Windows und Ihre Java-Runtime führen unterschiedliche Root-Listen, und Roots werden zwischen Releases entfernt. Eine Kopie eines Trust-Stores in diese Seite zu packen würde bedeuten, dass sie selbstsicher „vertrauenswürdig“ für einen Root anzeigt, den Chrome letzten Monat entfernt hat — genau die Klasse selbstsicher falscher Antworten, die dieses Werkzeug aufdecken soll. Stattdessen liefert es überprüfbare Rechnung: die Kette ist in sich konsistent, jede Signatur wurde gegen den Schlüssel darüber geprüft, und die Fingerprints stehen da, damit Sie sie mit dem vergleichen, was eine CA veröffentlicht.',
-  },
-  {
-    q: 'Wie passt ein Wildcard-Zertifikat wirklich auf einen Hostnamen?',
-    a: 'Eine Wildcard ersetzt genau ein Label, und nur das linkeste (RFC 6125 §6.4.3). *.example.com passt also auf api.example.com und www.example.com; es passt nicht auf a.b.example.com, denn das bräuchte zwei Labels, und nicht auf das nackte example.com, denn dort gibt es kein Label zu ersetzen — weshalb Zertifikate die Apex-Domain normalerweise als zweiten SAN führen. Eine Wildcard wird außerdem nie in den obersten zwei Labels akzeptiert (*.com ist bedeutungslos) und nie innerhalb eines Labels (w*.example.com ist kein gültiges Muster). Das Hostnamen-Feld auf dieser Seite wendet jede dieser Regeln an und sagt Ihnen, welche das Urteil entschieden hat.',
-  },
-  {
-    q: 'Ist es sicher, hier ein Zertifikat einzufügen — oder einen privaten Schlüssel?',
-    a: 'Ein Zertifikat ist von Natur aus öffentlich: es wird am Anfang jedes TLS-Handshakes im Klartext gesendet, und für jedes öffentlich vertrauenswürdige Zertifikat steht es ohnehin schon in Certificate-Transparency-Logs. Es gibt also nichts zu schützen. Ein privater Schlüssel ist das Gegenteil, und auch damit geht diese Seite sicher um: das gesamte Werkzeug ist eine statische Seite ohne Server dahinter, ein eingefügter PRIVATE KEY-Block wird an seinem Label erkannt, nie geparst und nie irgendwohin gesendet — die Seite sagt Ihnen das ausdrücklich. Das können die meisten Zertifikats-Decoder nicht behaupten, weil sie Ihre Eingabe an ein Backend schicken. Falls Sie einen Schlüssel dort eingefügt haben: rotieren Sie ihn.',
-  },
-  {
-    q: 'Warum steht bei einer Signatur manchmal „nicht geprüft“ statt „fehlgeschlagen“?',
-    a: 'Weil das zwei völlig verschiedene Antworten sind und sie zu vermischen eine Lüge wäre. „Fehlgeschlagen“ heißt: der öffentliche Schlüssel des Ausstellers wurde auf die Signatur angewandt und passte nicht — das Zertifikat wurde verändert, oder das ist nicht der Aussteller. „Nicht geprüft“ heißt: die Prüfung war überhaupt nicht möglich, und der Grund wird immer genannt: RSASSA-PSS trägt Hash, Salt-Länge und Maskenfunktion in seinen Parametern, und dieses Werkzeug rät sie nicht; SHA-224, MD5 und DSA sind in Web Crypto nicht implementiert; Ed25519 braucht Chrome 137 oder Safari 17. Ein Boolean würde für all das „nicht verifiziert“ anzeigen und Sie es als „gefälscht“ lesen lassen. Jede Kettenverbindung hier hat drei Zustände, nie zwei.',
-  },
-  {
-    q: 'Mein Zertifikat hat den richtigen commonName. Warum lehnen Browser es trotzdem ab?',
-    a: 'Weil Browser 2017 aufgehört haben, den commonName zu lesen. Chrome 58 und Firefox 48 haben den Fallback entfernt, und jeder aktuelle Client verlangt, dass der Hostname stattdessen in der Erweiterung subjectAltName steht — ein Zertifikat mit perfektem CN und ohne SAN passt auf überhaupt nichts und erzeugt NET::ERR_CERT_COMMON_NAME_INVALID. Es ist weiterhin erlaubt, den Namen zusätzlich in den CN zu schreiben, und die meisten CAs tun es, aber es ist Dekoration. Dieses Werkzeug zeigt die SAN-Liste genau deshalb getrennt vom Subject und warnt, wenn ein Zertifikat gar keinen SAN hat.',
-  },
-];
+const faqs = toolFaqs('certificate-decoder', 'de');
 
 const softwareApp = softwareAppLd({
   name: 'Certificate Decoder & Chain Checker',
@@ -177,6 +140,7 @@ openssl x509 -in isrgrootx1.pem -noout -fingerprint -sha256
 # ...and against the value ISRG publishes for Root X1. Three sources, one answer.`;
 import type { Locale as __Locale } from '../../i18n/config';
 import { localizeKey as __l } from '../../i18n/utils';
+import { toolFaqs } from '../../data/tool-faqs';
 const __lang = (Astro.currentLocale ?? 'en') as __Locale;
 ---
 

@@ -29,6 +29,7 @@ import {
 import { CHECK_IDS } from '../../lib/systemd-lint/rules';
 import type { Locale as __Locale } from '../../i18n/config';
 import { localizeKey as __l } from '../../i18n/utils';
+import { toolFaqs } from '../../data/tool-faqs';
 const __lang = (Astro.currentLocale ?? 'en') as __Locale;
 
 const tool = getTool('systemd-unit-validator');
@@ -40,44 +41,7 @@ const directiveCount = ALL_DIRECTIVE_NAMES.length;
 const maxChars = MAX_INPUT_CHARS.toLocaleString('de-DE');
 const shorthands = Object.entries(CALENDAR_SHORTHANDS);
 
-const faqs = [
-  {
-    q: 'Was prüft der Systemd Unit Validator?',
-    a: `${checkCount} Prüfungen auf einem echten Parse der Datei, in vier Gruppen. Struktur: ein ungültiger Sektionskopf, ein klein geschriebenes [unit], eine unbekannte oder doppelte Sektion, eine Zeile ohne „=“, eine Zuweisung vor der ersten Sektion. Namen: eine Direktive in der falschen Sektion (User= in [Unit]), ein Tippfehler, den systemd wegwirft (ExecStrat=), ein veralteter Name, ein Name, den die Tabelle einfach nicht kennt. Werte: ein falsches Enum — systemd vergleicht die nämlich case-sensitiv —, ein Boolean, der keiner ist, ein Exec*-Pfad, der nicht absolut ist, Shell-Syntax in einer Exec*-Zeile, die systemd nicht interpretiert, ein unbekannter %-Specifier und ein „Kommentar“ am Zeilenende, der in Wahrheit Teil des Werts ist. Semantik: ein Service ohne ExecStart=, zwei ExecStart=-Zeilen bei Type≠oneshot, Type=forking ohne PIDFile=, Restart=always mit Type=oneshot, ein Timer ohne Trigger, ein OnCalendar=, das systemd nicht parsen kann, Persistent= auf einem monotonen Timer, ein Socket ohne Listen*, ein fehlendes [Install] und ein System-Target in einer User-Unit.`,
-  },
-  {
-    q: 'Ist das systemd-analyze verify?',
-    a: 'Nein, und das kann es auch nicht sein. systemd-analyze verify läuft auf einer Maschine mit systemd, braucht für alles im System-Suchpfad meist root und löst Ihre Unit vor allem gegen DIESEN Host auf: dessen Benutzer, Pfade, Drop-ins und andere Units. Das macht es zum gründlicheren Werkzeug — und zum falschen für den Moment, in dem Sie die Prüfung wirklich wollen: ein .service in einem Pull Request auf einem macOS-Laptop, oder eine Unit, die ein Assistent gerade für Sie geschrieben hat. Diese Seite liest eine Datei als Text, in Ihrem Browser, und benennt den Unterschied ausdrücklich — alles, was sie aus dem Text allein nicht wissen kann, steht weiter unten aufgelistet statt geraten.',
-  },
-  {
-    q: 'Verlässt meine Unit-Datei jemals meinen Browser?',
-    a: `Nein. Der Parser und alle ${checkCount} Prüfungen sind JavaScript, das in Ihrem Tab läuft — es gibt keinen Server, keinen API-Aufruf und kein Logging, also werden 0 Bytes hochgeladen. Das zählt hier besonders: Unit-Dateien enthalten interne Hostnamen, private Pfade, Namen von Dienstkonten, EnvironmentFile=-Orte und gelegentlich ein Credential, das niemand in einen Wert hätte schreiben sollen.`,
-  },
-  {
-    q: 'Warum feuert mein systemd-Timer nie?',
-    a: 'Die häufigste Ursache ist mit Abstand ein OnCalendar=, das systemd nicht parsen kann, weil cron-Syntax hineingeschrieben wurde. Zwei Formen erklären fast alle Fälle. Erstens ein nacktes „*/15“: eine Kalender-Wiederholung in systemd braucht einen ausdrücklichen Startwert, „*-*-* *:00/15:00“ (oder kurz „*:00/15:00“) wird also akzeptiert und „*/15“ komplett abgelehnt. Zweitens ein ganzer fünffeldiger crontab-Zeitplan („0 3 * * *“): systemd-Kalenderereignisse sind „DOW YYYY-MM-DD HH:MM:SS“ und keine fünf Felder — dieses Tool erkennt die Form und schickt Sie zum Konverter. Danach lohnt der Blick auf einen Timer ohne jeden Trigger und auf ein .timer ohne Unit=, dessen .service anders heißt. Eine Unit, die systemd nicht lädt, erscheint nie in systemctl list-timers — deshalb sieht nichts falsch aus.',
-  },
-  {
-    q: 'Warum ist WantedBy= in [Unit] ein Fehler und keine Warnung?',
-    a: 'Weil die Einstellung überhaupt nicht wirkt. systemd liest WantedBy= nur aus [Install]; überall sonst protokolliert es „Unknown key name \'WantedBy\' in section \'Unit\', ignoring.“ und macht weiter. Die Unit lädt, startet von Hand, sieht gesund aus — und systemctl enable tut stillschweigend nichts, sodass sie nach einem Reboot nicht wiederkommt. Auf dieser Seite heißt Fehler: systemd verweigert die Unit ODER verwirft die Einstellung vollständig; Warnung heißt: die Einstellung greift und ist eine Falle. Eine verworfene Einstellung gehört in die erste Gruppe, weil die Datei dann nicht mehr beschreibt, was die Maschine tun wird.',
-  },
-  {
-    q: 'Warum ist eine unbekannte Direktive nur ein Hinweis?',
-    a: `Weil diese Seite eine Direktiven-Tabelle mitbringt — ${directiveCount} Namen — und Ihre Maschine ein systemd. Mit jedem Release kommen neue Direktiven hinzu, ein Name, den diese Tabelle nicht kennt, kann dort also völlig gültig sein, wo Sie ihn ausführen werden. Das als Fehler zu melden würde Sie darauf trainieren, den ganzen Bericht zu ignorieren — das Einzige, was ein Linter nicht überlebt. Ein Name, der einer echten Direktive knapp danebenliegt, ist ein anderer Fall: dort ist die Evidenz stark genug für die Aussage, dass systemd die Zeile wegwirft, und DAS wird als Fehler mit Korrektur gemeldet.`,
-  },
-  {
-    q: 'Was ändert der Schalter System / User?',
-    a: 'Drei Dinge, alle darüber, welcher Manager die Datei lädt. Im User-Scope wird ein WantedBy= mit einem System-Target (multi-user.target, graphical.target) gemeldet: der User-Manager hat kein solches Target, systemctl --user enable hat also nichts zu verlinken und die Unit startet nie — default.target ist gemeint, und timers.target existiert dort tatsächlich. Der Scope reist außerdem im Share-Link mit, damit ein verschickter Link dieselben Funde zeigt wie Ihr Bildschirm. Alles andere — Parse, Namen, Werte — ist identisch, denn systemd liest die Datei in beiden Fällen gleich.',
-  },
-  {
-    q: 'Kann er eine Template-Unit, ein Drop-in oder meine Abhängigkeiten prüfen?',
-    a: 'Er liest genau eine Datei, also: ein Template wird normal geparst und %i als Hinweis gemeldet (es hat nur einen Wert, wenn die Datei name@.service heißt und als name@instance.service gestartet wird); ein Drop-in-Fragment parst für sich problemlos, aber hier weiß niemand, was es überschreibt, also sieht eine Teildatei aus wie eine Unit ohne ExecStart=; und eine in After=, Wants= oder Unit= genannte Unit wird nie aufgelöst, weil diese Datei nicht vor uns liegt. Bei allen drei zu raten wäre eine selbstbewusst falsche Antwort — schlimmer als keine.',
-  },
-  {
-    q: 'Wie groß darf die Unit-Datei sein, und werden Funde jemals abgeschnitten?',
-    a: `Bis ${maxChars} Zeichen, also etwa viertausend Zeilen — zwei Größenordnungen mehr als jede echte Unit-Datei. Darüber verweigert das Tool mit einer Meldung, statt Ihren Tab einzufrieren, denn eine so große Eingabe ist ein Journal-Auszug und keine Unit. Funde sind ebenfalls begrenzt: ${MAX_FINDINGS_PER_RULE} pro Prüfung und ${MAX_FINDINGS_TOTAL} insgesamt, und das Panel nennt die Grenze und die echte Anzahl, sobald eine greift. Die Ergebnisliste ist separat auf 50 Zeilen pro Schweregrad begrenzt, wieder mit der echten Zahl.`,
-  },
-];
+const faqs = toolFaqs('systemd-unit-validator', 'de');
 
 const softwareApp = softwareAppLd({
   name: 'Systemd Unit Validator',

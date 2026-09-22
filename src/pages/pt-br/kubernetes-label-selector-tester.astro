@@ -21,50 +21,14 @@ import { getTool } from '../../data/tools';
 import { softwareAppLd, faqPageLd } from '../../lib/jsonld';
 import type { Locale as __Locale } from '../../i18n/config';
 import { localizeKey as __l } from '../../i18n/utils';
+import { toolFaqs } from '../../data/tool-faqs';
 const __lang = (Astro.currentLocale ?? 'en') as __Locale;
 
 const tool = getTool('kubernetes-label-selector-tester');
 const pagePath = '/kubernetes-label-selector-tester/';
 const pageUrl = `${site.url}${__l(pagePath, (Astro.currentLocale ?? 'en') as __Locale)}`;
 
-const faqs = [
-  {
-    q: 'Por que env!=prod casa com um pod que não tem nenhuma label env?',
-    a: 'Porque é o que a regra diz, e é a linha mais surpreendente de toda a API de label selectors. No k8s.io/apimachinery, o Requirement.Matches resolve NotIn e != em um único ramo: se o conjunto de labels não tem a chave, o resultado é true. In e == tomam o ramo oposto: se a chave falta, o resultado é false. Então env!=prod significa «nenhuma label env valendo prod», e um pod sem label env cumpre isso perfeitamente. Se você queria dizer «tem uma label env, e ela não é prod», precisa de duas cláusulas: env,env!=prod — Exists E NotIn. Este tester anota toda cláusula que se cumpre porque a chave está ausente, então você nunca precisa lembrar em que sentido isso vai.',
-  },
-  {
-    q: 'Qual é a diferença entre matchLabels e matchExpressions?',
-    a: 'matchLabels é um mapa simples, e cada par vira um requisito de igualdade: {app: web, tier: frontend} é exatamente app=web,tier=frontend. matchExpressions é uma lista de entradas {key, operator, values} e é o único jeito de escrever os operadores baseados em conjunto In, NotIn, Exists e DoesNotExist. Quando um selector tem os dois, o apimachinery junta tudo com AND — o LabelSelectorAsSelector adiciona cada par de matchLabels e cada expressão à mesma lista de requisitos. Não existe OR em nenhum nível de um label selector.',
-  },
-  {
-    q: 'Um selector de Service pode usar matchExpressions?',
-    a: 'Não, e esse é o erro que os manifestos gerados cometem com mais frequência. O spec.selector de um Service é tipado como map[string]string, não como LabelSelector: ele aceita um mapa simples de labels e só suporta igualdade. Se você escrever matchLabels ou matchExpressions ali, o API server rejeita o campo na hora. Deployments, StatefulSets, DaemonSets, Jobs e o podSelector de uma NetworkPolicy aceitam um LabelSelector de verdade e admitem as duas formas. Cole um manifesto de Service com matchExpressions neste tester e ele avisa, e depois mostra o que um Deployment TERIA casado — assim você vê o erro e a intenção ao mesmo tempo.',
-  },
-  {
-    q: 'Um selector vazio casa com tudo ou com nada?',
-    a: 'Depende de o campo estar vazio ou ausente, e não é a mesma coisa. Um LabelSelector vazio — {}, ou matchLabels: {} — é labels.Everything(): casa com todos os objetos, e é justamente por isso que uma NetworkPolicy com podSelector: {} vale para todos os pods do namespace. Um selector nil, ao contrário, não casa com nada: LabelSelectorAsSelector(nil) devolve labels.Nothing(). E um Service é um terceiro caso: o campo selector é omitido quando está vazio, então um Service com selector: {} é um Service sem selector, e o controlador de endpoints não gerencia os endpoints dele de forma alguma.',
-  },
-  {
-    q: 'Algo que eu colo sai do meu navegador?',
-    a: 'Não. Os dois parsers, a validação e o matcher são JavaScript rodando na sua aba — não há servidor, nem chamada de API, nem log, então 0 bytes são enviados. Aqui isso conta porque um dump de pods não é texto neutro: ele carrega referências de imagens internas, nomes de nós, annotations e às vezes um token montado como variável de ambiente. Esta é a ferramenta que você pode usar em saída de produção sem abrir uma conversa sobre tratamento de dados.',
-  },
-  {
-    q: 'Meu Service está com zero endpoints. O que eu verifico primeiro?',
-    a: 'As labels dos pods, não o Service. Cole o manifesto do Service como selector e os pods reais como recursos: o tester lê o spec.selector para você e mostra um rastro por cláusula em cada pod, então um erro de digitação de um caractere aparece como label tier="frontnd" ≠ "frontend" em vez de uma lista de endpoints vazia. Descarte também duas armadilhas estruturais. Primeiro, um Service seleciona labels de POD, não os metadata.labels do próprio Deployment — é exatamente por isso que este tester lista o spec.template.metadata.labels de um workload como a própria linha «Pod template». Segundo, um selector que não casa com nada não é erro em nenhum lugar do Kubernetes: o kubectl aceita, o API server aceita, e o único sintoma é um objeto Endpoints vazio.',
-  },
-  {
-    q: 'Ele suporta field selectors como --field-selector status.phase=Running?',
-    a: 'Não, e isso é uma fronteira deliberada, não uma lacuna. Field selectors são outro mecanismo: filtram pelos campos do próprio objeto, são avaliados pelo API server contra uma lista curta de campos permitidos que varia por tipo de recurso, e quase nenhum suporta operadores baseados em conjunto. Simulá-los offline significaria codificar quais campos cada versão do Kubernetes indexa para cada kind, e errar de forma sutil. Esta ferramenta cobre label selectors, que funcionam igual em todos os tipos de recurso e ficam totalmente definidos pelo objeto que você já tem na área de transferência.',
-  },
-  {
-    q: 'E os operadores Gt e Lt que eu vi em node affinity?',
-    a: 'Eles existem, mas não em um label selector. Node affinity usa NodeSelectorRequirement, um tipo separado cujo conjunto de operadores é In, NotIn, Exists, DoesNotExist, Gt e Lt. Um LabelSelectorRequirement — o de matchExpressions, spec.selector e podSelector — tem só os quatro primeiros. Então Gt e Lt são válidos em nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution e inválidos em tudo o que este tester olha. Digite replicas>2 no campo do selector e ele diz isso, em vez de inventar uma comparação que um label selector não tem.',
-  },
-  {
-    q: 'Quanto ele aguenta, e quais são os limites?',
-    a: 'Ele avalia os primeiros 500 documentos de recursos de uma colagem de até 500.000 caracteres, e um selector de no máximo 100 cláusulas — cada limite se anuncia na tela com o número real, então uma execução truncada nunca parece completa. Chaves e valores são validados contra os limites reais: o nome de uma chave de label vai até 63 caracteres, o prefixo de subdomínio DNS opcional antes da / vai até 253, e um valor de label vai até 63 (valor vazio é legal). Uma chave ou valor inválido no SELECTOR é erro que bloqueia, porque o API server rejeitaria; uma label inválida em um RECURSO é só uma nota, porque a pergunta que você fez foi se o selector casa com ele.',
-  },
-];
+const faqs = toolFaqs('kubernetes-label-selector-tester', 'pt-br');
 
 const softwareApp = softwareAppLd({
   name: 'Kubernetes Label Selector Tester',

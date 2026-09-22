@@ -21,44 +21,7 @@ const tool = getTool('certificate-decoder');
 const pagePath = '/certificate-decoder/';
 const pageUrl = `${site.url}${__l(pagePath, (Astro.currentLocale ?? 'en') as __Locale)}`;
 
-const faqs = [
-  {
-    q: 'O que significa “unable to get local issuer certificate”?',
-    a: 'Significa que a cadeia enviada pelo seu servidor termina antes de chegar a algo em que o cliente confia — quase sempre porque falta um certificado intermediário. O cliente sobe a partir da folha: folha → intermediário → raiz. No repositório dele só existem raízes, então, se o intermediário que liga as duas pontas está ausente, o caminho morre ali e o OpenSSL devolve o erro 20 com exatamente essa mensagem. Cole sua cadeia aqui e o intermediário ausente aparece nomeado pelo distinguished name completo, que é justamente o texto de que você precisa para achar o arquivo certo e anexá-lo.',
-  },
-  {
-    q: 'Por que meu certificado funciona no navegador e falha no curl ou na CI?',
-    a: 'Porque navegadores consertam cadeias incompletas e clientes de linha de comando não. Quando falta um intermediário, Chrome, Edge e Safari podem baixá-lo pela URL da extensão authorityInfoAccess do próprio certificado, ou reaproveitar um que ficou em cache em outro site: o cadeado aparece e o defeito permanece invisível. curl, openssl s_client, crypto/tls do Go, requests do Python e quase todos os runtimes não fazem nada disso: usam exatamente os certificados que você enviou e falham. Essa assimetria é a razão pela qual “no meu navegador funciona” não é prova, e é a causa mais comum de um deploy que passa na conferência manual e quebra um webhook.',
-  },
-  {
-    q: 'O fullchain.pem deve incluir o certificado raiz?',
-    a: 'Não — e também não faz mal. Um cliente confia numa raiz porque essa raiz já está no repositório dele; uma cópia enviada pela rede não prova nada, porque um atacante poderia enviar qualquer raiz. Portanto isso só acrescenta cerca de 1–2 KB a cada handshake. O que precisa estar lá é a folha primeiro e depois cada intermediário acima dela. Esta ferramenta rotula cada certificado com o seu papel e diz em qual das duas situações você está: uma raiz meramente redundante, ou um intermediário que de fato falta.',
-  },
-  {
-    q: 'Qual é a diferença entre folha, intermediário e raiz?',
-    a: 'A folha é o certificado do seu nome de host: carrega a lista subjectAltName, tem CA:FALSE nos basicConstraints e é o que o servidor apresenta. Um intermediário é um certificado de AC que assina folhas em nome de uma raiz; tem CA:TRUE, normalmente com pathlen:0 para não poder delegar mais adiante. Uma raiz é um certificado de AC que assinou a si mesmo — subject e issuer são idênticos — e só se confia nela porque ela vem embutida em sistemas operacionais e navegadores. As ACs mantêm raízes offline e assinam por meio de intermediários justamente para que uma chave de assinatura comprometida possa ser trocada sem reemitir a raiz.',
-  },
-  {
-    q: 'Esta ferramenta diz se um certificado é confiável?',
-    a: 'Deliberadamente não — e essa é a resposta honesta, não uma limitação a contornar. “Confiável” é propriedade do cliente, não do certificado: Chrome, Firefox, macOS, Windows e o seu runtime Java carregam listas de raízes diferentes, e raízes deixam de ser confiadas entre versões. Embutir uma cópia de um repositório de confiança nesta página permitiria imprimir um “confiável” categórico para uma raiz que o Chrome removeu no mês passado — exatamente a classe de resposta confiante e errada que esta ferramenta existe para pegar. O que ela faz, em vez disso, é aritmética verificável: a cadeia é coerente consigo mesma, cada assinatura foi verificada contra a chave de cima, e as impressões digitais estão ali para você comparar com o que a AC publica.',
-  },
-  {
-    q: 'Como um certificado wildcard realmente casa com um nome de host?',
-    a: 'Um curinga substitui exatamente um rótulo, e apenas o mais à esquerda (RFC 6125 §6.4.3). Assim, *.example.com casa com api.example.com e www.example.com; não casa com a.b.example.com, porque isso exigiria dois rótulos, e não casa com example.com puro, porque não há rótulo para substituir — por isso os certificados normalmente listam o apex como um segundo SAN. Um curinga também nunca é aceito nos dois rótulos de cima (*.com não significa nada) nem dentro de um rótulo (w*.example.com não é um padrão válido). O campo de nome de host desta página aplica cada uma dessas regras e diz qual delas decidiu o veredito.',
-  },
-  {
-    q: 'É seguro colar aqui um certificado — ou uma chave privada?',
-    a: 'Um certificado é público por definição: é enviado em texto claro no início de todo handshake TLS e, para qualquer certificado publicamente confiável, já está publicado em logs de Certificate Transparency. Não há o que proteger. Uma chave privada é o oposto, e esta página ainda assim a trata com segurança: a ferramenta inteira é uma página estática sem servidor por trás, então, se você colar um bloco PRIVATE KEY, ele é reconhecido pelo rótulo, nunca é interpretado e nunca é enviado a lugar algum — a página diz isso explicitamente. A maioria dos decodificadores de certificado não pode afirmar o mesmo, porque envia sua entrada para um backend. Se você colou uma chave em um deles, faça a rotação.',
-  },
-  {
-    q: 'Por que uma assinatura às vezes aparece como “não verificada” em vez de “falhou”?',
-    a: 'Porque são duas respostas completamente diferentes, e misturá-las seria mentira. “Falhou” significa que a chave pública do emissor foi aplicada à assinatura e não bateu: o certificado foi alterado, ou aquele não é o emissor. “Não verificada” significa que a checagem não pôde ser feita, e o motivo é sempre nomeado: RSASSA-PSS carrega hash, tamanho de sal e função de máscara dentro dos seus parâmetros e esta ferramenta se recusa a adivinhá-los; SHA-224, MD5 e DSA não são implementados pelo Web Crypto; Ed25519 exige Chrome 137 ou Safari 17. Um booleano imprimiria “não verificada” para tudo isso e deixaria você ler como “falsificada”. Cada elo da cadeia aqui tem três estados, nunca dois.',
-  },
-  {
-    q: 'Meu certificado tem o commonName certo. Por que os navegadores ainda o recusam?',
-    a: 'Porque os navegadores pararam de ler o commonName em 2017. Chrome 58 e Firefox 48 removeram esse recurso de reserva, e todo cliente atual exige que o nome de host apareça na extensão subjectAltName: um certificado com um CN perfeito e sem SAN não casa com nada e produz NET::ERR_CERT_COMMON_NAME_INVALID. Continua válido colocar o nome também no CN, e a maioria das ACs faz isso, mas é decoração. Esta ferramenta mostra a lista de SAN separada do subject exatamente por esse motivo, e avisa quando um certificado não tem SAN nenhum.',
-  },
-];
+const faqs = toolFaqs('certificate-decoder', 'pt-br');
 
 const softwareApp = softwareAppLd({
   name: 'Certificate Decoder & Chain Checker',
@@ -177,6 +140,7 @@ openssl x509 -in isrgrootx1.pem -noout -fingerprint -sha256
 # ...and against the value ISRG publishes for Root X1. Three sources, one answer.`;
 import type { Locale as __Locale } from '../../i18n/config';
 import { localizeKey as __l } from '../../i18n/utils';
+import { toolFaqs } from '../../data/tool-faqs';
 const __lang = (Astro.currentLocale ?? 'en') as __Locale;
 ---
 

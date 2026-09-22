@@ -21,44 +21,7 @@ const tool = getTool('certificate-decoder');
 const pagePath = '/certificate-decoder/';
 const pageUrl = `${site.url}${__l(pagePath, (Astro.currentLocale ?? 'en') as __Locale)}`;
 
-const faqs = [
-  {
-    q: 'Que signifie « unable to get local issuer certificate » ?',
-    a: 'Cela signifie que la chaîne envoyée par votre serveur s’arrête avant d’atteindre quelque chose auquel le client fait confiance — presque toujours parce qu’un certificat intermédiaire manque. Un client remonte depuis la feuille : feuille → intermédiaire → racine. Son magasin ne contient que des racines ; si l’intermédiaire qui relie les deux est absent, le parcours s’arrête net et OpenSSL renvoie l’erreur 20 avec ce message exact. Collez votre chaîne ici et l’intermédiaire manquant est nommé par son distinguished name complet, c’est-à-dire précisément la chaîne de caractères dont vous avez besoin pour retrouver le bon fichier et l’ajouter.',
-  },
-  {
-    q: 'Pourquoi mon certificat fonctionne-t-il dans un navigateur et échoue-t-il dans curl ou en CI ?',
-    a: 'Parce que les navigateurs réparent les chaînes incomplètes et les clients en ligne de commande non. Quand un intermédiaire manque, Chrome, Edge et Safari peuvent le télécharger depuis l’URL de l’extension authorityInfoAccess du certificat, ou réutiliser celui qu’ils ont mis en cache sur un autre site : le cadenas apparaît et le défaut reste invisible. curl, openssl s_client, crypto/tls de Go, requests de Python et la plupart des runtimes ne font rien de tout cela : ils utilisent exactement les certificats que vous avez envoyés et échouent. Cette asymétrie explique pourquoi « chez moi dans le navigateur ça marche » n’est pas une preuve, et c’est la cause la plus fréquente d’un déploiement qui passe une vérification manuelle et casse un webhook.',
-  },
-  {
-    q: 'Le fichier fullchain.pem doit-il contenir le certificat racine ?',
-    a: 'Non — et cela ne nuit pas non plus. Un client fait confiance à une racine parce que cette racine est déjà dans son propre magasin ; une copie envoyée sur le réseau ne prouve rien, puisqu’un attaquant pourrait envoyer la racine de son choix. Cela n’ajoute donc qu’environ 1–2 Ko à chaque poignée de main. Ce qui doit y figurer, en revanche, c’est la feuille d’abord, puis chaque intermédiaire au-dessus d’elle. Cet outil étiquette chaque certificat par son rôle et vous dit dans laquelle des deux situations vous êtes : une racine simplement redondante, ou un intermédiaire réellement absent.',
-  },
-  {
-    q: 'Quelle est la différence entre feuille, intermédiaire et racine ?',
-    a: 'La feuille est le certificat de votre nom d’hôte : elle porte la liste subjectAltName, elle a CA:FALSE dans ses basicConstraints et c’est ce que le serveur présente. Un intermédiaire est un certificat d’AC qui signe des feuilles pour le compte d’une racine ; il a CA:TRUE, généralement avec pathlen:0 pour l’empêcher de déléguer plus loin. Une racine est un certificat d’AC qui s’est signé lui-même — son subject et son issuer sont identiques — et on ne lui fait confiance que parce qu’elle est livrée dans les systèmes d’exploitation et les navigateurs. Les AC gardent leurs racines hors ligne et signent via des intermédiaires précisément pour qu’une clé de signature compromise puisse être remplacée sans réémettre la racine.',
-  },
-  {
-    q: 'Cet outil dit-il si un certificat est de confiance ?',
-    a: 'Volontairement non, et c’est la réponse honnête, pas une limite à contourner. « De confiance » est une propriété du client, pas du certificat : Chrome, Firefox, macOS, Windows et votre runtime Java embarquent des listes de racines différentes, et des racines cessent d’être approuvées d’une version à l’autre. Embarquer une copie d’un magasin de confiance dans cette page lui permettrait d’afficher un « de confiance » péremptoire pour une racine que Chrome a retirée le mois dernier — exactement la catégorie de réponse fausse et assurée que cet outil existe pour détecter. Ce qu’il fait à la place est une arithmétique vérifiable : la chaîne est cohérente avec elle-même, chaque signature a été vérifiée contre la clé du dessus, et les empreintes sont là pour que vous les compariez à ce que publie une AC.',
-  },
-  {
-    q: 'Comment un certificat wildcard correspond-il réellement à un nom d’hôte ?',
-    a: 'Un joker remplace exactement une étiquette, et seulement celle de gauche (RFC 6125 §6.4.3). Ainsi *.example.com correspond à api.example.com et www.example.com ; il ne correspond pas à a.b.example.com, qui demanderait deux étiquettes, et pas à example.com tout court, puisqu’il n’y a aucune étiquette à remplacer — d’où l’habitude de lister l’apex comme second SAN. Un joker n’est par ailleurs jamais accepté dans les deux étiquettes de tête (*.com ne veut rien dire) ni à l’intérieur d’une étiquette (w*.example.com n’est pas un motif valide). Le champ nom d’hôte de cette page applique chacune de ces règles et vous dit laquelle a tranché.',
-  },
-  {
-    q: 'Est-il prudent de coller ici un certificat — ou une clé privée ?',
-    a: 'Un certificat est public par construction : il est envoyé en clair au début de chaque poignée de main TLS et, pour tout certificat publiquement approuvé, il est déjà publié dans les journaux Certificate Transparency. Il n’y a donc rien à protéger. Une clé privée est l’inverse, et cette page la traite quand même sans risque : l’outil entier est une page statique sans serveur derrière, donc si vous collez un bloc PRIVATE KEY il est reconnu par son étiquette, jamais analysé et jamais envoyé où que ce soit — la page vous le dit explicitement. La plupart des décodeurs de certificats ne peuvent pas en dire autant, car ils envoient votre saisie à un backend. Si vous avez collé une clé dans l’un d’eux, remplacez-la.',
-  },
-  {
-    q: 'Pourquoi une signature indique-t-elle parfois « non vérifiée » plutôt que « échouée » ?',
-    a: 'Parce que ce sont deux réponses complètement différentes et que les confondre serait un mensonge. « Échouée » signifie que la clé publique de l’émetteur a été appliquée à la signature et qu’elle ne correspond pas : le certificat a été modifié, ou ce n’est pas l’émetteur. « Non vérifiée » signifie que le contrôle n’a pas pu être effectué du tout, et la raison est toujours nommée : RSASSA-PSS transporte son hachage, sa longueur de sel et sa fonction de masque dans ses paramètres, et cet outil refuse de les deviner ; SHA-224, MD5 et DSA ne sont pas implémentés par Web Crypto ; Ed25519 exige Chrome 137 ou Safari 17. Un booléen afficherait « non vérifiée » pour tout cela et vous laisserait le lire comme « falsifiée ». Chaque maillon de la chaîne a ici trois états, jamais deux.',
-  },
-  {
-    q: 'Mon certificat a le bon commonName. Pourquoi les navigateurs le refusent-ils quand même ?',
-    a: 'Parce que les navigateurs ont cessé de lire le commonName en 2017. Chrome 58 et Firefox 48 ont supprimé ce repli, et tout client actuel exige que le nom d’hôte figure dans l’extension subjectAltName : un certificat avec un CN parfait et sans SAN ne correspond à rien du tout et produit NET::ERR_CERT_COMMON_NAME_INVALID. Il reste licite de mettre le nom aussi dans le CN, et la plupart des AC le font, mais c’est décoratif. Cet outil affiche la liste des SAN séparément du subject exactement pour cette raison, et prévient quand un certificat n’a aucun SAN.',
-  },
-];
+const faqs = toolFaqs('certificate-decoder', 'fr');
 
 const softwareApp = softwareAppLd({
   name: 'Certificate Decoder & Chain Checker',
@@ -177,6 +140,7 @@ openssl x509 -in isrgrootx1.pem -noout -fingerprint -sha256
 # ...and against the value ISRG publishes for Root X1. Three sources, one answer.`;
 import type { Locale as __Locale } from '../../i18n/config';
 import { localizeKey as __l } from '../../i18n/utils';
+import { toolFaqs } from '../../data/tool-faqs';
 const __lang = (Astro.currentLocale ?? 'en') as __Locale;
 ---
 

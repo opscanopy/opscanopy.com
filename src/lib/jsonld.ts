@@ -5,6 +5,8 @@
  * Keeping these here removes the per-page duplication of the SoftwareApplication
  * and FAQPage objects while preserving their precise content and shape.
  */
+import type { Faq } from '../data/tool-faqs';
+
 import { site } from '../data/site';
 import { getToolUpdatedAt } from '../data/tool-meta';
 import { toolOgImage } from './tool-og';
@@ -165,7 +167,7 @@ export function breadcrumbLd(
 /**
  * FAQPage object mirroring a list of rendered question/answer pairs.
  */
-export function faqPageLd(faqs: { q: string; a: string }[]): Record<string, unknown> {
+export function faqPageLd(faqs: Faq[]): Record<string, unknown> {
   return {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',

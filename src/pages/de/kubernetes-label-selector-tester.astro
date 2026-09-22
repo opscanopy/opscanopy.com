@@ -21,50 +21,14 @@ import { getTool } from '../../data/tools';
 import { softwareAppLd, faqPageLd } from '../../lib/jsonld';
 import type { Locale as __Locale } from '../../i18n/config';
 import { localizeKey as __l } from '../../i18n/utils';
+import { toolFaqs } from '../../data/tool-faqs';
 const __lang = (Astro.currentLocale ?? 'en') as __Locale;
 
 const tool = getTool('kubernetes-label-selector-tester');
 const pagePath = '/kubernetes-label-selector-tester/';
 const pageUrl = `${site.url}${__l(pagePath, (Astro.currentLocale ?? 'en') as __Locale)}`;
 
-const faqs = [
-  {
-    q: 'Warum trifft env!=prod auf einen Pod zu, der überhaupt kein env-Label hat?',
-    a: 'Weil die Regel es so sagt, und weil das die überraschendste Zeile der gesamten Label-Selector-API ist. In k8s.io/apimachinery behandelt Requirement.Matches NotIn und != in einem einzigen Zweig: hat das Label-Set den Key nicht, ist das Ergebnis true. In und == nehmen den umgekehrten Zweig: fehlt der Key, ist das Ergebnis false. env!=prod bedeutet also „kein env-Label mit dem Wert prod“ — und das erfüllt ein Pod ohne env-Label perfekt. Wenn Sie „hat ein env-Label, und es ist nicht prod“ meinen, brauchen Sie zwei Klauseln: env,env!=prod — Exists UND NotIn. Dieser Tester markiert jede Klausel, die nur wegen eines fehlenden Keys zutrifft, sodass Sie sich nie merken müssen, in welche Richtung es geht.',
-  },
-  {
-    q: 'Was ist der Unterschied zwischen matchLabels und matchExpressions?',
-    a: 'matchLabels ist eine einfache Map, und jedes Paar darin wird zu einer Gleichheits-Anforderung: {app: web, tier: frontend} ist genau app=web,tier=frontend. matchExpressions ist eine Liste von {key, operator, values}-Einträgen und der einzige Weg, die mengenbasierten Operatoren In, NotIn, Exists und DoesNotExist zu schreiben. Enthält ein Selector beides, verknüpft apimachinery alles mit UND — LabelSelectorAsSelector fügt jedes matchLabels-Paar und jeden Ausdruck derselben Anforderungsliste hinzu. Ein ODER gibt es in einem Label-Selector auf keiner Ebene.',
-  },
-  {
-    q: 'Kann ein Service-Selector matchExpressions verwenden?',
-    a: 'Nein, und das ist der Fehler, den generierte Manifeste am häufigsten machen. spec.selector eines Service ist als map[string]string typisiert, nicht als LabelSelector: es nimmt eine einfache Label-Map und unterstützt nur Gleichheit. Schreiben Sie dort matchLabels oder matchExpressions, lehnt der API-Server das Feld direkt ab. Deployments, StatefulSets, DaemonSets, Jobs und der podSelector einer NetworkPolicy nehmen dagegen einen echten LabelSelector und akzeptieren beide Formen. Fügen Sie ein Service-Manifest mit matchExpressions in diesen Tester ein, warnt er Sie — und zeigt dann, was ein Deployment getroffen HÄTTE, sodass Sie Fehler und Absicht gleichzeitig sehen.',
-  },
-  {
-    q: 'Trifft ein leerer Selector auf alles oder auf nichts zu?',
-    a: 'Das hängt davon ab, ob das Feld leer oder abwesend ist — und beides ist nicht dasselbe. Ein leerer LabelSelector — {} oder matchLabels: {} — ist labels.Everything(): er trifft auf jedes Objekt zu, und genau deshalb gilt eine NetworkPolicy mit podSelector: {} für jeden Pod im Namespace. Ein nil-Selector trifft dagegen auf nichts zu: LabelSelectorAsSelector(nil) liefert labels.Nothing(). Und ein Service ist noch ein dritter Fall: sein selector-Feld wird weggelassen, wenn es leer ist, ein Service mit selector: {} ist also ein Service ohne Selector — der Endpoints-Controller verwaltet seine Endpoints dann gar nicht.',
-  },
-  {
-    q: 'Verlässt irgendetwas, das ich einfüge, meinen Browser?',
-    a: 'Nein. Beide Parser, die Validierung und der Matcher sind JavaScript, das in Ihrem Tab läuft — es gibt keinen Server, keinen API-Aufruf und kein Logging, also werden 0 Bytes hochgeladen. Das zählt hier, weil ein Pod-Dump kein neutraler Text ist: er enthält interne Image-Referenzen, Node-Namen, Annotationen und manchmal ein Token, das als Umgebungsvariable eingebunden ist. Das ist das Werkzeug, das Sie auf Produktions-Output anwenden können, ohne vorher über Datenschutz reden zu müssen.',
-  },
-  {
-    q: 'Mein Service hat null Endpoints. Was prüfe ich zuerst?',
-    a: 'Die Pod-Labels, nicht den Service. Fügen Sie das Service-Manifest als Selector und die tatsächlichen Pods als Ressourcen ein: der Tester liest spec.selector für Sie aus und zeigt zu jedem Pod eine Spur pro Klausel, sodass ein Tippfehler von einem Zeichen als label tier="frontnd" ≠ "frontend" erscheint und nicht als leere Endpoint-Liste. Zwei strukturelle Fallen sollten Sie ebenfalls ausschließen. Erstens wählt ein Service POD-Labels aus, nicht die metadata.labels des Deployments selbst — genau deshalb listet dieser Tester spec.template.metadata.labels eines Workloads als eigene Zeile „Pod template“. Zweitens ist ein Selector, der nichts trifft, nirgends in Kubernetes ein Fehler: kubectl akzeptiert ihn, der API-Server akzeptiert ihn, und das einzige Symptom ist ein leeres Endpoints-Objekt.',
-  },
-  {
-    q: 'Unterstützt er Field-Selectors wie --field-selector status.phase=Running?',
-    a: 'Nein, und das ist eine bewusste Grenze, kein fehlendes Feature. Field-Selectors sind ein anderer Mechanismus: sie filtern auf den eigenen Feldern eines Objekts, sie werden vom API-Server gegen eine kleine, pro Ressourcentyp unterschiedliche Erlaubnisliste ausgewertet, und fast keiner von ihnen unterstützt mengenbasierte Operatoren. Sie offline zu simulieren würde bedeuten, für jede Kubernetes-Version und jede Art zu kodieren, welche Felder indexiert sind — und das subtil falsch zu treffen. Dieses Tool deckt Label-Selectors ab, die über alle Ressourcentypen hinweg gleich funktionieren und vollständig durch das Objekt definiert sind, das Sie schon in der Zwischenablage haben.',
-  },
-  {
-    q: 'Was ist mit den Operatoren Gt und Lt aus der Node-Affinity?',
-    a: 'Die gibt es, aber nicht auf einem Label-Selector. Node-Affinity verwendet NodeSelectorRequirement, einen eigenen Typ, dessen Operator-Menge In, NotIn, Exists, DoesNotExist, Gt und Lt umfasst. Ein LabelSelectorRequirement — der in matchExpressions, spec.selector und podSelector — hat nur die ersten vier. Gt und Lt sind also in nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution gültig und überall dort ungültig, wo dieser Tester hinschaut. Tippen Sie replicas>2 in das Selector-Feld, sagt er genau das, anstatt einen Vergleich zu erfinden, den ein Label-Selector nicht hat.',
-  },
-  {
-    q: 'Wie viel verkraftet er, und wo liegen die Grenzen?',
-    a: 'Er wertet die ersten 500 Ressourcen-Dokumente aus einer Eingabe von bis zu 500.000 Zeichen aus, und einen Selector mit höchstens 100 Klauseln — jede Grenze nennt sich auf dem Bildschirm samt echter Zahl, ein abgeschnittener Lauf sieht also nie wie ein vollständiger aus. Keys und Werte werden gegen die echten Limits geprüft: ein Label-Key-Name hat höchstens 63 Zeichen, ein optionales DNS-Subdomain-Prefix vor dem / höchstens 253, und ein Label-Wert höchstens 63 (ein leerer Wert ist erlaubt). Ein ungültiger Key oder Wert im SELECTOR ist ein harter Fehler, weil der API-Server ihn ablehnen würde; ein ungültiges Label auf einer RESSOURCE ist nur ein Hinweis, weil Ihre Frage war, ob der Selector darauf zutrifft.',
-  },
-];
+const faqs = toolFaqs('kubernetes-label-selector-tester', 'de');
 
 const softwareApp = softwareAppLd({
   name: 'Kubernetes Label Selector Tester',

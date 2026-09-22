@@ -11,14 +11,14 @@
  * from, so it cannot drift. English only, deliberately: the localized trees
  * are translations of this same content.
  *
- * KNOWN GAP: each tool page's FAQ and "why this exists" prose lives in that
- * page's own frontmatter and markup (src/pages/<slug>.astro), not in a
- * registry, so it cannot be reached from here. Lifting those into src/data/
- * would let this file carry them too — worth doing, not yet done.
+ * Tool FAQs come from src/data/tool-faqs (the registry every tool page renders
+ * from since 2026-09-22). KNOWN GAP: each page's "why this exists" prose is
+ * still inline markup in src/pages/<slug>.astro and is not reachable here.
  */
 import { site } from '../data/site';
 import { liveTools, categoryToSlug } from '../data/tools';
 import { getToolUpdatedAt } from '../data/tool-meta';
+import { toolFaqs } from '../data/tool-faqs';
 import { tracks } from '../data/learn';
 import { roadmaps } from '../data/roadmaps';
 import { program, liveDays } from '../data/mission90';
@@ -90,6 +90,11 @@ export async function GET(): Promise<Response> {
         ? [`Related: ${tool.related.map((s) => `${site.url}/${s}/`).join(' · ')}`, '']
         : []),
     );
+    const faqs = toolFaqs(tool.slug, 'en');
+    if (faqs.length) {
+      push('### Questions and answers', '');
+      for (const f of faqs) push(`**${f.q}**`, '', f.a, '');
+    }
   }
 
   push('---', '', '# About, security and privacy', '');

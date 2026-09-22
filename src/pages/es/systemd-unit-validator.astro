@@ -30,6 +30,7 @@ import {
 import { CHECK_IDS } from '../../lib/systemd-lint/rules';
 import type { Locale as __Locale } from '../../i18n/config';
 import { localizeKey as __l } from '../../i18n/utils';
+import { toolFaqs } from '../../data/tool-faqs';
 const __lang = (Astro.currentLocale ?? 'en') as __Locale;
 
 const tool = getTool('systemd-unit-validator');
@@ -41,44 +42,7 @@ const directiveCount = ALL_DIRECTIVE_NAMES.length;
 const maxChars = MAX_INPUT_CHARS.toLocaleString('es-ES');
 const shorthands = Object.entries(CALENDAR_SHORTHANDS);
 
-const faqs = [
-  {
-    q: '¿Qué comprueba el Systemd Unit Validator?',
-    a: `${checkCount} comprobaciones sobre un análisis real del archivo, en cuatro grupos. Estructura: un encabezado de sección inválido, un [unit] en minúsculas, una sección desconocida o repetida, una línea sin «=», una asignación escrita antes de la primera sección. Nombres: una directiva en la sección equivocada (User= en [Unit]), un typo que systemd descarta (ExecStrat=), un nombre obsoleto, un nombre que la tabla simplemente no conoce. Valores: un enum incorrecto —systemd los compara distinguiendo mayúsculas—, un booleano que no lo es, una ruta Exec* que no es absoluta, sintaxis de shell en una línea Exec* que systemd no interpretará, un especificador % desconocido y un «comentario» al final de línea que en realidad forma parte del valor. Semántica: un servicio sin ExecStart=, dos líneas ExecStart= cuando Type no es oneshot, Type=forking sin PIDFile=, Restart=always con Type=oneshot, un timer sin disparador, un OnCalendar= que systemd no puede analizar, Persistent= en un timer monotónico, un socket sin nada donde escuchar, un [Install] ausente y un target de sistema en una unidad de usuario.`,
-  },
-  {
-    q: '¿Esto es systemd-analyze verify?',
-    a: 'No, y no puede serlo. systemd-analyze verify se ejecuta en una máquina que tiene systemd, necesita root para casi todo lo que está en la ruta de búsqueda del sistema y, sobre todo, resuelve tu unidad contra ESA máquina: sus usuarios, sus rutas, sus drop-ins, sus otras unidades. Eso lo convierte en la herramienta más exhaustiva y en la herramienta equivocada para el momento en que de verdad quieres la comprobación: revisar un .service en un pull request desde un portátil macOS, o verificar una unidad que un asistente acaba de escribirte. Esta página lee un archivo como texto, en tu navegador, y es explícita sobre la diferencia: todo lo que no puede saber solo con el texto está listado más abajo en lugar de adivinado.',
-  },
-  {
-    q: '¿Mi archivo de unidad sale alguna vez de mi navegador?',
-    a: `No. El parser y las ${checkCount} comprobaciones son JavaScript ejecutándose en tu pestaña: no hay servidor, no hay llamada a una API y no hay logging, así que se suben 0 bytes. Aquí eso importa: los archivos de unidad llevan nombres de host internos, rutas privadas, nombres de cuentas de servicio, ubicaciones de EnvironmentFile= y de vez en cuando una credencial que nadie debería haber puesto en un valor.`,
-  },
-  {
-    q: '¿Por qué mi timer de systemd nunca se dispara?',
-    a: 'La causa más común, con mucha diferencia, es un OnCalendar= que systemd no puede analizar porque se pegó ahí sintaxis de cron. Dos formas explican casi todos los casos. Primera, un «*/15» a secas: una repetición de calendario en systemd necesita un valor de inicio explícito, así que «*-*-* *:00/15:00» (o la forma corta «*:00/15:00») se acepta y «*/15» se rechaza por completo. Segunda, un horario crontab entero de cinco campos («0 3 * * *»): los eventos de calendario de systemd son «DOW YYYY-MM-DD HH:MM:SS», no cinco campos, y esta herramienta reconoce la forma y te manda al convertidor. Después de eso, busca un timer sin ningún disparador y un .timer sin Unit= cuyo .service se llame de otra manera. Una unidad que systemd se niega a cargar nunca aparece en systemctl list-timers, y por eso nada parece estar mal.',
-  },
-  {
-    q: '¿Por qué WantedBy= en [Unit] es un error y no una advertencia?',
-    a: 'Porque el ajuste no surte efecto en absoluto. systemd lee WantedBy= solo de [Install]; en cualquier otro sitio registra «Unknown key name \'WantedBy\' in section \'Unit\', ignoring.» y sigue adelante. La unidad carga, arranca a mano, parece sana… y systemctl enable no hace nada en silencio, así que nunca vuelve tras un reinicio. En esta página, error significa que systemd rechaza la unidad O descarta el ajuste por completo; advertencia significa que el ajuste se aplica y es una trampa. Un ajuste descartado pertenece al primer grupo, porque el archivo ya no describe lo que hará la máquina.',
-  },
-  {
-    q: '¿Por qué una directiva no reconocida es solo una nota?',
-    a: `Porque esta página trae una tabla de directivas —${directiveCount} nombres— y tu máquina trae un systemd. Cada versión añade directivas nuevas, así que un nombre que esta tabla no conoce puede ser perfectamente válido donde vas a ejecutarlo. Llamarlo error te entrenaría para ignorar todo el informe, que es lo único que un linter no sobrevive. Un nombre que se parece mucho a una directiva real es otra cosa: ahí la evidencia basta para afirmar que systemd está tirando la línea, y ESO se reporta como error con la corrección.`,
-  },
-  {
-    q: '¿Qué cambia el interruptor Sistema / Usuario?',
-    a: 'Tres cosas, todas sobre qué gestor cargará el archivo. En ámbito de usuario se marca un WantedBy= que nombra un target de sistema (multi-user.target, graphical.target): el gestor de usuario no tiene ese target, así que systemctl --user enable no tiene nada que enlazar y la unidad nunca arranca —default.target es lo que quieres, y timers.target sí existe ahí. El ámbito también viaja en el enlace para compartir, de modo que un enlace que envías reproduce los hallazgos que viste y no otros. Todo lo demás —el análisis, los nombres, los valores— es idéntico, porque systemd lee el archivo igual en ambos casos.',
-  },
-  {
-    q: '¿Puede comprobar una unidad plantilla, un drop-in o mis dependencias?',
-    a: 'Lee exactamente un archivo, así que: una plantilla se analiza con normalidad y %i se marca como nota (solo tiene valor cuando el archivo es name@.service y se arranca como name@instance.service); un fragmento drop-in se analiza bien por sí solo, pero aquí nadie sabe qué está sobrescribiendo, así que un archivo parcial parecerá una unidad a la que le falta ExecStart=; y una unidad nombrada en After=, Wants= o Unit= nunca se resuelve, porque ese archivo no está delante de nosotros. Adivinar en los tres casos sería una respuesta segura de sí misma y equivocada, que es peor que ninguna respuesta.',
-  },
-  {
-    q: '¿Qué tamaño de archivo admite y se truncan los hallazgos?',
-    a: `Hasta ${maxChars} caracteres, unas cuatro mil líneas: dos órdenes de magnitud más que cualquier archivo de unidad real. Por encima de eso se niega con un mensaje en lugar de congelar tu pestaña, porque una entrada así es un volcado del journal, no una unidad. Los hallazgos también tienen tope: ${MAX_FINDINGS_PER_RULE} por comprobación y ${MAX_FINDINGS_TOTAL} en total, y el panel indica el tope y la cifra real cuando alguno se aplica. La lista de resultados tiene un tope aparte de 50 filas por severidad, otra vez con el número real.`,
-  },
-];
+const faqs = toolFaqs('systemd-unit-validator', 'es');
 
 const softwareApp = softwareAppLd({
   name: 'Systemd Unit Validator',

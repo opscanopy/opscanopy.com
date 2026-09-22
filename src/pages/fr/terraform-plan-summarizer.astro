@@ -22,44 +22,7 @@ const tool = getTool('terraform-plan-summarizer');
 const pagePath = '/terraform-plan-summarizer/';
 const pageUrl = `${site.url}${__l(pagePath, (Astro.currentLocale ?? 'en') as __Locale)}`;
 
-const faqs = [
-  {
-    q: 'Quels formats de plan sont acceptés ?',
-    a: 'Les deux, et le format collé est détecté pour vous. Le premier est la transcription lisible que Terraform imprime — celle avec +, ~, - et -/+ dans la marge de gauche — y compris les codes couleur ANSI et les fins de ligne CRLF que produit une copie depuis un log de CI. Le second est terraform show -json tfplan, le format machine, qui porte resource_changes, replace_paths, action_reason et output_changes et constitue une interface documentée et versionnée. Le JSON est plus fiable et c\'est celui à utiliser si vous pouvez sauvegarder un fichier de plan ; le texte est celui que vous avez réellement une fois la pipeline passée. Ce qui n\'est PAS accepté : terraform show -json de votre état, ni la sortie de terraform validate -json — deux confusions courantes, et dans les deux cas on vous dit de quoi il s\'agit et quelle commande produit la bonne chose.',
-  },
-  {
-    q: 'Quelle est la différence entre -/+ et +/- dans un plan ?',
-    a: 'L\'ordre des deux opérations, et c\'est lui qui décide s\'il y aura une coupure. -/+ signifie détruire puis créer : l\'ancien objet a disparu avant que le nouveau existe, donc tout ce qui en dépend est cassé pendant cet intervalle — quelques secondes pour une règle de security group, vingt minutes pour une instance RDS. +/- signifie créer puis détruire, c\'est exactement ce que vous achète lifecycle { create_before_destroy = true } : le remplaçant est construit et seulement ensuite l\'ancien objet est retiré. Terraform choisit détruire-d\'abord par défaut, donc +/- n\'apparaît que là où quelqu\'un l\'a demandé. Cette page écrit les deux ordres en mots sur chaque ligne de remplacement, au lieu de vous faire décoder un glyphe de trois caractères.',
-  },
-  {
-    q: 'Que signifie réellement « forces replacement » ?',
-    a: 'Cela marque l\'attribut précis dont la modification ne peut pas être appliquée sur place, si bien que le provider doit supprimer l\'objet et en construire un nouveau. C\'est par attribut, et c\'est là tout l\'intérêt : engine_version sur un aws_db_instance est une vraie montée de version que vous avez voulue, alors qu\'un availability_zone ou un name qui change par accident — variable renommée, tag reformaté, valeur par défaut du provider qui a bougé — c\'est le remplacement-surprise classique. Cette page extrait chacun de ces noms d\'attribut du bloc auquel il appartient et les affiche en pastilles sur la ligne de cette ressource, pour que vous n\'ayez jamais à parcourir un diff de 400 lignes à la recherche du commentaire.',
-  },
-  {
-    q: 'Pourquoi un remplacement compte-t-il à la fois comme « add » et comme « destroy » ?',
-    a: 'Parce que Terraform compte des opérations, pas des ressources, et qu\'un remplacement fait deux opérations. Un plan avec une création simple et un remplacement imprime donc « Plan: 2 to add, 0 to change, 1 to destroy » : le remplacement alimente les deux chiffres. C\'est exact, et c\'est aussi la ligne la plus mal lue de toute la sortie de Terraform, parce que « 2 to add » sonne comme deux nouvelles choses. Cette page affiche à la place quatre tuiles disjointes : add, c\'est créé directement ; replace, c\'est détruit puis recréé ; et rien n\'est compté deux fois. La comptabilité propre de Terraform est imprimée en dessous, mot pour mot, pour qu\'on puisse comparer les deux au lieu de les confondre.',
-  },
-  {
-    q: 'Est-il sûr de coller un plan ici ?',
-    a: 'Oui, et c\'est précisément pourquoi cette page existe sous cette forme. Il n\'y a pas de serveur derrière : l\'analyseur est du JavaScript qui se charge dans votre onglet et s\'y exécute, donc le plan ne quitte jamais votre machine — vérifiable dans l\'onglet réseau de votre navigateur, ou en chargeant la page puis en passant hors ligne. Cela compte davantage pour une sortie de plan que pour presque tout ce que vous colleriez dans un outil web : un plan est plein d\'identifiants de compte, d\'ARN, de plages de sous-réseau et de CIDR, de documents de politique IAM, de règles de security group et de noms DNS internes. En coller un dans un chatbot livre tout cela à un tiers et, sur les offres grand public de la plupart des assistants, aux données d\'entraînement.',
-  },
-  {
-    q: 'Les chiffres ne collent pas — que signifie l\'avertissement d\'écart ?',
-    a: 'Il signifie que les ressources que cette page a pu lire ne totalisent pas les sommes de la ligne de résumé de Terraform, et neuf fois sur dix le collage est incomplet : un visualiseur de logs de CI a replié le milieu, un tampon de défilement l\'a coupé, ou la copie a commencé à mi-chemin. L\'avertissement nomme les deux jeux de chiffres et vous dit de faire confiance à Terraform. La raison de son existence : la sortie lisible de Terraform n\'est explicitement pas une interface stable, un analyseur de texte finira donc par dériver sur un changement de format — et un récapitulatif qui dérive en silence imprimerait un total faux avec assurance, ce qui est pire que de ne rien imprimer. Ce recoupement est ce qui rend défendable l\'analyse d\'un format instable.',
-  },
-  {
-    q: 'Que veut dire « (known after apply) », et pourquoi n\'y a-t-il pas de valeur ?',
-    a: 'Cela veut dire que la valeur n\'existe pas encore. Des attributs comme un ARN, un id, un nom DNS généré ou une adresse IP sont attribués par le provider à la création : au moment du plan, Terraform ne les connaît réellement pas et refuse de deviner. Ce n\'est ni une erreur ni un avertissement — un plan portant sur du neuf en est rempli. Cela a toutefois une conséquence pratique : une ressource dont l\'entrée dépend d\'une valeur inconnue ne peut pas non plus être entièrement évaluée, d\'où une data source parfois marquée « read during apply » plutôt que résolue, et d\'où le fait qu\'un apply peut finir par faire plus que ce que le plan montrait.',
-  },
-  {
-    q: 'Est-ce que cela marche avec OpenTofu ?',
-    a: 'Oui. OpenTofu a été forké depuis Terraform 1.5.x et a conservé les deux formats de sortie : la transcription texte utilise les mêmes symboles et la même ligne « Plan: N to add, N to change, N to destroy », et tofu show -json émet la même famille de format_version avec la même structure resource_changes. Tout ce qui est sur cette page s\'applique sans changement, et la ligne de version est lue selon le produit qui l\'a imprimée. Idem pour les surcouches qui font passer la sortie de Terraform telle quelle — Terragrunt, Atlantis, Spacelift — tant que le texte du plan lui-même est intact.',
-  },
-  {
-    q: 'Contre quelles versions de Terraform est-ce testé ?',
-    a: 'Le chemin JSON est écrit pour format_version 0.1 à 1.x, ce qui couvre Terraform 0.12 à 1.9 et l\'OpenTofu actuel ; un document avec une version majeure inconnue est accepté mais accompagné d\'un avertissement, car un champ renommé produirait sinon des zéros en silence. Le chemin texte est testé contre les formes 1.5 et suivantes, là où « N to import » a rejoint la ligne de résumé et où apparaissent les blocs moved et import ; les sorties plus anciennes s\'analysent en grande partie, et ce qui ne s\'analyse pas est rattrapé par le recoupement des chiffres plutôt que rapporté comme un fait. La seule chose que cette page ne fera jamais, c\'est estimer un coût : les prix se périment, et un chiffre périmé imprimé avec assurance est exactement le type de réponse que ce site existe pour remplacer.',
-  },
-];
+const faqs = toolFaqs('terraform-plan-summarizer', 'fr');
 
 const softwareApp = softwareAppLd({
   name: 'Terraform Plan Summarizer',
@@ -188,6 +151,7 @@ terraform validate -json                    # this is a config check, not a plan
 
 import type { Locale as __Locale } from '../../i18n/config';
 import { localizeKey as __l } from '../../i18n/utils';
+import { toolFaqs } from '../../data/tool-faqs';
 const __lang = (Astro.currentLocale ?? 'en') as __Locale;
 ---
 
