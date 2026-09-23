@@ -5,6 +5,7 @@ import sitemap from '@astrojs/sitemap';
 import { createRequire } from 'node:module';
 import remarkCallouts from './src/lib/remark-callouts.mjs';
 import rehypeChapters from './src/lib/rehype-chapters.mjs';
+import rehypeImgDims from './src/lib/rehype-img-dims.mjs';
 
 // Real per-URL <lastmod>, written by scripts/gen-lastmod.mjs in `prebuild`.
 // Missing on a bare `astro dev` with no prior build — fall back to {} so every
@@ -107,7 +108,7 @@ export default defineConfig({
   ],
   markdown: {
     remarkPlugins: [remarkCallouts],
-    rehypePlugins: [rehypeChapters],
+    rehypePlugins: [rehypeChapters, rehypeImgDims],
   },
   vite: {
     plugins: [tailwindcss()],

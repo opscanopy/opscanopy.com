@@ -83,9 +83,9 @@ const fr: Partial<UiDict> = {
   'lang.switcherLabel': 'Langue',
 
   // Blog
-  'blog.metaTitle': 'Blog',
+  'blog.metaTitle': 'Blog — notes de terrain sur DevOps, CI/CD et observabilité',
   'blog.metaDescription':
-    'Notes sur l’outillage DevOps, l’observabilité et les manques qui méritent d’être comblés.',
+    'Notes pratiques pour ingénieurs DevOps : GitHub Actions et GitLab CI, Docker Compose, cron et timers systemd, relabeling Prometheus, routage Alertmanager.',
   'blog.eyebrow': 'Articles',
   'blog.indexTitle': 'Notes de la canopée.',
   'blog.indexLead':

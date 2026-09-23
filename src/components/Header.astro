@@ -144,12 +144,15 @@ const discoveryTools = [
         costs no layout: the tooltip carries it visually and `aria-keyshortcuts`
         exposes it to assistive tech. The href stays a real link to /search, so
         this still works with JavaScript disabled.
+
+        No aria-label: the name is computed from content ("Search Ctrl K") so it
+        contains the visible kbd text (WCAG 2.5.3, label in name). The sr-only
+        label still names the link wherever the kbd is hidden.
       */}
       {searchLink && (
         <a
           href={href(searchLink.href)}
           aria-current={isCurrent(searchLink.href) ? 'page' : undefined}
-          aria-label={searchLink.label}
           title={`${searchLink.label} · ${t('search.shortcutHint')}`}
           aria-keyshortcuts="Control+K Meta+K"
           class:list={[
@@ -170,10 +173,12 @@ const discoveryTools = [
             <circle cx="11" cy="11" r="7"></circle>
             <path d="m21 21-4.35-4.35"></path>
           </svg>
-          {/* The shortcut, visible at lg+ (aria-keyshortcuts above already
-              exposes it to AT). CommandPalette swaps "Ctrl" for "⌘" on Apple. */}
-          <span class="max-lg:hidden inline-flex items-center gap-0.5" aria-hidden="true">
-            <kbd class="kbd" data-kbd-mod>Ctrl</kbd><kbd class="kbd">K</kbd>
+          <span class="sr-only">{searchLink.label} </span>
+          {/* The shortcut, visible at lg+ and part of the accessible name.
+              CommandPalette swaps "Ctrl" for "⌘" on Apple. The space between
+              the keys is for the name only; flex layout drops it visually. */}
+          <span class="max-lg:hidden inline-flex items-center gap-0.5">
+            <kbd class="kbd" data-kbd-mod>Ctrl</kbd>{' '}<kbd class="kbd">K</kbd>
           </span>
         </a>
       )}
@@ -466,10 +471,51 @@ const discoveryTools = [
         menu.querySelectorAll<HTMLElement>(
           'a[href], button:not([disabled]), summary, select, [tabindex]:not([tabindex="-1"])',
         ),
-      ).filter((el) => el.offsetParent !== null);
+      ).filter(
+        // offsetParent alone keeps the links inside the closed LangSwitcher
+        // <details>, so the trap's "last" was unreachable and Tab ran off the page.
+        (el) =>
+          el.offsetParent !== null &&
+          !(el.tagName !== 'SUMMARY' && el.closest('details:not([open])')),
+      );
 
     const labelOpen = toggle.dataset.labelOpen ?? 'Open menu';
     const labelClose = toggle.dataset.labelClose ?? 'Close menu';
+
+    /** The command palette lives inside this <header> too. While it is open (or
+        the key event came from inside it) the palette owns Escape and Tab — the
+        menu must not also close and yank focus back to the toggle. */
+    const palette = document.getElementById('cmdk');
+    const paletteOwns = (event: KeyboardEvent) =>
+      !!palette &&
+      (!palette.hidden || (event.target instanceof Node && palette.contains(event.target)));
+
+    /** Make the overlay modal: everything outside the <header> (skip link,
+        main, footer — and their equivalents at each ancestor level) goes inert
+        while the menu is open. Only elements WE made inert are restored, so an
+        element something else had already marked inert stays that way. */
+    const header = menu.closest('header');
+    let inerted: HTMLElement[] = [];
+    const setBackgroundInert = (on: boolean) => {
+      if (!on) {
+        inerted.forEach((el) => {
+          el.inert = false;
+        });
+        inerted = [];
+        return;
+      }
+      if (!header || inerted.length > 0) return;
+      let node: HTMLElement = header;
+      while (node.parentElement && node !== document.body) {
+        const parent: HTMLElement = node.parentElement;
+        for (const sibling of Array.from(parent.children)) {
+          if (sibling === node || !(sibling instanceof HTMLElement) || sibling.inert) continue;
+          sibling.inert = true;
+          inerted.push(sibling);
+        }
+        node = parent;
+      }
+    };
 
     const setOpen = (open: boolean) => {
       toggle.setAttribute('aria-expanded', String(open));
@@ -477,6 +523,7 @@ const discoveryTools = [
       menu.hidden = !open;
       iconOpen?.classList.toggle('hidden', open);
       iconClose?.classList.toggle('hidden', !open);
+      setBackgroundInert(open);
       // Lock the page behind the overlay so the body doesn't scroll under it.
       document.documentElement.style.overflow = open ? 'hidden' : '';
     };
@@ -494,7 +541,7 @@ const discoveryTools = [
     });
 
     document.addEventListener('keydown', (event) => {
-      if (!isOpen()) return;
+      if (!isOpen() || paletteOwns(event)) return;
 
       // Close on Escape and return focus to the toggle.
       if (event.key === 'Escape') {

@@ -174,6 +174,18 @@ describe('WCAG contrast ratio math', () => {
   });
 });
 
+// Shiki's github-dark comment ink is an inline style, not a token, so the
+// override in global.css is pinned here as a literal pair.
+describe('WCAG AA contrast — Shiki code-block comments (pinned pair)', () => {
+  it('comment override #959da5 on github-dark #24292e >= 4.5:1 (AA)', () => {
+    assertContrast('#959da5', '#24292e', 4.5, 'shiki comment on github-dark');
+  });
+
+  it('global.css still carries the override for the #6A737D comment span', () => {
+    expect(readCss()).toMatch(/\.astro-code span\[style\*='#6A737D' i\]\s*\{\s*color:\s*#959da5 !important;/);
+  });
+});
+
 describe('CSS token extraction', () => {
   it('parses at least the expected tokens from the @theme block', () => {
     const css = readCss();

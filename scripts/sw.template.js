@@ -4,7 +4,8 @@
 //
 // Strategy:
 //   - Navigations: network-first (NAV_TIMEOUT_MS), else the runtime pages
-//     cache, else the precached /offline/ shell.
+//     cache, else keep waiting on the network, else the precached /offline/
+//     shell.
 //   - /_astro/* (content-hashed build assets): cache-first.
 //   - /pagefind/* + icons/manifest: stale-while-revalidate.
 //   - Everything else (API-ish/cross-origin/non-GET): passthrough, untouched.
@@ -90,47 +91,80 @@ function timeoutAfter(ms) {
   return new Promise((_, reject) => setTimeout(() => reject(new Error('sw-nav-timeout')), ms));
 }
 
-async function handleNavigation(request) {
+// Cache storage can throw or reject at any point (quota, private mode, a
+// corrupted profile). These two helpers are the only way the fetch handlers
+// touch it, so a broken cache degrades to "no cache" and never costs the
+// visitor a response the network already delivered (src/lib/sw.test.ts).
+
+/** A cache lookup that treats any cache-storage failure as a miss. */
+async function cacheLookup(request, name) {
   try {
-    const response = await Promise.race([fetch(request), timeoutAfter(NAV_TIMEOUT_MS)]);
-    if (response && response.ok) {
-      const cache = await caches.open(PAGES_CACHE);
-      // Never let a caching failure surface as a navigation failure.
-      cache.put(request, response.clone()).catch(() => {});
-      trimCache(PAGES_CACHE, PAGES_LIMIT).catch(() => {});
-      return response;
-    }
-    return response; // a real 4xx/5xx from the network — show it, don't mask it
+    const source = name ? await caches.open(name) : caches;
+    return (await source.match(request)) || undefined;
   } catch {
-    const cached = await caches.match(request);
+    return undefined;
+  }
+}
+
+/** Open + put + trim in the background, every error swallowed. Pass a clone. */
+function safeCachePut(name, request, response, event) {
+  const max = name === PAGES_CACHE ? PAGES_LIMIT : ASSETS_LIMIT;
+  const work = (async () => {
+    const cache = await caches.open(name);
+    await cache.put(request, response);
+    await trimCache(name, max);
+  })().catch(() => {});
+  if (event && typeof event.waitUntil === 'function') {
+    try {
+      event.waitUntil(work);
+    } catch {
+      /* the event's lifetime already ended — the write still runs */
+    }
+  }
+  return work;
+}
+
+async function handleNavigation(request, event) {
+  // Kept, not raced away: a timeout falls back to cache, but with nothing
+  // cached a slow page still beats the offline shell, so we wait for it.
+  const network = fetch(request).then((response) => {
+    if (response && response.ok) safeCachePut(PAGES_CACHE, request, response.clone(), event);
+    return response; // a real 4xx/5xx from the network — show it, don't mask it
+  });
+  network.catch(() => {}); // observed below; silence the unhandled-rejection path
+  try {
+    return await Promise.race([network, timeoutAfter(NAV_TIMEOUT_MS)]);
+  } catch {
+    const cached = await cacheLookup(request);
     if (cached) return cached;
-    const offline = await caches.match('/offline/');
+    try {
+      const late = await network;
+      if (late) return late;
+    } catch {
+      /* offline for real — fall through to the shell */
+    }
+    const offline = await cacheLookup('/offline/');
     return offline || Response.error();
   }
 }
 
-async function handleAssetCacheFirst(request) {
-  const cached = await caches.match(request);
+async function handleAssetCacheFirst(request, event) {
+  const cached = await cacheLookup(request);
   if (cached) return cached;
   try {
     const response = await fetch(request);
-    if (response && response.ok) {
-      const cache = await caches.open(ASSETS_CACHE);
-      cache.put(request, response.clone()).catch(() => {});
-      trimCache(ASSETS_CACHE, ASSETS_LIMIT).catch(() => {});
-    }
+    if (response && response.ok) safeCachePut(ASSETS_CACHE, request, response.clone(), event);
     return response;
   } catch {
     return Response.error();
   }
 }
 
-async function handleStaleWhileRevalidate(request) {
-  const cache = await caches.open(ASSETS_CACHE);
-  const cached = await cache.match(request);
+async function handleStaleWhileRevalidate(request, event) {
+  const cached = await cacheLookup(request, ASSETS_CACHE);
   const network = fetch(request)
     .then((response) => {
-      if (response && response.ok) cache.put(request, response.clone()).catch(() => {});
+      if (response && response.ok) safeCachePut(ASSETS_CACHE, request, response.clone(), event);
       return response;
     })
     .catch(() => undefined);
@@ -149,14 +183,14 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
 
   if (request.mode === 'navigate') {
-    event.respondWith(handleNavigation(request));
+    event.respondWith(handleNavigation(request, event));
     return;
   }
   if (url.pathname.startsWith('/_astro/')) {
-    event.respondWith(handleAssetCacheFirst(request));
+    event.respondWith(handleAssetCacheFirst(request, event));
     return;
   }
   if (url.pathname.startsWith('/pagefind/') || /\.(?:png|svg|ico|webmanifest)$/.test(url.pathname)) {
-    event.respondWith(handleStaleWhileRevalidate(request));
+    event.respondWith(handleStaleWhileRevalidate(request, event));
   }
 });

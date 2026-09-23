@@ -94,8 +94,9 @@ const en = {
   'lang.switcherLabel': 'Language',
 
   // Blog
-  'blog.metaTitle': 'Blog',
-  'blog.metaDescription': 'Notes on DevOps tooling, observability, and the gaps worth filling.',
+  'blog.metaTitle': 'Blog — DevOps, CI/CD & observability field notes',
+  'blog.metaDescription':
+    'Field notes for DevOps engineers: GitHub Actions and GitLab CI, Docker Compose, cron and systemd timers, Prometheus relabeling and Alertmanager routing.',
   'blog.eyebrow': 'Writing',
   'blog.indexTitle': 'Notes from the canopy.',
   'blog.indexLead':
@@ -143,6 +144,9 @@ const en = {
   'blog.tagEyebrow': 'Tag',
   'blog.tagTitle': 'Posts tagged “{tag}”',
   'blog.tagLead': 'Every post filed under “{tag}”, newest first.',
+  // Meta description only — tagLead is the visible lead and too short for a snippet.
+  'blog.tagMetaDescription':
+    'Every OpsCanopy post tagged “{tag}”, newest first — {count} in total, each a hands-on DevOps guide with worked examples and real configs.',
   'blog.tagCountSingular': 'post.',
   'blog.tagCountPlural': 'posts.',
 
