@@ -174,6 +174,17 @@ describe('specific decode errors (REQ-3)', () => {
     const badJson = decode(`${Buffer.from('hello').toString('base64url')}.${b64u({ a: 1 })}.x`);
     expect(badJson.error).toMatch(/header.*JSON/i);
   });
+  it('never leaks the raw SyntaxError or U+FFFD into the JSON message (UX-09)', () => {
+    const binary = Buffer.from([0xff, 0xfe, 0x41, 0x7b]).toString('base64url');
+    const header = decode(`${binary}.${b64u({ a: 1 })}.x`);
+    expect(header.error).toMatch(/header.*JSON/i);
+    expect(header.error).not.toMatch(/Unexpected token/i);
+    expect(header.error).not.toContain('�');
+    const payload = decode(`${b64u({ alg: 'HS256' })}.${binary}.x`);
+    expect(payload.partial?.segmentError).toMatch(/payload.*JSON/i);
+    expect(payload.partial?.segmentError).not.toMatch(/Unexpected token/i);
+    expect(payload.partial?.segmentError).not.toContain('�');
+  });
   it('renders the header partially when only the payload is broken', () => {
     const r = decode(`${b64u({ alg: 'HS256', typ: 'JWT' })}.@@@.x`);
     expect(r.valid).toBe(false);

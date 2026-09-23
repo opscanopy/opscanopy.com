@@ -97,7 +97,7 @@ const de: Partial<PagesContent> = {
       {
         heading: 'Fragen',
         body: [
-          'Fragen zum Datenschutz sind willkommen. Am besten erreichen Sie uns über unsere öffentliche GitHub-Organisation — den Link finden Sie auf der Kontaktseite.',
+          'Fragen zum Datenschutz sind willkommen. Da GitHub-Issues öffentlich sind, schreiben Sie uns bitte an hello@opscanopy.com, statt ein Issue zu eröffnen. Sicherheitsmeldungen gehen an dieselbe Adresse — siehe die Sicherheitsseite.',
         ],
       },
     ],
@@ -290,7 +290,7 @@ const de: Partial<PagesContent> = {
       {
         heading: 'Allgemeine Fragen',
         body: [
-          'Für alles andere — einschließlich Datenschutzfragen oder allgemeinem Feedback — ist GitHub der beste Weg, uns zu erreichen. Wir lesen alles, auch wenn eine Antwort etwas dauern kann.',
+          'GitHub ist öffentlich und daher nur für Fehlerberichte und Funktionswünsche der richtige Ort. Für Fragen zu Datenschutz oder Sicherheit oder für alles Persönliche schreiben Sie bitte an hello@opscanopy.com — Sicherheitsmeldungen behandelt die Sicherheitsseite. Wir lesen alles, auch wenn eine Antwort etwas dauern kann.',
         ],
       },
     ],

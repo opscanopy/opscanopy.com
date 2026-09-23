@@ -42,6 +42,9 @@ function pager(index, total, sections) {
     links.push(
       el('a', { className: ['chapter-link', 'chapter-prev'], href: `#${prev.id}` }, [
         el('span', { className: ['chapter-dir'] }, [arrow('← '), text('Previous')]),
+        // A real space, so templates that don't stack the two spans (blog
+        // posts) and screen readers don't read "PreviousWhat 137…".
+        text(' '),
         el('span', { className: ['chapter-title'] }, [text(prev.title)]),
       ]),
     );
@@ -50,6 +53,7 @@ function pager(index, total, sections) {
     links.push(
       el('a', { className: ['chapter-link', 'chapter-next'], href: `#${next.id}` }, [
         el('span', { className: ['chapter-dir'] }, [text('Next'), arrow(' →')]),
+        text(' '),
         el('span', { className: ['chapter-title'] }, [text(next.title)]),
       ]),
     );

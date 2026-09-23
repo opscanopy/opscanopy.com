@@ -36,6 +36,12 @@ const BUILD_DATE = new Date();
 // https://astro.build/config
 export default defineConfig({
   site: 'https://opscanopy.com',
+  // Astro 7 defaults to 'jsx', which strips the newline whitespace between
+  // text and an inline tag — the prose was authored against Astro 6 and ran
+  // together in the built HTML ("like<span class="code-mono">…",
+  // "the<a class="link-inline">…"). `true` is Astro 6's lossless compression.
+  // scripts/check-inline-whitespace.mjs (postbuild) fails the build on a regression.
+  compressHTML: true,
   // Native i18n routing. English is the default and stays un-prefixed at the
   // root (/tools, /cron-expression-tester …) so existing URLs/SEO are intact;
   // other locales are prefixed (/es/…, /de/…, /fr/…, /pt-br/…).

@@ -97,7 +97,7 @@ const ptBr: Partial<PagesContent> = {
       {
         heading: 'Dúvidas',
         body: [
-          'Dúvidas sobre privacidade são bem-vindas. A melhor forma de falar conosco é pela nossa organização pública no GitHub — veja a página de Contato para o link.',
+          'Dúvidas sobre privacidade são bem-vindas. Como as issues do GitHub são públicas, escreva para hello@opscanopy.com em vez de abrir uma issue. Relatos de segurança vão para o mesmo endereço — veja a página de Segurança.',
         ],
       },
     ],
@@ -290,7 +290,7 @@ const ptBr: Partial<PagesContent> = {
       {
         heading: 'Perguntas gerais',
         body: [
-          'Para qualquer outra coisa — incluindo dúvidas sobre privacidade ou feedback geral — o GitHub é o melhor lugar para falar conosco. Lemos tudo, mesmo que a resposta demore um pouco.',
+          'O GitHub é público, então é o lugar certo apenas para bugs e pedidos de recursos. Para dúvidas sobre privacidade ou segurança, ou qualquer assunto pessoal, escreva para hello@opscanopy.com — relatos de segurança são tratados na página de Segurança. Lemos tudo, mesmo que a resposta demore um pouco.',
         ],
       },
     ],

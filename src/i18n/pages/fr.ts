@@ -107,7 +107,7 @@ const fr: Partial<PagesContent> = {
       {
         heading: 'Questions',
         body: [
-          'Les questions relatives à la confidentialité sont les bienvenues. Le meilleur moyen de nous joindre est notre organisation GitHub publique — voir la page Contact pour le lien.',
+          'Les questions relatives à la confidentialité sont les bienvenues. Les issues GitHub étant publiques, écrivez-nous à hello@opscanopy.com au lieu d’ouvrir une issue. Les signalements de sécurité vont à la même adresse — voir la page Sécurité.',
         ],
       },
     ],
@@ -300,7 +300,7 @@ const fr: Partial<PagesContent> = {
       {
         heading: 'Questions générales',
         body: [
-          'Pour tout le reste — y compris les questions de confidentialité ou les retours généraux — GitHub est le meilleur endroit pour nous joindre. Nous lisons tout, même si une réponse prend parfois un peu de temps.',
+          'GitHub est public : c’est donc le bon endroit uniquement pour les bugs et les demandes de fonctionnalités. Pour les questions de confidentialité ou de sécurité, ou pour tout sujet personnel, écrivez plutôt à hello@opscanopy.com — les signalements de sécurité sont décrits sur la page Sécurité. Nous lisons tout, même si une réponse prend parfois un peu de temps.',
         ],
       },
     ],

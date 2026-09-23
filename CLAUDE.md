@@ -97,6 +97,18 @@ npx vitest run src/lib/hash-generator/engine.test.ts
 
 **OpsCanopy** is a fully static Astro v7 site. Every tool runs 100% client-side — there is no server, no API, no backend. Astro v7 + Tailwind v4 + no framework (plain `<script>` modules).
 
+**`compressHTML: true` is load-bearing.** Astro 7 changed the default to `'jsx'`,
+which deletes line-break whitespace between text and an inline tag, so every
+`word\n<span class="code-mono">` in the source shipped as `word<span…>` ("like*/15",
+"theHash Generator") on 195 pages from the 7.x upgrade (2026-08-27) until
+2026-09-23. `true` is Astro 6's lossless mode the templates were written against.
+`scripts/check-inline-whitespace.mjs` (postbuild) fails the build on the
+code-mono/link-inline form and warns on `<code>/<strong>/<em>` boundaries (German
+compounds and plurals like `<code>/64</code>s` are legitimate there). Note that
+editing a rehype/remark plugin does not invalidate the content-layer cache
+(`node_modules/.astro/data-store.json`) — move it aside before a local build that
+must prove a plugin change; CI builds cold.
+
 Astro 7 keeps the legacy `unified` Markdown pipeline only because
 `@astrojs/markdown-remark` is an explicit dependency — v7 made "Sätteri" the default
 processor and stopped installing unified, which is what `markdown.remarkPlugins` /

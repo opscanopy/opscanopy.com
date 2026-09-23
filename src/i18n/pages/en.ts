@@ -166,7 +166,7 @@ const en: PagesContent = {
       {
         heading: 'Questions',
         body: [
-          'Privacy questions are welcome. The best way to reach us is through our public GitHub organization — see the Contact page for the link.',
+          'Privacy questions are welcome. Because GitHub issues are public, please email them to hello@opscanopy.com rather than opening an issue. Security reports go to the same address — see the Security page.',
         ],
       },
     ],
@@ -360,7 +360,7 @@ const en: PagesContent = {
       {
         heading: 'General questions',
         body: [
-          'For anything else — including privacy questions or general feedback — GitHub is the best place to reach us. We read everything, even if a reply takes a little while.',
+          'GitHub is public, so it is the right place for bugs and feature requests only. For privacy or security questions, or anything personal, email hello@opscanopy.com instead — security reports are covered on the Security page. We read everything, even if a reply takes a little while.',
         ],
       },
     ],

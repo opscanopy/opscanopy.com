@@ -100,9 +100,14 @@ function parseSegmentDetailed(seg: string, name: 'header' | 'payload'): SegmentP
       return { ok: false, why: 'not-object', detail: `The ${name} decoded but is not a JSON object.` };
     }
     return { ok: true, obj: parsed as Record<string, unknown>, text };
-  } catch (err) {
-    const at = err instanceof SyntaxError ? ` (${err.message})` : '';
-    return { ok: false, why: 'json', detail: `The ${name} decoded but isn't valid JSON${at}.` };
+  } catch {
+    // Never echo the engine's SyntaxError: it quotes the decoded bytes, which
+    // for a non-JSON segment are usually U+FFFD replacement characters (UX-09).
+    return {
+      ok: false,
+      why: 'json',
+      detail: `The ${name} decoded but isn't valid JSON — a JWT ${name} is base64url-encoded JSON and usually starts with "eyJ".`,
+    };
   }
 }
 
