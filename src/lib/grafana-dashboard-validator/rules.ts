@@ -440,7 +440,7 @@ const datasourceByName: Rule = {
 const DS_INPUT_HINT_DECLARED =
   'Import this file through Dashboards → Import so Grafana can prompt for it, or replace every ' +
   '"${DS_…}" reference with a real { type, uid } before provisioning it — provisioning does not ' +
-  'run the import dialog, which is what turns into "Datasource not found".';
+  'run the import dialog, which is what turns into "Datasource ${DS_…} was not found".';
 
 const unresolvedDsInput: Rule = {
   id: 'unresolved-ds-input',
@@ -461,6 +461,13 @@ const unresolvedDsInput: Rule = {
     }
 
     const declared = new Set(ctx.inputNames);
+    // The common hand fix keeps the ${DS_PROMETHEUS} references and adds a
+    // datasource-type template variable of that name. DatasourceSrv.get() runs
+    // the uid through templateSrv.replace() before the lookup, so the variable
+    // resolves the placeholder and nothing is missing.
+    for (const variable of ctx.variables) {
+      if (variable.type === 'datasource') declared.add(variable.name);
+    }
     const grouped = groupUsages(
       ctx.usages,
       (usage) => isDatasourceInputName(usage.name) && !declared.has(usage.name),
@@ -470,9 +477,15 @@ const unresolvedDsInput: Rule = {
         id: 'unresolved-ds-input',
         severity: 'error',
         path: list[0].path,
+        // Grafana's own wording, from DatasourceSrv.loadDatasource() when no
+        // instance settings match the (uninterpolated) key:
+        //   return Promise.reject({ message: `Datasource ${key} was not found` });
+        // https://raw.githubusercontent.com/grafana/grafana/main/public/app/features/plugins/datasource_srv.ts
+        // (identical on the v9.5.x branch:
+        // https://raw.githubusercontent.com/grafana/grafana/v9.5.x/public/app/features/plugins/datasource_srv.ts)
         message:
           `"\${${name}}" is an import placeholder, but this file has no "__inputs" block that ` +
-          `declares it — Grafana reports "Datasource \${${name}} not found".`,
+          `declares it — Grafana reports "Datasource \${${name}} was not found".`,
         hint:
           'Replace it with the real { type, uid } of the datasource, or re-export the dashboard ' +
           'with "Export for sharing externally" so the "__inputs" block comes with it.',

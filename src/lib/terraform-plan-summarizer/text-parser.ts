@@ -212,7 +212,7 @@ function blankChange(address: string, action: PlanAction): ResourceChange {
   };
 }
 
-/** `~ engine_version = "13.4" -> "15.3" # forces replacement` → `engine_version`. */
+/** `~ storage_encrypted = false -> true # forces replacement` → `storage_encrypted`. */
 function attributeOf(line: string): string | null {
   let rest = line.trim();
   // Strip the leading change symbol, whichever form it takes.
@@ -408,8 +408,16 @@ export function parsePlanText(text: string, maxChanges: number): TextParseResult
       }
 
       // `# (because aws_iam_role.old is not in configuration)` — Terraform's own
-      // words for why, kept verbatim rather than paraphrased.
-      if (current !== null && current.actionReason === null && body.startsWith('(') && body.endsWith(')')) {
+      // words for why, kept verbatim rather than paraphrased. It only ever sits
+      // between the header and the `resource "…"` line: inside the block, a
+      // parenthesised comment is `# (4 unchanged attributes hidden)`, not a reason.
+      if (
+        current !== null &&
+        !sawSymbolLine &&
+        current.actionReason === null &&
+        body.startsWith('(') &&
+        body.endsWith(')')
+      ) {
         current.actionReason = body.slice(1, -1);
       }
       continue;

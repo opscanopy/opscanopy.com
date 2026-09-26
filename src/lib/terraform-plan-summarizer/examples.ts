@@ -67,36 +67,53 @@ Do you want to perform these actions?
   Only 'yes' will be accepted to approve.
 `;
 
+/**
+ * Turning on encryption for an existing RDS instance is the classic surprise
+ * replacement: storage_encrypted is ForceNew in the AWS provider
+ * (internal/service/rds/instance.go), so the diff is a destroy-and-recreate of
+ * the primary database. engine_version would be the wrong example — the
+ * provider modifies it in place (a major version needs
+ * allow_major_version_upgrade), it never forces a replacement.
+ */
 const RDS_REPLACE = `Terraform used the selected providers to generate the following execution
 plan. Resource actions are indicated with the following symbols:
--/+ destroy and then create replacement
   ~ update in-place
+-/+ destroy and then create replacement
 
 Terraform will perform the following actions:
 
   # module.data.aws_db_instance.primary must be replaced
 -/+ resource "aws_db_instance" "primary" {
       ~ address                               = "primary.abc123.eu-west-1.rds.amazonaws.com" -> (known after apply)
-        allocated_storage                     = 200
       ~ arn                                   = "arn:aws:rds:eu-west-1:123456789012:db:primary" -> (known after apply)
-        backup_retention_period               = 7
-        deletion_protection                   = false
+      ~ availability_zone                     = "eu-west-1a" -> (known after apply)
+      ~ ca_cert_identifier                    = "rds-ca-rsa2048-g1" -> (known after apply)
       ~ endpoint                              = "primary.abc123.eu-west-1.rds.amazonaws.com:5432" -> (known after apply)
-        engine                                = "postgres"
-      ~ engine_version                        = "13.4" -> "15.3" # forces replacement
-      ~ id                                    = "primary" -> (known after apply)
-        identifier                            = "primary"
-        instance_class                        = "db.r6g.xlarge"
-        multi_az                              = true
-      ~ password                              = (sensitive value)
-        skip_final_snapshot                   = true
-        storage_encrypted                     = true
+      ~ engine_version_actual                 = "15.7" -> (known after apply)
+      ~ hosted_zone_id                        = "Z29XKXDKYMONMX" -> (known after apply)
+      ~ id                                    = "db-ABCDEFGHIJKLMNOPQRSTUVWXY2" -> (known after apply)
+      ~ kms_key_id                            = "" -> (known after apply)
+      ~ resource_id                           = "db-ABCDEFGHIJKLMNOPQRSTUVWXY2" -> (known after apply)
+      ~ status                                = "available" -> (known after apply)
+      ~ storage_encrypted                     = false -> true # forces replacement
+        tags                                  = {}
+        # (35 unchanged attributes hidden)
     }
 
   # module.data.aws_db_parameter_group.primary will be updated in-place
   ~ resource "aws_db_parameter_group" "primary" {
-        id     = "primary-pg13"
-      ~ family = "postgres13" -> "postgres15"
+        id           = "primary-pg15"
+        name         = "primary-pg15"
+        tags         = {}
+        # (6 unchanged attributes hidden)
+
+      + parameter {
+          + apply_method = "immediate"
+          + name         = "log_min_duration_statement"
+          + value        = "500"
+        }
+
+        # (2 unchanged blocks hidden)
     }
 
 Plan: 1 to add, 1 to change, 1 to destroy.

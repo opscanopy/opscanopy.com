@@ -711,8 +711,48 @@ describe('rule: unresolved-ds-input', () => {
     expect(d.path).toBe('panels[0].datasource.uid');
     expect(d.message).toBe(
       '"${DS_PROMETHEUS}" is an import placeholder, but this file has no "__inputs" block that ' +
-        'declares it — Grafana reports "Datasource ${DS_PROMETHEUS} not found".',
+        'declares it — Grafana reports "Datasource ${DS_PROMETHEUS} was not found".',
     );
+  });
+
+  // The usual hand fix for an "Export for sharing externally" file: keep the
+  // ${DS_PROMETHEUS} references and add a datasource-type template variable
+  // of the same name. templateSrv.replace() then resolves the placeholder
+  // before DatasourceSrv looks the datasource up, so nothing is missing.
+  it('stays silent when a datasource variable of the same name resolves the placeholder', () => {
+    const dashboard = mutated((d) => {
+      d.templating = {
+        list: [
+          {
+            name: 'DS_PROMETHEUS',
+            label: 'Datasource',
+            type: 'datasource',
+            query: 'prometheus',
+            current: { selected: false, text: 'Prometheus', value: 'prom-main' },
+            hide: 0,
+            refresh: 1,
+            regex: '',
+            options: [],
+          },
+        ],
+      };
+      firstPanel(d).datasource = { type: 'prometheus', uid: '${DS_PROMETHEUS}' };
+      (firstPanel(d).targets as Json[])[0].datasource = { type: 'prometheus', uid: '${DS_PROMETHEUS}' };
+    });
+    const result = lint(dashboard);
+    expect(ids(result)).toEqual([]);
+    expect(result.stats.varsUnresolved).toBe(0);
+  });
+
+  it('still fires when the only datasource variable has a different name', () => {
+    const dashboard = mutated((d) => {
+      d.templating = { list: [{ name: 'DS_LOKI', type: 'datasource', query: 'loki' }] };
+      firstPanel(d).datasource = { type: 'prometheus', uid: '${DS_PROMETHEUS}' };
+      (firstPanel(d).targets as Json[])[0].datasource = { type: 'loki', uid: '${DS_LOKI}' };
+    });
+    const d = one(lint(dashboard), 'unresolved-ds-input');
+    expect(d.path).toBe('panels[0].datasource.uid');
+    expect(d.message).toContain('"${DS_PROMETHEUS}"');
   });
 
   it('never double-reports a DS_ placeholder as an undefined variable', () => {

@@ -1,22 +1,30 @@
 /**
  * remark-callouts — tags blockquotes that begin with a bold label (e.g.
- * `> **Warning:** …`, `> **Tip:** …`) with a `data-callout` type so GuidePost's
- * CSS can render warnings, tips and asides distinctly instead of one flat bar.
+ * `> **Warning:** …`, `> **Tip:** …`) with a `data-callout` type so global.css
+ * can render warnings, tips and asides distinctly instead of one flat bar.
  *
  * Zero-dependency: walks the mdast tree directly (no unist-util-visit). Only
  * recognised labels are tagged; any other blockquote keeps the default style.
  */
 
+// English labels first, then the de / es / fr / pt-br equivalents the
+// localized blog posts use (same styles in every locale).
 const TYPES = [
-  { type: 'warning', labels: ['warning', 'gotcha', 'caution', 'danger', 'careful', 'avoid', 'pitfall'] },
+  { type: 'warning', labels: ['warning', 'gotcha', 'caution', 'danger', 'careful', 'avoid', 'pitfall',
+    'achtung', 'vorsicht', 'fallstrick', 'cuidado', 'atención', 'ojo', 'attention', 'piège', 'mise en garde', 'atenção', 'armadilha'] },
   { type: 'real-error', labels: ['real error', 'error i hit'] },
-  { type: 'tip', labels: ['tip', 'pro tip', 'protip', 'best practice'] },
-  { type: 'aside', labels: ['real world', 'real-world', 'example', 'interview', 'interview tip', 'in practice', 'analogy', 'aside'] },
-  { type: 'note', labels: ['note', 'important', 'key', 'remember', 'key takeaway'] },
+  { type: 'tip', labels: ['tip', 'pro tip', 'protip', 'best practice', 'tipp', 'consejo', 'astuce', 'conseil', 'dica'] },
+  { type: 'aside', labels: ['real world', 'real-world', 'example', 'interview', 'interview tip', 'in practice', 'analogy', 'aside',
+    'in der praxis', 'beispiel', 'en la práctica', 'ejemplo', 'en pratique', 'exemple', 'na prática', 'exemplo'] },
+  { type: 'note', labels: ['note', 'important', 'key', 'remember', 'key takeaway', 'tl;dr', 'tldr', 'summary',
+    'hinweis', 'wichtig', 'merke', 'zusammenfassung', 'nota', 'importante', 'resumen', 'clave',
+    'remarque', 'à retenir', 'en résumé', 'résumé', 'resumo'] },
 ];
 
 function labelToType(label) {
-  const norm = label.trim().toLowerCase().replace(/:\s*$/, '').trim();
+  // NFC so a decomposed "é"/"ã" matches; trim() also drops the (narrow) no-break
+  // space French typography puts before the colon ("Attention :").
+  const norm = label.normalize('NFC').trim().toLowerCase().replace(/:\s*$/, '').trim();
   for (const { type, labels } of TYPES) if (labels.includes(norm)) return type;
   return null;
 }

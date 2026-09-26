@@ -97,7 +97,7 @@ const TEXT_RDS_REPLACE = `Terraform will perform the following actions:
 -/+ resource "aws_db_instance" "primary" {
       ~ address                     = "primary.abc.eu-west-1.rds.amazonaws.com" -> (known after apply)
         allocated_storage           = 100
-      ~ engine_version              = "13.4" -> "15.3" # forces replacement
+      ~ storage_encrypted           = false -> true # forces replacement
       ~ id                          = "primary" -> (known after apply)
         identifier                  = "primary"
       ~ password                    = (sensitive value)
@@ -301,7 +301,8 @@ const JSON_PLAN = JSON.stringify({
       provider_name: 'registry.terraform.io/hashicorp/aws',
       change: {
         actions: ['delete', 'create'],
-        replace_paths: [['engine_version'], ['root_block_device', 0, 'volume_type']],
+        // Both ForceNew on aws_db_instance (internal/service/rds/instance.go).
+        replace_paths: [['storage_encrypted'], ['restore_to_point_in_time', 0, 'source_db_instance_identifier']],
         before_sensitive: { password: true },
         after_sensitive: {},
       },
@@ -515,7 +516,7 @@ describe('summarizePlan — text format', () => {
     const rds = byAddress(s, 'module.data.aws_db_instance.primary');
     expect(rds.action).toBe('replace');
     expect(rds.replaceOrder).toBe('destroy-create');
-    expect(rds.replaceReasons).toEqual(['engine_version']);
+    expect(rds.replaceReasons).toEqual(['storage_encrypted']);
     expect(rds.sensitive).toBe(true);
     expect(rds.moduleChain).toEqual(['data']);
     expect(rds.type).toBe('aws_db_instance');
@@ -523,6 +524,34 @@ describe('summarizePlan — text format', () => {
     expect(s.counts.replace).toBe(1);
     expect(s.counts.create).toBe(0);
     expect(s.counts.destroy).toBe(0);
+    expect(s.reconciliation.status).toBe('match');
+  });
+
+  it('never mistakes "# (N unchanged attributes hidden)" for the reason Terraform gave', () => {
+    // Terraform 0.14+ prints this comment inside nearly every block it renders
+    // (internal/command/jsonformat/computed/renderers/util.go, `unchanged`).
+    const s = summarizePlan(`Terraform will perform the following actions:
+
+  # aws_db_parameter_group.primary will be updated in-place
+  ~ resource "aws_db_parameter_group" "primary" {
+        id   = "primary-pg15"
+        name = "primary-pg15"
+        # (4 unchanged attributes hidden)
+
+      + parameter {
+          + apply_method = "immediate"
+          + name         = "log_min_duration_statement"
+          + value        = "500"
+        }
+
+        # (2 unchanged blocks hidden)
+    }
+
+Plan: 0 to add, 1 to change, 0 to destroy.
+`);
+    const pg = byAddress(s, 'aws_db_parameter_group.primary');
+    expect(pg.action).toBe('update');
+    expect(pg.actionReason).toBeNull();
     expect(s.reconciliation.status).toBe('match');
   });
 
@@ -733,7 +762,10 @@ describe('summarizePlan — terraform show -json', () => {
     const rds = byAddress(s, 'module.data.aws_db_instance.primary');
     expect(rds.action).toBe('replace');
     expect(rds.replaceOrder).toBe('destroy-create');
-    expect(rds.replaceReasons).toEqual(['engine_version', 'root_block_device[0].volume_type']);
+    expect(rds.replaceReasons).toEqual([
+      'storage_encrypted',
+      'restore_to_point_in_time[0].source_db_instance_identifier',
+    ]);
     expect(rds.sensitive).toBe(true);
     expect(rds.provider).toBe('registry.terraform.io/hashicorp/aws');
     expect(rds.actionReason).toBe(
@@ -950,7 +982,7 @@ describe('toMarkdown', () => {
     expect(md).toContain('**Terraform plan summary**');
     expect(md).toContain('| ± replace | 1 |');
     expect(md).toContain('module.data.aws_db_instance.primary');
-    expect(md).toContain('forces replacement: engine_version');
+    expect(md).toContain('forces replacement: storage_encrypted');
     // Terraform's accounting, spelled out — and no `0 to import` padding.
     expect(md).toContain(
       'Terraform counts each replacement once as an add and once as a destroy: 1 to add, 0 to change, 1 to destroy.',
@@ -986,9 +1018,9 @@ describe('examples', () => {
     // Chip 1 is the boot seed: a clean, reconciling everyday plan.
     expect(summaries[0].reconciliation.status).toBe('match');
     expect(summaries[0].highRisk).toEqual([]);
-    // Chip 2: an RDS replacement blamed on engine_version.
+    // Chip 2: an RDS replacement blamed on storage_encrypted (a real ForceNew).
     expect(summaries[1].highRisk.length).toBeGreaterThan(0);
-    expect(summaries[1].changes.some((c) => c.replaceReasons.includes('engine_version'))).toBe(
+    expect(summaries[1].changes.some((c) => c.replaceReasons.includes('storage_encrypted'))).toBe(
       true,
     );
     // Chip 3: a module teardown that takes a NAT gateway with it.
@@ -999,6 +1031,57 @@ describe('examples', () => {
     expect(summaries[4].noChanges).toBe(true);
     // Chip 6: a truncated CI paste — the reconciliation warning is the point.
     expect(summaries[5].reconciliation.status).toBe('mismatch');
+  });
+
+  /**
+   * A chip that blames the wrong attribute teaches the wrong lesson, so every
+   * replacement the chips claim is pinned to the provider schema. Each entry was
+   * checked against hashicorp/terraform-provider-aws `main` (2026-09-26):
+   *   aws_db_instance.storage_encrypted — internal/service/rds/instance.go, ForceNew: true
+   *     (engine_version is Optional+Computed with no ForceNew: it is modified in place,
+   *     a major version needing allow_major_version_upgrade)
+   *   aws_eks_cluster.encryption_config — internal/service/eks/cluster.go,
+   *     customdiff.ForceNewIfChange when an existing encryption_config is removed
+   */
+  const VERIFIED_FORCE_NEW: Record<string, string[]> = {
+    aws_db_instance: ['storage_encrypted'],
+    aws_eks_cluster: ['encryption_config'],
+  };
+
+  it('every "forces replacement" a chip shows is a real ForceNew attribute', () => {
+    let checked = 0;
+    for (const example of examples) {
+      for (const change of summarizePlan(example.input).changes) {
+        for (const reason of change.replaceReasons) {
+          expect(VERIFIED_FORCE_NEW[change.type] ?? [], `${example.id}: ${change.address}`).toContain(
+            reason,
+          );
+          checked += 1;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  it('no chip shows an in-place update of a ForceNew attribute', () => {
+    // aws_db_parameter_group.family is ForceNew (internal/service/rds/parameter_group.go),
+    // so "~ family = … -> …" under "will be updated in-place" cannot happen.
+    for (const example of examples) {
+      expect(example.input, example.id).not.toMatch(/~ family\s+=/);
+    }
+  });
+
+  it('text chips print the action legend in Terraform\'s own order', () => {
+    // internal/command/jsonformat/plan.go (v1.9.5): create, update, delete,
+    // delete-then-create, create-then-delete, read.
+    const order = ['+ create', '~ update in-place', '- destroy', '-/+ destroy', '+/- create', '<= read'];
+    for (const example of examples) {
+      if (example.id === 'show-json') continue;
+      const plain = example.input.replace(/\u001b\[[0-9;]*m/g, '');
+      const seen = order.filter((legend) => plain.includes(`\n${legend}`) || plain.includes(`  ${legend}`));
+      const positions = seen.map((legend) => plain.indexOf(legend));
+      expect(positions, example.id).toEqual([...positions].sort((a, b) => a - b));
+    }
   });
 
   it('chip 6 really does carry ANSI escapes and CRLF line endings', () => {

@@ -72,7 +72,11 @@ try {
 
 for (const file of files) {
   if (!file.endsWith('.md')) continue;
-  for (const tag of frontmatterTags(await readFile(join(dir, file), 'utf8'))) {
+  const src = await readFile(join(dir, file), 'utf8');
+  // Drafts are not built, so they must not lift a tag over the threshold: a
+  // queued post would otherwise make a tag page indexable before it ships.
+  if (/^draft:\s*true\s*$/m.test(src.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? '')) continue;
+  for (const tag of frontmatterTags(src)) {
     counts.set(tag, (counts.get(tag) ?? 0) + 1);
   }
 }

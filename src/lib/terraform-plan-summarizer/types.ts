@@ -76,7 +76,7 @@ export interface ResourceChange {
   action: PlanAction;
   /** Only set when `action === 'replace'`. */
   replaceOrder: ReplaceOrder | null;
-  /** Attribute paths Terraform blamed for the replacement, e.g. `engine_version`. */
+  /** Attribute paths Terraform blamed for the replacement, e.g. `storage_encrypted`. */
   replaceReasons: string[];
   /** True when a resource blamed more attributes than the per-resource cap keeps. */
   replaceReasonsTruncated: boolean;
