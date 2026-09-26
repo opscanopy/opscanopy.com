@@ -109,9 +109,9 @@ export function resultHtml(result: SubnetResult, { localePrefix }: RenderOptions
       `<a class="snc-chip" href="${escapeHtml(href)}">${text}</a>`;
     chipsHtml =
       '<div class="snc-xchips">' +
-      chip(`${localePrefix}/cidr-checker${hash}`, 'Check against CIDRs') +
-      chip(`${localePrefix}/subnet-splitter${hash}`, 'Split this subnet') +
-      chip(`${localePrefix}/ip-address-converter${hash}`, 'Convert this address') +
+      chip(`${localePrefix}/cidr-checker/${hash}`, 'Check against CIDRs') +
+      chip(`${localePrefix}/subnet-splitter/${hash}`, 'Split this subnet') +
+      chip(`${localePrefix}/ip-address-converter/${hash}`, 'Convert this address') +
       '</div>';
   }
 

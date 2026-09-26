@@ -116,8 +116,8 @@ export function resultHtml(result: ConvertResult, { localePrefix, rawInput }: Re
       `<a class="ipc-chip" href="${escapeHtml(href)}">${text}</a>`;
     chipsHtml =
       '<div class="ipc-chips">' +
-      chip(`${localePrefix}/subnet-calculator${hash}`, 'Open in Subnet Calculator') +
-      chip(`${localePrefix}/cidr-checker${hash}`, 'Check against CIDRs') +
+      chip(`${localePrefix}/subnet-calculator/${hash}`, 'Open in Subnet Calculator') +
+      chip(`${localePrefix}/cidr-checker/${hash}`, 'Check against CIDRs') +
       chip(`${localePrefix}/reverse-dns-ptr/${hash}`, 'Build PTR record') +
       '</div>';
   }

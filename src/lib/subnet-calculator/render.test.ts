@@ -26,8 +26,10 @@ describe('resultHtml', () => {
   });
 
   it('builds cross-tool links under the given locale prefix', () => {
-    expect(resultHtml(seed, { localePrefix: '' })).toContain('href="/cidr-checker#ip=');
-    expect(resultHtml(seed, { localePrefix: '/de' })).toContain('href="/de/cidr-checker#ip=');
+    expect(resultHtml(seed, { localePrefix: '' })).toContain('href="/cidr-checker/#ip=');
+    expect(resultHtml(seed, { localePrefix: '/de' })).toContain('href="/de/cidr-checker/#ip=');
+    expect(resultHtml(seed, { localePrefix: '' })).toContain('href="/subnet-splitter/#ip=');
+    expect(resultHtml(seed, { localePrefix: '' })).toContain('href="/ip-address-converter/#ip=');
   });
 
   it('escapes engine strings rather than trusting them as markup', () => {

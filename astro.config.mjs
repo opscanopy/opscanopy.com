@@ -6,17 +6,19 @@ import { createRequire } from 'node:module';
 import remarkCallouts from './src/lib/remark-callouts.mjs';
 import rehypeChapters from './src/lib/rehype-chapters.mjs';
 import rehypeImgDims from './src/lib/rehype-img-dims.mjs';
+import { applyLastmod } from './scripts/lastmod-core.mjs';
 
 // Real per-URL <lastmod>, written by scripts/gen-lastmod.mjs in `prebuild`.
-// Missing on a bare `astro dev` with no prior build — fall back to {} so every
-// URL simply keeps the build date rather than failing the config.
+// Missing on a bare `astro dev` with no prior build — fall back to null, which
+// omits <lastmod> on every URL. Never the build date: a timestamp that moves on
+// every deploy is a claim that every page changed.
 const require = createRequire(import.meta.url);
-/** @type {Record<string, string>} */
-let LASTMOD = {};
+/** @type {Record<string, string> | null} */
+let LASTMOD = null;
 try {
   LASTMOD = require('./src/data/lastmod.generated.json');
 } catch {
-  console.warn('[sitemap] lastmod.generated.json not found — using build date for all URLs.');
+  console.warn('[sitemap] lastmod.generated.json not found — omitting <lastmod> on all URLs.');
 }
 
 // Tag pages with too few posts to index, written by scripts/gen-thin-tags.mjs in
@@ -31,8 +33,6 @@ try {
   console.warn('[sitemap] thin-tags.generated.json not found — all tag pages stay listed.');
 }
 const THIN_TAG_PATHS = new Set(THIN_TAGS.thin.map((t) => `/blog/tag/${t}/`));
-
-const BUILD_DATE = new Date();
 
 // https://astro.build/config
 export default defineConfig({
@@ -56,10 +56,9 @@ export default defineConfig({
   },
   integrations: [
     sitemap({
-      // Default for pages with no real date of their own (index/listing pages,
-      // which genuinely do change whenever their contents do). Per-URL dates
-      // are applied in `serialize` below.
-      lastmod: BUILD_DATE,
+      // No `lastmod` default on purpose. It used to be the build time, and the
+      // 94 URLs gen-lastmod did not cover then claimed a change on every deploy.
+      // Per-URL dates are applied (or the field omitted) in `serialize` below.
       // Emit <xhtml:link rel="alternate" hreflang> groups. Map the URL path id
       // (pt-br) to its BCP-47 hreflang value (pt-BR).
       i18n: {
@@ -82,14 +81,11 @@ export default defineConfig({
         // THIN_TAG_PATHS above. Keeping them listed would advertise URLs we
         // simultaneously ask Google to ignore.
         !THIN_TAG_PATHS.has(new URL(page).pathname),
-      // Replace the blanket build-date stamp with the page's real last-modified
-      // date where one exists (git commit date for tools, frontmatter dates for
-      // posts and guides). Claiming all 445 URLs changed on every deploy is both
-      // untrue and a weak freshness signal.
+      // The page's real last-modified date (git commit dates for tools and
+      // listing/info pages, frontmatter dates for posts and guides), or no
+      // <lastmod> at all when none is known — see scripts/lastmod-core.mjs.
       serialize: (item) => {
-        const pathname = new URL(item.url).pathname;
-        const known = LASTMOD[pathname];
-        if (known) item.lastmod = known;
+        applyLastmod(item, LASTMOD);
 
         // Add the x-default alternate the integration's `i18n` option omits.
         // The page HTML has declared x-default all along (SEO.astro), so the

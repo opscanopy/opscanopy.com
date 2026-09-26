@@ -53,6 +53,14 @@ describe('localizeKey()', () => {
   it('locale-prefixes an in-page anchor without adding a trailing slash', () => {
     expect(localizeKey('/#why', 'de')).toBe('/de/#why');
   });
+
+  it('slashes the path BEFORE a fragment or query, never after it', () => {
+    expect(localizeKey('/cidr-checker#ip=10.0.0.1', 'en')).toBe('/cidr-checker/#ip=10.0.0.1');
+    expect(localizeKey('/cidr-checker#ip=10.0.0.1', 'de')).toBe('/de/cidr-checker/#ip=10.0.0.1');
+    expect(localizeKey('/search?q=cron', 'fr')).toBe('/fr/search/?q=cron');
+    expect(localizeKey('/tools/#section', 'en')).toBe('/tools/#section');
+    expect(localizeKey('/rss.xml#top', 'en')).toBe('/rss.xml#top');
+  });
 });
 
 describe('localizeNavHref()', () => {

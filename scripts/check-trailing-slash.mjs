@@ -6,12 +6,14 @@
  * share the same attribute name — and flags any internal path that violates
  * localizeKey's contract (src/i18n/utils.ts, withTrailingSlash): every route
  * must end in "/" UNLESS it targets a file (last path segment has an
- * extension — this incidentally also exempts every hashed asset href) or
- * contains an in-page anchor ("#"). Astro's default build.format
- * ("directory") serves every route at a trailing slash; a bare path either
- * 404s or 308-redirects on the static host. This is a black-box check that
- * the CONTRACT held in the shipped output — it mirrors withTrailingSlash's
- * rules exactly rather than enforcing a stricter policy of its own.
+ * extension — this incidentally also exempts every hashed asset href). A
+ * "#fragment" or "?query" is stripped first and the remaining path is checked,
+ * so "/tools#section" is an offender and "/tools/#section" is not. Astro's
+ * default build.format ("directory") serves every route at a trailing slash;
+ * on Cloudflare Static Assets a bare path costs a 307 hop (the fragment
+ * survives the redirect, the round trip does not). This used to skip any href
+ * containing "#", mirroring withTrailingSlash — which let 25 cross-tool chip
+ * links like "/de/subnet-calculator#ip=…" ship unslashed until 2026-09-26.
  *
  * Usage:
  *   node scripts/check-trailing-slash.mjs             scan dist/, exit 1 on any offender
@@ -36,9 +38,9 @@ export function checkHref(href) {
   if (!href || href.startsWith('//') || !href.startsWith('/')) {
     return { skip: true, reason: 'external or non-rooted' };
   }
-  if (href.includes('#')) return { skip: true, reason: 'anchor' };
-  if (href.endsWith('/')) return { skip: true, reason: 'already slashed' };
-  const lastSegment = href.slice(href.lastIndexOf('/') + 1);
+  const path = href.replace(/[?#].*$/, '');
+  if (path.endsWith('/')) return { skip: true, reason: 'already slashed' };
+  const lastSegment = path.slice(path.lastIndexOf('/') + 1);
   if (lastSegment.includes('.')) return { skip: true, reason: 'file' };
   return { skip: false, reason: 'missing trailing slash' };
 }
@@ -65,7 +67,12 @@ function runSelfTest() {
     ['/_astro/chunk.Ab12Cd.js', true],
     ['/#why', true],
     ['/tools/#section', true],
-    ['/tools#section', true], // permissive by design — matches withTrailingSlash's unconditional '#' skip
+    ['/tools#section', false],
+    ['/de/cidr-checker#ip=x', false],
+    ['/de/cidr-checker/#ip=x', true],
+    ['/search?q=cron', false],
+    ['/search/?q=cron', true],
+    ['/rss.xml?v=2', true],
     ['#', true],
     ['https://example.com/foo', true],
     ['mailto:hello@opscanopy.com', true],
@@ -82,7 +89,7 @@ function runSelfTest() {
       console.error(`  FAIL  ${JSON.stringify(href).padEnd(28)} -> got skip=${skip}, expected skip=${expectSkip}`);
     }
   }
-  console.log(failures ? `\nself-test: ${failures} FAILURE(S)` : '\nself-test: all 15 cases passed');
+  console.log(failures ? `\nself-test: ${failures} FAILURE(S)` : '\nself-test: all 20 cases passed');
   process.exit(failures ? 1 : 0);
 }
 

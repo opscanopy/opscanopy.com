@@ -26,16 +26,23 @@ export function localePaths() {
 /**
  * Append the trailing slash that canonical/hreflang URLs always carry
  * (SEO.astro's getAbsoluteLocaleUrl, driven by the astro.config build.format
- * default of "directory"), UNLESS the key is an in-page anchor ("/#why"),
- * already ends in "/", or points at a FILE (last segment has an extension,
- * e.g. "/rss.xml", "/mission-90/feed.xml") — files are served at their exact
- * path on the static host, so "/rss.xml/" would 404.
+ * default of "directory"), UNLESS the path already ends in "/" or points at a
+ * FILE (last segment has an extension, e.g. "/rss.xml", "/mission-90/feed.xml")
+ * — files are served at their exact path on the static host, so "/rss.xml/"
+ * would 404. A "#fragment" or "?query" is split off first and the slash goes
+ * on the path before it: "/cidr-checker#ip=x" → "/cidr-checker/#ip=x", and
+ * "/#why" is untouched because its path is already "/". (Until 2026-09-26 any
+ * key containing "#" was returned as-is, which is the same gap that let the
+ * cross-tool chips ship "/subnet-calculator#ip=…" and cost a 307 hop each.)
  */
 export function withTrailingSlash(key: string): string {
-  if (key.endsWith('/') || key.includes('#')) return key;
-  const lastSegment = key.slice(key.lastIndexOf('/') + 1);
+  const cut = key.search(/[?#]/);
+  const path = cut === -1 ? key : key.slice(0, cut);
+  const suffix = cut === -1 ? '' : key.slice(cut);
+  if (path.endsWith('/')) return key;
+  const lastSegment = path.slice(path.lastIndexOf('/') + 1);
   if (lastSegment.includes('.')) return key;
-  return `${key}/`;
+  return `${path}/${suffix}`;
 }
 
 /**

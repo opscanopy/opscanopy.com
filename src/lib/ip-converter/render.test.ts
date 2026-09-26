@@ -32,12 +32,12 @@ describe('resultHtml', () => {
 
   it('builds cross-tool links under the given locale prefix', () => {
     const en = resultHtml(seed, { localePrefix: '', rawInput });
-    expect(en).toContain('href="/subnet-calculator#ip=192.168.1.10"');
-    expect(en).toContain('href="/cidr-checker#ip=192.168.1.10"');
+    expect(en).toContain('href="/subnet-calculator/#ip=192.168.1.10"');
+    expect(en).toContain('href="/cidr-checker/#ip=192.168.1.10"');
     expect(en).toContain('href="/reverse-dns-ptr/#ip=192.168.1.10"');
     expect(en).toContain('href="/reverse-dns-ptr/"');
     const de = resultHtml(seed, { localePrefix: '/de', rawInput });
-    expect(de).toContain('href="/de/subnet-calculator#ip=192.168.1.10"');
+    expect(de).toContain('href="/de/subnet-calculator/#ip=192.168.1.10"');
     expect(de).toContain('href="/de/reverse-dns-ptr/"');
   });
 
