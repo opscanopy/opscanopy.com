@@ -11,6 +11,7 @@
 //   node scripts/syndicate.mjs --target devto       # one target
 //   node scripts/syndicate.mjs --target devto --publish
 //   node scripts/syndicate.mjs --limit 3 --publish  # drip a few at a time
+//   node scripts/syndicate.mjs --only <slug> --show-payload   # dry run, print payload
 //
 // Credentials come from the environment, never from a file in the repo:
 //   DEVTO_API_KEY   dev.to -> Settings -> Extensions -> DEV Community API Keys
@@ -28,9 +29,10 @@
 //      exactly this. A target that cannot express a canonical does not get prose.
 
 import { readFile, readdir, stat } from 'node:fs/promises';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { transformForDevto } from './syndicate-transform.mjs';
 
 const SITE = 'https://opscanopy.com';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -101,6 +103,12 @@ const DEFAULT_PUBLISH_LIMIT = 2;
  */
 const MIN_GAP_HOURS = 20;
 const FORCE = args.includes('--force');
+
+/**
+ * Dry run only: print the payload a target would send (title, cover image,
+ * swapped images, first 600 chars of body). Ignored with --publish.
+ */
+const SHOW_PAYLOAD = args.includes('--show-payload') && !PUBLISH;
 
 /**
  * Local record of what has been published, per target: the last publish time and
@@ -357,7 +365,19 @@ function foremTarget({ name, host, username }) {
     publishedTimestamps() {
       return this._published ?? [];
     },
-    async create(post, key) {
+    /**
+     * dev.to-specific body/cover transform (see scripts/syndicate-transform.mjs):
+     * hero SVGs -> their raster -og.png sibling, and main_image = the page's
+     * og:image. Canonical is passed through untouched.
+     */
+    prepare(post) {
+      return transformForDevto(post, {
+        origin: SITE,
+        hasFile: (p) => existsSync(join(ROOT, 'public', p.replace(/^\//, ''))),
+      });
+    },
+    async create(rawPost, key) {
+      const post = this.prepare(rawPost);
       const res = await fetch(`https://${host}/api/articles`, {
         method: 'POST',
         headers: { 'api-key': key, 'Content-Type': 'application/json' },
@@ -367,6 +387,7 @@ function foremTarget({ name, host, username }) {
             body_markdown: post.body,
             published: true,
             canonical_url: post.canonical,
+            main_image: post.main_image,
             description: post.description.slice(0, 250) || undefined,
             tags: post.tags.slice(0, 4).map((t) => t.replace(/[^a-z0-9]/gi, '')),
           },
@@ -690,6 +711,19 @@ for (const target of TARGETS) {
     console.log(`   ${PUBLISH ? 'PUBLISH' : 'would  '} ${post.title.slice(0, 62)}`);
     console.log(`           canonical: ${post.canonical}`);
     console.log(`           tags: ${post.tags.slice(0, 4).join(', ') || '(none)'}`);
+    if (target.prepare) {
+      const p = target.prepare(post);
+      console.log(`           main_image: ${p.main_image ?? '(none)'}`);
+      for (const s of p.report.swapped) console.log(`           image swap: ${s} -> -og.png`);
+      for (const s of p.report.otherSvgs) console.log(`           WARN svg kept (dev.to may not render it): ${s}`);
+      if (SHOW_PAYLOAD) {
+        console.log(`           ── payload ──`);
+        console.log(`           title: ${p.title}`);
+        console.log(`           canonical_url: ${p.canonical}`);
+        console.log(`           main_image: ${p.main_image ?? '(none)'}`);
+        console.log(p.body.slice(0, 600).replace(/^/gm, '           | '));
+      }
+    }
     if (!PUBLISH) continue;
     try {
       const url = await target.create(post, key);
