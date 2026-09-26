@@ -5,9 +5,14 @@
  * for `lang`, newest first; all chrome comes from the UI dictionary.
  */
 import Shell from '../Shell.astro';
-import type { Locale } from '../../i18n/config';
+import { DEFAULT_LOCALE, type Locale } from '../../i18n/config';
 import { useTranslations, localizeKey } from '../../i18n/utils';
-import { getPostsForLocale, formatPostDate, estimateReadingTime } from '../../i18n/blog';
+import {
+  getPostsForLocale,
+  getAllTags,
+  formatPostDate,
+  estimateReadingTime,
+} from '../../i18n/blog';
 
 interface Props {
   lang: Locale;
@@ -16,6 +21,42 @@ interface Props {
 const { lang } = Astro.props;
 const t = useTranslations(lang);
 const posts = await getPostsForLocale(lang);
+
+/**
+ * Browse-by-tag chips — English only, because /blog/tag/<tag>/ pages exist only
+ * for the default locale (see src/pages/blog/tag/[tag].astro; BlogPost.astro
+ * links its tag badges on the same condition).
+ *
+ * Only INDEXABLE tags are listed: linking a noindexed thin tag page from the
+ * hub would spend internal links on pages we ask search engines to drop. The
+ * thin set comes from scripts/gen-thin-tags.mjs (prebuild), read with the same
+ * dynamic-import-with-fallback as the tag route. Without the artefact (a bare
+ * `astro dev`), fall back to that script's own rule: THRESHOLD (3) or more
+ * English posts. Order: post count desc, then alphabetical.
+ */
+const THIN_TAG_THRESHOLD = 3; // mirror of THRESHOLD in scripts/gen-thin-tags.mjs
+let browseTags: { tag: string; count: number }[] = [];
+if (lang === DEFAULT_LOCALE && posts.length > 0) {
+  const counts = new Map<string, number>();
+  for (const post of posts) {
+    // de-duplicate per post so a "Cron" + "cron" pair counts once
+    for (const tag of new Set((post.entry.data.tags ?? []).map((tg) => tg.toLowerCase()))) {
+      counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
+  }
+  let thinTags: string[] | null = null;
+  try {
+    thinTags = (await import('../../data/thin-tags.generated.json')).default.thin;
+  } catch {
+    /* no prebuild artefact — fall back to the threshold rule below */
+  }
+  browseTags = getAllTags(lang, posts)
+    .map((tag) => ({ tag, count: counts.get(tag) ?? 0 }))
+    .filter(({ tag, count }) =>
+      thinTags ? !thinTags.includes(tag) : count >= THIN_TAG_THRESHOLD,
+    )
+    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+}
 ---
 
 <Shell
@@ -33,6 +74,22 @@ const posts = await getPostsForLocale(lang);
           <p class="caption mt-6 text-mute">
             <span class="tabular-nums">{posts.length}</span>{' '}{posts.length === 1 ? t('blog.countSuffixSingular') : t('blog.countSuffixPlural')}
           </p>
+        )}
+        {browseTags.length > 0 && (
+          <nav aria-label="Browse by tag" class="mt-6">
+            <ul role="list" class="flex flex-wrap gap-x-2 gap-y-2 pointer-coarse:gap-y-6">
+              {browseTags.map(({ tag }) => (
+                <li>
+                  <a
+                    href={`/blog/tag/${tag}/`}
+                    class="badge code-mono lowercase tap-44 transition-colors hover:border-brand/40 hover:text-brand-strong"
+                  >
+                    {tag}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
         )}
       </header>
 
