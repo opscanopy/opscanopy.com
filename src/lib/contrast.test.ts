@@ -142,6 +142,34 @@ function assertLadder(tokens: Record<string, string>, direction: 'darker' | 'lig
   expect(cardDelta, `${label}: card vs canvas-soft (body) should differ by >= ${minStep} L*, got ${cardDelta.toFixed(2)}`).toBeGreaterThanOrEqual(minStep);
 }
 
+/**
+ * The footer surface is off-ladder on purpose (in dark it steps DOWN from the
+ * body while the ladder climbs), so it gets its own two-sided check: it must
+ * read as its own band against the body it follows (canvas-soft), AND the
+ * colophon plate — an `.instrument` slab, `--color-inverse` — must stand clear
+ * of it. Returns failure messages rather than asserting, so the gate itself can
+ * be proven to fail (see the regression test that feeds it the old value).
+ */
+function footerLadderFailures(tokens: Record<string, string>, minStep: number, label: string): string[] {
+  const failures: string[] = [];
+  const footer = tokens['--color-footer'];
+  if (!footer) return [`${label}: --color-footer is missing`];
+  const pairs: [string, string][] = [
+    ['--color-footer', '--color-canvas-soft'],
+    ['--color-inverse', '--color-footer'],
+  ];
+  for (const [a, b] of pairs) {
+    const delta = Math.abs(cielabL(tokens[a]) - cielabL(tokens[b]));
+    if (delta < minStep) {
+      failures.push(`${label}: ${a} vs ${b} should differ by >= ${minStep} L*, got ${delta.toFixed(2)}`);
+    }
+  }
+  return failures;
+}
+
+/** Ink tokens the footer sets text in (links, captions, titles, the phone colophon line). */
+const FOOTER_INKS = ['--color-body', '--color-mute', '--color-brand-strong', '--color-link'] as const;
+
 // ---------------------------------------------------------------------------
 // Shared assertion helper
 // ---------------------------------------------------------------------------
@@ -220,6 +248,9 @@ describe('CSS token extraction', () => {
       '--color-inverse-mute',
       '--color-inverse-error',
       '--color-card',
+      // Footer surface + its hover step (the colophon footer).
+      '--color-footer',
+      '--color-footer-hover',
     ];
     for (const token of required) {
       expect(light[token], `missing light token ${token}`).toBeDefined();
@@ -259,6 +290,9 @@ describe('CSS token extraction', () => {
       '--color-inverse-mute',
       '--color-inverse-error',
       '--color-card',
+      // Footer surface + its hover step (the colophon footer).
+      '--color-footer',
+      '--color-footer-hover',
     ];
     for (const token of required) {
       expect(dark[token], `missing dark token ${token}`).toBeDefined();
@@ -479,6 +513,168 @@ describe('WCAG AA contrast — dark theme tokens', () => {
   });
   it('primary (active tab fill) on canvas >= 3:1 (UI component)', () => {
     assertContrast(dark['--color-primary'], dark['--color-canvas'], 3, 'dark: primary on canvas');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Footer surface — `--color-footer` / `--color-footer-hover` (bg-footer,
+// bg-footer-hover). The footer carries the colophon plate, a dark `.instrument`
+// slab, in BOTH themes. Until 2026-09-27 the plan had it on canvas-soft-2, which
+// in dark sits 2.5 L* (1.07:1) from the slab: the plate vanished into the band.
+// ---------------------------------------------------------------------------
+
+describe('Footer surface', () => {
+  const css = readCss();
+  const light = extractTokensFromBlock(css, THEME_BLOCK);
+  const dark = extractTokensFromBlock(css, /html\[data-theme=['"]dark['"]\]\s*\{/);
+  const themes = [
+    ['light', light],
+    ['dark', dark],
+  ] as const;
+
+  for (const [name, tokens] of themes) {
+    it(`${name}: footer reads as its own band (vs canvas-soft) and the slab stands clear of it (>= 3 L*)`, () => {
+      expect(footerLadderFailures(tokens, 3, name)).toEqual([]);
+    });
+
+    it(`${name}: body / mute / brand-strong / link on footer >= 4.5:1 (AA)`, () => {
+      for (const ink of FOOTER_INKS) {
+        assertContrast(tokens[ink], tokens['--color-footer'], 4.5, `${name}: ${ink} on footer`);
+      }
+    });
+
+    it(`${name}: ink (current-page link) on footer >= 7:1 (AAA-level)`, () => {
+      assertContrast(tokens['--color-ink'], tokens['--color-footer'], 7, `${name}: ink on footer`);
+    });
+
+    // The hovered control (language-switcher summary, theme toggle) keeps its
+    // text legible on the hover step, and the step is visible against the band.
+    it(`${name}: body and ink on footer-hover >= 4.5:1, and the hover step is >= 3 L* off the footer`, () => {
+      assertContrast(tokens['--color-body'], tokens['--color-footer-hover'], 4.5, `${name}: body on footer-hover`);
+      assertContrast(tokens['--color-ink'], tokens['--color-footer-hover'], 4.5, `${name}: ink on footer-hover`);
+      const delta = Math.abs(cielabL(tokens['--color-footer-hover']) - cielabL(tokens['--color-footer']));
+      expect(delta, `${name}: footer-hover vs footer, got ${delta.toFixed(2)} L*`).toBeGreaterThanOrEqual(3);
+    });
+  }
+
+  // The hover step is defined as the neighbouring ladder value, written as a
+  // literal hex because this parser (and the token rule) reads hex only. Pin
+  // the equality so a ladder edit cannot silently orphan it.
+  it('footer-hover equals canvas-soft-3 (light) and canvas-soft-2 (dark)', () => {
+    expect(light['--color-footer-hover']).toBe(light['--color-canvas-soft-3']);
+    expect(dark['--color-footer-hover']).toBe(dark['--color-canvas-soft-2']);
+  });
+
+  // Proof the gate can fail: fed the value the footer was going to use (dark
+  // canvas-soft-2, 1.07:1 against the slab) it must reject it — and for the
+  // slab reason specifically, since soft-2 vs the body is a legal 4.5 L* step.
+  it('rejects the old dark footer value (canvas-soft-2): the slab would vanish', () => {
+    const old: Record<string, string> = { ...dark, '--color-footer': dark['--color-canvas-soft-2'] };
+    expect(contrastRatio(old['--color-inverse'], old['--color-footer'])).toBeLessThan(1.1);
+    const failures = footerLadderFailures(old, 3, 'dark (old)');
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain('--color-inverse vs --color-footer');
+  });
+
+  // The footer language switcher's upward menu (LangSwitcher variant="footer")
+  // covers the footer band, so its fill must step off the band. It is a card,
+  // not the header menu's canvas: dark --color-footer IS canvas's value, so a
+  // canvas menu had no fill edge at all. Its option hover is soft-3, because
+  // soft-2 is ~1 L* off the dark card.
+  for (const [name, tokens] of themes) {
+    it(`${name}: footer lang menu (card) stands >= 3 L* off the footer, its hover (soft-3) >= 3 L* off the card, text AA on both`, () => {
+      const menu = Math.abs(cielabL(tokens['--color-card']) - cielabL(tokens['--color-footer']));
+      expect(menu, `${name}: card menu vs footer, got ${menu.toFixed(2)} L*`).toBeGreaterThanOrEqual(3);
+      const hover = Math.abs(cielabL(tokens['--color-canvas-soft-3']) - cielabL(tokens['--color-card']));
+      expect(hover, `${name}: soft-3 hover vs card menu, got ${hover.toFixed(2)} L*`).toBeGreaterThanOrEqual(3);
+      for (const bg of ['--color-card', '--color-canvas-soft-3']) {
+        assertContrast(tokens['--color-body'], tokens[bg], 4.5, `${name}: body on ${bg} (lang menu)`);
+        assertContrast(tokens['--color-ink'], tokens[bg], 4.5, `${name}: ink on ${bg} (lang menu)`);
+      }
+    });
+  }
+
+  it('rejects the header menu surface (canvas) and hover (soft-2) for the footer menu in dark', () => {
+    const canvasStep = Math.abs(cielabL(dark['--color-canvas']) - cielabL(dark['--color-footer']));
+    expect(canvasStep).toBeLessThan(3);
+    const soft2Step = Math.abs(cielabL(dark['--color-canvas-soft-2']) - cielabL(dark['--color-card']));
+    expect(soft2Step).toBeLessThan(3);
+  });
+
+  it('reports a missing footer token instead of passing vacuously', () => {
+    const without = Object.fromEntries(Object.entries(light).filter(([k]) => k !== '--color-footer'));
+    expect(footerLadderFailures(without, 3, 'light')).toEqual(['light: --color-footer is missing']);
+  });
+
+  // Amber is NOT legal on the footer: light accent-ink (#a85a06) is 4.12:1 on
+  // the #ebe7de band, below AA, and none of amber's four jobs (figure numbers,
+  // the changed-value tick, warm progress fills, Badge "new") lives there. The
+  // plate's own inks are the inverse tier. Pinned as a source check on the two
+  // footer components rather than as a ratio, so a future amber tweak that
+  // happens to pass AA still has to lift this rule deliberately.
+  it('the footer components never reference accent-ink', () => {
+    const AMBER = /accent-ink|highlight-pink/;
+    // Self-test the pattern so the scan cannot pass vacuously.
+    expect('class="text-accent-ink"').toMatch(AMBER);
+    expect('color: var(--color-highlight-pink)').toMatch(AMBER);
+    expect('class="text-inverse-accent"').not.toMatch(AMBER);
+    for (const rel of ['../components/Footer.astro', '../components/FooterColophon.astro']) {
+      const path = join(fileURLToPath(new URL('.', import.meta.url)), rel);
+      // Drop comments first: the colophon's doc comment names the rule itself.
+      const src = readFileSync(path, 'utf-8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+        .replace(/<!--[\s\S]*?-->/g, '');
+      expect(src.length, `${rel} read as empty`).toBeGreaterThan(200);
+      expect(src, `${rel} uses accent-ink (amber) on the footer surface`).not.toMatch(AMBER);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Focus ring on a slab. The base :focus-visible ring is --color-link; in the
+// light theme that is 2.54:1 on the charcoal slab, below SC 1.4.11's 3:1. The
+// `.instrument :focus-visible` rule in global.css repaints it in slab leaf.
+// That rule sits in @layer components, and the playgrounds' own rings are
+// unlayered scoped rules that set the full `outline` shorthand, so it only
+// wins because it is `!important` (layered important beats every normal
+// declaration). Pinned as a source check: dropping the `!important` passes
+// every ratio yet silently puts the 2.54:1 ring back on the result panels.
+// ---------------------------------------------------------------------------
+
+describe('Slab focus ring', () => {
+  const css = readCss();
+  const light = extractTokensFromBlock(css, THEME_BLOCK);
+  const dark = extractTokensFromBlock(css, /html\[data-theme=['"]dark['"]\]\s*\{/);
+
+  it('the base ring (link) fails 3:1 on the light slab — the reason the rule exists', () => {
+    expect(contrastRatio(light['--color-link'], light['--color-inverse'])).toBeLessThan(3);
+  });
+
+  it('inverse-brand ring on the slab >= 3:1 in both themes (UI component)', () => {
+    assertContrast(light['--color-inverse-brand'], light['--color-inverse'], 3, 'light: slab ring');
+    assertContrast(dark['--color-inverse-brand'], dark['--color-inverse'], 3, 'dark: slab ring');
+  });
+
+  it('global.css repaints descendants of both slab classes with !important', () => {
+    const RULE =
+      /\.instrument\s+:focus-visible\s*,\s*\.instrument-flush\s+:focus-visible\s*\{\s*outline-color:\s*var\(--color-inverse-brand\)\s*!important\s*;?\s*\}/;
+    // Self-test the pattern so the source check cannot pass vacuously.
+    expect('.instrument :focus-visible,\n.instrument-flush :focus-visible {\n  outline-color: var(--color-inverse-brand) !important;\n}').toMatch(RULE);
+    expect('.instrument :focus-visible,\n.instrument-flush :focus-visible {\n  outline-color: var(--color-inverse-brand);\n}').not.toMatch(RULE);
+    expect(css).toMatch(RULE);
+  });
+
+  // Markdown code blocks (Shiki github-dark, #24292e in both themes) carry an
+  // injected copy button; the base link ring there was 2.12:1.
+  it('Shiki code-block controls get the slab ring (>= 3:1 on #24292e)', () => {
+    const SHIKI_BG = '#24292e';
+    expect(contrastRatio(light['--color-link'], SHIKI_BG)).toBeLessThan(3);
+    assertContrast(light['--color-inverse-brand'], SHIKI_BG, 3, 'code-block ring');
+    const RULE = /\.rich-text\s+pre\s+:focus-visible\s*\{\s*outline-color:\s*var\(--color-inverse-brand\)\s*!important\s*;?\s*\}/;
+    expect('.rich-text pre :focus-visible {\n  outline-color: var(--color-inverse-brand) !important;\n}').toMatch(RULE);
+    expect('.rich-text pre :focus-visible {\n  outline-color: var(--color-link);\n}').not.toMatch(RULE);
+    expect(css).toMatch(RULE);
   });
 });
 

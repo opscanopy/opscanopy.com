@@ -7,8 +7,8 @@
  * dependency on the UI dictionaries (../ui/*), so client-side code that only
  * needs to build localized hrefs (the command palette's lazy-loaded chunk)
  * can import this alone instead of pulling in all 5 UI dictionaries via
- * ./utils. Those four are re-exported by ./utils for every existing call
- * site — zero call-site churn.
+ * ./utils. Everything exported here is re-exported by ./utils for every
+ * existing call site — zero call-site churn.
  */
 import { DEFAULT_LOCALE, LOCALES, isLocale, type Locale } from './config';
 
@@ -69,17 +69,73 @@ export function localizeKey(pageKey: string, locale: Locale): string {
 export const ENGLISH_ONLY_SECTIONS = ['/learn', '/mission-90', '/changelog', '/tests'];
 
 /**
- * localizeKey for nav / footer / menu CHROME links. English-only sections are
- * never locale-prefixed, so their links resolve to the real English page from
- * every locale instead of a `/de/learn`-style 404. Every other key localizes as
- * usual, so Tools and Blog (which do have localized pages) are unaffected.
+ * Single FILE routes that exist only in English, matched exactly (not as a
+ * prefix). The blog feed is English posts only and is built once at /rss.xml
+ * (src/pages/rss.xml.ts) — /de/rss.xml does not exist.
+ */
+export const ENGLISH_ONLY_FILES = ['/rss.xml'] as const;
+
+/**
+ * Is this page key served only in English? True for anything at or under an
+ * ENGLISH_ONLY_SECTIONS entry (matched at a path boundary, so "/learn-more" is
+ * not "/learn") and for an exact ENGLISH_ONLY_FILES match. Chrome links to
+ * such a key must never be locale-prefixed — see localizeNavHref.
+ */
+export function isEnglishOnlyKey(pageKey: string): boolean {
+  const key = pageKey.startsWith('/') ? pageKey : '/' + pageKey;
+  if ((ENGLISH_ONLY_FILES as readonly string[]).includes(key)) return true;
+  return ENGLISH_ONLY_SECTIONS.some((p) => key === p || key === `${p}/` || key.startsWith(`${p}/`));
+}
+
+/**
+ * localizeKey for nav / footer / menu CHROME links. English-only keys
+ * (isEnglishOnlyKey) are never locale-prefixed, so their links resolve to the
+ * real English page from every locale instead of a `/de/learn`- or
+ * `/de/rss.xml`-style 404. Every other key localizes as usual, so Tools and
+ * Blog (which do have localized pages) are unaffected.
  */
 export function localizeNavHref(pageKey: string, locale: Locale): string {
   const key = pageKey.startsWith('/') ? pageKey : '/' + pageKey;
-  const isEnglishOnly = ENGLISH_ONLY_SECTIONS.some(
-    (p) => key === p || key === `${p}/` || key.startsWith(`${p}/`),
-  );
-  return isEnglishOnly ? withTrailingSlash(key) : localizeKey(key, locale);
+  return isEnglishOnlyKey(key) ? withTrailingSlash(key) : localizeKey(key, locale);
+}
+
+/**
+ * Strip a leading locale prefix, returning the locale-neutral page key with a
+ * leading slash. "/de/tools" → "/tools"; "/tools" → "/tools"; "/de" → "/".
+ */
+export function stripLocale(pathname: string): string {
+  const parts = pathname.split('/').filter(Boolean);
+  if (parts.length && isLocale(parts[0]) && parts[0] !== DEFAULT_LOCALE) {
+    parts.shift();
+  }
+  return '/' + parts.join('/');
+}
+
+/** Drop a trailing slash (except on the root) so "/tools" and "/tools/" compare equal. */
+const withoutTrailingSlash = (p: string): string => (p !== '/' && p.endsWith('/') ? p.slice(0, -1) : p);
+
+/**
+ * Does a chrome link's page key point at the page being rendered? Compares the
+ * locale-neutral key of `pathname` (so /es/tools/ matches "/tools"),
+ * trailing-slash-insensitive. Exact match only: "/tools" is not current on
+ * /tools/subnet/. Shared by Header and Footer for aria-current="page".
+ */
+export function isCurrentKey(key: string, pathname: string): boolean {
+  return withoutTrailingSlash(stripLocale(pathname)) === withoutTrailingSlash(key);
+}
+
+/**
+ * Should the page offer a language switcher? Hidden on pages that declare no
+ * alternates (404, English-only pages) and, rather than render a dead one-item
+ * dropdown, when the page exists in only one locale. `available` undefined
+ * means "every locale" (LangSwitcher's own default). Header and Footer share
+ * this rule so the two switchers can never disagree.
+ */
+export function shouldShowLangSwitcher(
+  noAlternates: boolean | undefined,
+  available: Locale[] | undefined,
+): boolean {
+  return !noAlternates && (available === undefined || available.length > 1);
 }
 
 export { isLocale };

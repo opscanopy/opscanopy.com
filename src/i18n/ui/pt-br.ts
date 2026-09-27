@@ -14,6 +14,8 @@ const ptBr: Partial<UiDict> = {
   'a11y.themeToDark': 'Mudar para o tema escuro',
   'a11y.themeToLight': 'Mudar para o tema claro',
   'a11y.opensNewTab': '(abre em uma nova aba)',
+  // Footer <nav> landmark name (the header's is "Primary").
+  'a11y.footerNav': 'Rodapé',
 
   // Header
   'nav.browseTools': 'Explorar ferramentas',
@@ -40,6 +42,12 @@ const ptBr: Partial<UiDict> = {
   // Footer
   'footer.copyright': 'Gratuito e aberto.',
   'footer.openSource': 'Código aberto — leia exatamente o que cada ferramenta calcula.',
+  'footer.sitemap': 'Mapa do site',
+  'footer.follow': 'Siga-nos',
+  // Caption under the English-only Learn column on locale pages.
+  'footer.inEnglish': 'Em inglês',
+  // sr-only prefix before a platform name: "OpsCanopy on" + " " + "GitHub".
+  'footer.profileOn': 'OpsCanopy no',
   'footer.disclaimer.lead': 'Sem afiliação ou endosso da Grafana Labs.',
   'footer.disclaimer.trademark': 'e',
   'footer.disclaimer.tail': 'são marcas registradas da Raintank, Inc.',

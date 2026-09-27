@@ -1,110 +1,257 @@
 ---
+/**
+ * Footer — the "colophon plate" footer, rendered once per page by Shell.astro.
+ *
+ *   brand (logo, tagline, open-source line, Follow row) + colophon plate   (lg: on the index grid)
+ *   link index — getFooter(lang) packed into 4 cells by footerCells()     (2 cols → 4 from md)
+ *   bottom bar — © · Sitemap · [colophon line <lg] · theme · language, then the disclaimer
+ * The top row reuses the index template (5fr + 3×4fr) so the plate's left edge
+ * lines up with the Learn column instead of floating between columns.
+ *
+ * SEO: this is the ONLY inbound link for /changelog/, /contact/, /privacy/ and
+ * /terms/, and the main one for the DevOps roadmap, the Linux/Docker guides,
+ * /about/ and /security/. Every target is a plain server-rendered <a href> —
+ * never JS-injected, hidden, inert or inside a <details> (the language switcher
+ * is the one exception: its links duplicate the header's). The structure lives
+ * ONLY in src/i18n/site/en.ts; locales translate labels. The anchors are frozen,
+ * so a link renders its label and nothing else (the sr-only new-tab hint only
+ * ever rides an external link). scripts/check-footer.mjs (postbuild) and
+ * src/i18n/site.test.ts guard all of this.
+ *
+ * DOM order is visual order at every breakpoint — no CSS `order`. Nothing here
+ * may carry a date or the build SHA (a site-wide date competes with each page's
+ * real "Updated" date; a SHA churns every page on every deploy), and the canopy
+ * texture takes a fixed id so the footer is byte-stable across builds. No
+ * <style> block on purpose: Astro would stamp a scope attribute on every
+ * element, and the footer ships on every page (20 KB raw budget).
+ */
 import Logo from './Logo.astro';
+import MeshGradient from './MeshGradient.astro';
+import FooterColophon from './FooterColophon.astro';
+import LangSwitcher from './LangSwitcher.astro';
 import { site } from '../data/site';
 import { BCP47, DEFAULT_LOCALE, type Locale } from '../i18n/config';
-import { useTranslations, localizeKey, localizeNavHref } from '../i18n/utils';
-import { getSiteContent } from '../i18n/site';
+import {
+  useTranslations,
+  localizeKey,
+  stripLocale,
+  isCurrentKey,
+  shouldShowLangSwitcher,
+} from '../i18n/utils';
+import { getSiteContent, getFooter, footerCells } from '../i18n/site';
+import { repoUrl, socialLinks } from '../lib/site-links';
+
+interface Props {
+  /** Hide the language switcher (pages that declare no alternates: 404, English-only pages). */
+  hideLangSwitcher?: boolean;
+  /**
+   * Locales this page exists in, threaded from Shell. Leave WITHOUT a default:
+   * `undefined` means "every locale" to LangSwitcher and shouldShowLangSwitcher.
+   */
+  availableLocales?: Locale[];
+  /** Render the colophon plate (and its phone line). Off on 404/500/offline, which already show a slab. */
+  colophon?: boolean;
+}
+
+const { hideLangSwitcher, availableLocales, colophon = true } = Astro.props;
 
 const lang: Locale = (Astro.currentLocale as Locale) ?? DEFAULT_LOCALE;
 const t = useTranslations(lang);
-const { tagline, footer: footerColumns } = getSiteContent(lang);
-const href = (key: string) => (key.startsWith('http') ? key : localizeNavHref(key, lang));
+const { tagline } = getSiteContent(lang);
+const cells = footerCells(getFooter(lang));
+const followLinks = socialLinks.filter((s) => s.footer);
+const showLangSwitcher = shouldShowLangSwitcher(hideLangSwitcher, availableLocales);
+
+/** getFooter hrefs are already localized ("/de/about/"); compare their locale-neutral key. */
+const isCurrent = (href: string) => isCurrentKey(stripLocale(href), Astro.url.pathname);
+/** The sr-only new-tab hint is in the page language, even inside a lang="en" link. */
+const hintLang = (linkLang: string | undefined) => (linkLang ? BCP47[lang] : undefined);
 
 const year = new Intl.NumberFormat(BCP47[lang], { useGrouping: false }).format(
   new Date().getFullYear()
 );
+
+/**
+ * Link styling is split for weight, not looks: the INHERITED half (body-sm,
+ * text-body, text-pretty, wrap-anywhere, hyphens-auto) sits once on each <ul>
+ * and every <a> carries only the non-inherited half. The computed style of a
+ * link is exactly the full set — body-sm inline-flex items-center py-1
+ * pointer-coarse:min-h-11 text-body hover:text-link text-pretty wrap-anywhere
+ * aria-[current=page]:text-ink aria-[current=page]:font-medium
+ * transition-colors hyphens-auto — at ~1.4 KB less per page (20 KB budget,
+ * scripts/check-footer.mjs). hyphens-auto is what breaks de
+ * "Nutzungsbedingungen" in a narrow column: never a soft hyphen in the anchor.
+ */
+const listClass = 'mt-2 body-sm text-body text-pretty wrap-anywhere hyphens-auto';
+const linkClass =
+  'inline-flex items-center py-1 pointer-coarse:min-h-11 hover:text-link aria-[current=page]:text-ink aria-[current=page]:font-medium transition-colors';
 ---
 
-{/* data-pagefind-ignore: footer chrome must never leak into the site-search index. */}
-<footer class="bg-canvas border-t border-hairline" data-pagefind-ignore>
-  <div class="container-page pt-16 pb-8 sm:pt-20 sm:pb-10">
-    <div class="grid grid-cols-1 gap-12 md:grid-cols-12 md:gap-8">
-      <!-- Brand column -->
-      <div class="md:col-span-4 lg:col-span-5">
+{/* data-pagefind-ignore: footer chrome must never leak into the site-search index.
+    No overflow-hidden: the footer language menu opens upward over the band. */}
+<footer class="relative isolate border-t border-hairline-strong bg-footer" data-pagefind-ignore>
+  <MeshGradient id="footer-canopy" class="absolute inset-x-0 top-0 -z-10 h-24 opacity-70" />
+  <div class="container-page pt-12 pb-8 sm:pt-14 sm:pb-10">
+    <div class="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,5fr)_repeat(3,minmax(0,4fr))] lg:gap-x-6">
+      {/* Brand column */}
+      <div class="min-w-0">
         <a
           href={localizeKey('/', lang)}
-          class="text-ink hover:text-ink/80 inline-flex items-center rounded-sm transition-opacity"
-          style="touch-action: manipulation;"
+          class="text-ink hover:text-ink/80 inline-flex items-center rounded-sm transition-opacity pointer-coarse:min-h-11"
           aria-label={t('a11y.homeLabel', { name: site.name })}
         >
           <Logo />
         </a>
-        <p class="body-sm text-body mt-5 max-w-xs text-pretty">{tagline}</p>
+        <p class="body-sm text-body mt-4 max-w-sm text-pretty">{tagline}</p>
+        <p class="body-sm mt-3 max-w-sm text-pretty">
+          <a
+            href={repoUrl}
+            rel="noopener noreferrer"
+            target="_blank"
+            class="text-body hover:text-link underline decoration-hairline-strong underline-offset-4 transition-colors"
+            >{t('footer.openSource')}<span aria-hidden="true">&nbsp;↗</span><span class="sr-only"> {t('a11y.opensNewTab')}</span></a
+          >
+        </p>
+        <h2 class="eyebrow mt-6">{t('footer.follow')}</h2>
+        {/* min-w: the one-letter "X" is 8px wide on its own. The label stays
+            start-aligned, so the row keeps its even 20px gaps and the extra
+            target width falls into the trailing space. */}
+        <ul role="list" class="body-sm text-body mt-2 flex flex-wrap gap-x-5">
+          {
+            followLinks.map((s) => (
+              <li>
+                <a
+                  href={s.href}
+                  rel="me noopener noreferrer"
+                  target="_blank"
+                  translate="no"
+                  class="inline-flex min-w-6 items-center py-1 pointer-coarse:min-h-11 pointer-coarse:min-w-11 hover:text-link transition-colors"
+                ><span class="sr-only">{t('footer.profileOn')}{' '}</span>{s.label}<span class="sr-only"> {t('a11y.opensNewTab')}</span></a>
+              </li>
+            ))
+          }
+        </ul>
       </div>
 
-      <!-- Footer nav columns -->
-      <nav
-        aria-label="Footer"
-        class="grid grid-cols-2 gap-x-8 gap-y-10 sm:grid-cols-4 md:col-span-8 lg:col-span-7"
-      >
-        {
-          footerColumns.map((column) => (
-            <div class="min-w-0">
-              <p class="eyebrow">{column.title}</p>
-              <ul class="mt-4 space-y-1">
-                {column.links.map((link) => {
-                  const isExternal = link.href.startsWith('http');
-                  return (
-                    <li class="min-w-0">
-                      {isExternal ? (
-                        <a
-                          href={link.href}
-                          rel="noopener noreferrer"
-                          target="_blank"
-                          class="body-sm text-body hover:text-ink inline-flex min-h-11 items-center rounded-sm text-pretty transition-colors"
-                          style="touch-action: manipulation;"
-                        >
-                          {link.label}
-                          <span class="sr-only">{t('a11y.opensNewTab')}</span>
-                        </a>
-                      ) : (
-                        <a
-                          href={href(link.href)}
-                          class="body-sm text-body hover:text-ink inline-flex min-h-11 items-center rounded-sm text-pretty transition-colors"
-                          style="touch-action: manipulation;"
-                        >
-                          {link.label}
-                        </a>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))
-        }
-      </nav>
+      {/* Colophon plate: from lg only; below lg the bottom bar carries its one-line form. */}
+      {
+        colophon && (
+          <div class="hidden min-w-0 lg:col-span-3 lg:block">
+            <FooterColophon lang={lang} variant="plate" />
+          </div>
+        )
+      }
     </div>
 
-    <!-- Divider + bottom row -->
-    <div
-      class="border-hairline mt-14 flex flex-col gap-3 border-t pt-8 sm:flex-row sm:items-start sm:justify-between sm:gap-8"
+    {/* Link index: 4 cells (Tools · Learn · Resources · Company + stacked Legal). */}
+    <nav
+      aria-label={t('a11y.footerNav')}
+      class="mt-10 grid grid-cols-2 gap-x-6 gap-y-8 md:grid-cols-[minmax(0,5fr)_repeat(3,minmax(0,4fr))] lg:mt-12"
     >
-      <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-5">
-        <p class="caption text-mute">
-          &copy;&nbsp;<span class="tabular-nums">{year}</span>&nbsp;<span translate="no"
-            >OpsCanopy</span
-          >. {t('footer.copyright')}
+      {
+        cells.map((cell) => (
+          <div class="min-w-0">
+            {cell.map((group, i) => (
+              <div class={i > 0 ? 'mt-6' : undefined}>
+                {/* The "In English" caption shares the heading's line, so a
+                    captioned column's links stay level with its neighbours. */}
+                <div class="flex flex-wrap items-baseline gap-x-2">
+                  <h2 class="eyebrow" lang={group.titleLang}>{group.title}</h2>
+                  {group.caption && <span class="caption text-mute">{group.caption}</span>}
+                </div>
+                <ul role="list" class={listClass}>
+                  {group.links.map((link) => (
+                    <li>
+                      <a
+                        href={link.href}
+                        rel={link.rel}
+                        target={link.target}
+                        lang={link.lang}
+                        translate={link.translate}
+                        aria-current={!link.external && isCurrent(link.href) ? 'page' : undefined}
+                        class={linkClass}
+                      >{link.label}{link.external && <span class="sr-only" lang={hintLang(link.lang)}> {t('a11y.opensNewTab')}</span>}</a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        ))
+      }
+    </nav>
+
+    {/* Bottom bar */}
+    <div class="mt-10 border-t border-hairline-muted pt-6">
+      <div class="flex flex-wrap items-center gap-x-5 gap-y-3">
+        <p class="caption text-mute flex flex-wrap items-center gap-x-2">
+          <span>
+            &copy;&nbsp;<span class="tabular-nums">{year}</span>&nbsp;<span translate="no"
+              >OpsCanopy</span
+            >. {t('footer.copyright')}
+          </span>
+          <span aria-hidden="true">·</span>
+          {/* Resting underline: it shares the copyright line's colour, so colour
+              alone cannot mark it as a link (WCAG 1.4.1). */}
+          <a
+            href="/sitemap-index.xml"
+            class="hover:text-link inline-flex items-center rounded-sm underline decoration-hairline-strong underline-offset-4 transition-colors pointer-coarse:min-h-11"
+            >{t('footer.sitemap')}</a
+          >
         </p>
-        <a
-          href="/sitemap-index.xml"
-          class="caption text-mute hover:text-ink inline-flex min-h-11 items-center rounded-sm transition-colors sm:min-h-0"
-          style="touch-action: manipulation;"
-        >
-          Sitemap
-        </a>
-        <a
-          href={site.github}
-          rel="noopener noreferrer"
-          target="_blank"
-          class="caption text-mute hover:text-ink inline-flex min-h-11 items-center rounded-sm transition-colors sm:min-h-0"
-          style="touch-action: manipulation;"
-        >
-          {t('footer.openSource')}
-          <span class="sr-only">{t('a11y.opensNewTab')}</span>
-        </a>
+        {
+          colophon && (
+            <div class="w-full lg:hidden">
+              <FooterColophon lang={lang} variant="line" />
+            </div>
+          )
+        }
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            class="theme-toggle body-sm inline-flex h-9 items-center gap-1.5 rounded-md border border-hairline-muted px-2.5 text-body transition-colors hover:bg-footer-hover hover:text-ink pointer-coarse:min-h-11"
+            aria-label={t('a11y.themeToDark')}
+            title={t('a11y.themeToDark')}
+            data-to-dark={t('a11y.themeToDark')}
+            data-to-light={t('a11y.themeToLight')}
+            style="touch-action: manipulation;"
+          >
+            <svg
+              class="theme-icon-moon h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.75"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"></path>
+            </svg>
+            <svg
+              class="theme-icon-sun h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.75"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="4"></circle>
+              <path
+                d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"
+              ></path>
+            </svg>
+            <span class="theme-label-dark">{t('theme.dark')}</span>
+            <span class="theme-label-light">{t('theme.light')}</span>
+          </button>
+          {showLangSwitcher && <LangSwitcher lang={lang} available={availableLocales} variant="footer" />}
+        </div>
       </div>
-      <p class="caption text-mute max-w-xl text-pretty sm:text-right">
+      {/* pr-16 below lg: keeps the last line clear of the fixed back-to-top /
+          sections buttons that sit bottom-right on blog and guide pages. */}
+      <p class="caption text-mute mt-4 max-w-2xl pr-16 text-pretty lg:pr-0">
         {t('footer.disclaimer.lead')}
         <span translate="no">Loki</span> {t('footer.disclaimer.trademark')}
         <span translate="no">Grafana</span> {t('footer.disclaimer.tail')}

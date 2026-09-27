@@ -1,7 +1,7 @@
 /** Localized site copy — Brazilian Portuguese (pt-br). Partial: omitted fields fall back to English. */
-import type { SiteContent } from './en';
+import type { SiteLocaleContent } from './en';
 
-const ptBr: Partial<SiteContent> = {
+const ptBr: SiteLocaleContent = {
   tagline:
     'Uma copa de ferramentas gratuitas, privadas e baseadas no navegador para engenheiros de plataforma e DevOps.',
   description:
@@ -10,53 +10,32 @@ const ptBr: Partial<SiteContent> = {
     { href: '/tools', label: 'Ferramentas' },
     { href: '/learn', label: 'Learn' },
     { href: '/mission-90/', label: '90 Days DevOps' },
-          { href: '/tests', label: 'Testes práticos' },
+    { href: '/tests', label: 'Testes práticos' },
     { href: '/blog', label: 'Blog' },
     { href: '/search', label: 'Buscar' },
   ],
-  footer: [
-    {
-      title: 'Ferramentas',
-      links: [
-        { href: '/loki-alert-rule-tester', label: 'AlertLint — testador de regras do Loki' },
-        { href: '/tools', label: 'Todas as ferramentas' },
-      ],
+  // Footer: labels only — the structure is English-owned (./en.ts). Omitted
+  // hrefs fall back on purpose: a target that is also in the header nav takes
+  // the `nav` label above (Learn, 90 Days DevOps, the practice tests, Blog);
+  // tool names and the other English-only targets (roadmap, guides, Changelog,
+  // RSS feed) keep their English anchor and render lang="en". The Learn
+  // title stays English too; getFooter adds the localized "In English" caption.
+  footerLabels: {
+    titles: {
+      tools: 'Ferramentas',
+      resources: 'Recursos',
+      company: 'Empresa',
+      legal: 'Legal',
     },
-    {
-      title: 'Learn',
-      links: [
-        { href: '/learn', label: 'All guides' },
-        { href: '/mission-90/', label: '90 Days DevOps' },
-        { href: '/learn/roadmaps/devops', label: 'DevOps roadmap' },
-        { href: '/learn/guides/linux-for-devops', label: 'Linux for DevOps' },
-        { href: '/learn/guides/docker-for-devops', label: 'Docker for DevOps' },
-      ],
+    links: {
+      '/tools': 'Todas as ferramentas',
+      '/about': 'Sobre',
+      '/contact': 'Contato',
+      '/privacy': 'Privacidade',
+      '/security': 'Segurança',
+      '/terms': 'Termos',
     },
-    {
-      title: 'Recursos',
-      links: [
-        { href: '/blog', label: 'Blog' },
-        { href: '/changelog', label: 'Changelog' },
-        { href: '/#why', label: 'Por que o OpsCanopy' },
-        { href: 'https://github.com/opscanopy/opscanopy.com', label: 'Código-fonte no GitHub' },
-      ],
-    },
-    {
-      title: 'Empresa',
-      links: [
-        { href: '/about', label: 'Sobre' },
-        { href: '/contact', label: 'Contato' },
-      ],
-    },
-    {
-      title: 'Legal',
-      links: [
-        { href: '/privacy', label: 'Privacidade' },
-        { href: '/security', label: 'Segurança' },
-        { href: '/terms', label: 'Termos' },
-      ],
-    },
-  ],
+  },
 };
 
 export default ptBr;

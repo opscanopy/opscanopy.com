@@ -114,7 +114,14 @@ padding` (chips in cards, code in slabs, art in card caps).
 - Motion carries information only (live demos, self-typing terminals) — no
   decorative scroll-reveals. Interaction states only on interactive elements.
 - Designed error pages (404/500/offline as terminal slabs); neofetch-style
-  colophon footer.
+  colophon footer — built 2026-09-27 as `FooterColophon.astro`: an instrument
+  plate (mute FigureCap `colophon — opscanopy.com`, mono `<dl>` of build-time
+  facts: live tools and categories, locales, engines, licence, type, source)
+  beside the brand column from `lg`, collapsing to one mono line below `sm`.
+  English-only (`lang="en" translate="no" data-nosnippet`), slab inks only, no
+  dates or build SHA, no trust claims; hidden on the error pages, which already
+  carry a slab. The footer band is its own surface (`--color-footer`, a step
+  below the body in both themes) so the plate never sinks into it.
 
 ## Imagery & OG
 

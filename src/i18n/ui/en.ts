@@ -24,6 +24,8 @@ const en = {
   'a11y.themeToDark': 'Switch to dark theme',
   'a11y.themeToLight': 'Switch to light theme',
   'a11y.opensNewTab': '(opens in a new tab)',
+  // Footer <nav> landmark name (the header's is "Primary").
+  'a11y.footerNav': 'Footer',
 
   // Header
   'nav.browseTools': 'Browse Tools',
@@ -50,6 +52,12 @@ const en = {
   // Footer
   'footer.copyright': 'Free & open.',
   'footer.openSource': 'Open source — read exactly what each tool computes.',
+  'footer.sitemap': 'Sitemap',
+  'footer.follow': 'Follow',
+  // Caption under the English-only Learn column on locale pages.
+  'footer.inEnglish': 'In English',
+  // sr-only prefix before a platform name: "OpsCanopy on" + " " + "GitHub".
+  'footer.profileOn': 'OpsCanopy on',
   'footer.disclaimer.lead': 'Not affiliated with or endorsed by Grafana Labs.',
   'footer.disclaimer.trademark': 'and',
   'footer.disclaimer.tail': 'are trademarks of Raintank, Inc.',

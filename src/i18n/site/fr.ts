@@ -1,7 +1,7 @@
 /** Localized site copy — French (fr). Partial: omitted fields fall back to English. */
-import type { SiteContent } from './en';
+import type { SiteLocaleContent } from './en';
 
-const fr: Partial<SiteContent> = {
+const fr: SiteLocaleContent = {
   tagline:
     'Une canopée d’outils libres, privés et basés sur le navigateur pour les ingénieurs plateforme et DevOps.',
   description:
@@ -10,53 +10,32 @@ const fr: Partial<SiteContent> = {
     { href: '/tools', label: 'Outils' },
     { href: '/learn', label: 'Learn' },
     { href: '/mission-90/', label: '90 Days DevOps' },
-          { href: '/tests', label: 'Tests blancs' },
+    { href: '/tests', label: 'Tests blancs' },
     { href: '/blog', label: 'Blog' },
     { href: '/search', label: 'Recherche' },
   ],
-  footer: [
-    {
-      title: 'Outils',
-      links: [
-        { href: '/loki-alert-rule-tester', label: 'AlertLint — testeur de règles Loki' },
-        { href: '/tools', label: 'Tous les outils' },
-      ],
+  // Footer: labels only — the structure is English-owned (./en.ts). Omitted
+  // hrefs fall back on purpose: a target that is also in the header nav takes
+  // the `nav` label above (Learn, 90 Days DevOps, the practice tests, Blog);
+  // tool names and the other English-only targets (roadmap, guides, Changelog,
+  // RSS feed) keep their English anchor and render lang="en". The Learn
+  // title stays English too; getFooter adds the localized "In English" caption.
+  footerLabels: {
+    titles: {
+      tools: 'Outils',
+      resources: 'Ressources',
+      company: 'Entreprise',
+      legal: 'Mentions légales',
     },
-    {
-      title: 'Learn',
-      links: [
-        { href: '/learn', label: 'All guides' },
-        { href: '/mission-90/', label: '90 Days DevOps' },
-        { href: '/learn/roadmaps/devops', label: 'DevOps roadmap' },
-        { href: '/learn/guides/linux-for-devops', label: 'Linux for DevOps' },
-        { href: '/learn/guides/docker-for-devops', label: 'Docker for DevOps' },
-      ],
+    links: {
+      '/tools': 'Tous les outils',
+      '/about': 'À propos',
+      '/contact': 'Contact',
+      '/privacy': 'Confidentialité',
+      '/security': 'Sécurité',
+      '/terms': 'Conditions d’utilisation',
     },
-    {
-      title: 'Ressources',
-      links: [
-        { href: '/blog', label: 'Blog' },
-        { href: '/changelog', label: 'Changelog' },
-        { href: '/#why', label: 'Pourquoi OpsCanopy' },
-        { href: 'https://github.com/opscanopy/opscanopy.com', label: 'Code source sur GitHub' },
-      ],
-    },
-    {
-      title: 'Entreprise',
-      links: [
-        { href: '/about', label: 'À propos' },
-        { href: '/contact', label: 'Contact' },
-      ],
-    },
-    {
-      title: 'Mentions légales',
-      links: [
-        { href: '/privacy', label: 'Confidentialité' },
-        { href: '/security', label: 'Sécurité' },
-        { href: '/terms', label: 'Conditions d’utilisation' },
-      ],
-    },
-  ],
+  },
 };
 
 export default fr;

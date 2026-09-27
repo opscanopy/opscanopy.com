@@ -11,9 +11,14 @@ const de: Partial<UiDict> = {
   'a11y.homeLabel': '{name}, Startseite',
   'a11y.openMenu': 'Menü öffnen',
   'a11y.closeMenu': 'Menü schließen',
-  'a11y.themeToDark': 'Zum dunklen Design wechseln',
-  'a11y.themeToLight': 'Zum hellen Design wechseln',
+  // Name must contain the visible label ('theme.dark' / 'theme.light' on the
+  // mobile toggle) — WCAG 2.5.3 label in name; 'Zum dunklen Design wechseln'
+  // did not contain 'Dunkles Design'.
+  'a11y.themeToDark': 'Dunkles Design aktivieren',
+  'a11y.themeToLight': 'Helles Design aktivieren',
   'a11y.opensNewTab': '(wird in einem neuen Tab geöffnet)',
+  // Footer <nav> landmark name (the header's is "Primary").
+  'a11y.footerNav': 'Fußzeile',
 
   // Header
   'nav.browseTools': 'Tools durchsuchen',
@@ -40,6 +45,12 @@ const de: Partial<UiDict> = {
   // Footer
   'footer.copyright': 'Kostenlos & offen.',
   'footer.openSource': 'Open Source — lesen Sie genau nach, was jedes Tool berechnet.',
+  'footer.sitemap': 'Sitemap',
+  'footer.follow': 'Folgen',
+  // Caption under the English-only Learn column on locale pages.
+  'footer.inEnglish': 'Auf Englisch',
+  // sr-only prefix before a platform name: "OpsCanopy on" + " " + "GitHub".
+  'footer.profileOn': 'OpsCanopy auf',
   'footer.disclaimer.lead': 'Nicht mit Grafana Labs verbunden oder von Grafana Labs unterstützt.',
   'footer.disclaimer.trademark': 'und',
   'footer.disclaimer.tail': 'sind Marken von Raintank, Inc.',

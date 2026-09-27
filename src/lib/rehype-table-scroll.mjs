@@ -16,11 +16,16 @@ function text(node) {
   return (node.children ?? []).map(text).join('');
 }
 
-/** @param {any} table */
-function label(table) {
+/**
+ * The region's label: the table's caption, else "Table N" in document order.
+ * Every region needs a DISTINCT name — two regions both called "Table" fail
+ * axe landmark-unique (posts with 2+ uncaptioned tables did).
+ * @param {any} table @param {number} n
+ */
+function label(table, n) {
   const caption = (table.children ?? []).find((c) => c.type === 'element' && c.tagName === 'caption');
   const t = caption ? text(caption).trim() : '';
-  return t || 'Table';
+  return t || `Table ${n}`;
 }
 
 /** @param {any} node */
@@ -29,26 +34,27 @@ function isScroller(node) {
   return node?.type === 'element' && Array.isArray(cls) && cls.includes('table-scroll');
 }
 
-/** @param {any} parent */
-function walk(parent) {
+/** @param {any} parent @param {{ n: number }} count */
+function walk(parent, count) {
   const kids = parent.children;
   if (!kids) return;
   for (let i = 0; i < kids.length; i++) {
     const node = kids[i];
     if (node.type !== 'element') continue;
     if (node.tagName === 'table' && !isScroller(parent)) {
+      count.n += 1;
       kids[i] = {
         type: 'element',
         tagName: 'div',
-        properties: { className: ['table-scroll'], tabIndex: 0, role: 'region', ariaLabel: label(node) },
+        properties: { className: ['table-scroll'], tabIndex: 0, role: 'region', ariaLabel: label(node, count.n) },
         children: [node],
       };
       continue;
     }
-    walk(node);
+    walk(node, count);
   }
 }
 
 export default function rehypeTableScroll() {
-  return (tree) => walk(tree);
+  return (tree) => walk(tree, { n: 0 });
 }

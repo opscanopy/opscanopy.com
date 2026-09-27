@@ -4,6 +4,16 @@
  * key, just re-prefixed), so switching language keeps you on the same page.
  * Zero-JS: a native <details> disclosure. For pages that exist only in some
  * locales (blog posts), pass `available` so we don't link to missing pages.
+ *
+ * Two placements:
+ *   - `header` (default): menu drops DOWN, aligned to the summary's right edge.
+ *   - `footer`: the switcher sits in the footer's bottom bar, near the foot of
+ *     the page, so the menu opens UP (`bottom-full mb-1`) and aligns to the
+ *     summary's start edge; the summary is bordered so it reads as a control on
+ *     the footer paper, and hovers onto the footer's own hover surface. Its
+ *     menu is a card (not canvas, which equals the dark footer band).
+ * Both variants lift the summary and every option to the 44px tap minimum on a
+ * coarse pointer; on a fine pointer the header variant renders as it always has.
  */
 import { LOCALES, LOCALE_LABELS, DEFAULT_LOCALE, type Locale } from '../i18n/config';
 import { useTranslations, stripLocale, localizeKey } from '../i18n/utils';
@@ -17,9 +27,11 @@ interface Props {
       summary keeps its sr-only "Language:" prefix and title, so it stays
       accessible. */
   compact?: boolean;
+  /** Where the switcher sits — decides which way the menu opens. */
+  variant?: 'header' | 'footer';
 }
 
-const { lang, available = [...LOCALES], compact = false } = Astro.props;
+const { lang, available = [...LOCALES], compact = false, variant = 'header' } = Astro.props;
 const t = useTranslations(lang);
 const pageKey = stripLocale(Astro.url.pathname);
 const options = LOCALES.filter((l) => available.includes(l)).map((l) => ({
@@ -28,11 +40,15 @@ const options = LOCALES.filter((l) => available.includes(l)).map((l) => ({
   href: localizeKey(pageKey, l),
   current: l === lang,
 }));
+const isFooter = variant === 'footer';
 ---
 
 <details class="lang-switcher relative">
   <summary
-    class="body-sm inline-flex h-9 cursor-pointer list-none items-center gap-1.5 rounded-md px-2.5 text-body transition-colors hover:bg-canvas-soft-2 hover:text-ink"
+    class:list={[
+      'body-sm inline-flex h-9 cursor-pointer list-none items-center gap-1.5 rounded-md px-2.5 text-body transition-colors hover:text-ink pointer-coarse:min-h-11',
+      isFooter ? 'border border-hairline-muted hover:bg-footer-hover' : 'hover:bg-canvas-soft-2',
+    ]}
     title={t('lang.switcherLabel')}
   >
     {/* No aria-label: it would replace the visible "English" and break WCAG
@@ -56,8 +72,17 @@ const options = LOCALES.filter((l) => available.includes(l)).map((l) => ({
     </svg>
     <span class:list={['font-medium', compact && 'max-lg:hidden']} translate="no">{LOCALE_LABELS[lang]}</span>
   </summary>
+  {/* Menu surface. The header menu is bg-canvas, a step off the soft header.
+      On the footer that would vanish in dark: --color-footer IS canvas's value
+      (#141310), so the popup would have no fill edge against the band it
+      covers. The footer menu is a card instead (+7.6 L* light / +7.0 dark off
+      the footer), and its option hover steps to soft-3, because soft-2 sits
+      only 1.0 L* off the dark card. contrast.test.ts gates both steps. */}
   <ul
-    class="absolute right-0 z-50 mt-1 min-w-[10rem] rounded-lg border border-hairline bg-canvas py-1 shadow-modal"
+    class:list={[
+      'absolute z-50 min-w-[10rem] rounded-lg border border-hairline py-1 shadow-modal',
+      isFooter ? 'bottom-full left-0 mb-1 bg-card' : 'right-0 mt-1 bg-canvas',
+    ]}
   >
     {
       options.map((opt) => (
@@ -69,7 +94,8 @@ const options = LOCALES.filter((l) => available.includes(l)).map((l) => ({
             aria-current={opt.current ? 'true' : undefined}
             translate="no"
             class:list={[
-              'body-sm flex min-h-10 items-center px-3 transition-colors hover:bg-canvas-soft-2 hover:text-ink',
+              'body-sm flex min-h-10 items-center px-3 transition-colors hover:text-ink pointer-coarse:min-h-11',
+              isFooter ? 'hover:bg-canvas-soft-3' : 'hover:bg-canvas-soft-2',
               opt.current ? 'font-medium text-ink' : 'text-body',
             ]}
           >
@@ -96,8 +122,11 @@ const options = LOCALES.filter((l) => available.includes(l)).map((l) => ({
 </style>
 
 <script>
-  // Close any open language dropdown on outside click / Escape.
-  function wireLangSwitchers() {
+  // Close any open language dropdown on outside click, on Escape (returning
+  // focus to its summary), and when keyboard focus moves out of it. Arrow
+  // functions throughout: a hoisted `function` declaration would lose the
+  // narrowing on `summary` (see CLAUDE.md).
+  const wireLangSwitchers = () => {
     const switchers = document.querySelectorAll<HTMLDetailsElement>('details.lang-switcher');
     switchers.forEach((d) => {
       if (d.dataset.wired === 'true') return;
@@ -117,10 +146,33 @@ const options = LOCALES.filter((l) => available.includes(l)).map((l) => ({
         }, 0);
       });
       d.addEventListener('keydown', (e) => {
-        if ((e as KeyboardEvent).key === 'Escape') d.open = false;
+        if (e.key !== 'Escape' || !d.open) return;
+        d.open = false;
+        // Escape closes the innermost disclosure only: stop it reaching the
+        // document-level handlers (the mobile nav overlay would otherwise close
+        // too and pull focus to its toggle).
+        e.stopPropagation();
+        summary?.focus();
+      });
+      // Tabbing past the last option (or Shift+Tab off the summary) leaves the
+      // menu open over the page otherwise. A real focus target outside the
+      // switcher closes it. A null relatedTarget is ambiguous: a click on plain
+      // text (the outside-click handler's job; the document keeps focus) or Tab
+      // past the page's last control — the footer switcher IS the last one — in
+      // which case focus has left the document, so check that after the move.
+      d.addEventListener('focusout', (e) => {
+        const next = e.relatedTarget;
+        if (!d.open) return;
+        if (next instanceof Node) {
+          if (!d.contains(next)) d.open = false;
+          return;
+        }
+        setTimeout(() => {
+          if (d.open && !document.hasFocus()) d.open = false;
+        }, 0);
       });
     });
-  }
+  };
   wireLangSwitchers();
   document.addEventListener('astro:page-load', wireLangSwitchers);
 </script>

@@ -27,8 +27,18 @@ describe('rehypeTableScroll', () => {
     const root = run({ type: 'root', children: [t] });
     const wrap = root.children![0];
     expect(wrap.tagName).toBe('div');
-    expect(wrap.properties).toEqual({ className: ['table-scroll'], tabIndex: 0, role: 'region', ariaLabel: 'Table' });
+    expect(wrap.properties).toEqual({ className: ['table-scroll'], tabIndex: 0, role: 'region', ariaLabel: 'Table 1' });
     expect(wrap.children).toEqual([t]);
+  });
+
+  it('gives every uncaptioned table a distinct region name (axe landmark-unique)', () => {
+    const captioned = el('table', [el('caption', [{ type: 'text', value: 'Flags' }])]);
+    const root = run({ type: 'root', children: [table(), el('section', [captioned, table()]), table()] });
+    const labels = [root.children![0], root.children![1].children![0], root.children![1].children![1], root.children![2]].map(
+      (n) => n.properties!.ariaLabel,
+    );
+    expect(labels).toEqual(['Table 1', 'Flags', 'Table 3', 'Table 4']);
+    expect(new Set(labels).size).toBe(labels.length);
   });
 
   it('labels the region with the table caption when there is one', () => {

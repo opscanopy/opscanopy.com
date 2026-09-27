@@ -8,10 +8,11 @@
  *    "page key" used to compute canonical/hreflang/equivalent-page URLs.
  *  - localizeKey(path, locale): inverse — turn a page key into a localized path.
  *
- * localizeKey/localizeNavHref/ENGLISH_ONLY_SECTIONS/withTrailingSlash live in
- * the leaf module ./paths (no UI-dictionary dependency, so client code that
- * only needs hrefs — the command palette's lazy chunk — can import just that)
- * and are re-exported below for every existing call site.
+ * stripLocale, localizeKey/localizeNavHref, ENGLISH_ONLY_SECTIONS/_FILES,
+ * isEnglishOnlyKey, isCurrentKey, shouldShowLangSwitcher and withTrailingSlash
+ * live in the leaf module ./paths (no UI-dictionary dependency, so client code
+ * that only needs hrefs — the command palette's lazy chunk — can import just
+ * that) and are re-exported below for every existing call site.
  */
 import { DEFAULT_LOCALE, LOCALES, isLocale, type Locale } from './config';
 import en, { type UiKey } from './ui/en';
@@ -56,18 +57,16 @@ export function getLocaleFromUrl(url: URL): Locale {
   return isLocale(seg) && seg !== DEFAULT_LOCALE ? seg : DEFAULT_LOCALE;
 }
 
-/**
- * Strip a leading locale prefix, returning the locale-neutral page key with a
- * leading slash. "/de/tools" → "/tools"; "/tools" → "/tools"; "/de" → "/".
- */
-export function stripLocale(pathname: string): string {
-  const parts = pathname.split('/').filter(Boolean);
-  if (parts.length && isLocale(parts[0]) && parts[0] !== DEFAULT_LOCALE) {
-    parts.shift();
-  }
-  return '/' + parts.join('/');
-}
-
-export { localizeKey, localizeNavHref, ENGLISH_ONLY_SECTIONS, withTrailingSlash } from './paths';
+export {
+  localizeKey,
+  localizeNavHref,
+  ENGLISH_ONLY_SECTIONS,
+  ENGLISH_ONLY_FILES,
+  isEnglishOnlyKey,
+  isCurrentKey,
+  shouldShowLangSwitcher,
+  stripLocale,
+  withTrailingSlash,
+} from './paths';
 export { LOCALES, DEFAULT_LOCALE, isLocale };
 export type { Locale };
