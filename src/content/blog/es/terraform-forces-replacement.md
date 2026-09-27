@@ -1,8 +1,7 @@
 ---
 title: "Terraform forces replacement: qué es -/+ y cómo evitarlo"
 description: "Terraform fuerza un reemplazo cuando un atributo no puede cambiar in situ: qué significa -/+, cómo hallar la causa con show -json y jq, y cómo evitarlo."
-pubDate: 2026-10-05
-draft: true
+pubDate: 2026-09-27
 tags: ["terraform", "ci-cd", "devops"]
 lang: es
 translationOf: "terraform-forces-replacement"

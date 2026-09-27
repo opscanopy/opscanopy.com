@@ -1,8 +1,7 @@
 ---
 title: "Terraform forces replacement : comprendre -/+ et corriger"
 description: "Terraform force un remplacement quand un attribut ne peut changer sur place : ce que signifie -/+, trouver la cause avec show -json et jq, et l'empêcher."
-pubDate: 2026-10-05
-draft: true
+pubDate: 2026-09-27
 tags: ["terraform", "ci-cd", "devops"]
 lang: fr
 translationOf: "terraform-forces-replacement"
