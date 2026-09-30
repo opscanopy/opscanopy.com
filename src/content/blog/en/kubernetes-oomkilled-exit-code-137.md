@@ -144,3 +144,5 @@ To be clear about what that does and does not do: it will not tell you *why* a c
 6. Total it across replicas and confirm it still fits the node pool.
 
 The recurring theme: exit code 137 is a report that something exceeded a boundary, not a description of the bug. The useful question is never "how much memory should I add" but "does this workload's memory grow with time, and does its runtime know what its ceiling is".
+
+A pod that keeps restarting also keeps dropping out of its Service, because it is never Ready long enough to receive traffic. If the restarts stop but the Service still sends nothing, work through [why a Kubernetes Service has no endpoints](/blog/kubernetes-service-has-no-endpoints/): selector, EndpointSlice, then readiness.

@@ -1,8 +1,7 @@
 ---
 title: "Kubernetes Service has no endpoints: find the selector bug"
 description: "A Kubernetes Service has no endpoints, or a Deployment says selector does not match template labels? One bug, two symptoms, and how to trace both to a fix."
-pubDate: 2026-10-12
-draft: true
+pubDate: 2026-09-30
 tags: ["kubernetes", "containers", "debugging"]
 relatedTool:
   name: "Kubernetes Label Selector Tester"

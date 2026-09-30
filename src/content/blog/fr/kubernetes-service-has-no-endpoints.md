@@ -1,8 +1,7 @@
 ---
 title: "Kubernetes Service has no endpoints : le bug du selector"
 description: "Un Service Kubernetes sans endpoints, ou un Deployment rejeté par selector does not match template labels ? Un bug, deux symptômes, et comment le corriger."
-pubDate: 2026-10-12
-draft: true
+pubDate: 2026-09-30
 tags: ["kubernetes", "containers", "debugging"]
 lang: fr
 translationOf: "kubernetes-service-has-no-endpoints"

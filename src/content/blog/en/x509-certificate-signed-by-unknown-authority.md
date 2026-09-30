@@ -127,6 +127,8 @@ COPY corp-root.crt /usr/local/share/ca-certificates/corp-root.crt
 RUN update-ca-certificates
 ```
 
+The same proxy breaks curl, git, npm and pip with a different message, `unable to get local issuer certificate`, and each of those reads its own trust store. [That post](/blog/unable-to-get-local-issuer-certificate/) covers where each one looks and how to point it at the corporate root.
+
 ### 4. The certificate really is self-signed
 
 Internal services, a local dev stack, a private registry. Here the error is correct: the certificate genuinely is not trusted by anyone, and nothing is misconfigured except your client's trust store.
