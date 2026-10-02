@@ -14,19 +14,24 @@
  * anchors, merge keys, timestamps, multi-document streams and out-of-range
  * integers all vanish on the way through, and every one of them is named.
  *
- * UX contract (CLAUDE.md, ported from CidrCheckerPlayground /
- * SubnetCalculatorPlayground): example chips at `var(--radius-pill)`, one
- * ~180ms debounce with the exact hint line, a ~600ms calm-error hold before
- * anything goes red, per-row copy + `data-copy-all` + `data-copy-link`, a
- * single visible `role="status"` summary plus an sr-only copy-status span, a
- * results container that is NOT `aria-live`, glossary captions instead of
+ * Built on the playground kit (src/components/playground/*): ExampleChips,
+ * EditorPane (the editor slab under its figure cap, whose label follows the
+ * direction), RunHint, SnapshotBar, ResultPanel (the L2 instrument: figure
+ * cap, the one live summary, copy status) and CopyButton. The results
+ * container stays here, seeded with `set:html` + `data-results`; its slab
+ * inks anchor on `.jy-results`.
+ *
+ * UX contract (CLAUDE.md): one ~180ms debounce, a ~600ms calm-error hold
+ * before anything goes red, per-row copy + `data-copy-all` + `data-copy-link`,
+ * a results container that is NOT `aria-live`, glossary captions instead of
  * tooltips, and `escapeHtml()` on every injected value.
  *
- * Runtime contract (lazy-imported inside the boot closure so the engine and
- * CodeMirror code-split away from the page shell):
+ * Runtime contract (lazy-imported inside the boot closure so the engine,
+ * CodeMirror and the plate theme code-split away from the page shell):
  *   ../lib/json-yaml-converter/engine   → convert, detectFormat,
  *                                         encodeState, decodeState
  *   ../lib/json-yaml-converter/examples → examples: ConverterExample[]
+ *   ../lib/playground-kit/cm-theme      → plate
  *
  * Only the example LABELS are read at build time (for server-rendered chips, so
  * they exist before hydration); the chip payloads come from the lazy import by
@@ -35,6 +40,12 @@
 import { examples } from '../lib/json-yaml-converter/examples';
 import { convert } from '../lib/json-yaml-converter/engine';
 import { resultHtml, summaryText, EMPTY_HTML } from '../lib/json-yaml-converter/render';
+import ExampleChips from './playground/ExampleChips.astro';
+import EditorPane from './playground/EditorPane.astro';
+import RunHint from './playground/RunHint.astro';
+import SnapshotBar from './playground/SnapshotBar.astro';
+import ResultPanel from './playground/ResultPanel.astro';
+import CopyButton from './playground/CopyButton.astro';
 
 /**
  * Server-rendered seed. The client re-converts the same example on boot, so
@@ -61,6 +72,7 @@ const seedOk = seedResult && seedResult.ok ? seedResult : null;
 const seedText = seedExample?.input ?? '';
 const seedHtml = seedOk ? resultHtml(seedOk).html : EMPTY_HTML;
 const seedSummary = seedOk ? summaryText(seedOk) : '';
+const chipItems = examples.map((ex) => ({ label: ex.label }));
 ---
 
 <section class="jy-pg" aria-label="JSON ↔ YAML Converter playground">
@@ -68,20 +80,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     {/* ── Example chips ────────────────────────────────────────────────── */}
     <div class="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:px-5">
       <span class="eyebrow shrink-0">Examples</span>
-      <div id="jy-chips" class="jy-chips" role="group" aria-label="Examples">
-        {
-          examples.map((ex, i) => (
-            <button
-              type="button"
-              class="jy-chip"
-              data-example-idx={String(i)}
-              aria-pressed={i === 0 ? 'true' : 'false'}
-            >
-              {ex.label}
-            </button>
-          ))
-        }
-      </div>
+      <ExampleChips prefix="jy" items={chipItems} active={seedExample ? 0 : null} ariaLabel="Examples" />
     </div>
 
     {/* ── Controls: direction, indent, sort ────────────────────────────── */}
@@ -155,200 +154,43 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
       </div>
     </div>
 
-    {/* ── Input editor (dark instrument slab) ──────────────────────────── */}
-    <div class="jy-pane bg-inverse">
-      <div class="jy-pane__bar">
-        <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
-          <span class="jy-pane__dot"></span>
-          <span class="jy-pane__dot"></span>
-          <span class="jy-pane__dot"></span>
-        </span>
-        <span id="jy-input-name" class="jy-pane__name code-mono"
-          >{seedDirection === 'yaml-to-json' ? 'input.yaml' : 'input.json'}</span
-        >
-        <span class="jy-pane__tag code-mono">input</span>
-      </div>
-      <div id="jy-input" class="jy-editor">
-        <pre class="jy-cm-fallback code-mono" data-cm-fallback>{seedText}</pre>
-      </div>
-    </div>
+    {/* ── Input editor: the plate under its figure cap. The cap's label
+        follows the direction (input.yaml / input.json). ─────────────────── */}
+    <EditorPane prefix="jy" label={seedDirection === 'yaml-to-json' ? 'input.yaml' : 'input.json'} id="jy-input">
+      <pre class="jy-fallback editor-pane__fallback code-mono" data-cm-fallback>{seedText}</pre>
+    </EditorPane>
 
-    {/* ── Hints + snapshots ────────────────────────────────────────────── */}
+    {/* ── Hints + snapshots (on paper) ─────────────────────────────────── */}
     <div class="border-b border-hairline px-4 pt-3 pb-4 sm:px-5">
-      <p id="jy-run-hint" class="jy-hint caption text-mute">
-        Results update as you type — press Enter to run now.
-      </p>
-      <p class="jy-hint caption text-mute">
-        Press <kbd class="jy-kbd">Esc</kbd> to release keyboard focus from the editor;
-        <kbd class="jy-kbd">⌘</kbd>/<kbd class="jy-kbd">Ctrl</kbd> + <kbd class="jy-kbd">Enter</kbd>
-        converts and leaves the editor. Nothing you paste is uploaded.
-      </p>
+      <RunHint variant="cm" id="jy-run-hint" />
       <p class="jy-hint caption text-mute">
         An <strong class="font-medium text-body">anchor</strong> (<span class="code-mono">&amp;name</span>)
         marks a value so an <strong class="font-medium text-body">alias</strong>
         (<span class="code-mono">*name</span>) can reuse it. JSON has neither, so every alias is
         written out as a full copy.
       </p>
-      <div class="jy-snap-row mt-3 flex flex-wrap items-center gap-2">
-        <button id="jy-snap-save" type="button" class="jy-snap-btn">Save snapshot</button>
-        <select
-          id="jy-snap-select"
-          class="jy-snap-select"
-          aria-label="Load a saved snapshot"
-          disabled
-        >
-          <option value="">No snapshots yet</option>
-        </select>
-        <button
-          id="jy-snap-delete"
-          type="button"
-          class="jy-snap-delete"
-          aria-label="Delete this snapshot"
-          hidden>&times;</button
-        >
-      </div>
+      <SnapshotBar prefix="jy" />
     </div>
 
-    {/* ── Result ───────────────────────────────────────────────────────── */}
-    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <span class="flex flex-wrap items-center gap-2">
-          <span class="eyebrow">Result</span>
-          <button
-            id="jy-share"
-            type="button"
-            class="jy-copy jy-copy--labeled"
-            data-copy-link
-            data-copy=""
-            data-copy-label="Copy link"
-            hidden
-          >
-            <svg
-              class="jy-copy-icon"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M6.75 9.25l2.5-2.5"></path>
-              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
-              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
-            </svg>
-            <svg
-              class="jy-check-icon hidden"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
-            </svg>
-            <span class="jy-copy-label">Copy link</span>
-          </button>
-          <button
-            id="jy-copy-all"
-            type="button"
-            class="jy-copy jy-copy--labeled"
-            data-copy-all
-            data-copy=""
-            data-copy-label="Copy output"
-            hidden
-          >
-            <svg
-              class="jy-copy-icon"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <rect x="5" y="5" width="9" height="9" rx="1.5"></rect>
-              <path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"></path>
-            </svg>
-            <svg
-              class="jy-check-icon hidden"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
-            </svg>
-            <span class="jy-copy-label">Copy output</span>
-          </button>
-        </span>
-        <span
-          id="jy-summary"
-          class="jy-summary code-mono text-mute"
-          role="status"
-          aria-live="polite">{seedSummary}</span
-        >
-      </div>
+    {/* ── Result — the L2 instrument; the live summary reads out in the
+        figure cap's actions slot. ────────────────────────────────────── */}
+    <ResultPanel slug="json-yaml-converter" prefix="jy" summary={seedSummary} split>
+      <Fragment slot="actions">
+        <CopyButton kind="link" id="jy-share" />
+        <CopyButton kind="all" id="jy-copy-all" label="Copy output" />
+      </Fragment>
       {/* Seeded at build time (see `seedHtml` above) so the converted document
           and the loss report are in the static HTML; the client replaces them
           with the same markup on boot and binds the copy payloads. */}
-      <div id="jy-results" class="jy-results" set:html={seedHtml}></div>
-      <span id="jy-copy-status" class="sr-only" role="status" aria-live="polite"></span>
-    </div>
+      <div id="jy-results" class="jy-results" set:html={seedHtml} data-results></div>
+    </ResultPanel>
   </div>
 </section>
 
 <style>
   @reference "../styles/global.css";
 
-  /* ── Example chips ───────────────────────────────────────────────────── */
-  .jy-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .jy-chip {
-    display: inline-flex;
-    align-items: center;
-    padding: 4px 12px;
-    border: none;
-    border-radius: var(--radius-pill);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    font-size: 12px;
-    line-height: 18px;
-    color: var(--color-brand-strong);
-    cursor: pointer;
-    touch-action: manipulation;
-    transition:
-      background 0.12s ease,
-      box-shadow 0.12s ease;
-  }
-  .jy-chip:hover,
-  .jy-chip[aria-pressed='true'] {
-    background: var(--color-brand-soft);
-    box-shadow: inset 0 0 0 1px var(--color-brand);
-  }
-  .jy-chip:focus-visible {
-    outline: 2px solid var(--color-link);
-    outline-offset: 1px;
-  }
-
-  /* ── Control row: direction / indent / sort ──────────────────────────── */
+  /* ── Control row: direction / indent / sort (paper) ──────────────────── */
   .jy-controls {
     display: grid;
     grid-template-columns: 1fr;
@@ -389,8 +231,8 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     white-space: nowrap;
     touch-action: manipulation;
     transition:
-      background 0.15s ease,
-      color 0.15s ease;
+      background-color var(--dur-fast) var(--ease-brand),
+      color var(--dur-fast) var(--ease-brand);
   }
   .jy-seg__btn:hover {
     color: var(--color-body);
@@ -409,7 +251,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     align-items: center;
     align-self: flex-start;
     gap: 8px;
-    min-height: 28px;
+    min-height: var(--control-h-sm);
     font-size: 13px;
     line-height: 20px;
     color: var(--color-body);
@@ -446,366 +288,212 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     outline: 2px solid var(--color-link);
     outline-offset: 1px;
   }
-
-  /* ── Input pane (dark instrument slab) ───────────────────────────────── */
-  .jy-pane {
-    display: flex;
-    min-width: 0;
-    flex-direction: column;
-  }
-  .jy-pane__bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 9px 16px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  }
-  .jy-pane__dot {
-    width: 9px;
-    height: 9px;
-    border-radius: 9999px;
-    background: rgba(255, 255, 255, 0.18);
-  }
-  .jy-pane__name {
-    /* 0.72 alpha over --color-inverse clears 4.5:1 in both themes. */
-    color: rgba(255, 255, 255, 0.72);
-    font-size: 12px;
-  }
-  .jy-pane__tag {
-    margin-left: auto;
-    color: rgba(255, 255, 255, 0.6);
-    font-size: 11px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-
-  /* CodeMirror host. Background is transparent so the slab shows through —
-     that is deliberate: One Dark's own #282c34 is LIGHTER than
-     --color-inverse, and its dimmest token (comments, #7d8799) only clears
-     4.5:1 against the darker slab. */
-  .jy-editor {
-    overflow: hidden;
-    padding-inline: 4px;
-  }
-  /* Build-time text stand-in for the editor, sized like the CM content so the
-     pane does not jump when the script swaps it out. Removed on mount. */
-  .jy-cm-fallback {
-    margin: 0;
-    padding: 14px 16px 16px;
-    min-height: 240px;
-    max-height: 440px;
-    overflow: auto;
-    color: #eae7e0;
-    font-size: 13px;
-    line-height: 20px;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-  .jy-editor :global(.cm-editor) {
-    background: transparent;
-    font-family: var(--font-mono);
-    font-size: 13px;
-    line-height: 20px;
-  }
-  .jy-editor :global(.cm-editor.cm-focused) {
-    outline: 2px solid var(--color-link);
-    outline-offset: -2px;
-  }
-  .jy-editor :global(.cm-scroller) {
-    overflow: auto;
-    min-height: 240px;
-    max-height: 440px;
-    font-family: var(--font-mono);
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
-  }
-  .jy-editor :global(.cm-scroller)::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  .jy-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: var(--radius-pill);
-    border: 3px solid transparent;
-    background-clip: content-box;
-  }
-  .jy-editor :global(.cm-gutters) {
-    background: transparent;
-    border-right: 1px solid rgba(255, 255, 255, 0.1);
-  }
-  /* One Dark's gutter foreground is below 4.5:1 — lift it. */
-  .jy-editor :global(.cm-lineNumbers .cm-gutterElement) {
-    color: #a9a39a;
-  }
-  .jy-editor :global(.cm-content) {
-    padding: 14px 0 16px;
-  }
-  .jy-editor :global(.cm-line) {
-    padding-inline: 4px;
-  }
-  /* Invalid input: a hairline red rule down the editor, never a flash. */
-  .jy-pane.jy-pane--error .jy-editor :global(.cm-editor) {
-    box-shadow: inset 2px 0 0 0 var(--color-error);
+  @media (pointer: coarse) {
+    .jy-seg__btn,
+    .jy-switch {
+      min-height: var(--control-h-md);
+    }
   }
 
   .jy-hint {
-    margin-top: 8px;
+    margin-top: 4px;
     font-size: 12px;
     line-height: 18px;
     text-wrap: pretty;
   }
-  .jy-hint + .jy-hint {
-    margin-top: 4px;
-  }
   .jy-hint .code-mono {
     font-size: 12px;
   }
-  .jy-kbd {
-    border: 1px solid currentColor;
-    border-radius: var(--radius-xs);
-    padding: 0 3px;
-    font-size: 0.85em;
-  }
 
-  /* ── Snapshot row ────────────────────────────────────────────────────── */
-  .jy-snap-btn {
-    flex: 0 0 auto;
-    height: 30px;
-    padding: 0 12px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-    cursor: pointer;
-    transition:
-      background 0.12s ease,
-      box-shadow 0.12s ease;
-  }
-  .jy-snap-btn:hover {
-    background: var(--color-canvas-soft);
-    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
-  }
-  .jy-snap-select {
-    height: 30px;
-    max-width: 220px;
-    padding: 0 8px;
-    border-radius: var(--radius-sm);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-  }
-  .jy-snap-select:disabled {
-    color: var(--color-mute);
-    cursor: not-allowed;
-  }
-  .jy-snap-delete {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: transparent;
-    color: var(--color-mute);
-    cursor: pointer;
-    transition:
-      background 0.12s ease,
-      color 0.12s ease;
-  }
-  .jy-snap-delete:hover {
-    background: var(--color-error-soft);
-    color: var(--color-error-deep);
-  }
-
-  /* ── Result panel ────────────────────────────────────────────────────── */
-  .jy-summary {
-    min-width: 0;
-    text-align: right;
+  /* The build-time stand-in for the editor (global .editor-pane__fallback
+     matches the CodeMirror metrics), held to the editor's scroller box and
+     wrapped like its lineWrapping so the swap does not jump. */
+  .jy-fallback {
+    min-height: 240px;
+    max-height: 440px;
+    overflow: auto;
+    white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
+  /* Invalid input: a hairline slab-red rule down the editor, never a flash.
+     The pane root is EditorPane's (no scope hash), hence :global. */
+  .jy-pg :global([data-editor-pane][data-invalid] .cm-editor) {
+    box-shadow: inset 2px 0 0 0 var(--color-inverse-error);
+  }
+
   .jy-results {
     min-height: 120px;
   }
-  /* Copy failure message flips from sr-only to a visible caption. */
-  .jy-copy-status--fail {
-    display: block;
-    margin-top: 10px;
-    font-size: 12px;
-    line-height: 18px;
-    color: var(--color-error-deep);
+  .jy-pg :global(.result-panel__summary.text-inverse-error) {
+    color: var(--color-inverse-error);
   }
 
-  /* ── Runtime-injected markup (Astro scoped styles never reach it) ────── */
-  :global(.jy-out) {
+  /* ── Runtime-injected markup (render.ts) — on the slab, so slab inks only.
+     Anchored on this component's own `.jy-results` container (the panel
+     wrapper is ResultPanel's and carries no scope attribute). ─────────── */
+  .jy-results :global(.jy-out) {
     border-radius: var(--radius-md);
-    background: var(--color-inverse);
-    box-shadow: var(--shadow-hairline);
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
     overflow: hidden;
-    animation: jy-rise 0.18s ease both;
+    animation: jy-rise var(--dur-base) var(--ease-brand) both;
   }
-  :global(.jy-out__bar) {
+  .jy-results :global(.jy-out__bar) {
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 7px 10px 7px 14px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid var(--color-inverse-hairline);
   }
-  :global(.jy-out__name) {
+  .jy-results :global(.jy-out__name) {
     font-family: var(--font-mono);
     font-size: 12px;
-    color: rgba(255, 255, 255, 0.72);
+    color: var(--color-inverse-fg);
   }
-  :global(.jy-out__meta) {
+  .jy-results :global(.jy-out__meta) {
     margin-left: auto;
     font-family: var(--font-mono);
     font-size: 11px;
-    color: rgba(255, 255, 255, 0.6);
+    color: var(--color-inverse-mute);
     white-space: nowrap;
   }
-  :global(.jy-out__pre) {
+  .jy-results :global(.jy-out__pre) {
     margin: 0;
     padding: 14px 16px;
     overflow-x: auto;
     font-family: var(--font-mono);
     font-size: 13px;
     line-height: 20px;
-    color: #eae7e0;
+    color: var(--color-inverse-fg);
     white-space: pre;
     tab-size: 2;
   }
 
-  :global(.jy-block) {
+  .jy-results :global(.jy-block) {
     margin-top: 12px;
     border-radius: var(--radius-md);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
     overflow: hidden;
-    animation: jy-rise 0.18s ease both;
+    animation: jy-rise var(--dur-base) var(--ease-brand) both;
   }
-  :global(.jy-block__head) {
+  /* Group-heading role (a sans heading over its rows, not one more label). */
+  .jy-results :global(.jy-block__head) {
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 9px 14px;
-    border-bottom: 1px solid var(--color-hairline);
-    font-family: var(--font-mono);
-    font-size: 11px;
+    border-bottom: 1px solid var(--color-inverse-hairline);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 600;
     line-height: 16px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--color-mute);
+    color: var(--color-inverse-fg);
   }
-  :global(.jy-block__meta) {
+  .jy-results :global(.jy-block__meta) {
     margin-left: auto;
-    text-transform: none;
-    letter-spacing: 0;
+    font-family: var(--font-mono);
+    font-weight: 400;
+    color: var(--color-inverse-mute);
     white-space: nowrap;
   }
-  :global(.jy-block__sub) {
+  .jy-results :global(.jy-block__sub) {
     margin: 0;
     padding: 8px 14px;
-    border-bottom: 1px solid var(--color-hairline);
+    border-bottom: 1px solid #ffffff12;
     font-size: 12px;
     line-height: 18px;
-    color: var(--color-mute);
+    color: var(--color-inverse-mute);
     text-wrap: pretty;
   }
-  :global(.jy-diag) {
+  .jy-results :global(.jy-diag) {
     display: flex;
     align-items: flex-start;
     gap: 10px;
     padding: 9px 10px 9px 14px;
   }
-  :global(.jy-diag + .jy-diag) {
-    border-top: 1px solid var(--color-hairline);
+  .jy-results :global(.jy-diag + .jy-diag) {
+    border-top: 1px solid #ffffff12;
   }
-  :global(.jy-diag__sev) {
+  /* Severity: the row-key role (label-field), tinted in slab inks. */
+  .jy-results :global(.jy-diag__sev) {
+    @apply label-field;
     flex: 0 0 auto;
     margin-top: 1px;
     padding: 1px 7px;
-    border-radius: var(--radius-pill);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 16px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    border-radius: var(--radius-xs);
   }
-  :global(.jy-diag--error .jy-diag__sev) {
-    background: var(--color-error-soft);
-    color: var(--color-error-deep);
+  .jy-results :global(.jy-diag--error .jy-diag__sev) {
+    background: #ff9d951f;
+    color: var(--color-inverse-error);
   }
-  :global(.jy-diag--warning .jy-diag__sev) {
-    background: var(--color-warning-soft);
-    color: var(--color-warning-deep);
+  .jy-results :global(.jy-diag--warning .jy-diag__sev) {
+    background: #e0a4581f;
+    color: var(--color-inverse-accent);
   }
-  :global(.jy-diag--note .jy-diag__sev) {
-    background: var(--color-canvas-soft-2);
-    color: var(--color-body);
+  .jy-results :global(.jy-diag--note .jy-diag__sev) {
+    background: #ffffff14;
+    color: var(--color-inverse-mute);
   }
-  :global(.jy-diag__body) {
+  .jy-results :global(.jy-diag__body) {
     min-width: 0;
     flex: 1 1 auto;
   }
-  :global(.jy-diag__msg) {
+  .jy-results :global(.jy-diag__msg) {
     margin: 0;
     font-size: 13px;
     line-height: 19px;
-    color: var(--color-ink);
+    color: var(--color-inverse-fg);
     overflow-wrap: anywhere;
     text-wrap: pretty;
   }
-  :global(.jy-diag__loc) {
+  .jy-results :global(.jy-diag__loc) {
     display: inline-block;
     margin-top: 3px;
     font-family: var(--font-mono);
     font-size: 11px;
     line-height: 16px;
-    color: var(--color-mute);
+    color: var(--color-inverse-mute);
     overflow-wrap: anywhere;
   }
-  :global(.jy-clean) {
+  .jy-results :global(.jy-clean) {
     margin: 0;
     padding: 12px 14px;
     font-size: 13px;
     line-height: 19px;
-    color: var(--color-body);
+    color: var(--color-inverse-mute);
     text-wrap: pretty;
   }
 
-  :global(.jy-error) {
+  .jy-results :global(.jy-error) {
     display: flex;
     gap: 10px;
     padding: 12px 14px;
     border-radius: var(--radius-md);
-    background: var(--color-error-soft);
-    box-shadow: inset 0 0 0 1px var(--color-error);
-    color: var(--color-error-deep);
+    background: #ff9d9514;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-error);
+    color: var(--color-inverse-error);
   }
-  :global(.jy-error__icon) {
+  .jy-results :global(.jy-error__icon) {
     flex: 0 0 auto;
     width: 18px;
     height: 18px;
     margin-top: 1px;
   }
-  :global(.jy-error__title) {
+  .jy-results :global(.jy-error__title) {
     margin: 0;
     font-size: 14px;
     font-weight: 500;
     line-height: 20px;
   }
-  :global(.jy-error__detail) {
+  .jy-results :global(.jy-error__detail) {
     margin-top: 2px;
     font-size: 13px;
     line-height: 19px;
     text-wrap: pretty;
     overflow-wrap: anywhere;
   }
-  :global(.jy-empty) {
+  .jy-results :global(.jy-empty) {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -814,82 +502,48 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     text-align: center;
     text-wrap: pretty;
     border-radius: var(--radius-md);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-mute);
   }
 
-  /* ── Copy buttons: icon-only per row, labeled in the header ──────────── */
-  :global(.jy-copy) {
+  /* Per-row copy (render.ts emits the button; playground-kit/copy.ts drives
+     it, and marks success with [data-copied]). */
+  .jy-results :global(.jy-copy) {
     flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
+    width: var(--control-h-sm);
+    height: var(--control-h-sm);
     padding: 0;
     border: none;
     border-radius: var(--radius-sm);
     background: transparent;
-    color: var(--color-mute);
+    color: var(--color-inverse-mute);
     cursor: pointer;
     touch-action: manipulation;
     transition:
-      color 0.12s ease,
-      background 0.12s ease;
+      color var(--dur-fast) var(--ease-brand),
+      background-color var(--dur-fast) var(--ease-brand);
   }
-  :global(.jy-copy:hover) {
-    color: var(--color-brand-strong);
-    background: var(--color-hairline);
+  .jy-results :global(.jy-copy:hover) {
+    color: var(--color-inverse-brand);
+    background: #ffffff14;
   }
-  :global(.jy-copy:focus-visible) {
-    outline: 2px solid var(--color-link);
+  .jy-results :global(.jy-copy[data-copied]) {
+    color: var(--color-inverse-brand);
+    background: #8fc97a1f;
+  }
+  .jy-results :global(.jy-copy:focus-visible),
+  .jy-results :global(.jy-out__pre:focus-visible) {
+    outline: 2px solid var(--color-inverse-brand);
     outline-offset: 1px;
   }
-  /* The output block's copy button sits on the dark slab. */
-  :global(.jy-out__bar .jy-copy) {
-    color: rgba(255, 255, 255, 0.72);
-  }
-  :global(.jy-out__bar .jy-copy:hover) {
-    color: #ffffff;
-    background: rgba(255, 255, 255, 0.12);
-  }
-  :global(.jy-copy--labeled) {
-    width: auto;
-    height: 26px;
-    gap: 6px;
-    padding: 0 10px;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 16px;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-  }
-  :global(.jy-copy--copied) {
-    color: var(--color-brand-strong);
-    background: var(--color-brand-soft);
-  }
-
-  /* Coarse-pointer tap targets, in the two tiers the contract defines:
-     chips and icon-only per-row copy buttons at 44px, labeled header copy
-     controls at 36px (wide text targets, not the primary in-result action). */
   @media (pointer: coarse) {
-    .jy-chip {
-      min-height: 44px;
-    }
-    .jy-seg__btn,
-    .jy-switch {
-      min-height: 36px;
-    }
-    :global(.jy-copy) {
-      width: 44px;
-      height: 44px;
-    }
-    :global(.jy-copy--labeled) {
-      width: auto;
-      height: auto;
-      min-height: 36px;
+    .jy-results :global(.jy-copy) {
+      width: var(--control-h-lg);
+      height: var(--control-h-lg);
     }
   }
 
@@ -904,16 +558,17 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    :global(.jy-out),
-    :global(.jy-block) {
+    .jy-results :global(.jy-out),
+    .jy-results :global(.jy-block) {
       animation: none;
     }
   }
 </style>
 
 <script>
-  import { copyTextToClipboard } from '../lib/clipboard';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  import { wireCopyButtons } from '../lib/playground-kit/copy';
+  import { syncChipsByIndex, CHIP_SELECTOR } from '../lib/playground-kit/chips';
   import type { Extension } from '@codemirror/state';
   import type { EditorView } from '@codemirror/view';
   // The HTML builders are shared with the frontmatter's build-time seed —
@@ -947,7 +602,6 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
   const DEBOUNCE_MS = 180;
   /* Nothing goes red until the typing has been idle this long. */
   const ERROR_HOLD_MS = 600;
-  const RESET_MS = 1800;
   /* Past ~2000 chars a fragment stops being a dependable URL (browser, proxy
      and chat-client limits), so we neither write it nor offer the share link —
      the converter itself keeps working on documents of any size. */
@@ -984,8 +638,9 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
 
   async function init(root: HTMLElement): Promise<void> {
     const editorHost = el<HTMLElement>(root, '#jy-input');
-    const paneEl = el<HTMLElement>(root, '.jy-pane');
-    const inputName = el<HTMLElement>(root, '#jy-input-name');
+    const paneEl = el<HTMLElement>(root, '[data-editor-pane]');
+    // The editor pane's figure-cap label names the input's format.
+    const inputName = paneEl?.querySelector<HTMLElement>('.figcap__label') ?? null;
     const resultsBox = el<HTMLElement>(root, '#jy-results');
     const summaryEl = el<HTMLElement>(root, '#jy-summary');
     const shareBtn = el<HTMLButtonElement>(root, '#jy-share');
@@ -1000,12 +655,12 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     const snapSaveBtn = el<HTMLButtonElement>(root, '#jy-snap-save');
     const snapSelect = el<HTMLSelectElement>(root, '#jy-snap-select');
     const snapDeleteBtn = el<HTMLButtonElement>(root, '#jy-snap-delete');
-    const chips = Array.from(root.querySelectorAll<HTMLButtonElement>('#jy-chips .jy-chip'));
+    const chipsWrap = el<HTMLElement>(root, '#jy-chips');
+    const chips = Array.from(chipsWrap?.querySelectorAll<HTMLButtonElement>(CHIP_SELECTOR) ?? []);
 
     if (
       !editorHost ||
       !paneEl ||
-      !inputName ||
       !resultsBox ||
       !summaryEl ||
       !shareBtn ||
@@ -1024,53 +679,11 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
       return;
     }
 
-    /* ---- Copy plumbing --------------------------------------------------- */
+    /* ---- Copy plumbing (output + diagnostic rows, Copy link, Copy output) —
+       the kit helper: one delegated listener; outcomes announced in
+       #jy-copy-status. ------------------------------------------------------ */
 
-    function setCopyStatus(message: string, failed: boolean): void {
-      copyStatus!.textContent = message;
-      copyStatus!.classList.toggle('sr-only', !failed);
-      copyStatus!.classList.toggle('jy-copy-status--fail', failed);
-    }
-
-    function setCopied(btn: HTMLButtonElement, copied: boolean): void {
-      btn.classList.toggle('jy-copy--copied', copied);
-      btn.querySelector('.jy-copy-icon')?.classList.toggle('hidden', copied);
-      btn.querySelector('.jy-check-icon')?.classList.toggle('hidden', !copied);
-      const label = btn.querySelector<HTMLElement>('.jy-copy-label');
-      if (label) {
-        label.textContent = copied ? 'Copied' : (btn.dataset.copyLabel ?? 'Copy');
-      } else if (copied) {
-        btn.dataset.prevAriaLabel = btn.getAttribute('aria-label') ?? '';
-        btn.setAttribute('aria-label', 'Copied');
-      } else if (btn.dataset.prevAriaLabel) {
-        btn.setAttribute('aria-label', btn.dataset.prevAriaLabel);
-        delete btn.dataset.prevAriaLabel;
-      }
-    }
-
-    async function handleCopy(btn: HTMLButtonElement): Promise<void> {
-      const text = btn.dataset.copy ?? '';
-      const ok = await copyTextToClipboard(text);
-      if (ok) {
-        setCopied(btn, true);
-        setCopyStatus('Copied to clipboard.', false);
-        window.clearTimeout(Number(btn.dataset.copyTimer));
-        btn.dataset.copyTimer = String(
-          window.setTimeout(() => {
-            setCopied(btn, false);
-            if (copyStatus!.textContent === 'Copied to clipboard.') setCopyStatus('', false);
-          }, RESET_MS),
-        );
-      } else {
-        setCopyStatus('Copy failed — select the value manually.', true);
-      }
-    }
-
-    root.addEventListener('click', (e) => {
-      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.jy-copy');
-      if (!btn || !root.contains(btn)) return;
-      void handleCopy(btn);
-    });
+    wireCopyButtons(root, { status: copyStatus });
 
     /* ---- Lazy engine + examples + CodeMirror ----------------------------- */
 
@@ -1090,7 +703,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     let indentWithTab: typeof import('@codemirror/commands').indentWithTab;
     let yamlLang: typeof import('@codemirror/lang-yaml').yaml;
     let jsonLang: typeof import('@codemirror/lang-json').json;
-    let oneDark: typeof import('@codemirror/theme-one-dark').oneDark;
+    let plate: typeof import('../lib/playground-kit/cm-theme').plate;
 
     try {
       const [engineMod, examplesMod, stateMod, viewMod, commandsMod, yamlMod, jsonMod, themeMod] =
@@ -1102,7 +715,10 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
           import('@codemirror/commands'),
           import('@codemirror/lang-yaml'),
           import('@codemirror/lang-json'),
-          import('@codemirror/theme-one-dark'),
+          // The plate theme + highlight (the ONE code palette), in the same
+          // closure as the languages — a static import would pull
+          // @codemirror/view into the page shell.
+          import('../lib/playground-kit/cm-theme'),
         ]);
       engine = engineMod as unknown as EngineModule;
       examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
@@ -1111,7 +727,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
       ({ history: cmHistory, defaultKeymap, historyKeymap, indentWithTab } = commandsMod);
       ({ yaml: yamlLang } = yamlMod);
       ({ json: jsonLang } = jsonMod);
-      ({ oneDark } = themeMod);
+      ({ plate } = themeMod);
     } catch (err) {
       summaryEl.textContent = '';
       resultsBox.innerHTML = errorHtml(
@@ -1158,7 +774,13 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
           cmHistory(),
           highlightActiveLine(),
           langCompartment.of(inputLanguage()),
-          oneDark,
+          plate,
+          // This pane's size only; colours, gutter and focus ring are the
+          // kit's (cm-theme.ts + global.css .editor-pane__host).
+          EditorViewCtor.theme({
+            '&': { fontSize: '13px' },
+            '.cm-scroller': { minHeight: '240px', maxHeight: '440px', scrollbarWidth: 'thin' },
+          }),
           EditorViewCtor.lineWrapping,
           // CodeMirror puts role="textbox" on the content DOM; without a name
           // that is an unlabelled input field for a screen reader (and an axe
@@ -1210,16 +832,6 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
             clearTimers();
             evalTimer = window.setTimeout(() => evaluate('type'), DEBOUNCE_MS);
           }),
-          EditorViewCtor.theme({
-            '&': { color: '#eae7e0' },
-            '.cm-content': { caretColor: '#eae7e0' },
-            '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#eae7e0' },
-            '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
-              backgroundColor: 'rgba(79, 138, 200, 0.34)',
-            },
-            '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.04)' },
-            '.cm-activeLineGutter': { backgroundColor: 'transparent' },
-          }),
         ],
       });
       return new EditorViewCtor({ state, parent: host });
@@ -1239,7 +851,11 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
       // Roving tabindex: only the checked radio is in the tab order.
       dirY2jBtn!.tabIndex = toJson ? 0 : -1;
       dirJ2yBtn!.tabIndex = toJson ? -1 : 0;
-      inputName!.textContent = toJson ? 'input.yaml' : 'input.json';
+      const name = toJson ? 'input.yaml' : 'input.json';
+      if (inputName) {
+        inputName.textContent = name;
+        inputName.title = name;
+      }
     }
 
     function applyIndentChrome(): void {
@@ -1256,12 +872,12 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
 
     function setSummary(text: string, isError: boolean): void {
       summaryEl!.textContent = text;
-      summaryEl!.classList.toggle('text-error-deep', isError);
-      summaryEl!.classList.toggle('text-mute', !isError);
+      summaryEl!.classList.toggle('text-inverse-error', isError);
+      summaryEl!.classList.toggle('text-inverse-mute', !isError);
     }
 
     function setErrorState(on: boolean): void {
-      paneEl!.classList.toggle('jy-pane--error', on);
+      paneEl!.toggleAttribute('data-invalid', on);
       if (on) {
         view.contentDOM.setAttribute('aria-invalid', 'true');
         view.contentDOM.setAttribute('aria-describedby', 'jy-run-hint jy-error-detail');
@@ -1279,12 +895,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     }
 
     function setActiveChip(idx: number | null): void {
-      chips.forEach((chip) => {
-        chip.setAttribute(
-          'aria-pressed',
-          idx !== null && chip.dataset.exampleIdx === String(idx) ? 'true' : 'false',
-        );
-      });
+      syncChipsByIndex(chipsWrap, idx);
     }
 
     function clearChips(): void {

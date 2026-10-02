@@ -16,20 +16,24 @@
  * (which would contradict the contract's "hidden until valid" wording). Saved
  * snapshots and last-input restore still apply, so nothing is lost on reload.
  *
- * UX contract (CLAUDE.md), ported from CidrCheckerPlayground — the only correct
- * reference for state handling, since SubnetCalculator writes its hash during the
- * boot seed: example chips at `var(--radius-pill)`, ONE ~220ms debounce (this
- * tool's inputs are large) with the exact hint line, a ~600ms calm-error hold
- * before anything goes red, per-row copy + `data-copy-all`, a single visible
- * `role="status"` summary plus an sr-only copy-status span, a results container
- * that is NOT `aria-live`, glossary captions instead of tooltips, and
- * `escapeHtml()` on every injected value — attribute contexts included.
+ * Built on the playground kit (src/components/playground/*): ExampleChips,
+ * EditorPane (the editor slab under its figure cap), RunHint, SnapshotBar,
+ * ResultPanel (the L2 instrument: figure cap, the one live summary, copy
+ * status) and CopyButton. The results container stays here, seeded with
+ * `set:html` + `data-results`; its slab inks anchor on `.gd-results`.
+ *
+ * UX contract (CLAUDE.md): ONE ~220ms debounce (this tool's inputs are large),
+ * a ~600ms calm-error hold before anything goes red, per-row copy +
+ * `data-copy-all`, a results container that is NOT `aria-live`, glossary
+ * captions instead of tooltips, and `escapeHtml()` on every injected value —
+ * attribute contexts included.
  *
  * Runtime contract (lazy-imported inside the boot closure so the engine, the
- * CodeMirror runtime and the JSON language mode all code-split away from the page
- * shell):
+ * CodeMirror runtime, the plate theme and the JSON language mode all
+ * code-split away from the page shell):
  *   ../lib/grafana-dashboard-validator/engine   → lintDashboard, summaryLine
  *   ../lib/grafana-dashboard-validator/examples → examples: DashboardExample[]
+ *   ../lib/playground-kit/cm-theme              → plate
  *
  * Only the example LABELS are read at build time (so the chips are
  * server-rendered and exist before hydration); the dashboards themselves come
@@ -41,6 +45,12 @@ import { GRAFANA_RULES_VERSION } from '../lib/grafana-dashboard-validator/types'
 import { RULE_IDS } from '../lib/grafana-dashboard-validator/types';
 import { lintDashboard, summaryLine } from '../lib/grafana-dashboard-validator/engine';
 import { resultHtml, EMPTY_HTML } from '../lib/grafana-dashboard-validator/render';
+import ExampleChips from './playground/ExampleChips.astro';
+import EditorPane from './playground/EditorPane.astro';
+import RunHint from './playground/RunHint.astro';
+import SnapshotBar from './playground/SnapshotBar.astro';
+import ResultPanel from './playground/ResultPanel.astro';
+import CopyButton from './playground/CopyButton.astro';
 
 /**
  * Server-rendered seed. The client re-lints the same example on boot, so this
@@ -63,6 +73,7 @@ const seedOk = seedResult && seedResult.ok ? seedResult : null;
 const seedHtml = seedOk ? resultHtml(seedOk, { ruleCount: RULE_IDS.length }) : EMPTY_HTML;
 const seedSummary = seedOk ? summaryLine(seedOk) : '';
 const seedHasErrors = Boolean(seedOk && seedOk.summary.errors > 0);
+const chipItems = examples.map((ex) => ({ label: ex.label }));
 ---
 
 <section class="gd-pg" aria-label="Grafana Dashboard Validator playground">
@@ -70,20 +81,7 @@ const seedHasErrors = Boolean(seedOk && seedOk.summary.errors > 0);
     {/* ── Example chips ────────────────────────────────────────────────── */}
     <div class="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:px-5">
       <span class="eyebrow shrink-0">Examples</span>
-      <div id="gd-chips" class="gd-chips" role="group" aria-label="Examples">
-        {
-          examples.map((ex, i) => (
-            <button
-              type="button"
-              class:list={['gd-chip', { 'is-active': i === 0 }]}
-              data-example-idx={String(i)}
-              aria-pressed={i === 0 ? 'true' : 'false'}
-            >
-              {ex.label}
-            </button>
-          ))
-        }
-      </div>
+      <ExampleChips prefix="gd" items={chipItems} active={seedExample ? 0 : null} ariaLabel="Examples" />
       <p class="gd-gloss caption text-mute">
         The <strong class="font-medium text-body">uid</strong> is the stable identifier you choose and
         keep in git; the <strong class="font-medium text-body">id</strong> is a row number belonging to
@@ -97,164 +95,44 @@ const seedHasErrors = Boolean(seedOk && seedOk.summary.errors > 0);
       </p>
     </div>
 
-    {/* ── Input editor (dark instrument slab) ──────────────────────────── */}
-    <div class="gd-pane bg-inverse">
-      <div class="gd-pane__bar">
-        <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
-          <span class="gd-pane__dot"></span>
-          <span class="gd-pane__dot"></span>
-          <span class="gd-pane__dot"></span>
-        </span>
-        <span class="gd-pane__name code-mono">dashboard.json</span>
-        <span class="gd-pane__tag code-mono">input</span>
-      </div>
-      <div id="gd-input" class="gd-editor">
-        <pre class="gd-cm-fallback code-mono" data-cm-fallback>{seedExample?.json}</pre>
-      </div>
-    </div>
+    {/* ── Input editor: the plate under its figure cap ─────────────────── */}
+    <EditorPane prefix="gd" label="dashboard.json" id="gd-input">
+      <pre class="gd-fallback editor-pane__fallback code-mono" data-cm-fallback>{seedExample?.json}</pre>
+    </EditorPane>
 
-    {/* ── Hints + snapshots ────────────────────────────────────────────── */}
+    {/* ── Hints + snapshots (on paper) ─────────────────────────────────── */}
     <div class="border-b border-hairline px-4 pt-3 pb-4 sm:px-5">
-      <p id="gd-run-hint" class="gd-hint caption text-mute">
-        Results update as you type — press Enter to run now.
-      </p>
+      <RunHint variant="cm" id="gd-run-hint" />
       <p class="gd-hint caption text-mute">
-        Press <kbd class="gd-kbd">Esc</kbd> to release keyboard focus from the editor;
-        <kbd class="gd-kbd">⌘</kbd>/<kbd class="gd-kbd">Ctrl</kbd> + <kbd class="gd-kbd">Enter</kbd>
-        lints and leaves the editor. Dashboards are too large for a shareable link, so use
-        <span class="code-mono">Save snapshot</span> instead — it stays in this browser. Nothing you
-        paste is uploaded.
+        Dashboards are too large for a shareable link, so use
+        <span class="code-mono">Save snapshot</span> instead.
       </p>
-      <div class="gd-snap-row mt-3 flex flex-wrap items-center gap-2">
-        <button id="gd-snap-save" type="button" class="gd-snap-btn">Save snapshot</button>
-        <select
-          id="gd-snap-select"
-          class="gd-snap-select"
-          aria-label="Load a saved snapshot"
-          disabled
-        >
-          <option value="">No snapshots yet</option>
-        </select>
-        <button
-          id="gd-snap-delete"
-          type="button"
-          class="gd-snap-delete"
-          aria-label="Delete this snapshot"
-          hidden>&times;</button
-        >
-      </div>
+      <SnapshotBar prefix="gd" />
     </div>
 
-    {/* ── Findings ─────────────────────────────────────────────────────── */}
-    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <span class="flex flex-wrap items-center gap-2">
-          <span class="eyebrow">Findings</span>
-          <button
-            id="gd-copy-all"
-            type="button"
-            class="gd-copy gd-copy--labeled"
-            data-copy-all
-            data-copy=""
-            data-copy-label="Copy report"
-            hidden
-          >
-            <svg
-              class="gd-copy-icon"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <rect x="5" y="5" width="9" height="9" rx="1.5"></rect>
-              <path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"></path>
-            </svg>
-            <svg
-              class="gd-check-icon hidden"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
-            </svg>
-            <span class="gd-copy-label">Copy report</span>
-          </button>
-        </span>
-        <span
-          id="gd-summary"
-          class:list={['gd-summary code-mono', seedHasErrors ? 'text-error-deep' : 'text-mute']}
-          role="status"
-          aria-live="polite"
-        >{seedSummary}</span>
-      </div>
+    {/* ── Findings — the L2 instrument; the live summary reads out in the
+        figure cap's actions slot. No Copy link: see the header comment. ── */}
+    <ResultPanel
+      slug="grafana-dashboard-validator"
+      prefix="gd"
+      summary={seedSummary}
+      summaryClass={seedHasErrors ? 'text-inverse-error' : undefined}
+      label="Findings"
+      split
+    >
+      <Fragment slot="actions">
+        <CopyButton kind="all" id="gd-copy-all" label="Copy report" />
+      </Fragment>
       {/* Seeded at build time (see `seedHtml` above) so every finding is in the
           static HTML; the script repaints this same node on each lint. */}
-      <div id="gd-results" class="gd-results" set:html={seedHtml}></div>
-      <span id="gd-copy-status" class="sr-only" role="status" aria-live="polite"></span>
-    </div>
+      <div id="gd-results" class="gd-results" set:html={seedHtml} data-results></div>
+    </ResultPanel>
   </div>
 </section>
 
 <style>
   @reference "../styles/global.css";
 
-  /* ── Example chips ───────────────────────────────────────────────────── */
-  /* Build-time text stand-in for the CodeMirror document: what a no-JS visitor
-     and every AI crawler read. `init` removes it once CM mounts. */
-  .gd-cm-fallback {
-    margin: 0;
-    padding: 14px 16px 16px;
-    max-height: 360px;
-    overflow: auto;
-    color: #e6e6e6;
-    font-size: 13px;
-    line-height: 20px;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-
-  .gd-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .gd-chip {
-    display: inline-flex;
-    align-items: center;
-    padding: 4px 12px;
-    border: none;
-    border-radius: var(--radius-pill);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    font-size: 12px;
-    line-height: 18px;
-    color: var(--color-brand-strong);
-    cursor: pointer;
-    touch-action: manipulation;
-    transition:
-      background 0.12s ease,
-      box-shadow 0.12s ease;
-  }
-  .gd-chip:hover,
-  .gd-chip[aria-pressed='true'] {
-    background: var(--color-brand-soft);
-    box-shadow: inset 0 0 0 1px var(--color-brand);
-  }
-  .gd-chip:focus-visible {
-    outline: 2px solid var(--color-link);
-    outline-offset: 1px;
-  }
   .gd-gloss {
     margin: 0;
     font-size: 12px;
@@ -267,317 +145,171 @@ const seedHasErrors = Boolean(seedOk && seedOk.summary.errors > 0);
   .gd-gloss .code-mono {
     font-size: 12px;
   }
-
-  /* ── Input pane (dark instrument slab) ───────────────────────────────── */
-  .gd-pane {
-    display: flex;
-    min-width: 0;
-    flex-direction: column;
-  }
-  .gd-pane__bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 9px 16px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  }
-  .gd-pane__dot {
-    width: 9px;
-    height: 9px;
-    border-radius: 9999px;
-    background: rgba(255, 255, 255, 0.18);
-  }
-  .gd-pane__name {
-    /* 0.72 alpha over --color-inverse clears 4.5:1 in both themes. */
-    color: rgba(255, 255, 255, 0.72);
-    font-size: 12px;
-  }
-  .gd-pane__tag {
-    margin-left: auto;
-    color: rgba(255, 255, 255, 0.6);
-    font-size: 11px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-
-  /* CodeMirror host. Background stays transparent so the slab shows through:
-     One Dark's own #282c34 is LIGHTER than --color-inverse, and its dimmest
-     token only clears 4.5:1 against the darker slab. */
-  .gd-editor {
-    overflow: hidden;
-    padding-inline: 4px;
-  }
-  .gd-editor :global(.cm-editor) {
-    background: transparent;
-    font-family: var(--font-mono);
-    font-size: 13px;
-    line-height: 20px;
-  }
-  .gd-editor :global(.cm-editor.cm-focused) {
-    outline: 2px solid var(--color-link);
-    outline-offset: -2px;
-  }
-  .gd-editor :global(.cm-scroller) {
-    overflow: auto;
-    min-height: 280px;
-    max-height: 480px;
-    font-family: var(--font-mono);
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
-  }
-  .gd-editor :global(.cm-scroller)::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  .gd-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: var(--radius-pill);
-    border: 3px solid transparent;
-    background-clip: content-box;
-  }
-  .gd-editor :global(.cm-gutters) {
-    background: transparent;
-    border-right: 1px solid rgba(255, 255, 255, 0.1);
-  }
-  /* One Dark's gutter foreground is below 4.5:1 on this slab — lift it. */
-  .gd-editor :global(.cm-lineNumbers .cm-gutterElement) {
-    color: #a9a39a;
-  }
-  .gd-editor :global(.cm-content) {
-    padding: 14px 0 16px;
-  }
-  .gd-editor :global(.cm-line) {
-    padding-inline: 4px;
-  }
-  /* Invalid input: a hairline red rule down the editor, never a flash. */
-  .gd-pane.gd-pane--error .gd-editor :global(.cm-editor) {
-    box-shadow: inset 2px 0 0 0 var(--color-error);
-  }
-
   .gd-hint {
-    margin-top: 8px;
+    margin-top: 4px;
     font-size: 12px;
     line-height: 18px;
     text-wrap: pretty;
   }
-  .gd-hint + .gd-hint {
-    margin-top: 4px;
-  }
   .gd-hint .code-mono {
     font-size: 12px;
   }
-  .gd-kbd {
-    border: 1px solid currentColor;
-    border-radius: var(--radius-xs);
-    padding: 0 3px;
-    font-size: 0.85em;
-  }
 
-  /* ── Snapshot row ────────────────────────────────────────────────────── */
-  .gd-snap-btn {
-    flex: 0 0 auto;
-    height: 30px;
-    padding: 0 12px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-    cursor: pointer;
-    transition:
-      background 0.12s ease,
-      box-shadow 0.12s ease;
-  }
-  .gd-snap-btn:hover {
-    background: var(--color-canvas-soft);
-    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
-  }
-  .gd-snap-select {
-    height: 30px;
-    max-width: 220px;
-    padding: 0 8px;
-    border-radius: var(--radius-sm);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-  }
-  .gd-snap-select:disabled {
-    color: var(--color-mute);
-    cursor: not-allowed;
-  }
-  .gd-snap-delete {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: transparent;
-    color: var(--color-mute);
-    cursor: pointer;
-    transition:
-      background 0.12s ease,
-      color 0.12s ease;
-  }
-  .gd-snap-delete:hover {
-    background: var(--color-error-soft);
-    color: var(--color-error-deep);
-  }
-
-  /* ── Findings panel ──────────────────────────────────────────────────── */
-  .gd-summary {
-    min-width: 0;
-    text-align: right;
+  /* The build-time stand-in for the editor (global .editor-pane__fallback
+     matches the CodeMirror metrics), held to the editor's scroller box and
+     wrapped like its lineWrapping so the swap does not jump. */
+  .gd-fallback {
+    min-height: 280px;
+    max-height: 480px;
+    overflow: auto;
+    white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
+  /* Invalid input: a hairline slab-red rule down the editor, never a flash.
+     The pane root is EditorPane's (no scope hash), hence :global. */
+  .gd-pg :global([data-editor-pane][data-invalid] .cm-editor) {
+    box-shadow: inset 2px 0 0 0 var(--color-inverse-error);
+  }
+
   .gd-results {
     min-height: 120px;
   }
-  .gd-copy-status--fail {
-    display: block;
-    margin-top: 10px;
-    font-size: 12px;
-    line-height: 18px;
-    color: var(--color-error-deep);
+  /* The seeded summary carries the error tone server-side too (the span is
+     ResultPanel's, so its base mute class is also present). */
+  .gd-pg :global(.result-panel__summary.text-inverse-error) {
+    color: var(--color-inverse-error);
   }
 
-  /* ── Runtime-injected markup (Astro scoped styles never reach it) ────── */
-  :global(.gd-group) {
+  /* ── Runtime-injected markup (render.ts) — on the slab, so slab inks only.
+     Anchored on this component's own `.gd-results` container (the panel
+     wrapper is ResultPanel's and carries no scope attribute). ─────────── */
+  .gd-results :global(.gd-group) {
     margin-top: 12px;
     border-radius: var(--radius-md);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
     overflow: hidden;
-    animation: gd-rise 0.18s ease both;
+    animation: gd-rise var(--dur-base) var(--ease-brand) both;
   }
-  :global(.gd-group:first-child) {
+  .gd-results :global(.gd-group:first-child) {
     margin-top: 0;
   }
-  :global(.gd-group__head) {
+  /* Group-heading role (a sans heading over its rows, not one more label). */
+  .gd-results :global(.gd-group__head) {
     display: flex;
     align-items: center;
     gap: 8px;
     margin: 0;
     padding: 9px 14px;
-    border-bottom: 1px solid var(--color-hairline);
-    font-family: var(--font-mono);
-    font-size: 11px;
+    border-bottom: 1px solid var(--color-inverse-hairline);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 600;
     line-height: 16px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--color-mute);
+    color: var(--color-inverse-fg);
   }
-  :global(.gd-group__count) {
+  .gd-results :global(.gd-group__count) {
     margin-left: auto;
-    text-transform: none;
-    letter-spacing: 0;
+    font-family: var(--font-mono);
+    font-weight: 400;
+    color: var(--color-inverse-mute);
     white-space: nowrap;
   }
-  :global(.gd-row) {
+  .gd-results :global(.gd-row) {
     display: flex;
     align-items: flex-start;
     gap: 10px;
     padding: 10px 10px 12px 14px;
   }
-  :global(.gd-row + .gd-row) {
-    border-top: 1px solid var(--color-hairline);
+  .gd-results :global(.gd-row + .gd-row) {
+    border-top: 1px solid #ffffff12;
   }
-  :global(.gd-row__body) {
+  .gd-results :global(.gd-row__body) {
     min-width: 0;
     flex: 1 1 auto;
   }
-  :global(.gd-row__head) {
+  .gd-results :global(.gd-row__head) {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 6px;
   }
-  :global(.gd-pill) {
+  /* Severity: the row-key role (label-field), tinted in slab inks. */
+  .gd-results :global(.gd-pill) {
+    @apply label-field;
     flex: 0 0 auto;
     padding: 1px 7px;
-    border-radius: var(--radius-pill);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 16px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    border-radius: var(--radius-xs);
   }
-  :global(.gd-pill--error) {
-    background: var(--color-error-soft);
-    color: var(--color-error-deep);
+  .gd-results :global(.gd-pill--error) {
+    background: #ff9d951f;
+    color: var(--color-inverse-error);
   }
-  :global(.gd-pill--warning) {
-    background: var(--color-warning-soft);
-    color: var(--color-warning-deep);
+  .gd-results :global(.gd-pill--warning) {
+    background: #e0a4581f;
+    color: var(--color-inverse-accent);
   }
-  :global(.gd-pill--info) {
-    background: var(--color-canvas-soft-2);
-    color: var(--color-body);
+  .gd-results :global(.gd-pill--info) {
+    background: #ffffff14;
+    color: var(--color-inverse-mute);
   }
-  :global(.gd-rule) {
+  .gd-results :global(.gd-rule) {
     flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
     padding: 1px 7px;
-    border-radius: var(--radius-pill);
-    background: var(--color-canvas-soft);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-brand-strong);
+    border-radius: var(--radius-xs);
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-brand);
     font-family: var(--font-mono);
     font-size: 11px;
     line-height: 16px;
-    letter-spacing: 0.03em;
     text-decoration: none;
   }
-  :global(.gd-rule:hover) {
-    background: var(--color-brand-soft);
+  .gd-results :global(.gd-rule:hover) {
+    background: #ffffff14;
     text-decoration: underline;
   }
-  :global(.gd-rule:focus-visible) {
-    outline: 2px solid var(--color-link);
+  .gd-results :global(.gd-rule:focus-visible),
+  .gd-results :global(.gd-copy:focus-visible) {
+    outline: 2px solid var(--color-inverse-brand);
     outline-offset: 1px;
   }
-  :global(.gd-path) {
+  .gd-results :global(.gd-path) {
     flex: 1 1 auto;
     min-width: 0;
     font-family: var(--font-mono);
     font-size: 11px;
     line-height: 16px;
-    color: var(--color-mute);
+    color: var(--color-inverse-mute);
     overflow-wrap: anywhere;
   }
-  :global(.gd-row__title) {
+  .gd-results :global(.gd-row__title) {
     flex: 1 1 100%;
     margin: 4px 0 0;
     font-size: 14px;
-    line-height: 19px;
-    color: var(--color-ink);
+    line-height: 20px;
+    color: var(--color-inverse-fg);
     overflow-wrap: anywhere;
     text-wrap: pretty;
   }
-  :global(.gd-fix) {
+  .gd-results :global(.gd-fix) {
     display: flex;
     gap: 7px;
     margin-top: 7px;
     padding: 7px 9px;
     border-radius: var(--radius-sm);
-    background: var(--color-canvas-soft);
-    color: var(--color-body);
+    background: #ffffff0a;
+    color: var(--color-inverse-fg);
   }
-  :global(.gd-fix__label) {
+  .gd-results :global(.gd-fix__label) {
+    @apply label-field;
     flex: 0 0 auto;
-    font-family: var(--font-mono);
-    font-size: 11px;
     line-height: 17px;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: var(--color-accent-ink);
+    color: var(--color-inverse-accent);
   }
-  :global(.gd-fix__text) {
+  .gd-results :global(.gd-fix__text) {
     margin: 0;
     min-width: 0;
     font-size: 13px;
@@ -585,76 +317,74 @@ const seedHasErrors = Boolean(seedOk && seedOk.summary.errors > 0);
     overflow-wrap: anywhere;
     text-wrap: pretty;
   }
-  :global(.gd-note) {
+  .gd-results :global(.gd-note) {
     margin: 0;
     padding: 9px 14px;
     font-size: 12px;
     line-height: 17px;
-    color: var(--color-mute);
+    color: var(--color-inverse-mute);
     text-wrap: pretty;
     overflow-wrap: anywhere;
   }
-  :global(.gd-note + .gd-note) {
-    border-top: 1px solid var(--color-hairline);
+  .gd-results :global(.gd-note + .gd-note) {
+    border-top: 1px solid #ffffff12;
   }
-  :global(.gd-clean) {
+  .gd-results :global(.gd-clean) {
     display: flex;
     align-items: flex-start;
     gap: 10px;
     padding: 14px;
     border-radius: var(--radius-md);
-    background: var(--color-brand-soft);
-    box-shadow: var(--shadow-hairline);
+    background: #8fc97a14;
+    box-shadow: inset 0 0 0 1px #8fc97a4d;
   }
-  :global(.gd-clean__icon) {
+  .gd-results :global(.gd-clean__icon) {
     flex: 0 0 auto;
-    width: 22px;
-    height: 22px;
-    color: var(--color-brand-strong);
+    color: var(--color-inverse-brand);
   }
-  :global(.gd-clean__title) {
+  .gd-results :global(.gd-clean__title) {
     margin: 0;
     font-size: 14px;
     font-weight: 500;
     line-height: 20px;
-    color: var(--color-ink);
+    color: var(--color-inverse-fg);
   }
-  :global(.gd-clean__sub) {
+  .gd-results :global(.gd-clean__sub) {
     margin: 2px 0 0;
     font-size: 13px;
     line-height: 18px;
-    color: var(--color-body);
+    color: var(--color-inverse-mute);
     text-wrap: pretty;
   }
-  :global(.gd-error) {
+  .gd-results :global(.gd-error) {
     display: flex;
     gap: 10px;
     padding: 12px 14px;
     border-radius: var(--radius-md);
-    background: var(--color-error-soft);
-    box-shadow: inset 0 0 0 1px var(--color-error);
-    color: var(--color-error-deep);
+    background: #ff9d9514;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-error);
+    color: var(--color-inverse-error);
   }
-  :global(.gd-error__icon) {
+  .gd-results :global(.gd-error__icon) {
     flex: 0 0 auto;
     width: 18px;
     height: 18px;
     margin-top: 1px;
   }
-  :global(.gd-error__title) {
+  .gd-results :global(.gd-error__title) {
     margin: 0;
     font-size: 14px;
     font-weight: 500;
     line-height: 20px;
   }
-  :global(.gd-error__detail) {
+  .gd-results :global(.gd-error__detail) {
     margin-top: 2px;
     font-size: 13px;
     line-height: 19px;
     text-wrap: pretty;
     overflow-wrap: anywhere;
   }
-  :global(.gd-empty) {
+  .gd-results :global(.gd-empty) {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -663,74 +393,46 @@ const seedHasErrors = Boolean(seedOk && seedOk.summary.errors > 0);
     text-align: center;
     text-wrap: pretty;
     border-radius: var(--radius-md);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-mute);
   }
 
-  /* ── Copy buttons: icon-only per row, labeled in the header ──────────── */
-  :global(.gd-copy) {
+  /* Per-row copy (render.ts emits the button; playground-kit/copy.ts drives
+     it, and marks success with [data-copied]). */
+  .gd-results :global(.gd-copy) {
     flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
+    width: var(--control-h-sm);
+    height: var(--control-h-sm);
     padding: 0;
     border: none;
     border-radius: var(--radius-sm);
     background: transparent;
-    color: var(--color-mute);
+    color: var(--color-inverse-mute);
     cursor: pointer;
     touch-action: manipulation;
     transition:
-      color 0.12s ease,
-      background 0.12s ease;
+      color var(--dur-fast) var(--ease-brand),
+      background-color var(--dur-fast) var(--ease-brand);
   }
-  :global(.gd-copy:hover) {
-    color: var(--color-brand-strong);
-    background: var(--color-hairline);
+  .gd-results :global(.gd-copy:hover) {
+    color: var(--color-inverse-brand);
+    background: #ffffff14;
   }
-  :global(.gd-copy:focus-visible) {
-    outline: 2px solid var(--color-link);
-    outline-offset: 1px;
+  .gd-results :global(.gd-copy[data-copied]) {
+    color: var(--color-inverse-brand);
+    background: #8fc97a1f;
   }
-  :global(.gd-copy--labeled) {
-    width: auto;
-    height: 26px;
-    gap: 6px;
-    padding: 0 10px;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 16px;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-  }
-  :global(.gd-copy--copied) {
-    color: var(--color-brand-strong);
-    background: var(--color-brand-soft);
-  }
-
-  /* Coarse-pointer tap targets, in the two tiers the contract defines: chips
-     and icon-only per-row copy buttons at 44px, labeled header copy controls at
-     36px (wide text targets, not the primary in-result action). The row's rule
-     chip sits at the labeled tier too. */
   @media (pointer: coarse) {
-    .gd-chip {
-      min-height: 44px;
+    .gd-results :global(.gd-copy) {
+      width: var(--control-h-lg);
+      height: var(--control-h-lg);
     }
-    :global(.gd-copy) {
-      width: 44px;
-      height: 44px;
-    }
-    :global(.gd-copy--labeled) {
-      width: auto;
-      height: auto;
-      min-height: 36px;
-    }
-    :global(.gd-rule) {
-      min-height: 36px;
+    .gd-results :global(.gd-rule) {
+      min-height: var(--control-h-md);
       padding-inline: 10px;
     }
   }
@@ -746,16 +448,17 @@ const seedHasErrors = Boolean(seedOk && seedOk.summary.errors > 0);
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    :global(.gd-group),
-    :global(.gd-clean) {
+    .gd-results :global(.gd-group),
+    .gd-results :global(.gd-clean) {
       animation: none;
     }
   }
 </style>
 
 <script>
-  import { copyTextToClipboard } from '../lib/clipboard';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  import { wireCopyButtons } from '../lib/playground-kit/copy';
+  import { syncChipsByIndex, CHIP_SELECTOR } from '../lib/playground-kit/chips';
   import type { EditorView } from '@codemirror/view';
   import {
     EMPTY_HTML,
@@ -785,11 +488,6 @@ const seedHasErrors = Boolean(seedOk && seedOk.summary.errors > 0);
   const DEBOUNCE_MS = 220;
   /* Nothing goes red until the typing has been idle this long. */
   const ERROR_HOLD_MS = 600;
-  const RESET_MS = 1800;
-  /* DOM cap. The engine already caps itself at 50 diagnostics per rule and 400 in
-     total; this caps what is RENDERED per severity group, because a 400-row panel
-     is what freezes the tab. Each group states what it is hiding. */
-  /* Parser notes are bounded too — a hostile file can produce one per panel. */
 
   function boot(): void {
     document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
@@ -817,20 +515,17 @@ const seedHasErrors = Boolean(seedOk && seedOk.summary.errors > 0);
       .filter((e) => e.json.length > 0);
   }
 
-  /* ---- Icons (decorative) ------------------------------------------------- */
-
   /* ---- Result rendering --------------------------------------------------
      The pure HTML and text builders live in
      `../lib/grafana-dashboard-validator/render`, imported above and ALSO used
      by this component's frontmatter, so the server-rendered seed and every
      client repaint come from one implementation. Only DOM writes stay here. */
 
-
   /* ---- Instance init ----------------------------------------------------- */
 
   async function init(root: HTMLElement): Promise<void> {
     const editorHost = el<HTMLElement>(root, '#gd-input');
-    const paneEl = el<HTMLElement>(root, '.gd-pane');
+    const paneEl = el<HTMLElement>(root, '[data-editor-pane]');
     const resultsBox = el<HTMLElement>(root, '#gd-results');
     const summaryEl = el<HTMLElement>(root, '#gd-summary');
     const copyAllBtn = el<HTMLButtonElement>(root, '#gd-copy-all');
@@ -838,7 +533,8 @@ const seedHasErrors = Boolean(seedOk && seedOk.summary.errors > 0);
     const snapSaveBtn = el<HTMLButtonElement>(root, '#gd-snap-save');
     const snapSelect = el<HTMLSelectElement>(root, '#gd-snap-select');
     const snapDeleteBtn = el<HTMLButtonElement>(root, '#gd-snap-delete');
-    const chips = Array.from(root.querySelectorAll<HTMLButtonElement>('#gd-chips .gd-chip'));
+    const chipsWrap = el<HTMLElement>(root, '#gd-chips');
+    const chips = Array.from(chipsWrap?.querySelectorAll<HTMLButtonElement>(CHIP_SELECTOR) ?? []);
 
     if (
       !editorHost ||
@@ -854,52 +550,10 @@ const seedHasErrors = Boolean(seedOk && seedOk.summary.errors > 0);
       return;
     }
 
-    /* ---- Copy plumbing --------------------------------------------------- */
+    /* ---- Copy plumbing (row buttons, Copy report) — the kit helper: one
+       delegated listener; outcomes announced in #gd-copy-status. ---------- */
 
-    function setCopyStatus(message: string, failed: boolean): void {
-      copyStatus!.textContent = message;
-      copyStatus!.classList.toggle('sr-only', !failed);
-      copyStatus!.classList.toggle('gd-copy-status--fail', failed);
-    }
-
-    function setCopied(btn: HTMLButtonElement, copied: boolean): void {
-      btn.classList.toggle('gd-copy--copied', copied);
-      btn.querySelector('.gd-copy-icon')?.classList.toggle('hidden', copied);
-      btn.querySelector('.gd-check-icon')?.classList.toggle('hidden', !copied);
-      const label = btn.querySelector<HTMLElement>('.gd-copy-label');
-      if (label) {
-        label.textContent = copied ? 'Copied' : (btn.dataset.copyLabel ?? 'Copy');
-      } else if (copied) {
-        btn.dataset.prevAriaLabel = btn.getAttribute('aria-label') ?? '';
-        btn.setAttribute('aria-label', 'Copied');
-      } else if (btn.dataset.prevAriaLabel) {
-        btn.setAttribute('aria-label', btn.dataset.prevAriaLabel);
-        delete btn.dataset.prevAriaLabel;
-      }
-    }
-
-    async function handleCopy(btn: HTMLButtonElement): Promise<void> {
-      const ok = await copyTextToClipboard(btn.dataset.copy ?? '');
-      if (ok) {
-        setCopied(btn, true);
-        setCopyStatus('Copied to clipboard.', false);
-        window.clearTimeout(Number(btn.dataset.copyTimer));
-        btn.dataset.copyTimer = String(
-          window.setTimeout(() => {
-            setCopied(btn, false);
-            if (copyStatus!.textContent === 'Copied to clipboard.') setCopyStatus('', false);
-          }, RESET_MS),
-        );
-      } else {
-        setCopyStatus('Copy failed — select the value manually.', true);
-      }
-    }
-
-    root.addEventListener('click', (e) => {
-      const target = e.target as HTMLElement;
-      const copyBtn = target.closest<HTMLButtonElement>('.gd-copy');
-      if (copyBtn && root.contains(copyBtn)) void handleCopy(copyBtn);
-    });
+    wireCopyButtons(root, { status: copyStatus });
 
     /* ---- Lazy engine + examples + CodeMirror ----------------------------- */
 
@@ -918,7 +572,7 @@ const seedHasErrors = Boolean(seedOk && seedOk.summary.errors > 0);
     let historyKeymap: typeof import('@codemirror/commands').historyKeymap;
     let indentWithTab: typeof import('@codemirror/commands').indentWithTab;
     let json: typeof import('@codemirror/lang-json').json;
-    let oneDark: typeof import('@codemirror/theme-one-dark').oneDark;
+    let plate: typeof import('../lib/playground-kit/cm-theme').plate;
 
     try {
       const [engineMod, examplesMod, stateMod, viewMod, commandsMod, jsonMod, themeMod] =
@@ -929,7 +583,10 @@ const seedHasErrors = Boolean(seedOk && seedOk.summary.errors > 0);
           import('@codemirror/view'),
           import('@codemirror/commands'),
           import('@codemirror/lang-json'),
-          import('@codemirror/theme-one-dark'),
+          // The plate theme + highlight (the ONE code palette), in the same
+          // closure as the language — a static import would pull
+          // @codemirror/view into the page shell.
+          import('../lib/playground-kit/cm-theme'),
         ]);
       engine = engineMod as unknown as EngineModule;
       const ids = (engineMod as { RULE_IDS?: readonly string[] }).RULE_IDS;
@@ -939,7 +596,7 @@ const seedHasErrors = Boolean(seedOk && seedOk.summary.errors > 0);
       ({ EditorView: EditorViewCtor, keymap, lineNumbers, highlightActiveLine } = viewMod);
       ({ history: cmHistory, defaultKeymap, historyKeymap, indentWithTab } = commandsMod);
       ({ json } = jsonMod);
-      ({ oneDark } = themeMod);
+      ({ plate } = themeMod);
     } catch (err) {
       summaryEl.textContent = '';
       resultsBox.innerHTML = errorCardHtml(
@@ -975,11 +632,17 @@ const seedHasErrors = Boolean(seedOk && seedOk.summary.errors > 0);
           cmHistory(),
           highlightActiveLine(),
           json(),
-          oneDark,
+          plate,
+          // This pane's size only; colours, gutter and focus ring are the
+          // kit's (cm-theme.ts + global.css .editor-pane__host).
+          EditorViewCtor.theme({
+            '&': { fontSize: '13px' },
+            '.cm-scroller': { minHeight: '280px', maxHeight: '480px', scrollbarWidth: 'thin' },
+          }),
           EditorViewCtor.lineWrapping,
           // CodeMirror puts role="textbox" on the content DOM; without a name
           // that is an unlabelled input field for a screen reader (and an axe
-          // violation). aria-describedby points at the live-eval hint line.
+          // violation). aria-describedby points at the run hint line.
           EditorViewCtor.contentAttributes.of({
             'aria-label': 'Grafana dashboard JSON input',
             'aria-describedby': 'gd-run-hint',
@@ -1023,19 +686,9 @@ const seedHasErrors = Boolean(seedOk && seedOk.summary.errors > 0);
           ]),
           EditorViewCtor.updateListener.of((u) => {
             if (!u.docChanged || !liveReady) return;
-            clearChips();
+            setActiveChip(null);
             clearTimers();
             evalTimer = window.setTimeout(() => evaluate('type'), DEBOUNCE_MS);
-          }),
-          EditorViewCtor.theme({
-            '&': { color: '#eae7e0' },
-            '.cm-content': { caretColor: '#eae7e0' },
-            '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#eae7e0' },
-            '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
-              backgroundColor: 'rgba(79, 138, 200, 0.34)',
-            },
-            '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.04)' },
-            '.cm-activeLineGutter': { backgroundColor: 'transparent' },
           }),
         ],
       });
@@ -1051,12 +704,12 @@ const seedHasErrors = Boolean(seedOk && seedOk.summary.errors > 0);
 
     function setSummary(text: string, isError: boolean): void {
       summaryEl!.textContent = text;
-      summaryEl!.classList.toggle('text-error-deep', isError);
-      summaryEl!.classList.toggle('text-mute', !isError);
+      summaryEl!.classList.toggle('text-inverse-error', isError);
+      summaryEl!.classList.toggle('text-inverse-mute', !isError);
     }
 
     function setErrorState(on: boolean): void {
-      paneEl!.classList.toggle('gd-pane--error', on);
+      paneEl!.toggleAttribute('data-invalid', on);
       if (on) {
         view.contentDOM.setAttribute('aria-invalid', 'true');
         view.contentDOM.setAttribute('aria-describedby', 'gd-run-hint gd-error-detail');
@@ -1072,16 +725,7 @@ const seedHasErrors = Boolean(seedOk && seedOk.summary.errors > 0);
     }
 
     function setActiveChip(idx: number | null): void {
-      chips.forEach((chip) => {
-        chip.setAttribute(
-          'aria-pressed',
-          idx !== null && chip.dataset.exampleIdx === String(idx) ? 'true' : 'false',
-        );
-      });
-    }
-
-    function clearChips(): void {
-      setActiveChip(null);
+      syncChipsByIndex(chipsWrap, idx);
     }
 
     /* ---- Render ---------------------------------------------------------- */
@@ -1169,10 +813,6 @@ const seedHasErrors = Boolean(seedOk && seedOk.summary.errors > 0);
       errTimer = window.setTimeout(() => showError(message, 'type'), ERROR_HOLD_MS);
     }
 
-    // The build-time text stand-in has done its job (no-JS visitors and
-    // crawlers); CodeMirror appended its editor beside it, so drop it.
-    root.querySelectorAll('[data-cm-fallback]').forEach((node) => node.remove());
-
     /* ---- Seed (before any listener fires) -------------------------------- */
 
     const firstExample = examples[0];
@@ -1188,6 +828,10 @@ const seedHasErrors = Boolean(seedOk && seedOk.summary.errors > 0);
     }
 
     const view = makeEditor(editorHost, seedText);
+    // The build-time text stand-in has done its job (no-JS visitors and
+    // crawlers); CodeMirror appended its editor beside it, so drop it — only
+    // now, once the restore tier above has chosen the document.
+    root.querySelectorAll('[data-cm-fallback]').forEach((node) => node.remove());
     setActiveChip(seedChip);
 
     /* ---- Events ---------------------------------------------------------- */
@@ -1224,7 +868,7 @@ const seedHasErrors = Boolean(seedOk && seedOk.summary.errors > 0);
         liveReady = false;
         setEditorDoc(value);
         liveReady = true;
-        clearChips();
+        setActiveChip(null);
         clearTimers();
         evaluate('commit');
       },
