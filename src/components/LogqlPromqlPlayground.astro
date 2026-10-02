@@ -439,6 +439,7 @@ const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
   const ROOT_SEL = '.lp-pg';
   const SLUG = 'logql-promql-helper';
   const DEBOUNCE_MS = 180;
+  const ERROR_HOLD_MS = 600;
   const DIRECTIONS: { value: Direction; label: string; from: string; to: string }[] = [
     { value: 'logql-to-promql', label: 'LogQL → PromQL', from: 'LogQL', to: 'PromQL' },
     { value: 'promql-to-logql', label: 'PromQL → LogQL', from: 'PromQL', to: 'LogQL' },
@@ -808,8 +809,41 @@ const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
     let running = false;
     let queued: Source | null = null;
 
+    // Calm errors (playground UX contract): mid-typing, keep the last good
+    // output and hold the diagnostic until ERROR_HOLD_MS of idle, a blur,
+    // Ctrl/Cmd+Enter, Run now or a chip, so a half-written query never
+    // flashes red.
+    let errTimer: number | undefined;
+    let heldError: string | null = null;
+
+    function showError(message: string): void {
+      window.clearTimeout(errTimer);
+      heldError = null;
+      setEditorDoc(outputView, '');
+      renderError(notesBox!, summaryEl!, message);
+    }
+
+    function fail(source: Source, message: string): void {
+      hideActions();
+      if (source !== 'seed') clearShareHash();
+      if (source !== 'type') {
+        showError(message);
+        return;
+      }
+      heldError = message;
+      setSummary(summaryEl!, '', false);
+      window.clearTimeout(errTimer);
+      errTimer = window.setTimeout(() => showError(message), ERROR_HOLD_MS);
+    }
+
+    inputView.contentDOM.addEventListener('blur', () => {
+      if (heldError !== null) showError(heldError);
+    });
+
     async function convertNow(source: Source): Promise<void> {
       window.clearTimeout(timer);
+      window.clearTimeout(errTimer);
+      heldError = null;
       // Guaranteed present by the early return above; restated because
       // TypeScript discards that narrowing inside a hoisted function declaration.
       if (!convertBtn) return;
@@ -838,10 +872,7 @@ const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
         const result = await Promise.resolve(engine.convert(direction, query));
 
         if (!result || result.error) {
-          setEditorDoc(outputView, '');
-          hideActions();
-          renderError(notesBox!, summaryEl!, result?.error ?? 'Unknown error while converting.');
-          if (userInitiated) clearShareHash();
+          fail(source, result?.error ?? 'Unknown error while converting.');
           return;
         }
 
@@ -860,10 +891,7 @@ const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Unexpected error while converting.';
-        setEditorDoc(outputView, '');
-        hideActions();
-        renderError(notesBox!, summaryEl!, msg);
-        if (userInitiated) clearShareHash();
+        fail(source, msg);
       } finally {
         running = false;
         convertBtn.classList.remove('is-busy');

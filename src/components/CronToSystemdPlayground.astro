@@ -494,6 +494,7 @@ const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label, ariaLabel:
   const ROOT_SEL = '.cs-pg';
   const SLUG = 'cron-to-systemd';
   const DEBOUNCE_MS = 180;
+  const ERROR_HOLD_MS = 600;
 
   /** Boot every (so far un-hydrated) playground instance on the page. */
   function boot(): void {
@@ -772,8 +773,40 @@ const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label, ariaLabel:
     let running = false;
     let queued: Source | null = null;
 
+    // Calm errors (playground UX contract): mid-typing, keep the last good
+    // units and hold the diagnostic until ERROR_HOLD_MS of idle, a blur,
+    // Ctrl/Cmd+Enter, Run now or a chip, so a half-typed schedule such as
+    // "0 3 *" never flashes red or blanks the unit editors.
+    let errTimer: number | undefined;
+    let heldError: string | null = null;
+
+    function showError(message: string): void {
+      window.clearTimeout(errTimer);
+      heldError = null;
+      clearOutput();
+      renderError(notesBox!, summaryEl!, message);
+    }
+
+    function fail(source: Source, message: string): void {
+      if (source !== 'type') {
+        showError(message);
+        return;
+      }
+      heldError = message;
+      hideActions();
+      setSummary(summaryEl!, '', 'mute');
+      window.clearTimeout(errTimer);
+      errTimer = window.setTimeout(() => showError(message), ERROR_HOLD_MS);
+    }
+
+    inputView.contentDOM.addEventListener('blur', () => {
+      if (heldError !== null) showError(heldError);
+    });
+
     async function convertNow(source: Source): Promise<void> {
       window.clearTimeout(timer);
+      window.clearTimeout(errTimer);
+      heldError = null;
       // Guaranteed present by the early return above; restated because
       // TypeScript discards that narrowing inside a hoisted function declaration.
       if (!convertBtn) return;
@@ -800,8 +833,7 @@ const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label, ariaLabel:
         const result = await Promise.resolve(engine.convert(cronLine, { unitName: unitBase() }));
 
         if (!result || result.valid === false || result.error) {
-          clearOutput();
-          renderError(notesBox!, summaryEl!, result?.error ?? 'This crontab line could not be parsed.');
+          fail(source, result?.error ?? 'This crontab line could not be parsed.');
           return;
         }
 
@@ -834,8 +866,7 @@ const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label, ariaLabel:
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Unexpected error while converting.';
-        clearOutput();
-        renderError(notesBox!, summaryEl!, msg);
+        fail(source, msg);
       } finally {
         running = false;
         convertBtn.classList.remove('is-busy');

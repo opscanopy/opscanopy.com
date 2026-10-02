@@ -415,6 +415,7 @@ const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
   const ROOT_SEL = '.drc';
   const SLUG = 'docker-run-to-compose';
   const DEBOUNCE_MS = 180;
+  const ERROR_HOLD_MS = 600;
 
   function boot(): void {
     document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
@@ -843,8 +844,41 @@ const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
     let running = false;
     let queued: Source | null = null;
 
+    // Calm errors (playground UX contract): mid-typing, keep the last good
+    // output and hold the diagnostic until ERROR_HOLD_MS of idle, a blur,
+    // Ctrl/Cmd+Enter, Run now, a mode switch or a chip, so a half-typed
+    // command never flashes red.
+    let errTimer: number | undefined;
+    let heldError: string | null = null;
+
+    function showError(message: string): void {
+      window.clearTimeout(errTimer);
+      heldError = null;
+      renderError(outputBox!, warningsBox!, summaryEl!, message);
+    }
+
+    function fail(source: Source, message: string): void {
+      lastOutput = '';
+      hideActions();
+      if (source !== 'seed') clearShareHash();
+      if (source !== 'type') {
+        showError(message);
+        return;
+      }
+      heldError = message;
+      setSummary(summaryEl!, '', false);
+      window.clearTimeout(errTimer);
+      errTimer = window.setTimeout(() => showError(message), ERROR_HOLD_MS);
+    }
+
+    view.contentDOM.addEventListener('blur', () => {
+      if (heldError !== null) showError(heldError);
+    });
+
     async function run(source: Source): Promise<void> {
       window.clearTimeout(timer);
+      window.clearTimeout(errTimer);
+      heldError = null;
       if (running) {
         queued = source;
         return;
@@ -870,15 +904,10 @@ const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
         const res: RunResult | ComposeResult =
           mode === 'run' ? engine.runToCompose(input) : engine.composeToRun(input);
         if (!res.ok || res.error) {
-          renderError(
-            outputBox!,
-            warningsBox!,
-            summaryEl!,
+          fail(
+            source,
             res.error ?? (mode === 'run' ? 'Could not convert the command.' : 'Could not convert the service.'),
           );
-          lastOutput = '';
-          hideActions();
-          if (userInitiated) clearShareHash();
         } else {
           lastOutput = mode === 'run' ? ((res as RunResult).yaml ?? '') : ((res as ComposeResult).command ?? '');
           renderResult(
@@ -897,10 +926,7 @@ const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Unexpected error while converting.';
-        renderError(outputBox!, warningsBox!, summaryEl!, msg);
-        lastOutput = '';
-        hideActions();
-        if (userInitiated) clearShareHash();
+        fail(source, msg);
       } finally {
         running = false;
         runBtn!.classList.remove('is-busy');
