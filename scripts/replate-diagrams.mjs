@@ -547,7 +547,10 @@ function emitChunk(sheet, c) {
  * @param {string} src  source SVG (with <text>)
  * @param {{ file?: string, log?: Array<{file:string,label:string,s:number}> }} [opts]
  */
-export function replate(src, { file = 'diagram', log } = {}) {
+export function replate(source, { file = 'diagram', log } = {}) {
+  // Line endings are not content: a Windows checkout (core.autocrlf, no
+  // .gitattributes) hands us CRLF; output is always LF.
+  const src = source.replace(/\r\n/g, '\n');
   const doc = parseXml(src);
   const svg = doc.children.find((c) => c.name === 'svg');
   if (!svg) throw new Error(`replate: ${file}: no <svg> root`);
@@ -629,7 +632,7 @@ function main() {
     if (check) {
       let cur = '';
       try {
-        cur = readFileSync(dest, 'utf8');
+        cur = readFileSync(dest, 'utf8').replace(/\r\n/g, '\n');
       } catch {}
       if (cur !== out) {
         drift++;

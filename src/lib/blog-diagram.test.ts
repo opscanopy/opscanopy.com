@@ -63,7 +63,9 @@ const MANIFEST: Record<string, { viewBox: string; width: string | null; height: 
   'validate-gitlab-ci-yml-diagram.svg': { viewBox: '0 0 1200 620', width: null, height: null, role: 'img' },
 };
 
-const read = (dir: string, f: string) => readFileSync(join(dir, f), 'utf8');
+// Line endings are not content: the generator writes LF, and a Windows checkout
+// (core.autocrlf=true, no .gitattributes) turns that into CRLF on disk.
+const read = (dir: string, f: string) => readFileSync(join(dir, f), 'utf8').replace(/\r\n/g, '\n');
 
 type El = { name: string; attrs?: Record<string, string>; children?: El[]; value?: string };
 
