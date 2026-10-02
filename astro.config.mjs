@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import remarkCallouts from './src/lib/remark-callouts.mjs';
 import rehypeChapters from './src/lib/rehype-chapters.mjs';
 import rehypeImgDims from './src/lib/rehype-img-dims.mjs';
+import rehypeBlogThumb from './src/lib/rehype-blog-thumb.mjs';
 import rehypeTableScroll from './src/lib/rehype-table-scroll.mjs';
 import rehypeCodeHeader from './src/lib/rehype-code-header.mjs';
 import { shikiConfig } from './src/lib/shiki-theme.mjs';
@@ -118,7 +119,10 @@ export default defineConfig({
       // rehypeCodeHeader runs after Shiki (Astro highlights before user rehype
       // plugins), so every `pre.astro-code[data-language]` exists to be wrapped
       // in its <figure class="code-fig"> with a server-rendered figure cap.
-      rehypePlugins: [rehypeChapters, rehypeImgDims, rehypeTableScroll, rehypeCodeHeader],
+      // rehypeBlogThumb runs before rehypeImgDims: a blog post's first body
+      // image (its own cover) is re-pointed at the title-free -thumb plate,
+      // and the dimensions are then read from the file that ships.
+      rehypePlugins: [rehypeBlogThumb, rehypeChapters, rehypeImgDims, rehypeTableScroll, rehypeCodeHeader],
     }),
     // One code palette (src/lib/code-palette.ts) for Shiki and CodeMirror.
     // Shiki writes the plate as an inline background; global.css `.code-fig pre`
