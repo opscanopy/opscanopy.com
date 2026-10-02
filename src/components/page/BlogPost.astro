@@ -16,6 +16,8 @@ import { site } from '../../data/site';
 import { BCP47, DEFAULT_LOCALE, type Locale } from '../../i18n/config';
 import { useTranslations, localizeKey, localizeNavHref } from '../../i18n/utils';
 import { breadcrumbLd } from '../../lib/jsonld';
+import { blogKind, blogCategory, incidentNumbers, kindToken } from '../../lib/blog-kind';
+import { getTool } from '../../data/tools';
 import {
   formatPostDate,
   estimateReadingTime,
@@ -61,6 +63,16 @@ const relatedPosts = getRelatedPosts(post, allPosts, 3);
 
 // Chronological prev/next within the same language (oldest → newest).
 const { prev, next } = getPrevNext(post, allPosts);
+
+// Post-header cap — the same `IR-07 · kubernetes` / `note · docker` caption the
+// cover carries (scripts/blog-cover.mjs), from the same module
+// (src/lib/blog-kind.ts). The cover is drawn from the ENGLISH post's
+// frontmatter, so kind and category are read from it too (a locale copy shares
+// the neutral slug); a locale-only post falls back to its own data.
+const capSource = allPosts.find((p) => p.lang === DEFAULT_LOCALE && p.slug === slug)?.entry.data ?? entry.data;
+const capKind = blogKind(slug, capSource.kind);
+const capToken = kindToken(slug, capKind, incidentNumbers([{ slug, kind: capSource.kind }]));
+const capCategory = blogCategory(capSource.relatedTool?.href, capSource.tags, (s) => getTool(s)?.category).toLowerCase();
 
 // Breadcrumb trail (Home / Blog / {title}) — localized hrefs for the links,
 // absolute URLs for the BreadcrumbList JSON-LD per the shared contract.
@@ -126,7 +138,7 @@ const jsonLd = {
   <article class="bg-canvas-soft">
     <div class="container-page py-16 sm:py-24">
       <div
-        class="mx-auto grid w-full max-w-[var(--container-page)] grid-cols-1 gap-x-10 xl:grid-cols-[minmax(0,1fr)_44rem_minmax(0,1fr)]"
+        class="mx-auto grid w-full max-w-[var(--container-page)] grid-cols-1 gap-x-10 xl:grid-cols-[minmax(12rem,1fr)_44rem_minmax(11rem,1fr)]"
       >
         {
           toc.length > 1 && (
@@ -205,7 +217,11 @@ const jsonLd = {
         </div>
 
         <header class="mt-8">
-          <p class="caption flex flex-wrap items-center gap-x-1.5 gap-y-1 text-mute">
+          <p class="post-cap" data-kind={capKind}>
+            <span class="post-cap__dots" data-tone={capKind === 'incident' ? 'traffic' : 'mute'} aria-hidden="true"><i></i><i></i><i></i></span>
+            <span><span class="post-cap__token">{capToken}</span> · {capCategory}</span>
+          </p>
+          <p class="caption mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-mute">
             {
               // The org default resolves to the person behind it (as the JSON-LD
               // author does); an explicit frontmatter author is already a name.
@@ -537,6 +553,7 @@ const jsonLd = {
 
   <script>
     import { copyTextToClipboard } from '../../lib/clipboard';
+    import { wireCodeCopy } from '../../lib/code-copy';
 
     // Progressive enhancement for the blog post page: code-copy buttons, reading
     // progress bar, table-of-contents scroll-spy, heading anchor links, copy-link
@@ -555,36 +572,13 @@ const jsonLd = {
       if (!root) return;
       const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-      // --- Code-copy buttons (per <pre>) ---
-      if (navigator.clipboard) {
-        const copyLabel = root.dataset.copyLabel ?? 'Copy';
-        const copiedLabel = root.dataset.copiedLabel ?? 'Copied';
-        const ariaLabel = root.dataset.copyAria ?? 'Copy code to clipboard';
-        root.querySelectorAll<HTMLPreElement>('pre').forEach((pre) => {
-          if (pre.dataset.copyReady) return;
-          pre.dataset.copyReady = 'true';
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'rich-code-copy';
-          btn.textContent = copyLabel;
-          btn.setAttribute('aria-label', ariaLabel);
-          let resetTimer: number | undefined;
-          btn.addEventListener('click', async () => {
-            const code = pre.querySelector('code');
-            const text = (code ?? pre).textContent ?? '';
-            if (await copyTextToClipboard(text)) {
-              btn.textContent = copiedLabel;
-              btn.dataset.copied = 'true';
-              window.clearTimeout(resetTimer);
-              resetTimer = window.setTimeout(() => {
-                btn.textContent = copyLabel;
-                delete btn.dataset.copied;
-              }, 2000);
-            }
-          });
-          pre.appendChild(btn);
-        });
-      }
+      // --- Code-copy buttons: bind the Copy that rehype-code-header renders in
+      // each code block's figure cap (src/lib/code-copy.ts). ---
+      wireCodeCopy(root, {
+        copy: root.dataset.copyLabel ?? 'Copy',
+        copied: root.dataset.copiedLabel ?? 'Copied',
+        aria: root.dataset.copyAria ?? 'Copy code to clipboard',
+      });
 
       // --- Heading anchor links (hover-reveal #) ---
       const anchorLabel = root.dataset.anchorLabel ?? 'Link to this section';
@@ -717,6 +711,51 @@ const jsonLd = {
     background: linear-gradient(90deg, var(--color-brand), var(--color-brand-strong));
   }
 
+  /* --- Post-header cap: the cover's caption row on paper ---
+     `IR-NN · category` (incident: traffic dots, amber number — a figure
+     number is one of amber's four legal jobs) or `note · category` (neutral
+     dots). Same text as the cover's cap (src/lib/blog-kind.ts). */
+  .post-cap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 16px;
+    letter-spacing: var(--tracking-label);
+    color: var(--color-mute);
+    font-variant-numeric: tabular-nums;
+  }
+  .post-cap__dots {
+    display: inline-flex;
+    gap: 5px;
+    flex: none;
+  }
+  .post-cap__dots > i {
+    display: block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-hairline-strong);
+  }
+  .post-cap__dots[data-tone='traffic'] > i:nth-child(1) {
+    background: var(--color-dot-1);
+  }
+  .post-cap__dots[data-tone='traffic'] > i:nth-child(2) {
+    background: var(--color-dot-2);
+  }
+  .post-cap__dots[data-tone='traffic'] > i:nth-child(3) {
+    background: var(--color-dot-3);
+  }
+  .post-cap__token {
+    color: var(--color-ink);
+    font-weight: 500;
+  }
+  .post-cap[data-kind='incident'] .post-cap__token {
+    color: var(--color-accent-ink);
+  }
+
   /* --- Table of contents active link --- */
   .toc-link.is-active {
     color: var(--color-ink);
@@ -800,92 +839,9 @@ const jsonLd = {
     }
   }
 
-  /* Scoped to .rich-text — these rules never touch global elements. */
-  .rich-text {
-    color: var(--color-body);
-    font-family: var(--font-sans);
-    font-size: 16px;
-    line-height: 30px;
-    overflow-wrap: break-word;
-  }
-
-  .rich-text > :first-child {
-    margin-top: 0;
-  }
-
-  .rich-text > :last-child {
-    margin-bottom: 0;
-  }
-
-  .rich-text p {
-    text-wrap: pretty;
-  }
-
-  .rich-text :is(h2, h3, h4) {
-    color: var(--color-ink);
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    text-wrap: balance;
-    scroll-margin-top: 88px;
-  }
-
-  /*
-   * Heading sizes/line-heights mirror the global type scale in global.css
-   * (h2 → display-md, h3 → display-sm, h4 → body-md) so global.css remains the
-   * single source of truth. Vertical margins below are intentionally local to
-   * the article rhythm. Keep these values in sync if the display tokens change.
-   */
-  .rich-text h2 {
-    margin-top: 48px;
-    margin-bottom: 16px;
-    font-size: clamp(22px, 2.4vw, 24px);
-    line-height: 32px;
-    letter-spacing: -0.01em;
-  }
-
-  .rich-text h3 {
-    margin-top: 36px;
-    margin-bottom: 12px;
-    font-size: clamp(18px, 2vw, 20px);
-    line-height: 28px;
-    letter-spacing: -0.005em;
-  }
-
-  .rich-text h4 {
-    margin-top: 28px;
-    margin-bottom: 8px;
-    font-size: 16px;
-    line-height: 24px;
-  }
-
-  .rich-text p {
-    margin-block: 32px;
-  }
-
-  .rich-text :is(ul, ol) {
-    margin-block: 28px;
-    padding-left: 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .rich-text ul {
-    list-style: disc;
-  }
-
-  .rich-text ol {
-    list-style: decimal;
-  }
-
-  .rich-text li::marker {
-    color: var(--color-mute);
-  }
-
-  .rich-text li > :is(ul, ol) {
-    margin-block: 8px;
-  }
-
+  /* Prose metrics (.rich-text size, colour, headings, paragraphs, lists,
+     inline code) and code blocks (.code-fig) live in global.css, shared with
+     GuidePost and MissionDay. What stays here is this page's own rhythm. */
   .rich-text a {
     color: var(--color-link);
     text-decoration: underline;
@@ -975,98 +931,6 @@ const jsonLd = {
     border-left: 2px solid var(--color-hairline-strong);
     color: var(--color-body);
     font-style: normal;
-  }
-
-  /*
-   * Inline code: theme-aware soft surface (--color-canvas-soft-2) with the
-   * darkest text token (--color-ink). A --color-hairline-strong border replaces
-   * the near-invisible hairline shadow so the chip stays delineated and the
-   * text/background pairing clears WCAG AA in both light and dark themes.
-   */
-  .rich-text :not(pre) > code {
-    font-family: var(--font-mono);
-    font-size: 13px;
-    background: var(--color-canvas-soft-2);
-    color: var(--color-ink);
-    padding: 2px 6px;
-    border-radius: var(--radius-xs);
-    border: 1px solid var(--color-hairline-strong);
-    overflow-wrap: anywhere;
-    overflow-wrap: break-word;
-  }
-
-  .rich-text pre {
-    position: relative;
-    margin-block: 36px;
-    padding: 20px 24px;
-    border-radius: var(--radius-md);
-    /* Dark-stable instrument slab (dark in BOTH themes), matching HeroDemo /
-       TerminalPlay / CodeBlock — not --color-primary, which flips light in dark. */
-    background: var(--color-inverse);
-    color: var(--color-inverse-fg);
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    -webkit-overflow-scrolling: touch;
-    box-shadow: var(--shadow-subtle);
-    tab-size: 2;
-  }
-
-  /*
-   * Copy button injected by the progressive-enhancement script above. Lives in
-   * the top-right of each code block; sticks to the viewport edge horizontally
-   * so it stays reachable when the <pre> scrolls. Colors ride on the dark code
-   * surface tokens (--color-on-primary), so it reads in both themes.
-   */
-  .rich-text pre .rich-code-copy {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    z-index: 1;
-    padding: 4px 10px;
-    border: 1px solid color-mix(in srgb, var(--color-inverse-fg) 28%, transparent);
-    border-radius: var(--radius-xs);
-    background: color-mix(in srgb, var(--color-inverse-fg) 10%, transparent);
-    color: var(--color-inverse-fg);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    line-height: 1;
-    cursor: pointer;
-    opacity: 0.7;
-    transition:
-      opacity 0.15s ease,
-      background-color 0.15s ease,
-      border-color 0.15s ease;
-  }
-
-  .rich-text pre:hover .rich-code-copy,
-  .rich-text pre .rich-code-copy:focus-visible {
-    opacity: 1;
-  }
-
-  .rich-text pre .rich-code-copy:hover {
-    background: color-mix(in srgb, var(--color-inverse-fg) 18%, transparent);
-  }
-
-  .rich-text pre .rich-code-copy[data-copied] {
-    opacity: 1;
-    border-color: color-mix(in srgb, var(--color-success) 60%, transparent);
-    color: var(--color-success);
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .rich-text pre .rich-code-copy {
-      transition: none;
-    }
-  }
-
-  .rich-text pre code {
-    font-family: var(--font-mono);
-    font-size: 13px;
-    line-height: 20px;
-    background: transparent;
-    padding: 0;
-    white-space: pre;
-    box-shadow: none;
   }
 
   .rich-text hr {
