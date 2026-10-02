@@ -4,14 +4,19 @@
  *
  * A no-framework, server-rendered shell hydrated by a single module <script>
  * that lazily boots a CodeMirror 6 editor for the sample log text, wires a
- * pattern input, five flag toggles (g i m s u), a row of example CHIPS, a
- * shareable-URL encoder ("Copy link") and a "Copy as Markdown" action.
+ * pattern input, five flag toggles (g i m s u) and the example chips.
  * Matching is live and debounced — every edit re-runs the engine, updates a
  * match count, a highlighted rendering of the text and a table of matches
- * with their capture and named groups. It runs entirely client-side — no
- * upload, no network.
+ * with their capture and named groups.
  *
- * Runtime contract (built by sibling agents — imported lazily in the script):
+ * Built on the playground kit (src/components/playground/*): ExampleChips,
+ * EditorPane (sample.log), RunHint, SnapshotBar, ResultPanel (figure cap,
+ * live summary, copy status) and CopyButton. The two seeded containers
+ * (`#rx-highlight` on its own slab beside the editor, `#rx-results` in the
+ * result panel) stay here with `set:html` + `data-results`; their slab
+ * overrides anchor on `.rx-highlight` / `.rx-results`.
+ *
+ * Runtime contract (imported lazily in the script):
  *   ../lib/regex-tester/engine →
  *     run(pattern: string, flags: string, text: string): RegexResult
  *     encodeState(pattern: string, flags: string, text: string): string  // hash fragment
@@ -28,20 +33,21 @@
  *   ../lib/regex-tester/examples →
  *     examples: { id: string; label: string; pattern: string; flags: string;
  *                 text: string }[]
- *
- * The dark editor surface follows DESIGN.md `code-editor-mockup`; matches use
- * the brand link tint for highlights, errors the semantic error tokens.
- * Headlines stay sentence-case, weight 600.
  */
 // Build-time import of the same `examples` the client script loads lazily.
-// Used ONLY to server-render the example chips below, so the static HTML
-// carries real example names rather than a "Loading examples…" placeholder
-// that crawlers and no-JS visitors would otherwise be served. The script only
-// wires click handlers onto these already-rendered buttons — it never rebuilds
-// them — so this adds nothing to the client bundle and cannot drift.
+// Used to server-render the example chips (ExampleChips), so the static HTML
+// carries real example names. The script only wires click handlers onto
+// these already-rendered buttons — it never rebuilds them.
 import { examples as prerenderedExamples } from '../lib/regex-tester/examples';
 import { run as runRegex } from '../lib/regex-tester/engine';
 import { resultsHtml, buildHighlight, summaryText, EMPTY_HTML } from '../lib/regex-tester/render';
+import FigureCap from './FigureCap.astro';
+import ExampleChips from './playground/ExampleChips.astro';
+import EditorPane from './playground/EditorPane.astro';
+import RunHint from './playground/RunHint.astro';
+import SnapshotBar from './playground/SnapshotBar.astro';
+import ResultPanel from './playground/ResultPanel.astro';
+import CopyButton from './playground/CopyButton.astro';
 
 /**
  * Server-rendered seed. The client re-runs the same example on boot, so this
@@ -68,11 +74,12 @@ const seedOk = seedResult && seedResult.valid !== false ? seedResult : null;
 const seedHtml = seedOk ? resultsHtml(seedOk) : EMPTY_HTML;
 const seedHighlightHtml = buildHighlight(seedText, seedOk ? seedOk.matches : []);
 const seedSummary = seedOk ? summaryText(seedOk) : '';
+const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
 ---
 
 <section class="rx-pg" aria-label="Regex Log Tester playground">
-  <div class="card shadow-float rounded-lg overflow-hidden">
-    {/* ── Toolbar: pattern + flags + example ───────────────────────────── */}
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Toolbar: pattern + flags + examples ──────────────────────────── */}
     <div class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:px-5">
       <div class="flex flex-col gap-1">
         <div class="flex items-baseline gap-2">
@@ -99,13 +106,6 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
         <p id="rx-pattern-hint" class="sr-only">
           JavaScript regular expression syntax. Matching updates as you type.
         </p>
-        <div class="rx-snap-row mt-2 flex flex-wrap items-center gap-2">
-          <button id="rx-snap-save" type="button" class="rx-snap-btn">Save snapshot</button>
-          <select id="rx-snap-select" class="rx-snap-select" aria-label="Load a saved snapshot" disabled>
-            <option value="">No snapshots yet</option>
-          </select>
-          <button id="rx-snap-delete" type="button" class="rx-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
-        </div>
       </div>
 
       <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -142,204 +142,59 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
 
         <div class="flex min-w-0 flex-wrap items-end gap-2">
           <div class="flex min-w-0 flex-col gap-1.5">
-            {/* The chip group carries its own accessible name; there is no
-                <label for=…> because a group of buttons is not a labelable
-                control. This is the EXAMPLE picker — the `.rx-flag` row above
-                and the `#rx-snap-select` snapshot picker are unrelated. */}
-            <span class="eyebrow">Example</span>
-            <div id="rx-chips" class="rx-chips" role="group" aria-label="Examples">
-              {prerenderedExamples.map((ex, i) => (
-                <button
-                  type="button"
-                  class:list={['rx-chip', 'rx-tap', { 'is-active': i === 0 }]}
-                  data-example-idx={i}
-                  aria-pressed={i === 0 ? 'true' : 'false'}
-                >
-                  {ex.label}
-                </button>
-              ))}
-            </div>
+            {/* The EXAMPLE picker — the `.rx-flag` row above and the snapshot
+                picker below are unrelated. */}
+            <span class="eyebrow">Examples</span>
+            <ExampleChips prefix="rx" items={chipItems} active={seedExample ? 0 : null} ariaLabel="Examples" />
           </div>
           <button
             id="rx-test"
             type="button"
-            class="btn btn-primary btn-sm rx-tap"
-            title="Test pattern against sample text"
+            class="btn-tool rx-tap"
+            title="Run now (⌘/Ctrl + Enter)"
+            aria-keyshortcuts="Meta+Enter Control+Enter"
           >
-            <svg
-              class="h-4 w-4 shrink-0"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.4"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <circle cx="6.5" cy="6.5" r="4.5"></circle>
-              <path d="M10.5 10.5l3 3"></path>
-            </svg>
-            <span>Test</span>
+            Run now
           </button>
         </div>
       </div>
     </div>
 
-    {/* ── Mobile tab switch (single-pane on small screens) ─────────────── */}
-    <div
-      class="rx-tabs flex gap-1 border-b border-hairline px-4 py-2 md:hidden"
-      role="tablist"
-      aria-label="Sample and matches panes"
-    >
-      <button
-        id="rx-tab-sample"
-        type="button"
-        class="rx-tab rx-tap is-active"
-        role="tab"
-        aria-selected="true"
-        aria-controls="rx-pane-sample"
-        data-pane="sample"
-        tabindex="0"
-      >
-        Sample
-      </button>
-      <button
-        id="rx-tab-matches"
-        type="button"
-        class="rx-tab rx-tap"
-        role="tab"
-        aria-selected="false"
-        aria-controls="rx-pane-matches"
-        data-pane="matches"
-        tabindex="-1"
-      >
-        Matches
-      </button>
-    </div>
-
-    {/* ── Split: sample editor (left) + highlighted preview (right) ────── */}
-    <div class="rx-grid grid grid-cols-1 md:grid-cols-2">
-      <div
-        id="rx-pane-sample"
-        class="rx-pane rx-pane--active flex min-w-0 flex-col bg-inverse md:border-r md:border-white/10"
-        role="tabpanel"
-        aria-labelledby="rx-tab-sample"
-      >
-        <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
-          <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-          </span>
-          <span class="code-mono text-white/45">sample.log</span>
-        </div>
-        <div
-          id="rx-editor"
-          class="rx-editor min-h-72"
-          aria-label="Sample log lines"
-        >
-          <pre class="rx-cm-fallback code-mono" data-cm-fallback>{seedText}</pre>
-        </div>
-        <p class="text-xs text-mute mt-1 px-4 pb-2">Tip: press <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd> to release focus.</p>
-      </div>
-
-      <div
-        id="rx-pane-matches"
-        class="rx-pane flex min-w-0 flex-col bg-inverse"
-        role="tabpanel"
-        aria-labelledby="rx-tab-matches"
-      >
-        <div class="flex items-center justify-between gap-2 border-b border-white/10 px-4 py-2.5">
-          <div class="flex min-w-0 items-center gap-2">
-            <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
-              <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-              <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-              <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-            </span>
-            <span class="code-mono text-white/45">matches</span>
+    {/* ── Sample editor | highlighted matches (side by side ≥768px) ────── */}
+    <div class="border-b border-hairline px-4 py-4 sm:px-5">
+      <div class="rx-grid">
+        <EditorPane prefix="rx" id="rx-editor" label="sample.log">
+          <pre class="editor-pane__fallback code-mono" data-cm-fallback>{seedText}</pre>
+        </EditorPane>
+        <div class="rx-hl-pane instrument-flush">
+          <FigureCap label="matches · highlighted" />
+          {/* Seeded at build time (see `seedHighlightHtml` above) so the
+              marked-up log is in the static HTML; the client rebuilds it. */}
+          <div
+            id="rx-highlight"
+            class="rx-highlight"
+            role="region"
+            aria-label="Sample text with matches highlighted"
+            set:html={seedHighlightHtml}
+            data-results
+          >
           </div>
-          <span class="code-mono shrink-0 text-white/30">highlighted</span>
-        </div>
-        {/* Seeded at build time (see `seedHighlightHtml` above) so the marked-up
-            log is in the static HTML; the client rebuilds it on boot. */}
-        <div
-          id="rx-highlight"
-          class="rx-highlight"
-          role="region"
-          aria-label="Sample text with matches highlighted"
-          set:html={seedHighlightHtml}
-        >
         </div>
       </div>
+      <RunHint variant="cm" class="mt-2" />
+      <SnapshotBar prefix="rx" />
     </div>
 
-    {/* ── Results panel (count + per-match groups table) ───────────────── */}
-    <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <span class="flex flex-wrap items-center gap-2">
-          <span class="eyebrow">Matches</span>
-          <button
-            id="rx-share"
-            type="button"
-            class="rx-share-btn rx-tap"
-            data-copy=""
-            hidden
-          >
-            <svg
-              class="rx-share-icon"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M6.75 9.25l2.5-2.5"></path>
-              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
-              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
-            </svg>
-            <span class="rx-share-label">Copy link</span>
-          </button>
-          <button
-            id="rx-copy-md"
-            type="button"
-            class="rx-share-btn rx-tap"
-            hidden
-          >
-            <svg
-              class="rx-share-icon"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M3 2.5h6.5l3 3v7.75a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-9.75a1 1 0 0 1 1-1z"></path>
-              <path d="M9.5 2.5v3h3"></path>
-              <path d="M4.5 9h7M4.5 11.25h4.5"></path>
-            </svg>
-            <span class="rx-md-label">Copy as Markdown</span>
-          </button>
-        </span>
-        <span
-          id="rx-summary"
-          class="rx-summary code-mono text-mute"
-          role="status"
-          aria-live="polite"
-        >{seedSummary}</span>
-      </div>
-
+    {/* ── Result: count + per-match groups table on the L2 instrument ──── */}
+    <ResultPanel slug="regex-log-tester" prefix="rx" summary={seedSummary} label="Matches" summaryClass="whitespace-nowrap" split>
+      <Fragment slot="actions">
+        <CopyButton kind="link" id="rx-share" />
+        <CopyButton kind="all" id="rx-copy-md" label="Copy as Markdown" icon="markdown" />
+      </Fragment>
       {/* Seeded at build time (see `seedHtml` above) so the match table is in
           the static HTML; the client rebuilds the same markup on boot. */}
-      <div id="rx-results" class="rx-results" set:html={seedHtml}></div>
-    </div>
+      <div id="rx-results" class="rx-results" set:html={seedHtml} data-results></div>
+    </ResultPanel>
   </div>
 </section>
 
@@ -357,7 +212,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
     overflow: hidden;
-    transition: box-shadow 0.15s ease;
+    transition: box-shadow var(--dur-fast) var(--ease-brand);
   }
   .rx-pattern-wrap:focus-within {
     box-shadow: inset 0 0 0 1px var(--color-link), 0 0 0 3px var(--color-link-bg-soft);
@@ -378,7 +233,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
   .rx-pattern {
     flex: 1 1 auto;
     min-width: 0;
-    height: 40px;
+    height: var(--control-h-lg);
     border: 0;
     background: transparent;
     color: var(--color-ink);
@@ -397,57 +252,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     box-shadow: inset 0 0 0 1px var(--color-error), 0 0 0 3px var(--color-error-soft);
   }
 
-  .rx-snap-btn {
-    flex: 0 0 auto;
-    height: 30px;
-    padding: 0 12px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-    cursor: pointer;
-    transition: background 0.12s ease, box-shadow 0.12s ease;
-  }
-  .rx-snap-btn:hover {
-    background: var(--color-canvas-soft);
-    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
-  }
-  .rx-snap-select {
-    height: 30px;
-    max-width: 220px;
-    padding: 0 8px;
-    border-radius: var(--radius-sm);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-  }
-  .rx-snap-select:disabled {
-    color: var(--color-mute);
-    cursor: not-allowed;
-  }
-  .rx-snap-delete {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: transparent;
-    color: var(--color-mute);
-    cursor: pointer;
-    transition: background 0.12s ease, color 0.12s ease;
-  }
-  .rx-snap-delete:hover {
-    background: var(--color-error-soft);
-    color: var(--color-error-deep);
-  }
-
-  /* Flag toggle chips — selectable mono glyph + label. */
+  /* Flag toggles — selectable mono glyph + label. */
   .rx-flags {
     border: 0;
     margin: 0;
@@ -458,7 +263,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    min-height: 32px;
+    min-height: var(--control-h-md);
     padding: 0 10px;
     border-radius: var(--radius-sm);
     background: var(--color-canvas);
@@ -466,7 +271,10 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     color: var(--color-mute);
     cursor: pointer;
     user-select: none;
-    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+    transition:
+      background-color var(--dur-fast) var(--ease-brand),
+      color var(--dur-fast) var(--ease-brand),
+      box-shadow var(--dur-fast) var(--ease-brand);
   }
   .rx-flag:hover {
     box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
@@ -482,7 +290,6 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
   .rx-flag-name {
     font-size: 12px;
     line-height: 16px;
-    letter-spacing: -0.01em;
   }
   /* Checked state — driven by the :checked sibling, not a JS class. */
   .rx-flag:has(.rx-flag-input:checked) {
@@ -498,208 +305,60 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
   /* Coarse pointers (touch): meet the 44px minimum touch-target size. */
   @media (pointer: coarse) {
     .rx-flag {
-      min-height: 44px;
+      min-height: var(--control-h-lg);
     }
   }
 
-  /* The EXAMPLE picker — server-rendered chips. Distinct from the `.rx-flag`
-     toggles above and from `#rx-snap-select`, which stays a <select>. */
-  .rx-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .rx-chip {
-    display: inline-flex;
-    align-items: center;
-    padding: 5px 11px;
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--color-hairline-muted);
-    background: var(--color-canvas);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    line-height: 16px;
-    letter-spacing: 0.01em;
-    color: var(--color-brand-strong);
-    cursor: pointer;
-    text-align: left;
-    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
-  }
-  .rx-chip:hover {
-    border-color: var(--color-hairline-strong);
-    background: var(--color-canvas-hover);
-  }
-  .rx-chip.is-active,
-  .rx-chip[aria-pressed='true'] {
-    background: var(--color-brand-soft);
-    border-color: var(--color-brand-strong);
-    color: var(--color-brand-strong);
-  }
-  .rx-chip:focus-visible {
-    outline: 2px solid var(--color-focus);
-    outline-offset: 2px;
-  }
-  @media (pointer: coarse) {
-    .rx-chip {
-      min-height: 44px;
-    }
-  }
-
-  /* Mobile tab pills (square in-app scale; never the 100px marketing pill). */
-  .rx-tab {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 1 1 0;
-    min-height: 44px;
-    border-radius: var(--radius-sm);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    color: var(--color-mute);
-    background: transparent;
-    cursor: pointer;
-    transition: background-color 0.15s ease, color 0.15s ease;
-  }
-  .rx-tab:hover:not(.is-active) {
-    color: var(--color-body);
-    background: var(--color-canvas-soft-2);
-  }
-  .rx-tab.is-active {
-    color: var(--color-on-primary);
-    background: var(--color-primary);
-  }
-
-  /* Visibility is driven by the .rx-pane--active class, NOT the [hidden]
-     attribute. Tailwind v4's layered `[hidden]{display:none!important}` (in
-     @layer base) beats any unlayered !important override, which would otherwise
-     leave the matches pane invisible on desktop. Toggle ONLY the class in JS. */
-  @media (max-width: 767px) {
-    .rx-pane {
-      display: none;
-    }
-    .rx-pane.rx-pane--active {
-      display: flex;
-    }
+  /* Sample editor | highlighted matches, side by side from 768px. */
+  .rx-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
   }
   @media (min-width: 768px) {
-    /* Desktop: both panes always visible side by side. */
-    .rx-pane {
-      display: flex;
+    .rx-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
-
-  /* CodeMirror host — fills the dark pane, scrolls internally. */
-  .rx-editor {
-    overflow: hidden;
-  }
-  /* Build-time text stand-in for the editor, sized like the CM content so the
-     pane does not jump when the script swaps it out. Removed on mount. */
-  .rx-cm-fallback {
-    margin: 0;
-    padding: 14px 16px 16px;
-    max-height: 360px;
-    overflow: auto;
-    color: #e6e6e6;
-    font-size: 13px;
-    line-height: 20px;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-  .rx-editor :global(.cm-editor) {
-    height: 100%;
-    background: transparent;
-    font-family: var(--font-mono);
-    font-size: 13px;
-    line-height: 20px;
-  }
-  .rx-editor :global(.cm-editor.cm-focused) {
-    /* Replace CM's default outline with a brand-blue ring (a11y: keep a ring). */
-    outline: 2px solid var(--color-link);
-    outline-offset: -2px;
-  }
-  .rx-editor :global(.cm-scroller) {
-    overflow: auto;
-    max-height: 420px;
-    font-family: var(--font-mono);
-    /* Thin, theme-matched scrollbars on the dark surface. */
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
-  }
-  .rx-editor :global(.cm-scroller)::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  .rx-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.16);
-    border-radius: var(--radius-pill);
-    border: 3px solid transparent;
-    background-clip: content-box;
-  }
-  .rx-editor :global(.cm-scroller)::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.28);
-    background-clip: content-box;
-  }
-  .rx-editor :global(.cm-gutters) {
-    background: transparent;
-    border-right: 1px solid rgba(255, 255, 255, 0.08);
-  }
-  .rx-editor :global(.cm-lineNumbers .cm-gutterElement) {
-    color: rgba(255, 255, 255, 0.32);
-  }
-  .rx-editor :global(.cm-content) {
-    padding: 14px 0 16px;
-  }
-  .rx-editor :global(.cm-line) {
-    padding-inline: 4px;
+  .rx-hl-pane {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
   }
 
   /* Highlighted preview — the sample text re-rendered with <mark> spans.
-     This pane is filled at runtime via innerHTML, so every selector inside is
-     :global(...) and any injected mark gets explicit styling. */
+     Filled at runtime via innerHTML, so every selector inside is :global(...). */
   .rx-highlight {
     overflow: auto;
-    max-height: 462px;
-    padding: 14px 16px 16px;
+    max-height: 420px;
+    padding: 4px 8px 8px;
     scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
-  }
-  .rx-highlight::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  .rx-highlight::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.16);
-    border-radius: var(--radius-pill);
-    border: 3px solid transparent;
-    background-clip: content-box;
   }
   :global(.rx-pre) {
     margin: 0;
     font-family: var(--font-mono);
     font-size: 13px;
-    line-height: 20px;
-    color: rgba(255, 255, 255, 0.82);
+    line-height: 1.4;
+    color: var(--color-inverse-fg);
     white-space: pre-wrap;
     word-break: break-word;
     tab-size: 2;
   }
   :global(.rx-mark) {
-    background: color-mix(in srgb, var(--color-brand) 30%, transparent);
+    background: #8fc97a33;
     color: var(--color-inverse-fg);
     border-radius: 3px;
-    box-shadow: inset 0 0 0 1px rgba(0, 112, 243, 0.6);
+    box-shadow: inset 0 0 0 1px var(--color-inverse-brand);
     padding: 0 1px;
   }
   /* Alternate tint so adjacent matches stay distinguishable. */
   :global(.rx-mark--alt) {
-    background: rgba(121, 40, 202, 0.32);
-    box-shadow: inset 0 0 0 1px rgba(121, 40, 202, 0.62);
+    background: #c9bfe033;
+    box-shadow: inset 0 0 0 1px #c9bfe0;
   }
   /* Zero-length match marker (e.g. /^/) — a thin caret rule. */
   :global(.rx-mark--empty) {
-    box-shadow: inset 1px 0 0 0 rgba(0, 112, 243, 0.9);
+    box-shadow: inset 1px 0 0 0 var(--color-inverse-brand);
     background: transparent;
     padding: 0;
   }
@@ -707,66 +366,23 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     font-family: var(--font-mono);
     font-size: 13px;
     line-height: 20px;
-    color: rgba(255, 255, 255, 0.34);
-  }
-
-  /* Summary — right-aligned counts use tabular figures so they don't jitter. */
-  .rx-summary {
-    white-space: nowrap;
-  }
-
-  /* Share-link / Copy-as-Markdown pill buttons next to the "Matches" eyebrow.
-     Only shown once a valid, non-empty result exists (see runNow()). */
-  .rx-share-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: 26px;
-    padding: 0 10px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-mute);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 16px;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: color 0.12s ease, background 0.12s ease;
-  }
-  .rx-share-btn:hover {
-    color: var(--color-brand-strong);
-    background: var(--color-hairline);
-  }
-  .rx-share-btn:focus-visible {
-    outline: 2px solid var(--color-link);
-    outline-offset: 1px;
-  }
-  .rx-share-btn.rx-share-btn--copied {
-    color: var(--color-brand-strong);
-    background: var(--color-brand-soft);
-  }
-  @media (pointer: coarse) {
-    .rx-share-btn {
-      height: auto;
-      min-height: 36px;
-    }
+    color: var(--color-inverse-mute);
   }
 
   /* Results region. */
   .rx-results {
-    min-height: 44px;
+    min-height: var(--control-h-lg);
   }
 
-  /* Matches table — injected at runtime, so style globally. */
+  /* ── Matches table (render.ts; styled with :global) ──────────────────
+     Light rules first as the documented defaults; the slab re-skin follows,
+     anchored on this component's own `.rx-results` container. */
   :global(.rx-table-wrap) {
     border-radius: var(--radius-md);
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
     overflow: auto;
-    animation: rx-rise 0.18s ease both;
+    animation: rx-rise var(--dur-base) var(--ease-brand) both;
   }
   @keyframes rx-rise {
     from {
@@ -796,13 +412,9 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     vertical-align: top;
     border-bottom: 1px solid var(--color-hairline);
   }
+  /* Column heads take the row-key role (label-field): mono 11/16 uppercase. */
   :global(.rx-table thead th) {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    font-weight: 400;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--color-mute);
+    @apply label-field;
     background: var(--color-canvas-soft-2);
     white-space: nowrap;
     position: sticky;
@@ -828,7 +440,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     color: var(--color-mute);
     font-style: italic;
   }
-  /* Per-row capture / named group chips. */
+  /* Per-row capture / named group tags. */
   :global(.rx-groups) {
     display: flex;
     flex-wrap: wrap;
@@ -873,7 +485,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     background: var(--color-error-soft);
     box-shadow: inset 0 0 0 1px var(--color-error);
     color: var(--color-error-deep);
-    animation: rx-rise 0.18s ease both;
+    animation: rx-rise var(--dur-base) var(--ease-brand) both;
   }
   @media (prefers-reduced-motion: reduce) {
     :global(.rx-error) {
@@ -938,7 +550,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
     color: var(--color-body);
-    animation: rx-rise 0.18s ease both;
+    animation: rx-rise var(--dur-base) var(--ease-brand) both;
   }
   @media (prefers-reduced-motion: reduce) {
     :global(.rx-nomatch) {
@@ -969,13 +581,62 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
   }
+
+  /* ── Instrument re-skin — the matches sit on the L2 result slab (dark in
+     BOTH themes), so everything render.ts emits uses the slab ink tier. ── */
+  .rx-results :global(.rx-table-wrap),
+  .rx-results :global(.rx-nomatch),
+  .rx-results :global(.rx-empty) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-fg);
+  }
+  .rx-results :global(.rx-table th),
+  .rx-results :global(.rx-table td) {
+    border-bottom-color: #ffffff12;
+  }
+  .rx-results :global(.rx-table thead th) {
+    background: var(--color-inverse);
+    color: var(--color-inverse-mute);
+  }
+  .rx-results :global(.rx-table tbody tr:hover) {
+    background: #ffffff08;
+  }
+  .rx-results :global(.rx-val),
+  .rx-results :global(.rx-group__val) {
+    color: var(--color-inverse-fg);
+  }
+  .rx-results :global(.rx-idx),
+  .rx-results :global(.rx-val--empty),
+  .rx-results :global(.rx-group__key),
+  .rx-results :global(.rx-group__val--empty),
+  .rx-results :global(.rx-nogroups),
+  .rx-results :global(.rx-nomatch__icon),
+  .rx-results :global(.rx-empty) {
+    color: var(--color-inverse-mute);
+  }
+  .rx-results :global(.rx-group) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+  }
+  .rx-results :global(.rx-notice) {
+    background: #e0a45814;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-accent);
+  }
+  .rx-results :global(.rx-error) {
+    background: #ff9d9514;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-error);
+    color: var(--color-inverse-error);
+  }
 </style>
 
 <script>
   import type { EditorView } from '@codemirror/view';
   import { wireRunKeys } from '../lib/run-keys';
-  import { copyTextToClipboard } from '../lib/clipboard';
   import { buildMarkdownBlock } from '../lib/share-md';
+  import { wireCopyButtons } from '../lib/playground-kit/copy';
+  import { syncChipsByIndex, clearChips, CHIP_SELECTOR } from '../lib/playground-kit/chips';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
   // The HTML builders are shared with the frontmatter's build-time seed —
   // one implementation, so the no-JS markup and the live markup never drift.
@@ -1002,8 +663,8 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
   };
 
   const ROOT_SEL = '.rx-pg';
+  const SLUG = 'regex-log-tester';
   const DEBOUNCE_MS = 160;
-  const COPIED_RESET_MS = 1500;
   const FLAG_ORDER = ['g', 'i', 'm', 's', 'u'] as const;
 
   /** Boot every (so far un-hydrated) playground instance on the page. */
@@ -1019,6 +680,10 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
 
   function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
     return root.querySelector<T>(sel);
+  }
+
+  function isCoarsePointer(): boolean {
+    return window.matchMedia?.('(pointer: coarse)').matches ?? false;
   }
 
   /** Normalise the sibling examples array defensively. */
@@ -1039,25 +704,23 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
 
   /* ---- Result rendering (DOM writes over the shared pure builders) --------- */
 
-  function renderResults(
-    container: HTMLElement,
-    summary: HTMLElement,
-    result: RegexResult
-  ): void {
+  function setSummary(summary: HTMLElement, text: string, isError: boolean): void {
+    summary.textContent = text;
+    summary.classList.toggle('text-inverse-error', isError);
+    summary.classList.toggle('text-inverse-mute', !isError);
+  }
+
+  function renderResults(container: HTMLElement, summary: HTMLElement, result: RegexResult): void {
     // ONLY `valid === false` is an invalid pattern. A truthy `notice` is a
     // caveat on a perfectly good run (input over the scan cap, matching stopped
     // at the match cap) and must never suppress the real matches below.
     const invalid = !result || result.valid === false;
-    summary.textContent = summaryText(result);
-    summary.classList.toggle('text-error', invalid);
-    summary.classList.toggle('text-mute', !invalid);
+    setSummary(summary, summaryText(result), invalid);
     container.innerHTML = resultsHtml(result);
   }
 
   function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
-    summary.textContent = '';
-    summary.classList.remove('text-error');
-    summary.classList.add('text-mute');
+    setSummary(summary, '', false);
     container.innerHTML = EMPTY_HTML;
   }
 
@@ -1072,13 +735,12 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     const highlightBox = el<HTMLElement>(root, '#rx-highlight');
     const resultsBox = el<HTMLElement>(root, '#rx-results');
     const summaryEl = el<HTMLElement>(root, '#rx-summary');
+    const copyStatus = el<HTMLElement>(root, '#rx-copy-status');
     const shareBtn = el<HTMLButtonElement>(root, '#rx-share');
     const mdBtn = el<HTMLButtonElement>(root, '#rx-copy-md');
+    const testBtn = el<HTMLButtonElement>(root, '#rx-test');
     const sampleCue = el<HTMLElement>(root, '#rx-sample-cue');
-    const flagInputs = Array.from(
-      root.querySelectorAll<HTMLInputElement>('.rx-flag-input')
-    );
-    const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('.rx-tab'));
+    const flagInputs = Array.from(root.querySelectorAll<HTMLInputElement>('.rx-flag-input'));
     const snapSaveBtn = el<HTMLButtonElement>(root, '#rx-snap-save');
     const snapSelect = el<HTMLSelectElement>(root, '#rx-snap-select');
     const snapDeleteBtn = el<HTMLButtonElement>(root, '#rx-snap-delete');
@@ -1091,8 +753,10 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
       !highlightBox ||
       !resultsBox ||
       !summaryEl ||
+      !copyStatus ||
       !shareBtn ||
       !mdBtn ||
+      !testBtn ||
       !snapSaveBtn ||
       !snapSelect ||
       !snapDeleteBtn
@@ -1100,8 +764,12 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
       return;
     }
 
-    // Lazily load the sibling engine + examples + CodeMirror (kept off the
-    // initial path so CM code-splits into its own chunk).
+    // Copy plumbing (Copy link, Copy as Markdown) — the kit helper: one
+    // delegated listener; outcomes announced in #rx-copy-status.
+    wireCopyButtons(root, { status: copyStatus });
+
+    // Lazily load the sibling engine + examples + CodeMirror + the kit's plate
+    // theme (kept off the initial path so CM code-splits into its own chunk).
     let engine: EngineModule;
     let examples: Example[] = [];
     let EditorState: typeof import('@codemirror/state').EditorState;
@@ -1113,7 +781,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     let history: typeof import('@codemirror/commands').history;
     let historyKeymap: typeof import('@codemirror/commands').historyKeymap;
     let indentWithTab: typeof import('@codemirror/commands').indentWithTab;
-    let oneDark: typeof import('@codemirror/theme-one-dark').oneDark;
+    let plate: typeof import('../lib/playground-kit/cm-theme').plate;
     try {
       const [engineMod, examplesMod, stateMod, viewMod, commandsMod, themeMod] =
         await Promise.all([
@@ -1122,18 +790,16 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
           import('@codemirror/state'),
           import('@codemirror/view'),
           import('@codemirror/commands'),
-          import('@codemirror/theme-one-dark'),
+          import('../lib/playground-kit/cm-theme'),
         ]);
       engine = engineMod as unknown as EngineModule;
       examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
       ({ EditorState } = stateMod);
       ({ EditorView: EditorViewCtor, keymap, lineNumbers, highlightActiveLine } = viewMod);
       ({ defaultKeymap, history, historyKeymap, indentWithTab } = commandsMod);
-      ({ oneDark } = themeMod);
+      ({ plate } = themeMod);
     } catch (err) {
-      summaryEl.textContent = 'Error';
-      summaryEl.classList.add('text-error');
-      summaryEl.classList.remove('text-mute');
+      setSummary(summaryEl, 'Error', true);
       resultsBox.innerHTML = errorHtml(
         'Could not load the tester',
         'The regex engine failed to load. Reload the page to try again.'
@@ -1152,35 +818,32 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
           lineNumbers(),
           history(),
           highlightActiveLine(),
-          oneDark,
+          plate,
+          // Sizing only — colours, gutters and the focus ring come from the
+          // plate theme and the EditorPane rule in global.css.
+          EditorViewCtor.theme({
+            '&': { fontSize: '13px', maxHeight: '420px' },
+            '.cm-scroller': { overflow: 'auto' },
+          }),
           EditorViewCtor.lineWrapping,
+          EditorViewCtor.contentAttributes.of({ 'aria-label': 'Sample log lines' }),
           keymap.of([
             // Ours FIRST, so it wins over defaultKeymap's Enter.
             {
               key: 'Mod-Enter',
-              run: function (view) {
+              run: (view) => {
                 runNow(true);
-                view.contentDOM.blur();
+                if (isCoarsePointer()) view.contentDOM.blur();
                 return true;
               },
             },
+            { key: 'Escape', run: (view) => { view.contentDOM.blur(); return true; } },
             ...defaultKeymap,
             ...historyKeymap,
             indentWithTab,
-            { key: 'Escape', run: function(view) { view.contentDOM.blur(); return true; } },
           ]),
           EditorViewCtor.updateListener.of((u) => {
             if (u.docChanged) onChange();
-          }),
-          EditorViewCtor.theme({
-            '&': { color: '#e6e6e6' },
-            '.cm-content': { caretColor: '#e6e6e6' },
-            '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
-            '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
-              backgroundColor: 'rgba(0, 112, 243, 0.32)',
-            },
-            '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
-            '.cm-activeLineGutter': { backgroundColor: 'transparent' },
           }),
         ],
       });
@@ -1193,9 +856,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
 
     /** Collect the active flags in canonical g i m s u order. */
     function currentFlags(): string {
-      const set = new Set(
-        flagInputs.filter((c) => c.checked).map((c) => c.value)
-      );
+      const set = new Set(flagInputs.filter((c) => c.checked).map((c) => c.value));
       return FLAG_ORDER.filter((f) => set.has(f)).join('');
     }
 
@@ -1204,11 +865,12 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
       if (flagMirror) flagMirror.textContent = `/${currentFlags()}`;
     }
 
-    /** Hide + reset both share affordances (error/empty states never show them). */
-    function hideShareAndMd(): void {
-      shareBtn!.hidden = true;
-      shareBtn!.dataset.copy = '';
-      mdBtn!.hidden = true;
+    /** Hide + reset both copy actions (error/empty states never show them). */
+    function hideActions(): void {
+      for (const btn of [shareBtn!, mdBtn!]) {
+        btn.hidden = true;
+        btn.dataset.copy = '';
+      }
     }
 
     /** Drop the `#s=...` share fragment without adding a history entry. */
@@ -1222,12 +884,12 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
 
     /**
      * Run the engine and repaint the highlight + table. Never throws.
-     * `userInitiated` gates whether the URL hash is written — seeding from a
-     * bundled example or a shared link must never itself rewrite the address
-     * bar; only an explicit user action (typing, toggling a flag, choosing an
-     * example, pressing Test) does.
+     * `userInitiated` gates whether the URL hash is written and the last input
+     * recorded — seeding from a bundled example, a shared link or a restored
+     * input must never itself rewrite the address bar.
      */
     function runNow(userInitiated = true): void {
+      window.clearTimeout(debounceTimer);
       const pattern = patternInput!.value;
       const flags = currentFlags();
       const text = editorView.state.doc.toString();
@@ -1236,7 +898,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
         patternWrap!.classList.remove('rx-pattern-wrap--error');
         highlightBox!.innerHTML = buildHighlight(text, []);
         renderEmpty(resultsBox!, summaryEl!);
-        hideShareAndMd();
+        hideActions();
         if (userInitiated) clearHash();
         return;
       }
@@ -1254,8 +916,8 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
       }
 
       // A non-fatal `notice` (scan cap / match cap) is NOT a failure — the
-      // pattern compiled and the matches are real, so the highlight, the share
-      // link and the Markdown copy all stay available.
+      // pattern compiled and the matches are real, so the highlight and the
+      // copy actions all stay available.
       const ok = result && result.valid !== false;
       patternWrap!.classList.toggle('rx-pattern-wrap--error', !ok);
       patternInput!.setAttribute('aria-invalid', ok ? 'false' : 'true');
@@ -1265,23 +927,35 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
       renderResults(resultsBox!, summaryEl!, result);
 
       if (!ok) {
-        hideShareAndMd();
+        hideActions();
         if (userInitiated) clearHash();
         return;
       }
 
       const hash = engine.encodeState(pattern, flags, text);
-      shareBtn!.hidden = false;
       shareBtn!.dataset.copy =
         window.location.origin + window.location.pathname + window.location.search + hash;
+      shareBtn!.hidden = false;
+
+      const count = Number.isFinite(result.matchCount) ? result.matchCount : 0;
+      const matchSummary = count === 0 ? 'No matches' : count === 1 ? '1 match' : `${count} matches`;
+      const first = matches[0];
+      mdBtn!.dataset.copy = buildMarkdownBlock('Regex & Log Line Tester', [
+        { label: 'Pattern', value: pattern },
+        { label: 'Flags', value: flags },
+        { label: 'Log', value: text },
+        { label: 'Result', value: matchSummary },
+        { label: 'First match', value: first ? first.match : '' },
+      ]);
       mdBtn!.hidden = false;
+
       if (userInitiated) {
         try {
           window.history.replaceState(null, '', hash);
         } catch {
           /* ignore — Safari's replaceState throttle must never break input */
         }
-        recordToolLastInput('regex-log-tester', JSON.stringify({ pattern, flags, text }));
+        recordToolLastInput(SLUG, JSON.stringify({ pattern, flags, text }));
       }
     }
 
@@ -1289,7 +963,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     let debounceTimer: number | undefined;
     function scheduleRun(): void {
       window.clearTimeout(debounceTimer);
-      debounceTimer = window.setTimeout(runNow, DEBOUNCE_MS);
+      debounceTimer = window.setTimeout(() => runNow(true), DEBOUNCE_MS);
     }
 
     // Seed content: prefer a shared-state URL hash, then a restored last
@@ -1315,7 +989,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
 
     let fromRestored = false;
     if (!fromShare) {
-      const restored = getRestoredLastInput('regex-log-tester');
+      const restored = getRestoredLastInput(SLUG);
       if (restored) {
         try {
           const parsed = JSON.parse(restored) as unknown;
@@ -1333,25 +1007,10 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
       }
     }
 
-    // The example chips are already in the static HTML (server-rendered from
-    // the same `examples` module); the script only wires them. `chips` is
-    // captured as a plain array so the helpers below never lose the
-    // null-narrowing on `chipsWrap` inside a hoisted function declaration.
-    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>('.rx-chip'));
-
-    /**
-     * Mark one chip active, or none at all. A shared link, a restored input or
-     * a snapshot is not a bundled example, so it leaves EVERY chip unpressed —
-     * the chip equivalent of the "Shared snippet" / "Restored input" option the
-     * <select> used to grow.
-     */
-    function setActiveChip(idx: number | null): void {
-      chips.forEach((chip) => {
-        const active = idx !== null && chip.dataset.exampleIdx === String(idx);
-        chip.classList.toggle('is-active', active);
-        chip.setAttribute('aria-pressed', active ? 'true' : 'false');
-      });
-    }
+    // The example chips are already in the static HTML (ExampleChips); the
+    // script only wires them. A shared link, a restored input or a snapshot
+    // is not a bundled example, so it leaves EVERY chip unpressed.
+    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>(CHIP_SELECTOR));
 
     /**
      * Any doc edit means what is on screen is no longer the bundled example, so
@@ -1360,7 +1019,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
      * call, in the same synchronous block, so nothing flickers.
      */
     function onDocChange(): void {
-      setActiveChip(null);
+      clearChips(chipsWrap);
       scheduleRun();
     }
 
@@ -1377,7 +1036,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     });
     syncFlagMirror();
 
-    setActiveChip(fromShare || fromRestored || examples.length === 0 ? null : 0);
+    syncChipsByIndex(chipsWrap, fromShare || fromRestored || examples.length === 0 ? null : 0);
 
     // A shared/restored/custom seed isn't a bundled "sample" — don't advertise it as one.
     let sampleCueDismissed = fromShare || fromRestored;
@@ -1396,7 +1055,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
         });
         syncFlagMirror();
         setEditorDoc(editorView, ex.text); // triggers onDocChange via updateListener
-        setActiveChip(idx); // after the doc write, which clears every chip
+        syncChipsByIndex(chipsWrap, idx); // after the doc write, which clears every chip
         // Show the "(sample)" cue again for the newly loaded example.
         sampleCueDismissed = false;
         if (sampleCue) sampleCue.hidden = false;
@@ -1404,11 +1063,8 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
       });
     });
 
-    // "Test" button — immediate run on demand.
-    const testBtn = el<HTMLButtonElement>(root, '#rx-test');
-    if (testBtn) {
-      testBtn.addEventListener('click', () => runNow());
-    }
+    // "Run now" — immediate run on demand.
+    testBtn.addEventListener('click', () => runNow());
 
     // Dismiss the "(sample)" cue once the user edits the pattern.
     function dismissSampleCue(): void {
@@ -1418,68 +1074,11 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
       }
     }
 
-    // Share — copy a URL encoding the full pattern/flags/log state.
-    const shareLabel = shareBtn.querySelector<HTMLElement>('.rx-share-label');
-    let shareCopyTimer: number | undefined;
-    shareBtn.addEventListener('click', () => {
-      const text = shareBtn.dataset.copy ?? '';
-      void copyTextToClipboard(text).then((ok) => {
-        if (!ok) return;
-        shareBtn.classList.add('rx-share-btn--copied');
-        if (shareLabel) shareLabel.textContent = 'Copied';
-        window.clearTimeout(shareCopyTimer);
-        shareCopyTimer = window.setTimeout(() => {
-          shareBtn.classList.remove('rx-share-btn--copied');
-          if (shareLabel) shareLabel.textContent = 'Copy link';
-        }, COPIED_RESET_MS);
-      });
-    });
-
-    // Copy as Markdown — a fenced summary of the current pattern/flags/log/result.
-    const mdLabel = mdBtn.querySelector<HTMLElement>('.rx-md-label');
-    let mdCopyTimer: number | undefined;
-    mdBtn.addEventListener('click', () => {
-      const pattern = patternInput.value;
-      const flags = currentFlags();
-      const text = editorView.state.doc.toString();
-
-      let result: RegexResult;
-      try {
-        result = engine.run(pattern, flags, text);
-      } catch {
-        return;
-      }
-      if (!result || result.valid === false) return;
-
-      const count = Number.isFinite(result.matchCount) ? result.matchCount : 0;
-      const matchSummary = count === 0 ? 'No matches' : count === 1 ? '1 match' : `${count} matches`;
-      const first = Array.isArray(result.matches) ? result.matches[0] : undefined;
-
-      const md = buildMarkdownBlock('Regex & Log Line Tester', [
-        { label: 'Pattern', value: pattern },
-        { label: 'Flags', value: flags },
-        { label: 'Log', value: text },
-        { label: 'Result', value: matchSummary },
-        { label: 'First match', value: first ? first.match : '' },
-      ]);
-
-      void copyTextToClipboard(md).then((ok) => {
-        if (!ok) return;
-        mdBtn.classList.add('rx-share-btn--copied');
-        if (mdLabel) mdLabel.textContent = 'Copied';
-        window.clearTimeout(mdCopyTimer);
-        mdCopyTimer = window.setTimeout(() => {
-          mdBtn.classList.remove('rx-share-btn--copied');
-          if (mdLabel) mdLabel.textContent = 'Copy as Markdown';
-        }, COPIED_RESET_MS);
-      });
-    });
-
     // Pattern edits + flag toggles re-run (debounced for typing, immediate for
     // flags). Either one means the on-screen state is no longer the bundled
-    // example, so the active chip is released.
+    // example, so the pressed chip is released.
     patternInput.addEventListener('input', () => {
-      setActiveChip(null);
+      clearChips(chipsWrap);
       dismissSampleCue();
       scheduleRun();
     });
@@ -1488,50 +1087,14 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     wireRunKeys(patternInput, () => runNow(true));
     flagInputs.forEach((c) => {
       c.addEventListener('change', () => {
-        setActiveChip(null);
+        clearChips(chipsWrap);
         syncFlagMirror();
         runNow();
       });
     });
 
-    // Mobile tab switching (panes are always visible on desktop via CSS).
-    const samplePane = el<HTMLElement>(root, '#rx-pane-sample');
-    const matchesPane = el<HTMLElement>(root, '#rx-pane-matches');
-
-    function activateTab(tab: HTMLButtonElement, focusTab: boolean): void {
-      const showSample = tab.dataset.pane === 'sample';
-      tabs.forEach((t) => {
-        const active = t === tab;
-        t.classList.toggle('is-active', active);
-        t.setAttribute('aria-selected', active ? 'true' : 'false');
-        // Roving tabindex: only the selected tab is in the tab order.
-        t.tabIndex = active ? 0 : -1;
-      });
-      samplePane?.classList.toggle('rx-pane--active', showSample);
-      matchesPane?.classList.toggle('rx-pane--active', !showSample);
-      if (focusTab) tab.focus();
-      // Refresh CM measurement once the sample pane is visible (post-layout).
-      if (showSample) requestAnimationFrame(() => editorView.requestMeasure());
-    }
-
-    tabs.forEach((tab, i) => {
-      tab.addEventListener('click', () => activateTab(tab, false));
-      // Roving focus with Left/Right/Home/End per the tablist a11y pattern.
-      tab.addEventListener('keydown', (e) => {
-        let next = -1;
-        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (i + 1) % tabs.length;
-        else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
-          next = (i - 1 + tabs.length) % tabs.length;
-        else if (e.key === 'Home') next = 0;
-        else if (e.key === 'End') next = tabs.length - 1;
-        if (next < 0) return;
-        e.preventDefault();
-        activateTab(tabs[next], true);
-      });
-    });
-
     wireSnapshotUI({
-      slug: 'regex-log-tester',
+      slug: SLUG,
       saveBtn: snapSaveBtn,
       snapshotSelect: snapSelect,
       deleteBtn: snapDeleteBtn,
@@ -1560,7 +1123,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
         syncFlagMirror();
         setEditorDoc(editorView, text); // triggers onDocChange via updateListener
         // A snapshot is not a bundled example — leave every chip unpressed.
-        setActiveChip(null);
+        clearChips(chipsWrap);
         dismissSampleCue();
         runNow();
       },

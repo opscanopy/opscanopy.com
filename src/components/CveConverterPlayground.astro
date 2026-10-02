@@ -4,10 +4,16 @@
  *
  * A no-framework, server-rendered shell hydrated by a single module <script>
  * that lazily boots a CodeMirror 6 input editor and a read-only output editor,
- * wires "From"/"To" format pickers, an example picker, a "Convert" action and a
- * "Copy output" action. It runs entirely client-side — no upload, no network.
+ * wires "From"/"To" format pickers and the example chips. Conversion is live
+ * and debounced; "Run now" and ⌘/Ctrl + Enter convert immediately.
  *
- * Runtime contract (built by sibling agents — imported lazily in the script):
+ * Built on the playground kit (src/components/playground/*): ExampleChips,
+ * EditorPane (source + converted policy, side by side from 768px), RunHint,
+ * SnapshotBar, ResultPanel (figure cap, live summary, copy status) and
+ * CopyButton. The notes container stays here, seeded with `set:html` +
+ * `data-results`; its slab overrides anchor on `.cv-messages`.
+ *
+ * Runtime contract (imported lazily in the script):
  *   ../lib/cve-ignore/engine →
  *     convert(from: Format, to: Format, text: string) =>
  *       { output: string; warnings: string[]; error?: string }
@@ -15,19 +21,13 @@
  *     decodeState() => { src: Format; dst: Format; text: string } | null
  *   ../lib/cve-ignore/types →
  *     FORMATS: { value: Format; label: string; filename: string }[]
- *     type Format = string  (opaque format id, e.g. "trivy" | "grype" | …)
  *   ../lib/cve-ignore/examples →
  *     examples: { id: string; label: string; from: Format; to: Format; text: string }[]
- *
- * The dark editor surface follows DESIGN.md `code-editor-mockup`; warnings use
- * the semantic warning tokens, errors the error tokens. Headlines stay
- * sentence-case, weight 600.
  */
 // Build-time import of the same `examples` the client script loads lazily.
-// Used ONLY to server-render the example CHIPS below (the playground UX
-// contract's picker — never a <select>), so the static HTML carries real
-// example names for crawlers and no-JS visitors. The script re-reads the
-// examples module at hydration and addresses each chip by its
+// Used to server-render the example chips (ExampleChips), so the static HTML
+// carries real example names for crawlers and no-JS visitors. The script
+// re-reads the examples module at hydration and addresses each chip by its
 // `data-example-idx`, so this adds nothing to the client bundle.
 // The From/To pickers stay <select>s — they are format pickers, not examples.
 import { examples as prerenderedExamples } from '../lib/cve-ignore/examples';
@@ -41,13 +41,18 @@ import {
   warningsHtml,
   warningsSummaryText,
 } from '../lib/cve-ignore/render';
+import ExampleChips from './playground/ExampleChips.astro';
+import EditorPane from './playground/EditorPane.astro';
+import RunHint from './playground/RunHint.astro';
+import SnapshotBar from './playground/SnapshotBar.astro';
+import ResultPanel from './playground/ResultPanel.astro';
+import CopyButton from './playground/CopyButton.astro';
 
 /**
  * Server-rendered seed. The client re-converts the same example on boot, so
  * this is pure progressive enhancement — but it means a no-JS visitor, and
  * every AI crawler (they do not execute JS), sees the real converted Snyk
- * policy and all three lossy-conversion notes instead of two empty editors and
- * a pair of "Loading…" selects.
+ * policy and all three lossy-conversion notes instead of two empty editors.
  *
  * `convert` is pure and synchronous — no clock, no random, no network — so it
  * runs unchanged at build time. Both documents go into
@@ -55,7 +60,7 @@ import {
  * editor to the host, so the script removes every fallback once mounted.
  *
  * NOT seeded, because it is not knowable at build time: the `#s=` share URL
- * (built from `window.location`), so both share buttons stay hidden until the
+ * (built from `window.location`), so the copy actions stay hidden until the
  * client converts.
  */
 const seedExample = prerenderedExamples[0];
@@ -73,33 +78,26 @@ const seedSummary = !seedResult
   : seedResult.error
     ? 'Error'
     : warningsSummaryText(seedWarnings);
-const seedSummaryTone = !seedResult
-  ? 'text-mute'
-  : seedResult.error
-    ? 'text-error'
-    : seedWarnings.length > 0
-      ? 'text-warning-deep'
-      : 'text-mute';
 const seedFrom = seedExample ? seedExample.from : FORMATS[0].value;
 const seedTo = seedExample ? seedExample.to : FORMATS[1].value;
 const seedInputName = filenameFor(FORMATS, seedFrom);
 const seedOutputName = filenameFor(FORMATS, seedTo);
+const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
 ---
 
 <section class="cv-pg" aria-label="CVE-Ignore Converter playground">
-  <div class="card shadow-float rounded-lg overflow-hidden">
-    {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Toolbar: formats, examples, Run now ──────────────────────────── */}
     <div
       class="flex flex-col gap-3 border-b border-hairline px-4 py-3 lg:flex-row lg:items-end lg:justify-between lg:px-5"
     >
-      <div class="flex flex-wrap items-end gap-3">
+      <div class="flex min-w-0 flex-wrap items-end gap-3">
         <div class="flex min-w-0 flex-col gap-1">
           <label class="eyebrow" for="cv-from">From</label>
           <div class="cv-select-wrap relative min-w-0">
             <select id="cv-from" class="cv-select code-mono" autocomplete="off">
               {/* Server-rendered from `FORMATS` (the script refills the same
-                  list on boot) so the static HTML names the real ecosystems
-                  instead of "Loading…". */}
+                  list on boot) so the static HTML names the real ecosystems. */}
               {
                 FORMATS.map((f) => (
                   <option value={f.value} selected={f.value === seedFrom}>
@@ -165,230 +163,51 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
         </div>
 
         <div class="flex min-w-0 flex-col gap-1">
-          <span class="eyebrow">Example</span>
-          {/* Chips, not a <select> — the playground UX contract's example
-              picker. Server-rendered from `examples`; the hydration script
-              addresses each by its data-example-idx. */}
-          <div id="cv-chips" class="cv-chips" role="group" aria-label="Examples">
-            {
-              prerenderedExamples.map((ex, i) => (
-                <button
-                  type="button"
-                  class:list={['cv-chip', { 'is-active': i === 0 }]}
-                  data-example-idx={i}
-                  aria-pressed={i === 0 ? 'true' : 'false'}
-                >
-                  {ex.label}
-                </button>
-              ))
-            }
-          </div>
+          <span class="eyebrow">Examples</span>
+          <ExampleChips prefix="cv" items={chipItems} active={seedExample ? 0 : null} ariaLabel="Examples" />
         </div>
       </div>
 
-      <div class="flex shrink-0 flex-wrap items-center gap-2">
-        <span class="caption text-mute hidden items-center sm:inline-flex">⌘/Ctrl + Enter</span>
-        <button
-          id="cv-copy"
-          type="button"
-          class="btn btn-secondary btn-sm cv-tap"
-          data-default-label="Copy Output"
-          disabled
-        >
-          <svg
-            class="h-4 w-4 shrink-0"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <rect x="5.5" y="5.5" width="8" height="8" rx="1.5"></rect>
-            <path d="M3.5 10.5h-.5a1 1 0 01-1-1v-6a1 1 0 011-1h6a1 1 0 011 1v.5"></path>
-          </svg>
-          <span class="cv-copy-label">Copy Output</span>
-        </button>
-        <button
-          id="cv-convert"
-          type="button"
-          class="btn btn-primary btn-sm cv-tap"
-          title="Convert (⌘/Ctrl + Enter)"
-          aria-keyshortcuts="Meta+Enter Control+Enter"
-        >
-          <svg
-            class="cv-convert-icon h-4 w-4 shrink-0"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M3 5.5h8.5M9 3l2.5 2.5L9 8"></path>
-            <path d="M13 10.5H4.5M7 8l-2.5 2.5L7 13"></path>
-          </svg>
-          <span class="cv-convert-label">Convert</span>
-        </button>
-      </div>
-    </div>
-
-    {/* ── Mobile tab switch (single-pane on small screens) ─────────────── */}
-    <div
-      class="cv-tabs flex gap-1 border-b border-hairline px-4 py-2 md:hidden"
-      role="tablist"
-      aria-label="Editor panes"
-    >
       <button
-        id="cv-tab-input"
+        id="cv-convert"
         type="button"
-        class="cv-tab cv-tap is-active"
-        role="tab"
-        aria-selected="true"
-        aria-controls="cv-pane-input"
-        data-pane="input"
-        tabindex="0"
+        class="btn-tool cv-tap"
+        title="Run now (⌘/Ctrl + Enter)"
+        aria-keyshortcuts="Meta+Enter Control+Enter"
       >
-        Input
-      </button>
-      <button
-        id="cv-tab-output"
-        type="button"
-        class="cv-tab cv-tap"
-        role="tab"
-        aria-selected="false"
-        aria-controls="cv-pane-output"
-        data-pane="output"
-        tabindex="-1"
-      >
-        Output
+        Run now
       </button>
     </div>
 
-    {/* ── Editor split (side-by-side on desktop, tabbed on mobile) ─────── */}
-    <div class="cv-grid grid grid-cols-1 md:grid-cols-2">
-      <div
-        id="cv-pane-input"
-        class="cv-pane cv-pane--active flex min-w-0 flex-col bg-inverse md:border-r md:border-white/10"
-        role="tabpanel"
-        aria-labelledby="cv-tab-input"
-      >
-        <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
-          <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-          </span>
-          <span id="cv-input-name" class="code-mono text-white/45">{seedInputName}</span>
-        </div>
-        <div
-          id="cv-editor-input"
-          class="cv-editor min-h-72"
-          aria-label="Source suppression policy"
-        >
-          <pre class="cv-cm-fallback code-mono" data-cm-fallback>{seedInput}</pre>
-        </div>
-        <p class="text-xs text-mute mt-1" style="padding: 0 16px 8px;">Tip: press <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd> to release focus.</p>
-        <div class="cv-snap-row mt-3 flex flex-wrap items-center gap-2" style="padding: 0 16px 12px;">
-          <button id="cv-snap-save" type="button" class="cv-snap-btn">Save snapshot</button>
-          <select id="cv-snap-select" class="cv-snap-select" aria-label="Load a saved snapshot" disabled>
-            <option value="">No snapshots yet</option>
-          </select>
-          <button id="cv-snap-delete" type="button" class="cv-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
-        </div>
+    {/* ── Editors: source policy | converted policy (side by side ≥768px) ─ */}
+    <div class="border-b border-hairline px-4 py-4 sm:px-5">
+      <div class="cv-grid">
+        <EditorPane prefix="cv" id="cv-editor-input" label={seedInputName}>
+          <pre class="editor-pane__fallback code-mono" data-cm-fallback>{seedInput}</pre>
+        </EditorPane>
+        <EditorPane prefix="cv" id="cv-editor-output" label={seedOutputName}>
+          <Fragment slot="actions">
+            <CopyButton kind="all" id="cv-copy" label="Copy output" />
+          </Fragment>
+          <pre class="editor-pane__fallback code-mono" data-cm-fallback>{seedOutput}</pre>
+        </EditorPane>
       </div>
-
-      <div
-        id="cv-pane-output"
-        class="cv-pane flex min-w-0 flex-col bg-inverse"
-        role="tabpanel"
-        aria-labelledby="cv-tab-output"
-      >
-        <div class="flex items-center justify-between gap-2 border-b border-white/10 px-4 py-2.5">
-          <div class="flex min-w-0 items-center gap-2">
-            <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
-              <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-              <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-              <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-            </span>
-            <span id="cv-output-name" class="code-mono truncate text-white/45">{seedOutputName}</span>
-          </div>
-          <span class="code-mono shrink-0 text-white/30">read-only</span>
-        </div>
-        <div
-          id="cv-editor-output"
-          class="cv-editor min-h-72"
-          role="region"
-          aria-label="Converted suppression policy (read-only)"
-        >
-          <pre class="cv-cm-fallback code-mono" data-cm-fallback>{seedOutput}</pre>
-        </div>
-      </div>
+      <RunHint variant="cm" class="mt-2" />
+      <SnapshotBar prefix="cv" />
     </div>
 
-    {/* ── Messages panel (warnings + errors) ───────────────────────────── */}
-    <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <span class="flex items-center gap-2">
-          <span class="eyebrow">Notes</span>
-          <button id="cv-share" type="button" class="cv-share-btn" data-copy="" hidden>
-            <svg
-              class="cv-share-icon"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M6.75 9.25l2.5-2.5"></path>
-              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
-              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
-            </svg>
-            <span class="cv-share-label">Copy link</span>
-          </button>
-          <button id="cv-share-md" type="button" class="cv-share-btn" hidden>
-            <svg
-              class="cv-share-icon"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M4 2.5h5.5L12 5v8.5a1 1 0 01-1 1H4a1 1 0 01-1-1v-10a1 1 0 011-1z"></path>
-              <path d="M9.5 2.5V5H12"></path>
-              <path d="M5 8h5M5 10.5h5M5 5.5h2"></path>
-            </svg>
-            <span class="cv-share-md-label">Copy as Markdown</span>
-          </button>
-        </span>
-        <span
-          id="cv-summary"
-          class:list={['cv-summary code-mono', seedSummaryTone]}
-          role="status"
-          aria-live="polite"
-        >{seedSummary}</span>
-      </div>
-
+    {/* ── Result: lossy-conversion notes on the L2 instrument ──────────── */}
+    <ResultPanel slug="cve-ignore-converter" prefix="cv" summary={seedSummary} label="Notes" summaryClass="whitespace-nowrap" split>
+      <Fragment slot="actions">
+        <CopyButton kind="link" id="cv-share" />
+        <CopyButton kind="value" id="cv-share-md" label="Copy as Markdown" icon="markdown" />
+      </Fragment>
       {/* Seeded at build time (see `seedMessagesHtml` above) so the lossy-
           conversion notes are in the static HTML; the client replaces it with
           the same markup on boot. */}
-      <div id="cv-messages" class="cv-messages" set:html={seedMessagesHtml}></div>
-    </div>
+      <div id="cv-messages" class="cv-messages" set:html={seedMessagesHtml} data-results></div>
+    </ResultPanel>
   </div>
-
-  {/* Polite announcer for clipboard + transient toasts. */}
-  <span id="cv-announce" class="sr-only" role="status" aria-live="polite"></span>
 </section>
 
 <style>
@@ -399,58 +218,12 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
     touch-action: manipulation;
   }
 
-  /* The example picker: squared chips (playground UX contract), not a select. */
-  .cv-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .cv-chip {
-    display: inline-flex;
-    align-items: center;
-    padding: 5px 11px;
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--color-hairline-muted);
-    background: var(--color-canvas);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    line-height: 16px;
-    letter-spacing: 0.01em;
-    color: var(--color-brand-strong);
-    cursor: pointer;
-    touch-action: manipulation;
-    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
-  }
-  .cv-chip:hover {
-    border-color: var(--color-hairline-strong);
-    background: var(--color-canvas-hover);
-  }
-  .cv-chip.is-active {
-    background: var(--color-brand-soft);
-    border-color: var(--color-brand-strong);
-    color: var(--color-brand-strong);
-  }
-  .cv-chip:focus-visible {
-    outline: 2px solid var(--color-focus);
-    outline-offset: 2px;
-  }
-  .cv-chip:disabled {
-    cursor: not-allowed;
-    color: var(--color-mute);
-    opacity: 0.7;
-  }
-  @media (pointer: coarse) {
-    .cv-chip {
-      min-height: 44px;
-    }
-  }
-
-  /* The From/To format pickers: 6px-radius in-app form controls. */
+  /* The From/To format pickers: in-app form controls. */
   .cv-select {
     appearance: none;
     -webkit-appearance: none;
     width: 100%;
-    height: 32px;
+    height: var(--control-h-md);
     min-width: 0;
     max-width: 280px;
     padding: 0 32px 0 12px;
@@ -463,7 +236,7 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
     cursor: pointer;
     text-overflow: ellipsis;
     touch-action: manipulation;
-    transition: box-shadow 0.15s ease;
+    transition: box-shadow var(--dur-fast) var(--ease-brand);
   }
   @media (min-width: 640px) {
     .cv-select {
@@ -480,230 +253,34 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
     opacity: 0.7;
   }
   .cv-select-caret {
-    transition: color 0.15s ease;
+    transition: color var(--dur-fast) var(--ease-brand);
   }
   .cv-select-wrap:hover .cv-select-caret {
     color: var(--color-body);
   }
 
-  .cv-snap-btn {
-    flex: 0 0 auto;
-    height: 30px;
-    padding: 0 12px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-    cursor: pointer;
-    transition: background 0.12s ease, box-shadow 0.12s ease;
-  }
-  .cv-snap-btn:hover {
-    background: var(--color-canvas-soft);
-    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
-  }
-  .cv-snap-select {
-    height: 30px;
-    max-width: 220px;
-    padding: 0 8px;
-    border-radius: var(--radius-sm);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-  }
-  .cv-snap-select:disabled {
-    color: var(--color-mute);
-    cursor: not-allowed;
-  }
-  .cv-snap-delete {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: transparent;
-    color: var(--color-mute);
-    cursor: pointer;
-    transition: background 0.12s ease, color 0.12s ease;
-  }
-  .cv-snap-delete:hover {
-    background: var(--color-error-soft);
-    color: var(--color-error-deep);
-  }
-
-  /* Mobile tab pills (square in-app scale; never the 100px marketing pill). */
-  .cv-tab {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 1 1 0;
-    min-height: 44px;
-    border-radius: var(--radius-sm);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    color: var(--color-mute);
-    background: transparent;
-    cursor: pointer;
-    transition: background-color 0.15s ease, color 0.15s ease;
-  }
-  .cv-tab:hover:not(.is-active) {
-    color: var(--color-body);
-    background: var(--color-canvas-soft-2);
-  }
-  .cv-tab.is-active {
-    color: var(--color-on-primary);
-    background: var(--color-primary);
-  }
-
-  /* Visibility is driven by the .cv-pane--active class, NOT the [hidden]
-     attribute. Tailwind v4's layered `[hidden]{display:none!important}` (in
-     @layer base) beats any unlayered !important override, which previously left
-     the output pane invisible on desktop. */
-  @media (max-width: 767px) {
-    .cv-pane {
-      display: none;
-    }
-    .cv-pane.cv-pane--active {
-      display: flex;
-    }
+  /* Source | converted, side by side from 768px. */
+  .cv-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
   }
   @media (min-width: 768px) {
-    /* Desktop: both panes always visible side by side. */
-    .cv-pane {
-      display: flex;
-    }
-  }
-
-  /* CodeMirror host — fills the dark pane, scrolls internally. */
-  .cv-editor {
-    overflow: hidden;
-  }
-  /* Build-time text stand-in for each editor, sized like the CM content so the
-     pane does not jump when the script swaps it out. Removed on mount. */
-  .cv-cm-fallback {
-    margin: 0;
-    padding: 14px 16px 16px;
-    max-height: 360px;
-    overflow: auto;
-    color: #e6e6e6;
-    font-size: 13px;
-    line-height: 20px;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-  .cv-editor :global(.cm-editor) {
-    height: 100%;
-    background: transparent;
-    font-family: var(--font-mono);
-    font-size: 13px;
-    line-height: 20px;
-  }
-  .cv-editor :global(.cm-editor.cm-focused) {
-    /* Replace CM's default outline with a brand-blue ring (a11y: keep a ring). */
-    outline: 2px solid var(--color-link);
-    outline-offset: -2px;
-  }
-  .cv-editor :global(.cm-scroller) {
-    overflow: auto;
-    max-height: 420px;
-    font-family: var(--font-mono);
-    /* Thin, theme-matched scrollbars on the dark surface. */
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
-  }
-  .cv-editor :global(.cm-scroller)::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  .cv-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.16);
-    border-radius: var(--radius-pill);
-    border: 3px solid transparent;
-    background-clip: content-box;
-  }
-  .cv-editor :global(.cm-scroller)::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.28);
-    background-clip: content-box;
-  }
-  .cv-editor :global(.cm-gutters) {
-    background: transparent;
-    border-right: 1px solid rgba(255, 255, 255, 0.08);
-  }
-  .cv-editor :global(.cm-lineNumbers .cm-gutterElement) {
-    color: rgba(255, 255, 255, 0.32);
-  }
-  .cv-editor :global(.cm-content) {
-    padding: 14px 0 16px;
-  }
-  .cv-editor :global(.cm-line) {
-    padding-inline: 4px;
-  }
-  /* The read-only output pane: dim the (hidden) cursor and selection chrome. */
-  .cv-editor--ro :global(.cm-cursor),
-  .cv-editor--ro :global(.cm-dropCursor) {
-    display: none;
-  }
-
-  /* Summary — right-aligned counts use tabular figures so they don't jitter. */
-  .cv-summary {
-    white-space: nowrap;
-  }
-
-  /* Share / Copy-as-Markdown pills, next to the "Notes" eyebrow. */
-  .cv-share-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: 26px;
-    padding: 0 10px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-mute);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 16px;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: color 0.12s ease, background 0.12s ease;
-  }
-  .cv-share-btn:hover {
-    color: var(--color-brand-strong);
-    background: var(--color-hairline);
-  }
-  .cv-share-btn:focus-visible {
-    outline: 2px solid var(--color-link);
-    outline-offset: 1px;
-  }
-  .cv-share-btn.cv-share-btn--copied {
-    color: var(--color-brand-strong);
-    background: var(--color-brand-soft);
-  }
-  @media (pointer: coarse) {
-    .cv-share-btn {
-      height: auto;
-      min-height: 36px;
+    .cv-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
 
   /* Messages list (warnings / success / empty). */
   .cv-messages {
-    min-height: 44px;
     display: flex;
     flex-direction: column;
     gap: 8px;
   }
 
-  /* Lossy-conversion warning row. */
+  /* ── Runtime-injected markup (render.ts; styled with :global) ──────────
+     Light rules first as the documented defaults; the slab re-skin follows,
+     anchored on this component's own `.cv-messages` container. */
   :global(.cv-warn) {
     display: flex;
     gap: 10px;
@@ -712,7 +289,7 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
     background: var(--color-warning-soft);
     box-shadow: inset 0 0 0 1px var(--color-warning);
     color: var(--color-warning-deep);
-    animation: cv-rise 0.18s ease both;
+    animation: cv-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.cv-warn__icon) {
     flex: 0 0 auto;
@@ -752,7 +329,7 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
     top: 7px;
     width: 4px;
     height: 4px;
-    border-radius: 9999px;
+    border-radius: 50%;
     background: currentColor;
     opacity: 0.7;
   }
@@ -767,7 +344,7 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
     color: var(--color-body);
-    animation: cv-rise 0.18s ease both;
+    animation: cv-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.cv-ok__icon) {
     flex: 0 0 auto;
@@ -789,7 +366,7 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
     background: var(--color-error-soft);
     box-shadow: inset 0 0 0 1px var(--color-error);
     color: var(--color-error-deep);
-    animation: cv-rise 0.18s ease both;
+    animation: cv-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.cv-error__icon) {
     flex: 0 0 auto;
@@ -846,43 +423,35 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
     box-shadow: var(--shadow-hairline);
   }
 
-  /* Loading dots — animate opacity only; reduced-motion handled globally. */
-  :global(.cv-loading) {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 14px;
-    font-size: 14px;
-    line-height: 20px;
-    color: var(--color-body);
+  /* ── Instrument re-skin — the notes sit on the L2 result slab (dark in
+     BOTH themes), so everything render.ts emits uses the slab ink tier. ── */
+  .cv-messages :global(.cv-warn) {
+    background: #e0a45814;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-accent);
   }
-  :global(.cv-loading__dot) {
-    width: 6px;
-    height: 6px;
-    border-radius: 9999px;
-    background: var(--color-mute);
-    animation: cv-pulse 1.1s ease-in-out infinite;
+  .cv-messages :global(.cv-warn__icon) {
+    color: var(--color-inverse-accent);
   }
-  :global(.cv-loading__dot:nth-child(2)) {
-    animation-delay: 0.18s;
+  .cv-messages :global(.cv-warn__item) {
+    color: var(--color-inverse-fg);
   }
-  :global(.cv-loading__dot:nth-child(3)) {
-    animation-delay: 0.36s;
+  .cv-messages :global(.cv-ok),
+  .cv-messages :global(.cv-empty) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-fg);
   }
-  @keyframes cv-pulse {
-    0%,
-    100% {
-      opacity: 0.3;
-    }
-    50% {
-      opacity: 1;
-    }
+  .cv-messages :global(.cv-ok__icon) {
+    color: var(--color-inverse-brand);
   }
-  @media (prefers-reduced-motion: reduce) {
-    :global(.cv-loading__dot) {
-      animation: none;
-      opacity: 0.6;
-    }
+  .cv-messages :global(.cv-empty) {
+    color: var(--color-inverse-mute);
+  }
+  .cv-messages :global(.cv-error) {
+    background: #ff9d9514;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-error);
+    color: var(--color-inverse-error);
   }
 
   .is-busy {
@@ -890,21 +459,18 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
     pointer-events: none;
     cursor: progress;
   }
-  .is-busy .cv-convert-icon {
-    display: none;
-  }
 </style>
 
 <script>
-  import { copyTextToClipboard as copyText } from '../lib/clipboard';
   import { buildMarkdownBlock } from '../lib/share-md';
   import type { EditorView } from '@codemirror/view';
+  import { wireCopyButtons } from '../lib/playground-kit/copy';
+  import { syncChipsByIndex, clearChips, CHIP_SELECTOR } from '../lib/playground-kit/chips';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
   // The same pure builders the frontmatter used for the SSR seed — one
   // implementation, so the seeded panel and every later conversion agree.
   import {
     EMPTY_HTML,
-    LOADING_HTML,
     errorHtml,
     filenameFor,
     warningsHtml,
@@ -923,11 +489,13 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
   };
   type TypesModule = { FORMATS?: unknown };
   type Example = { id: string; label: string; from: Format; to: Format; text: string };
+  /** `seed` = boot / deep link / restore (never written or recorded); `type` = debounced edit; `run` = explicit. */
+  type Source = 'seed' | 'type' | 'run';
 
   const ROOT_SEL = '.cv-pg';
-  const COPIED_RESET_MS = 1800;
-  const SHARE_COPIED_RESET_MS = 1500;
   const SLUG = 'cve-ignore-converter';
+  const DEBOUNCE_MS = 180;
+  const ERROR_HOLD_MS = 600;
 
   /** Boot every (so far un-hydrated) playground instance on the page. */
   function boot(): void {
@@ -942,6 +510,22 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
 
   function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
     return root.querySelector<T>(sel);
+  }
+
+  function isCoarsePointer(): boolean {
+    return window.matchMedia?.('(pointer: coarse)').matches ?? false;
+  }
+
+  /**
+   * Rename an EditorPane's figure cap (the file name follows the format
+   * pickers). EditorPane renders a static label; the cap's label span is the
+   * only text in it, so this rewrites that span and its title.
+   */
+  function setPaneLabel(host: HTMLElement, text: string): void {
+    const label = host.closest('[data-editor-pane]')?.querySelector<HTMLElement>('.figcap__label');
+    if (!label) return;
+    label.textContent = text;
+    label.title = text;
   }
 
   /** Normalise the sibling FORMATS list into a stable descriptor array. */
@@ -977,49 +561,33 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
       .filter((e) => e.text.length > 0 || e.from || e.to);
   }
 
-  /* ---- Message rendering (warnings / errors / success / empty) --------------
+  /* ---- Summary + message rendering (slab inks) ------------------------------
      The HTML itself is built by ../lib/cve-ignore/render, which the Astro
      frontmatter also calls for the SSR seed. Only the DOM writes and the
      summary's tone classes live here. */
 
+  type Tone = 'mute' | 'accent' | 'error';
+  function setSummary(summary: HTMLElement, text: string, tone: Tone): void {
+    summary.textContent = text;
+    summary.classList.toggle('text-inverse-mute', tone === 'mute');
+    summary.classList.toggle('text-inverse-accent', tone === 'accent');
+    summary.classList.toggle('text-inverse-error', tone === 'error');
+  }
+
   function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
-    summary.textContent = '';
-    summary.classList.remove('text-error', 'text-warning-deep');
-    summary.classList.add('text-mute');
+    setSummary(summary, '', 'mute');
     container.innerHTML = EMPTY_HTML;
   }
 
-  function renderLoading(container: HTMLElement, summary: HTMLElement): void {
-    summary.textContent = '';
-    summary.classList.remove('text-error', 'text-warning-deep');
-    summary.classList.add('text-mute');
-    container.innerHTML = LOADING_HTML;
-  }
-
   function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
-    summary.textContent = 'Error';
-    summary.classList.remove('text-mute', 'text-warning-deep');
-    summary.classList.add('text-error');
+    setSummary(summary, 'Error', 'error');
     container.innerHTML = errorHtml(message);
   }
 
-  function renderWarnings(
-    container: HTMLElement,
-    summary: HTMLElement,
-    warnings: string[]
-  ): void {
-    summary.textContent = warningsSummaryText(warnings);
-    if (warnings.length === 0) {
-      summary.classList.remove('text-error', 'text-warning-deep');
-      summary.classList.add('text-mute');
-    } else {
-      summary.classList.remove('text-error', 'text-mute');
-      summary.classList.add('text-warning-deep');
-    }
+  function renderWarnings(container: HTMLElement, summary: HTMLElement, warnings: string[]): void {
+    setSummary(summary, warningsSummaryText(warnings), warnings.length === 0 ? 'mute' : 'accent');
     container.innerHTML = warningsHtml(warnings);
   }
-
-  /* ---- Clipboard ------------------------------------------------------------ */
 
   /* ---- Instance init -------------------------------------------------------- */
 
@@ -1033,12 +601,9 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
     const copyBtn = el<HTMLButtonElement>(root, '#cv-copy');
     const shareBtn = el<HTMLButtonElement>(root, '#cv-share');
     const shareMdBtn = el<HTMLButtonElement>(root, '#cv-share-md');
+    const copyStatus = el<HTMLElement>(root, '#cv-copy-status');
     const messagesBox = el<HTMLElement>(root, '#cv-messages');
     const summaryEl = el<HTMLElement>(root, '#cv-summary');
-    const announce = el<HTMLElement>(root, '#cv-announce');
-    const inputNameEl = el<HTMLElement>(root, '#cv-input-name');
-    const outputNameEl = el<HTMLElement>(root, '#cv-output-name');
-    const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('.cv-tab'));
     const snapSaveBtn = el<HTMLButtonElement>(root, '#cv-snap-save');
     const snapSelect = el<HTMLSelectElement>(root, '#cv-snap-select');
     const snapDeleteBtn = el<HTMLButtonElement>(root, '#cv-snap-delete');
@@ -1053,6 +618,7 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
       !copyBtn ||
       !shareBtn ||
       !shareMdBtn ||
+      !copyStatus ||
       !messagesBox ||
       !summaryEl ||
       !snapSaveBtn ||
@@ -1062,8 +628,17 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
       return;
     }
 
-    // Lazily load the sibling engine, types, examples + CodeMirror (off the
-    // initial path so CM code-splits into its own chunk).
+    // Copy plumbing (Copy output, Copy link, Copy as Markdown) — the kit
+    // helper: one delegated listener; outcomes announced in #cv-copy-status.
+    wireCopyButtons(root, { status: copyStatus });
+
+    // Live conversion hook, called by the input editor's update listener; a
+    // no-op until convertNow exists below.
+    let onInputEdit: () => void = () => {};
+
+    // Lazily load the sibling engine, types, examples, CodeMirror and the
+    // kit's plate theme together (off the initial path so CM code-splits into
+    // its own chunk).
     let engine: EngineModule;
     let formats: FormatDescriptor[] = [];
     let examples: Example[] = [];
@@ -1077,7 +652,7 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
     let historyKeymap: typeof import('@codemirror/commands').historyKeymap;
     let indentWithTab: typeof import('@codemirror/commands').indentWithTab;
     let yaml: typeof import('@codemirror/lang-yaml').yaml;
-    let oneDark: typeof import('@codemirror/theme-one-dark').oneDark;
+    let plate: typeof import('../lib/playground-kit/cm-theme').plate;
     try {
       const [engineMod, typesMod, examplesMod, stateMod, viewMod, commandsMod, yamlMod, themeMod] =
         await Promise.all([
@@ -1088,7 +663,7 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
           import('@codemirror/view'),
           import('@codemirror/commands'),
           import('@codemirror/lang-yaml'),
-          import('@codemirror/theme-one-dark'),
+          import('../lib/playground-kit/cm-theme'),
         ]);
       engine = engineMod as unknown as EngineModule;
       formats = normaliseFormats((typesMod as TypesModule).FORMATS);
@@ -1097,7 +672,7 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
       ({ EditorView: EditorViewCtor, keymap, lineNumbers, highlightActiveLine } = viewMod);
       ({ defaultKeymap, history, historyKeymap, indentWithTab } = commandsMod);
       ({ yaml } = yamlMod);
-      ({ oneDark } = themeMod);
+      ({ plate } = themeMod);
     } catch (err) {
       renderError(
         messagesBox,
@@ -1115,13 +690,11 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
         s.innerHTML = '<option value="">Unavailable</option>';
         s.disabled = true;
       });
-      chipsWrap.querySelectorAll<HTMLButtonElement>('.cv-chip').forEach((chip) => {
+      chipsWrap.querySelectorAll<HTMLButtonElement>(CHIP_SELECTOR).forEach((chip) => {
         chip.disabled = true;
-        chip.classList.remove('is-active');
-        chip.setAttribute('aria-pressed', 'false');
       });
-      convertBtn.setAttribute('aria-disabled', 'true');
-      convertBtn.classList.add('is-busy');
+      clearChips(chipsWrap);
+      convertBtn.disabled = true;
       return;
     }
 
@@ -1138,8 +711,8 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
     }
 
     // Seed priority: a shared `#s=` link > a restored last-input > the first
-    // example > sensible format defaults. Neither seed path writes the hash —
-    // only user-initiated conversions do (see convertNow()).
+    // example > sensible format defaults. No seed path writes the hash or
+    // records the last input — only user-initiated conversions do.
     const seed = examples[0];
     let shared: ShareState | null = null;
     try {
@@ -1191,39 +764,23 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
     fillFormatSelect(fromSel, defaultFrom);
     fillFormatSelect(toSel, defaultTo);
 
-    // The example chips are server-rendered from the same module; wire them by
-    // index. The old "Custom input" sentinel becomes "no chip active" — which
-    // is what a shared/deep-linked or restored input gets, same convention as
-    // any other hand-edited input.
-    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>('.cv-chip'));
-
-    /** Mark one chip active (idx < 0 clears the whole group). */
-    function setActiveChip(idx: number): void {
-      chips.forEach((chip) => {
-        const active = Number(chip.dataset.exampleIdx) === idx;
-        chip.classList.toggle('is-active', active);
-        chip.setAttribute('aria-pressed', active ? 'true' : 'false');
-      });
-    }
-
-    setActiveChip(fromShare || fromRestored ? -1 : examples.length ? 0 : -1);
+    // The example chips are server-rendered (ExampleChips); wire them by
+    // index. A shared or restored input matches no example: no chip pressed.
+    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>(CHIP_SELECTOR));
+    syncChipsByIndex(chipsWrap, fromShare || fromRestored || !examples.length ? null : 0);
     if (!examples.length) {
       chips.forEach((chip) => {
         chip.disabled = true;
       });
     }
 
-    /* ---- Editor factory (CM symbols now in async scope) --------------------- */
+    /* ---- Editors (CM symbols now in async scope) ----------------------------- */
 
-    const baseTheme = EditorViewCtor.theme({
-      '&': { color: '#e6e6e6' },
-      '.cm-content': { caretColor: '#e6e6e6' },
-      '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
-      '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
-        backgroundColor: 'rgba(0, 112, 243, 0.32)',
-      },
-      '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
-      '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+    // Sizing only — colours, gutters and the focus ring come from the plate
+    // theme and the EditorPane rule in global.css.
+    const sizing = EditorViewCtor.theme({
+      '&': { fontSize: '13px', maxHeight: '420px' },
+      '.cm-scroller': { overflow: 'auto' },
     });
 
     function makeInputEditor(host: HTMLElement, doc: string): EditorView {
@@ -1234,15 +791,28 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
           history(),
           highlightActiveLine(),
           yaml(),
-          oneDark,
+          plate,
+          sizing,
           EditorViewCtor.lineWrapping,
+          EditorViewCtor.contentAttributes.of({ 'aria-label': 'Source suppression policy' }),
           keymap.of([
-            { key: 'Escape', run: function(view) { view.contentDOM.blur(); return true; } },
+            // Ours FIRST, so it wins over defaultKeymap's Enter.
+            {
+              key: 'Mod-Enter',
+              run: (view) => {
+                void convertNow('run');
+                if (isCoarsePointer()) view.contentDOM.blur();
+                return true;
+              },
+            },
+            { key: 'Escape', run: (view) => { view.contentDOM.blur(); return true; } },
             ...defaultKeymap,
             ...historyKeymap,
             indentWithTab,
           ]),
-          baseTheme,
+          EditorViewCtor.updateListener.of((u) => {
+            if (u.docChanged) onInputEdit();
+          }),
         ],
       });
       return new EditorViewCtor({ state, parent: host });
@@ -1254,14 +824,14 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
         extensions: [
           lineNumbers(),
           yaml(),
-          oneDark,
+          plate,
+          sizing,
           EditorViewCtor.lineWrapping,
           EditorViewCtor.editable.of(false),
           EditorState.readOnly.of(true),
-          baseTheme,
+          EditorViewCtor.contentAttributes.of({ 'aria-label': 'Converted suppression policy (read-only)' }),
         ],
       });
-      host.classList.add('cv-editor--ro');
       return new EditorViewCtor({ state, parent: host });
     }
 
@@ -1269,7 +839,6 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
       view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
     }
 
-    // Editors.
     const seedText = fromShare && shared
       ? shared.text
       : fromRestored && restored
@@ -1279,19 +848,15 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
     const outputView = makeOutputEditor(outputHost, '');
     // The build-time text stand-ins have done their job (no-JS visitors and
     // crawlers); CodeMirror appended its editors beside them, so drop them —
-    // a fallback left behind renders the document twice.
+    // a fallback left behind renders the document twice. The share/restore
+    // tiers above already chose the document.
     root.querySelectorAll('[data-cm-fallback]').forEach((node) => node.remove());
-    let lastWarnings: string[] = [];
 
-    function hideShare(): void {
-      shareBtn!.hidden = true;
-      shareBtn!.dataset.copy = '';
-      shareBtn!.classList.remove('cv-share-btn--copied');
-    }
-
-    function hideShareMd(): void {
-      shareMdBtn!.hidden = true;
-      shareMdBtn!.classList.remove('cv-share-btn--copied');
+    function hideActions(): void {
+      for (const btn of [shareBtn!, shareMdBtn!, copyBtn!]) {
+        btn.hidden = true;
+        btn.dataset.copy = '';
+      }
     }
 
     /** Clear the `#s=` fragment without leaving a new history entry. */
@@ -1303,274 +868,18 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
       }
     }
 
-    /** Sync the dark editor chrome filenames to the chosen formats. */
+    /** Sync the editor caps' file names to the chosen formats. */
     function syncNames(): void {
-      // Guaranteed present by the early return in boot(); restated because TypeScript
+      // Guaranteed present by the early return above; restated because TypeScript
       // discards that narrowing inside a hoisted function declaration.
-      if (!fromSel || !toSel) return;
-      if (inputNameEl) inputNameEl.textContent = filenameFor(formats, fromSel.value);
-      if (outputNameEl) outputNameEl.textContent = filenameFor(formats, toSel.value);
+      if (!fromSel || !toSel || !inputHost || !outputHost) return;
+      setPaneLabel(inputHost, filenameFor(formats, fromSel.value));
+      setPaneLabel(outputHost, filenameFor(formats, toSel.value));
     }
     syncNames();
 
-    /** Reset to the pre-conversion state (output cleared, copy disabled). */
-    function resetOutput(): void {
-      // Guaranteed present by the early return in boot(); restated because TypeScript
-      // discards that narrowing inside a hoisted function declaration.
-      if (!copyBtn) return;
-      setEditorDoc(outputView, '');
-      copyBtn.disabled = true;
-      lastWarnings = [];
-      hideShare();
-      hideShareMd();
-      renderEmpty(messagesBox!, summaryEl!);
-    }
-
-    // Choosing an example swaps input + both formats, then clears the output.
-    chips.forEach((chip) => {
-      chip.addEventListener('click', () => {
-        const idx = Number(chip.dataset.exampleIdx);
-        if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
-        const ex = examples[idx];
-        setActiveChip(idx);
-        setEditorDoc(inputView, ex.text);
-        if (ex.from && formats.some((f) => f.value === ex.from)) fromSel.value = ex.from;
-        if (ex.to && formats.some((f) => f.value === ex.to)) toSel.value = ex.to;
-        syncNames();
-        resetOutput();
-      });
-    });
-
-    // Editing the input or formats means the shown output is stale → drop to
-    // "custom input", i.e. no chip active.
-    function markCustom(): void {
-      setActiveChip(-1);
-    }
-    fromSel.addEventListener('change', () => {
-      markCustom();
-      syncNames();
-      resetOutput();
-    });
-    toSel.addEventListener('change', () => {
-      markCustom();
-      syncNames();
-      resetOutput();
-    });
-
-    // Mobile tab switching (panes are always visible on desktop via CSS).
-    const inputPane = el<HTMLElement>(root, '#cv-pane-input');
-    const outputPane = el<HTMLElement>(root, '#cv-pane-output');
-
-    function activateTab(tab: HTMLButtonElement, focusTab: boolean): void {
-      const showInput = tab.dataset.pane === 'input';
-      tabs.forEach((t) => {
-        const active = t === tab;
-        t.classList.toggle('is-active', active);
-        t.setAttribute('aria-selected', active ? 'true' : 'false');
-        t.tabIndex = active ? 0 : -1;
-      });
-      inputPane?.classList.toggle('cv-pane--active', showInput);
-      outputPane?.classList.toggle('cv-pane--active', !showInput);
-      if (focusTab) tab.focus();
-      requestAnimationFrame(() => (showInput ? inputView : outputView).requestMeasure());
-    }
-
-    tabs.forEach((tab, i) => {
-      tab.addEventListener('click', () => activateTab(tab, false));
-      tab.addEventListener('keydown', (e) => {
-        let next = -1;
-        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (i + 1) % tabs.length;
-        else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
-          next = (i - 1 + tabs.length) % tabs.length;
-        else if (e.key === 'Home') next = 0;
-        else if (e.key === 'End') next = tabs.length - 1;
-        if (next < 0) return;
-        e.preventDefault();
-        activateTab(tabs[next], true);
-      });
-    });
-
-    // Convert — non-blocking; show loading, yield a frame, then render.
-    let running = false;
-    const convertLabel = convertBtn.querySelector<HTMLElement>('.cv-convert-label');
-    let spinner: HTMLElement | null = null;
-
-    async function convertNow(userInitiated = true): Promise<void> {
-      // Guaranteed present by the early return in boot(); restated because TypeScript
-      // discards that narrowing inside a hoisted function declaration.
-      if (!convertBtn) return;
-      if (running) return;
-      running = true;
-      convertBtn.classList.add('is-busy');
-      convertBtn.setAttribute('aria-disabled', 'true');
-      convertBtn.setAttribute('aria-busy', 'true');
-      if (!spinner) {
-        spinner = document.createElement('span');
-        spinner.setAttribute('aria-hidden', 'true');
-        // Inline the visual — this span is created at runtime and would not
-        // receive the component's scoped-style hash.
-        spinner.style.cssText =
-          'display:inline-block;width:14px;height:14px;flex:0 0 auto;border-radius:9999px;' +
-          'border:2px solid currentColor;border-top-color:transparent;';
-        if (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-          spinner.animate(
-            [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }],
-            { duration: 700, iterations: Infinity }
-          );
-        }
-        convertBtn.insertBefore(spinner, convertBtn.firstChild);
-      }
-      if (convertLabel) convertLabel.textContent = 'Converting…';
-      renderLoading(messagesBox!, summaryEl!);
-
-      // Yield so the loading state paints before (potentially heavy) work runs.
-      await new Promise<void>((resolve) => {
-        if ('requestAnimationFrame' in window) requestAnimationFrame(() => resolve());
-        else setTimeout(resolve, 0);
-      });
-
-      try {
-        const text = inputView.state.doc.toString();
-        const result = await Promise.resolve(
-          engine.convert(fromSel!.value, toSel!.value, text)
-        );
-
-        if (!result || result.error) {
-          setEditorDoc(outputView, '');
-          copyBtn!.disabled = true;
-          renderError(
-            messagesBox!,
-            summaryEl!,
-            result?.error ?? 'Unknown error while converting.'
-          );
-          hideShare();
-          hideShareMd();
-          if (userInitiated) clearHash();
-          return;
-        }
-
-        const output = typeof result.output === 'string' ? result.output : '';
-        setEditorDoc(outputView, output);
-        copyBtn!.disabled = output.length === 0;
-        const warnings = Array.isArray(result.warnings)
-          ? result.warnings.filter((w): w is string => typeof w === 'string' && w.length > 0)
-          : [];
-        renderWarnings(messagesBox!, summaryEl!, warnings);
-        if (announce) {
-          announce.textContent =
-            warnings.length > 0
-              ? `Converted with ${warnings.length} ${warnings.length === 1 ? 'note' : 'notes'}.`
-              : 'Converted successfully.';
-        }
-
-        if (output.length > 0) {
-          // A valid, non-empty result — surface the share + markdown actions.
-          lastWarnings = warnings;
-          let shareUrl = window.location.href.split('#')[0];
-          try {
-            const hash = engine.encodeState(fromSel!.value, toSel!.value, text);
-            if (typeof hash === 'string') {
-              const frag = hash.startsWith('#') ? hash : `#${hash}`;
-              shareUrl = `${shareUrl}${frag}`;
-              // Only a user-initiated conversion (button click / ⌘⏎) rewrites
-              // the address bar — the initial seed-from-hash/example never does.
-              if (userInitiated) window.history.replaceState(null, '', frag);
-              if (userInitiated) {
-                recordToolLastInput(
-                  SLUG,
-                  JSON.stringify({ src: fromSel!.value, dst: toSel!.value, text })
-                );
-              }
-            }
-          } catch {
-            /* non-fatal: sharing just won't reflect the latest state */
-          }
-          shareBtn!.hidden = false;
-          shareBtn!.dataset.copy = shareUrl;
-          shareMdBtn!.hidden = false;
-        } else {
-          hideShare();
-          hideShareMd();
-          if (userInitiated) clearHash();
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Unexpected error while converting.';
-        setEditorDoc(outputView, '');
-        copyBtn!.disabled = true;
-        renderError(messagesBox!, summaryEl!, msg);
-        hideShare();
-        hideShareMd();
-        if (userInitiated) clearHash();
-      } finally {
-        running = false;
-        convertBtn.classList.remove('is-busy');
-        convertBtn.removeAttribute('aria-disabled');
-        convertBtn.removeAttribute('aria-busy');
-        if (spinner) {
-          spinner.remove();
-          spinner = null;
-        }
-        if (convertLabel) convertLabel.textContent = 'Convert';
-      }
-    }
-
-    convertBtn.addEventListener('click', () => void convertNow());
-
-    // Cmd/Ctrl+Enter from inside the editor / toolbar triggers a conversion.
-    root.addEventListener('keydown', (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        e.preventDefault();
-        void convertNow();
-      }
-    });
-
-    // Copy output — copies the read-only editor's current document.
-    const copyLabel = copyBtn.querySelector<HTMLElement>('.cv-copy-label');
-    let copyTimer: number | undefined;
-    copyBtn.addEventListener('click', async () => {
-      const out = outputView.state.doc.toString();
-      if (!out) return;
-      const ok = await copyText(out);
-      if (copyLabel) copyLabel.textContent = ok ? 'Copied' : 'Copy Failed';
-      if (announce) {
-        announce.textContent = ok
-          ? 'Converted output copied to your clipboard.'
-          : 'Could not copy. Select the output text and copy it manually.';
-      }
-      window.clearTimeout(copyTimer);
-      copyTimer = window.setTimeout(() => {
-        if (copyLabel) copyLabel.textContent = copyBtn.dataset.defaultLabel ?? 'Copy Output';
-      }, COPIED_RESET_MS);
-    });
-
-    // Copy link — copies the full `#s=` share URL computed by the last
-    // successful conversion (stored in data-copy by convertNow()).
-    const shareLabel = shareBtn.querySelector<HTMLElement>('.cv-share-label');
-    let shareTimer: number | undefined;
-    shareBtn.addEventListener('click', async () => {
-      const url = shareBtn.dataset.copy ?? '';
-      if (!url) return;
-      const ok = await copyText(url);
-      if (ok) shareBtn.classList.add('cv-share-btn--copied');
-      if (shareLabel) shareLabel.textContent = ok ? 'Copied' : 'Copy Failed';
-      if (announce) {
-        announce.textContent = ok
-          ? 'Share link copied to your clipboard.'
-          : 'Could not copy the link. Copy the URL from your address bar instead.';
-      }
-      window.clearTimeout(shareTimer);
-      shareTimer = window.setTimeout(() => {
-        shareBtn.classList.remove('cv-share-btn--copied');
-        if (shareLabel) shareLabel.textContent = 'Copy link';
-      }, SHARE_COPIED_RESET_MS);
-    });
-
-    // Copy as Markdown — builds a small fenced summary from the CURRENT
-    // formats + converted output, for pasting into a PR description or
-    // security-review ticket.
-    const shareMdLabel = shareMdBtn.querySelector<HTMLElement>('.cv-share-md-label');
-    let shareMdTimer: number | undefined;
-    shareMdBtn.addEventListener('click', async () => {
+    /** A pasteable summary of the current formats + converted output. */
+    function markdownFor(output: string, warnings: string[]): string {
       const fromDesc = formats.find((f) => f.value === fromSel!.value);
       const toDesc = formats.find((f) => f.value === toSel!.value);
       const fromLabel = fromDesc
@@ -1583,26 +892,176 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
           ? `${toDesc.label} (${toDesc.filename})`
           : toDesc.label
         : toSel!.value;
-      const md = buildMarkdownBlock('CVE-Ignore Converter', [
+      return buildMarkdownBlock('CVE-Ignore Converter', [
         { label: 'Source format', value: fromLabel },
         { label: 'Destination format', value: toLabel },
-        { label: 'Converted output', value: outputView.state.doc.toString() },
-        { label: 'Lossy-conversion notes', value: lastWarnings.join('; ') },
+        { label: 'Converted output', value: output },
+        { label: 'Lossy-conversion notes', value: warnings.join('; ') },
       ]);
-      const ok = await copyText(md);
-      if (ok) shareMdBtn.classList.add('cv-share-btn--copied');
-      if (shareMdLabel) shareMdLabel.textContent = ok ? 'Copied' : 'Copy Failed';
-      if (announce) {
-        announce.textContent = ok
-          ? 'Markdown summary copied to your clipboard.'
-          : 'Could not copy. Select the output text and copy it manually.';
+    }
+
+    // ── Conversion ───────────────────────────────────────────────────────────
+    let timer: number | undefined;
+    let running = false;
+    let queued: Source | null = null;
+
+    // Calm errors (playground UX contract): mid-typing, keep the last good
+    // output and hold the diagnostic until ERROR_HOLD_MS of idle, a blur,
+    // Ctrl/Cmd+Enter, Run now, a format change or a chip, so a half-written
+    // policy never flashes red.
+    let errTimer: number | undefined;
+    let heldError: string | null = null;
+
+    function showError(message: string): void {
+      window.clearTimeout(errTimer);
+      heldError = null;
+      setEditorDoc(outputView, '');
+      renderError(messagesBox!, summaryEl!, message);
+    }
+
+    function fail(source: Source, message: string): void {
+      hideActions();
+      if (source !== 'seed') clearHash();
+      if (source !== 'type') {
+        showError(message);
+        return;
       }
-      window.clearTimeout(shareMdTimer);
-      shareMdTimer = window.setTimeout(() => {
-        shareMdBtn.classList.remove('cv-share-btn--copied');
-        if (shareMdLabel) shareMdLabel.textContent = 'Copy as Markdown';
-      }, SHARE_COPIED_RESET_MS);
+      heldError = message;
+      setSummary(summaryEl!, '', 'mute');
+      window.clearTimeout(errTimer);
+      errTimer = window.setTimeout(() => showError(message), ERROR_HOLD_MS);
+    }
+
+    inputView.contentDOM.addEventListener('blur', () => {
+      if (heldError !== null) showError(heldError);
     });
+
+    async function convertNow(source: Source): Promise<void> {
+      window.clearTimeout(timer);
+      window.clearTimeout(errTimer);
+      heldError = null;
+      // Guaranteed present by the early return above; restated because
+      // TypeScript discards that narrowing inside a hoisted function declaration.
+      if (!convertBtn) return;
+      if (running) {
+        queued = source;
+        return;
+      }
+      running = true;
+      const userInitiated = source !== 'seed';
+      if (source === 'run') {
+        convertBtn.classList.add('is-busy');
+        convertBtn.setAttribute('aria-busy', 'true');
+        // Yield so the busy state paints before the work runs.
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      }
+
+      try {
+        const text = inputView.state.doc.toString();
+        if (text.trim().length === 0) {
+          setEditorDoc(outputView, '');
+          hideActions();
+          renderEmpty(messagesBox!, summaryEl!);
+          if (userInitiated) clearHash();
+          return;
+        }
+        const result = await Promise.resolve(engine.convert(fromSel!.value, toSel!.value, text));
+
+        if (!result || result.error) {
+          fail(source, result?.error ?? 'Unknown error while converting.');
+          return;
+        }
+
+        const output = typeof result.output === 'string' ? result.output : '';
+        setEditorDoc(outputView, output);
+        const warnings = Array.isArray(result.warnings)
+          ? result.warnings.filter((w): w is string => typeof w === 'string' && w.length > 0)
+          : [];
+        renderWarnings(messagesBox!, summaryEl!, warnings);
+
+        if (output.length === 0) {
+          hideActions();
+          if (userInitiated) clearHash();
+          return;
+        }
+
+        // A valid, non-empty result — surface the copy actions.
+        copyBtn!.dataset.copy = output;
+        copyBtn!.hidden = false;
+        shareMdBtn!.dataset.copy = markdownFor(output, warnings);
+        shareMdBtn!.hidden = false;
+        let shareUrl = window.location.href.split('#')[0];
+        try {
+          const hash = engine.encodeState(fromSel!.value, toSel!.value, text);
+          if (typeof hash === 'string') {
+            const frag = hash.startsWith('#') ? hash : `#${hash}`;
+            shareUrl = `${shareUrl}${frag}`;
+            // Only a user-initiated conversion rewrites the address bar — the
+            // seed (example, share link or restored input) never does.
+            if (userInitiated) window.history.replaceState(null, '', frag);
+          }
+        } catch {
+          /* non-fatal: sharing just won't reflect the latest state */
+        }
+        shareBtn!.dataset.copy = shareUrl;
+        shareBtn!.hidden = false;
+        if (userInitiated) {
+          recordToolLastInput(SLUG, JSON.stringify({ src: fromSel!.value, dst: toSel!.value, text }));
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unexpected error while converting.';
+        fail(source, msg);
+      } finally {
+        running = false;
+        convertBtn.classList.remove('is-busy');
+        convertBtn.removeAttribute('aria-busy');
+        if (queued) {
+          const next = queued;
+          queued = null;
+          void convertNow(next);
+        }
+      }
+    }
+
+    function schedule(): void {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => void convertNow('type'), DEBOUNCE_MS);
+    }
+
+    // Typing in the source editor: no example is on screen any more; convert live.
+    onInputEdit = () => {
+      clearChips(chipsWrap);
+      schedule();
+    };
+
+    // Choosing an example swaps the input + both formats and converts at once.
+    // The doc write fires the update listener (which releases every chip), so
+    // the chip is pressed again after it.
+    chips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const idx = Number(chip.dataset.exampleIdx);
+        if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
+        const ex = examples[idx];
+        if (ex.from && formats.some((f) => f.value === ex.from)) fromSel.value = ex.from;
+        if (ex.to && formats.some((f) => f.value === ex.to)) toSel.value = ex.to;
+        syncNames();
+        setEditorDoc(inputView, ex.text);
+        syncChipsByIndex(chipsWrap, idx);
+        void convertNow('run');
+      });
+    });
+
+    // A format change is a new conversion of the same text: no example is
+    // selected any more, and the output re-converts at once.
+    for (const sel of [fromSel, toSel]) {
+      sel.addEventListener('change', () => {
+        clearChips(chipsWrap);
+        syncNames();
+        void convertNow('run');
+      });
+    }
+
+    convertBtn.addEventListener('click', () => void convertNow('run'));
 
     wireSnapshotUI({
       slug: SLUG,
@@ -1634,20 +1093,15 @@ const seedOutputName = filenameFor(FORMATS, seedTo);
         toSel!.value = parsed.dst as string;
         syncNames();
         setEditorDoc(inputView, parsed.text);
-        markCustom();
-        void convertNow();
+        clearChips(chipsWrap);
+        void convertNow('run');
       },
     });
 
-    // Convert whatever the editor ended up holding — a #s= share link, a restored
-    // last input, or the seeded example.
-    //
-    // boot() previously ended at renderEmpty() and never called convertNow at
-    // all, so this was worse than the other playgrounds with the same defect:
-    // opening a SHARED link showed an empty panel. Someone sending a colleague a
-    // converted policy sent them nothing. convertNow handles an empty editor by
-    // rendering the empty state itself, so this covers that case too.
-    void convertNow(false);
+    // Convert whatever the editor ended up holding — a #s= share link, a
+    // restored last input, or the seeded example — so the panel is never empty
+    // on arrival. The seed run never rewrites the hash or records the input.
+    void convertNow('seed');
   }
 
   boot();

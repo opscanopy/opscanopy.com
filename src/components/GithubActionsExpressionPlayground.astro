@@ -8,6 +8,13 @@
  *   • Expression evaluator — evaluate a ${{ }} / if: against an editable mock
  *     context, with GitHub's exact semantics and the always-true footgun warning.
  *   • Trigger simulator — describe an event and see per-job RUNS / SKIPPED.
+ * Both evaluate live on a debounce; "Run now" and ⌘/Ctrl + Enter run at once.
+ *
+ * Built on the playground kit (src/components/playground/*): ExampleChips,
+ * EditorPane (the editor slabs), RunHint, SnapshotBar (on paper, shared by
+ * both tabs), ResultPanel (one per tab: figure cap, live summary, copy
+ * status) and CopyButton. Tab 1's results container stays here, seeded with
+ * `set:html` + `data-results`; the slab overrides anchor on `.ga-results`.
  *
  * Runtime contract (imported lazily in the script):
  *   ../lib/github-actions-expression-tester/engine →
@@ -16,15 +23,14 @@
  *   ../lib/github-actions-expression-tester/examples →
  *     expressionExamples[], triggerExamples[]
  *
- * Everything runs client-side — no upload, no network. Show/hide is driven by an
- * `is-active` class (never the hidden attribute) so CodeMirror can re-measure on
- * tab switch. The CM keymap binds Escape→blur (Tab-trap fix, per CLAUDE.md).
+ * Show/hide is driven by a `ga-panel--active` class (never the hidden
+ * attribute) so CodeMirror can re-measure on tab switch. The CM keymap binds
+ * Escape→blur (Tab-trap fix, per CLAUDE.md).
  */
 // Build-time import of the same `examples` the client script loads lazily. Used
-// ONLY to server-render the two example-chip groups below, so the static HTML
-// carries real example names instead of a "Loading…" placeholder. The chips are
-// final markup — hydration only attaches click handlers and moves the active
-// state — so this adds nothing to the client bundle and cannot drift.
+// to server-render the two example-chip groups (ExampleChips), so the static
+// HTML carries real example names. Hydration only attaches click handlers and
+// moves the pressed state — so this adds nothing to the client bundle.
 import {
   expressionExamples as prerenderedExpressionExamples,
   triggerExamples as prerenderedTriggerExamples,
@@ -32,6 +38,12 @@ import {
 
 import { defaultContext, evaluateIfCondition } from '../lib/github-actions-expression-tester/engine';
 import { exprResultHtml, exprSummaryText, EXPR_EMPTY_HTML } from '../lib/github-actions-expression-tester/render';
+import ExampleChips from './playground/ExampleChips.astro';
+import EditorPane from './playground/EditorPane.astro';
+import RunHint from './playground/RunHint.astro';
+import SnapshotBar from './playground/SnapshotBar.astro';
+import ResultPanel from './playground/ResultPanel.astro';
+import CopyButton from './playground/CopyButton.astro';
 
 const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
 
@@ -45,8 +57,9 @@ const exprToken = '${{ }}'; // kept out of the Astro `{}` expression parser
  * Tab 2 (the trigger simulator) stays client-only: it is behind an inactive
  * tab panel, so a crawler gains nothing from it.
  *
- * The expression goes into a `<pre data-cm-fallback>` inside the CodeMirror
- * host; CM appends its editor to the host, so `init` removes it once mounted.
+ * The expression and the context go into `<pre data-cm-fallback>` elements
+ * inside the CodeMirror hosts; CM appends its editor to the host, so `init`
+ * removes them once mounted.
  */
 const seedExprExample = prerenderedExpressionExamples[0];
 const seedCtxJson = JSON.stringify(defaultContext(), null, 2);
@@ -55,6 +68,8 @@ const seedExprResult = seedExprExample
   : null;
 const seedExprHtml = seedExprResult ? exprResultHtml(seedExprResult) : EXPR_EMPTY_HTML;
 const seedExprSummary = seedExprResult ? exprSummaryText(seedExprResult) : '';
+const exprChipItems = prerenderedExpressionExamples.map((ex) => ({ label: ex.label }));
+const trigChipItems = prerenderedTriggerExamples.map((ex) => ({ label: ex.label }));
 ---
 
 <section class="ga-pg" aria-label="GitHub Actions expression and trigger playground">
@@ -63,7 +78,7 @@ const seedExprSummary = seedExprResult ? exprSummaryText(seedExprResult) : '';
     <div class="ga-tabs flex gap-1 border-b border-hairline px-3 py-2 sm:px-4" role="tablist" aria-label="Tool mode">
       <button
         id="ga-tab-expr"
-        class="ga-tab is-active"
+        class="ga-tab"
         role="tab"
         type="button"
         aria-selected="true"
@@ -89,180 +104,122 @@ const seedExprSummary = seedExprResult ? exprSummaryText(seedExprResult) : '';
     </div>
 
     {/* ═══════════════ TAB 1 — EXPRESSION EVALUATOR ═══════════════ */}
-    <div id="ga-panel-expr" class="ga-panel is-active" role="tabpanel" aria-labelledby="ga-tab-expr">
+    <div id="ga-panel-expr" class="ga-panel ga-panel--active" role="tabpanel" aria-labelledby="ga-tab-expr">
       {/* Toolbar */}
-      <div class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+      <div class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-end sm:justify-between sm:px-5">
         <div class="flex min-w-0 flex-col gap-2">
-          <span class="eyebrow shrink-0">Example</span>
-          {/* Server-rendered chips: real buttons in DOM order, so the tab order
-              works with no roving tabindex. The group's aria-label names them —
-              a chip group has nothing a label can point at. Chip 0 is the seed;
-              a #s= deep link or a restored input clears it. */}
-          <div id="ga-expr-chips" class="ga-chips" role="group" aria-label="Examples">
-            {prerenderedExpressionExamples.map((ex, i) => (
-              <button
-                type="button"
-                class:list={['ga-chip', { 'is-active': i === 0 }]}
-                data-example-idx={i}
-                aria-pressed={i === 0 ? 'true' : 'false'}
-              >
-                {ex.label}
-              </button>
-            ))}
-          </div>
+          <span class="eyebrow shrink-0">Examples</span>
+          {/* Chip 0 is the seed; a #s= deep link or a restored input clears it. */}
+          <ExampleChips prefix="ga-expr" items={exprChipItems} active={seedExprExample ? 0 : null} ariaLabel="Examples" />
         </div>
-        <div class="flex shrink-0 flex-wrap items-center gap-2">
-          <span class="caption text-mute hidden items-center sm:inline-flex">⌘/Ctrl + Enter</span>
-          <button id="ga-share-expr" type="button" class="btn btn-secondary btn-sm ga-tap" data-default-label="Share">
-            <svg class="h-4 w-4 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 8.5l5-3M5.5 7.5l5 3"></path><circle cx="12" cy="4" r="2"></circle><circle cx="4" cy="8" r="2"></circle><circle cx="12" cy="12" r="2"></circle></svg>
-            <span class="ga-share-label">Share</span>
-          </button>
-          <button id="ga-eval" type="button" class="btn btn-primary btn-sm ga-tap" title="Evaluate (⌘/Ctrl + Enter)" aria-keyshortcuts="Meta+Enter Control+Enter">
-            <svg class="ga-eval-icon h-4 w-4 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3l8 5-8 5z"></path></svg>
-            <span class="ga-eval-label">Evaluate</span>
-          </button>
-        </div>
+        <button
+          id="ga-eval"
+          type="button"
+          class="btn-tool ga-tap"
+          title="Run now (⌘/Ctrl + Enter)"
+          aria-keyshortcuts="Meta+Enter Control+Enter"
+        >
+          Run now
+        </button>
       </div>
 
       {/* Editors: expression + context (side-by-side on lg) */}
-      <div class="grid gap-px bg-hairline lg:grid-cols-2">
-        <div class="flex min-w-0 flex-col bg-inverse">
-          <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
-            <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true"><span class="h-2.5 w-2.5 rounded-full bg-white/15"></span><span class="h-2.5 w-2.5 rounded-full bg-white/15"></span><span class="h-2.5 w-2.5 rounded-full bg-white/15"></span></span>
-            <span class="code-mono text-white/45">if-condition</span>
-          </div>
-          <div id="ga-expr-editor" class="ga-editor min-h-32" aria-label="GitHub Actions if condition or expression">
-            <pre class="ga-cm-fallback code-mono" data-cm-fallback>{seedExprExample?.expression}</pre>
-          </div>
+      <div class="border-b border-hairline px-4 py-4 sm:px-5">
+        <div class="ga-grid ga-grid--expr">
+          <EditorPane prefix="ga" id="ga-expr-editor" label="if-condition">
+            <pre class="editor-pane__fallback code-mono" data-cm-fallback>{seedExprExample?.expression}</pre>
+          </EditorPane>
+          <EditorPane prefix="ga" id="ga-ctx-editor" label="context (editable mock)">
+            <Fragment slot="actions">
+              <button type="button" class="chip ga-preset" data-preset="push">push</button>
+              <button type="button" class="chip ga-preset" data-preset="pull_request">pull_request</button>
+              <button type="button" class="chip ga-preset" data-preset="tag">tag</button>
+            </Fragment>
+            <pre class="editor-pane__fallback code-mono" data-cm-fallback>{seedCtxJson}</pre>
+          </EditorPane>
         </div>
-        <div class="flex min-w-0 flex-col bg-inverse">
-          <div class="flex flex-wrap items-center gap-2 border-b border-white/10 px-4 py-2">
-            <span class="code-mono mr-auto text-white/45">context (editable mock)</span>
-            <button type="button" class="ga-preset" data-preset="push">push</button>
-            <button type="button" class="ga-preset" data-preset="pull_request">pull_request</button>
-            <button type="button" class="ga-preset" data-preset="tag">tag</button>
-          </div>
-          <div id="ga-ctx-editor" class="ga-editor min-h-32" aria-label="Editable mock evaluation context (JSON)">
-            <pre class="ga-cm-fallback code-mono" data-cm-fallback>{seedCtxJson}</pre>
-          </div>
-        </div>
+        <RunHint variant="cm" class="mt-2" />
       </div>
-      <p class="caption px-4 py-2 text-mute">
-        Results update as you type — press <kbd class="ga-kbd">⌘/Ctrl</kbd> + <kbd class="ga-kbd">Enter</kbd> to run now.
-        Press <kbd class="ga-kbd">Esc</kbd> to release the editor. Your input never leaves the browser.
-      </p>
 
-      {/* Results */}
-      <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
-        <div class="mb-3 flex items-center justify-between gap-3">
-          <span class="eyebrow">Result</span>
-          <span id="ga-expr-summary" class="ga-summary code-mono text-mute" role="status" aria-live="polite">{seedExprSummary}</span>
-        </div>
+      {/* Result */}
+      <ResultPanel slug="github-actions-expression-tester" prefix="ga-expr" summary={seedExprSummary} summaryClass="whitespace-nowrap" split>
+        <Fragment slot="actions">
+          <CopyButton kind="link" id="ga-share-expr" />
+        </Fragment>
         {/* Seeded at build time (see `seedExprHtml` above) so the verdict and the
             token breakdown are in the static HTML; the script repaints this node. */}
-        <div id="ga-expr-results" class="ga-results" set:html={seedExprHtml}></div>
-      </div>
+        <div id="ga-expr-results" class="ga-results" set:html={seedExprHtml} data-results></div>
+      </ResultPanel>
     </div>
 
     {/* ═══════════════ TAB 2 — TRIGGER SIMULATOR ═══════════════ */}
     <div id="ga-panel-trig" class="ga-panel" role="tabpanel" aria-labelledby="ga-tab-trig">
-      <div class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+      <div class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-end sm:justify-between sm:px-5">
         <div class="flex min-w-0 flex-col gap-2">
-          <span class="eyebrow shrink-0">Example</span>
-          {/* Second chip group — same contract, its own tabpanel. */}
-          <div id="ga-trig-chips" class="ga-chips" role="group" aria-label="Examples">
-            {prerenderedTriggerExamples.map((ex, i) => (
-              <button
-                type="button"
-                class:list={['ga-chip', { 'is-active': i === 0 }]}
-                data-example-idx={i}
-                aria-pressed={i === 0 ? 'true' : 'false'}
-              >
-                {ex.label}
-              </button>
-            ))}
-          </div>
+          <span class="eyebrow shrink-0">Examples</span>
+          <ExampleChips prefix="ga-trig" items={trigChipItems} active={prerenderedTriggerExamples.length ? 0 : null} ariaLabel="Examples" />
         </div>
-        <div class="flex shrink-0 flex-wrap items-center gap-2">
-          <span class="caption text-mute hidden items-center sm:inline-flex">⌘/Ctrl + Enter</span>
-          <button id="ga-share-trig" type="button" class="btn btn-secondary btn-sm ga-tap" data-default-label="Share">
-            <svg class="h-4 w-4 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 8.5l5-3M5.5 7.5l5 3"></path><circle cx="12" cy="4" r="2"></circle><circle cx="4" cy="8" r="2"></circle><circle cx="12" cy="12" r="2"></circle></svg>
-            <span class="ga-share-label">Share</span>
-          </button>
-          <button id="ga-sim" type="button" class="btn btn-primary btn-sm ga-tap" title="Simulate (⌘/Ctrl + Enter)" aria-keyshortcuts="Meta+Enter Control+Enter">
-            <svg class="ga-sim-icon h-4 w-4 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3l8 5-8 5z"></path></svg>
-            <span class="ga-sim-label">Simulate</span>
-          </button>
-        </div>
+        <button
+          id="ga-sim"
+          type="button"
+          class="btn-tool ga-tap"
+          title="Run now (⌘/Ctrl + Enter)"
+          aria-keyshortcuts="Meta+Enter Control+Enter"
+        >
+          Run now
+        </button>
       </div>
 
-      <div class="grid gap-px bg-hairline lg:grid-cols-[1.4fr_1fr]">
-        <div class="flex min-w-0 flex-col bg-inverse">
-          <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
-            <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true"><span class="h-2.5 w-2.5 rounded-full bg-white/15"></span><span class="h-2.5 w-2.5 rounded-full bg-white/15"></span><span class="h-2.5 w-2.5 rounded-full bg-white/15"></span></span>
-            <span class="code-mono text-white/45">.github/workflows/ci.yml</span>
+      <div class="border-b border-hairline px-4 py-4 sm:px-5">
+        <div class="ga-grid ga-grid--trig">
+          <EditorPane prefix="ga" id="ga-wf-editor" label=".github/workflows/ci.yml" />
+
+          {/* Event scenario builder (on paper) */}
+          <div class="flex min-w-0 flex-col gap-3">
+            <span class="eyebrow">Event scenario</span>
+            <label class="ga-field">
+              <span class="ga-field-label">Event</span>
+              <div class="ga-select-wrap relative">
+                <select id="ga-ev-event" class="ga-select code-mono w-full">
+                  <option value="push">push</option>
+                  <option value="pull_request">pull_request</option>
+                  <option value="pull_request_target">pull_request_target</option>
+                  <option value="tag">push (tag)</option>
+                </select>
+                <svg class="ga-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"></path></svg>
+              </div>
+            </label>
+            <label class="ga-field" id="ga-field-branch">
+              <span class="ga-field-label">Branch</span>
+              <input id="ga-ev-branch" type="text" class="ga-input code-mono input-focus" value="main" autocomplete="off" spellcheck="false" />
+            </label>
+            <label class="ga-field hidden" id="ga-field-tag">
+              <span class="ga-field-label">Tag</span>
+              <input id="ga-ev-tag" type="text" class="ga-input code-mono input-focus" value="v1.0.0" autocomplete="off" spellcheck="false" />
+            </label>
+            <label class="ga-field">
+              <span class="ga-field-label">Changed files <span class="text-mute">(one per line)</span></span>
+              <textarea id="ga-ev-files" class="ga-input ga-textarea code-mono input-focus" rows="4" spellcheck="false" placeholder="src/app.ts&#10;docs/readme.md"></textarea>
+            </label>
           </div>
-          <div id="ga-wf-editor" class="ga-editor min-h-48" aria-label="Workflow YAML"></div>
         </div>
-
-        {/* Event scenario builder */}
-        <div class="flex min-w-0 flex-col gap-3 bg-canvas px-4 py-4">
-          <span class="eyebrow">Event scenario</span>
-          <label class="ga-field">
-            <span class="ga-field-label">Event</span>
-            <div class="ga-select-wrap relative">
-              <select id="ga-ev-event" class="ga-select code-mono w-full">
-                <option value="push">push</option>
-                <option value="pull_request">pull_request</option>
-                <option value="pull_request_target">pull_request_target</option>
-                <option value="tag">push (tag)</option>
-              </select>
-              <svg class="ga-caret pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-mute" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"></path></svg>
-            </div>
-          </label>
-          <label class="ga-field" id="ga-field-branch">
-            <span class="ga-field-label">Branch</span>
-            <input id="ga-ev-branch" type="text" class="ga-input code-mono input-focus" value="main" autocomplete="off" spellcheck="false" />
-          </label>
-          <label class="ga-field hidden" id="ga-field-tag">
-            <span class="ga-field-label">Tag</span>
-            <input id="ga-ev-tag" type="text" class="ga-input code-mono input-focus" value="v1.0.0" autocomplete="off" spellcheck="false" />
-          </label>
-          <label class="ga-field">
-            <span class="ga-field-label">Changed files <span class="text-mute">(one per line)</span></span>
-            <textarea id="ga-ev-files" class="ga-input ga-textarea code-mono input-focus" rows="4" spellcheck="false" placeholder="src/app.ts&#10;docs/readme.md"></textarea>
-          </label>
-        </div>
+        <RunHint variant="cm" class="mt-2" />
       </div>
-      <p class="caption px-4 py-2 text-mute">
-        Results update as you type — press <kbd class="ga-kbd">⌘/Ctrl</kbd> + <kbd class="ga-kbd">Enter</kbd> to run now.
-        Press <kbd class="ga-kbd">Esc</kbd> to release the editor. Nothing is uploaded.
-      </p>
 
-      <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
-        <div class="mb-3 flex items-center justify-between gap-3">
-          <span class="eyebrow">Decision</span>
-          <span id="ga-trig-summary" class="ga-summary code-mono text-mute" role="status" aria-live="polite"></span>
-        </div>
+      <ResultPanel slug="github-actions-expression-tester" prefix="ga-trig" label="Decision" summaryClass="whitespace-nowrap" split>
+        <Fragment slot="actions">
+          <CopyButton kind="link" id="ga-share-trig" />
+        </Fragment>
         <div id="ga-trig-results" class="ga-results">
-          <p class="ga-empty body-sm text-mute">Load an example or paste a workflow, set an event, then Simulate to see which jobs run or are skipped — and why.</p>
+          <p class="ga-empty body-sm">Load an example or paste a workflow and set an event to see which jobs run or are skipped — and why.</p>
         </div>
-      </div>
+      </ResultPanel>
     </div>
 
-    {/* Snapshot row — applies to whichever tab (expr / trig) is active. */}
-    <div class="ga-snap-row flex flex-wrap items-center gap-2 border-t border-hairline px-4 py-2.5 sm:px-5">
-      <button id="ga-snap-save" type="button" class="ga-snap-btn">Save snapshot</button>
-      <select id="ga-snap-select" class="ga-snap-select" aria-label="Load a saved snapshot" disabled>
-        <option value="">No snapshots yet</option>
-      </select>
-      <button id="ga-snap-delete" type="button" class="ga-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
-    </div>
-
-    {/* Footer: semantics version */}
-    <div class="flex items-center justify-between gap-3 border-t border-hairline px-4 py-2.5 sm:px-5">
-      <span class="caption text-mute">100% in your browser · no signup</span>
-      <span id="ga-version" class="caption text-mute code-mono"></span>
+    {/* Snapshot row — on paper, applies to whichever tab (expr / trig) is active. */}
+    <div class="flex flex-wrap items-center justify-between gap-3 border-t border-hairline px-4 pb-3 sm:px-5">
+      <SnapshotBar prefix="ga" />
+      <span id="ga-version" class="caption text-mute code-mono mt-3"></span>
     </div>
   </div>
 </section>
@@ -271,7 +228,6 @@ const seedExprSummary = seedExprResult ? exprSummaryText(seedExprResult) : '';
   @reference "../styles/global.css";
 
   .ga-tap { touch-action: manipulation; }
-  .ga-kbd { border: 1px solid currentColor; border-radius: 3px; padding: 0 4px; font-size: 0.85em; }
 
   /* Tabs */
   .ga-tab {
@@ -279,88 +235,32 @@ const seedExprSummary = seedExprResult ? exprSummaryText(seedExprResult) : '';
     padding: 9px 14px; border-radius: var(--radius-sm);
     font-size: 14px; font-weight: 500; color: var(--color-mute);
     background: transparent; cursor: pointer; touch-action: manipulation;
-    transition: color .15s ease, background-color .15s ease;
-    min-height: 44px;
+    transition: color var(--dur-fast) var(--ease-brand), background-color var(--dur-fast) var(--ease-brand);
+    min-height: var(--control-h-lg);
   }
   .ga-tab:hover { color: var(--color-ink); background: var(--color-canvas-soft-2); }
-  .ga-tab.is-active { color: var(--color-ink); background: var(--color-canvas-soft-2); box-shadow: var(--shadow-hairline); }
+  .ga-tab[aria-selected='true'] { color: var(--color-ink); background: var(--color-canvas-soft-2); box-shadow: var(--shadow-hairline); }
   .ga-tab:focus-visible { outline: 2px solid var(--color-link); outline-offset: 2px; }
   .ga-tab-glyph { font-size: 12px; opacity: .8; }
 
   /* Panels — class-driven so CodeMirror can re-measure on activate. */
   .ga-panel { display: none; }
-  .ga-panel.is-active { display: block; }
+  .ga-panel.ga-panel--active { display: block; }
 
-  /* Example chips — the playground UX contract's picker (squared, mono, brand
-     ink). Ported from SlugifyPlayground.astro; tokens only, no new ones.
-     `max-width: 100%` is load-bearing at 390px: the longest label here is
-     "⚠ The always-true footgun (runner#1173)", and an unconstrained chip would
-     push past the viewport and give the whole PAGE a horizontal scrollbar —
-     the same failure the old <select> needed `width: 100%` to avoid. */
-  /* Build-time text stand-in for each CodeMirror document: what a no-JS
-     visitor and every AI crawler read. `init` removes it once CM mounts. */
-  .ga-cm-fallback {
-    margin: 0;
-    padding: 14px 16px 16px;
-    max-height: 360px;
-    overflow: auto;
-    color: #e6e6e6;
-    font-size: 13px;
-    line-height: 20px;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-
-  .ga-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .ga-chip {
-    display: inline-flex;
-    align-items: center;
-    max-width: 100%;
-    padding: 5px 11px;
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--color-hairline-muted);
-    background: var(--color-canvas);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    line-height: 16px;
-    letter-spacing: 0.01em;
-    color: var(--color-brand-strong);
-    cursor: pointer;
-    touch-action: manipulation;
-    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
-  }
-  .ga-chip:hover {
-    border-color: var(--color-hairline-strong);
-    background: var(--color-canvas-hover);
-  }
-  .ga-chip.is-active {
-    background: var(--color-brand-soft);
-    border-color: var(--color-brand-strong);
-    color: var(--color-brand-strong);
-  }
-  .ga-chip:focus-visible {
-    outline: 2px solid var(--color-focus);
-    outline-offset: 2px;
-  }
-  @media (pointer: coarse) {
-    .ga-chip {
-      min-height: 44px;
-    }
+  /* Editor grids: expression | context, workflow | scenario (from 1024px). */
+  .ga-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  @media (min-width: 1024px) {
+    .ga-grid--expr { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ga-grid--trig { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
   }
 
   /* Select + inputs */
   .ga-select {
-    /* Now only the event-scenario picker. `width: 100%` is load-bearing, not
-       cosmetic: without it a select sizes to its longest option text, and a
-       long option pushed past the viewport at 390px — the whole PAGE gained a
-       horizontal scrollbar and read as broken (measured when the example
-       pickers were still selects). With width:100% it shrinks inside its
-       min-w-0 flex parent and max-width still caps it on desktop. */
-    appearance: none; -webkit-appearance: none; height: 32px; min-width: 0; width: 100%; max-width: 320px;
+    /* `width: 100%` is load-bearing, not cosmetic: without it a select sizes to
+       its longest option text, and a long option pushed past the viewport at
+       390px. With width:100% it shrinks inside its min-w-0 flex parent and
+       max-width still caps it on desktop. */
+    appearance: none; -webkit-appearance: none; height: var(--control-h-md); min-width: 0; width: 100%; max-width: 320px;
     padding: 0 32px 0 12px; border-radius: var(--radius-sm);
     background: var(--color-canvas); color: var(--color-ink); box-shadow: var(--shadow-hairline);
     font-size: 13px; line-height: 20px; cursor: pointer; text-overflow: ellipsis; touch-action: manipulation;
@@ -381,91 +281,20 @@ const seedExprSummary = seedExprResult ? exprSummaryText(seedExprResult) : '';
   }
   .ga-textarea { resize: vertical; min-height: 80px; }
 
-  .ga-snap-btn {
-    flex: 0 0 auto;
-    height: 30px;
-    padding: 0 12px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-    cursor: pointer;
-    transition: background 0.12s ease, box-shadow 0.12s ease;
-  }
-  .ga-snap-btn:hover {
-    background: var(--color-canvas-soft);
-    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
-  }
-  .ga-snap-select {
-    height: 30px;
-    max-width: 220px;
-    padding: 0 8px;
-    border-radius: var(--radius-sm);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-  }
-  .ga-snap-select:disabled {
-    color: var(--color-mute);
-    cursor: not-allowed;
-  }
-  .ga-snap-delete {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: transparent;
-    color: var(--color-mute);
-    cursor: pointer;
-    transition: background 0.12s ease, color 0.12s ease;
-  }
-  .ga-snap-delete:hover {
-    background: var(--color-error-soft);
-    color: var(--color-error-deep);
-  }
+  .ga-results { min-height: var(--control-h-lg); }
 
-  /* Context preset chips on the dark bar */
-  .ga-preset {
-    padding: 2px 10px; border-radius: var(--radius-pill); font-size: 12px;
-    font-family: var(--font-mono); color: rgba(255,255,255,.72);
-    background: rgba(255,255,255,.08); cursor: pointer; touch-action: manipulation;
-    transition: background-color .15s ease, color .15s ease;
-  }
-  .ga-preset:hover { background: rgba(255,255,255,.16); color: #fff; }
-  .ga-preset:focus-visible { outline: 2px solid var(--color-link); outline-offset: 1px; }
-
-  /* CodeMirror dark host (mirrors PromqlExplainerPlayground) */
-  .ga-editor { overflow: hidden; }
-  .ga-editor :global(.cm-editor) { height: 100%; background: transparent; font-family: var(--font-mono); font-size: 13px; line-height: 20px; }
-  .ga-editor :global(.cm-editor.cm-focused) { outline: 2px solid var(--color-link); outline-offset: -2px; }
-  .ga-editor :global(.cm-scroller) { overflow: auto; max-height: 360px; font-family: var(--font-mono); scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.18) transparent; }
-  .ga-editor :global(.cm-scroller)::-webkit-scrollbar { width: 10px; height: 10px; }
-  .ga-editor :global(.cm-scroller)::-webkit-scrollbar-thumb { background: rgba(255,255,255,.16); border-radius: var(--radius-pill); border: 3px solid transparent; background-clip: content-box; }
-  .ga-editor :global(.cm-gutters) { background: transparent; border-right: 1px solid rgba(255,255,255,.08); }
-  .ga-editor :global(.cm-lineNumbers .cm-gutterElement) { color: rgba(255,255,255,.32); }
-  .ga-editor :global(.cm-content) { padding: 12px 0 14px; }
-  .ga-editor :global(.cm-line) { padding-inline: 4px; }
-
-  .ga-summary { white-space: nowrap; }
-  .ga-results { min-height: 44px; }
-
-  /* Result building blocks (runtime-injected → :global with explicit sizing) */
+  /* ── Result building blocks (runtime-injected → :global) ──────────────
+     Light rules first as the documented defaults; the slab re-skin follows,
+     anchored on this component's own `.ga-results` containers. */
   :global(.ga-verdict) {
     display: flex; align-items: center; gap: 12px; padding: 14px 16px;
     border-radius: var(--radius-md); background: var(--color-canvas); box-shadow: var(--shadow-hairline);
-    animation: ga-rise .18s ease both;
+    animation: ga-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.ga-verdict__badge) {
     flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
     min-width: 64px; padding: 4px 12px; border-radius: var(--radius-pill);
-    font-weight: 600; font-size: 13px; letter-spacing: .02em;
+    font-weight: 600; font-size: 13px;
   }
   :global(.ga-verdict__badge.is-true) { background: var(--color-success-soft); color: var(--color-success-deep); box-shadow: inset 0 0 0 1px var(--color-success); }
   :global(.ga-verdict__badge.is-false) { background: var(--color-canvas-soft-2); color: var(--color-body); box-shadow: inset 0 0 0 1px var(--color-hairline-strong); }
@@ -474,8 +303,8 @@ const seedExprSummary = seedExprResult ? exprSummaryText(seedExprResult) : '';
 
   :global(.ga-warn) {
     display: flex; gap: 10px; margin-top: 12px; padding: 12px 14px; border-radius: var(--radius-md);
-    background: var(--color-warning-soft, #fef3c7); box-shadow: inset 0 0 0 1px var(--color-warning, #f59e0b);
-    color: var(--color-warning-deep, #92400e); animation: ga-rise .18s ease both;
+    background: var(--color-warning-soft); box-shadow: inset 0 0 0 1px var(--color-warning);
+    color: var(--color-warning-deep); animation: ga-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.ga-warn.is-info) { background: var(--color-canvas); color: var(--color-body); box-shadow: inset 0 0 0 1px var(--color-hairline-strong); }
   :global(.ga-warn__icon) { flex: 0 0 auto; width: 18px; height: 18px; margin-top: 1px; }
@@ -489,20 +318,20 @@ const seedExprSummary = seedExprResult ? exprSummaryText(seedExprResult) : '';
   :global(.ga-part__token) { flex: 0 0 auto; max-width: 46%; align-self: flex-start; padding: 2px 8px; border-radius: var(--radius-sm); background: var(--color-canvas-soft-2); box-shadow: var(--shadow-hairline); font-family: var(--font-mono); font-size: 13px; line-height: 20px; color: var(--color-ink); white-space: pre-wrap; word-break: break-word; }
   :global(.ga-part__meaning) { min-width: 0; flex: 1 1 auto; font-size: 14px; line-height: 21px; color: var(--color-body); text-wrap: pretty; }
 
-  /* Trigger results table */
-  :global(.ga-wf-banner) { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: var(--radius-md); font-size: 14px; line-height: 21px; animation: ga-rise .18s ease both; }
+  /* Trigger results table (built by the script) */
+  :global(.ga-wf-banner) { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: var(--radius-md); font-size: 14px; line-height: 21px; animation: ga-rise var(--dur-base) var(--ease-brand) both; }
   :global(.ga-wf-banner.is-yes) { background: var(--color-success-soft); color: var(--color-success-deep); box-shadow: inset 0 0 0 1px var(--color-success); }
   :global(.ga-wf-banner.is-no) { background: var(--color-canvas-soft-2); color: var(--color-body); box-shadow: inset 0 0 0 1px var(--color-hairline-strong); }
   :global(.ga-jobs) { margin-top: 12px; width: 100%; border-collapse: collapse; font-size: 14px; }
   :global(.ga-jobs th) { text-align: left; padding: 8px 10px; color: var(--color-mute); font-weight: 500; font-size: 12px; border-bottom: 1px solid var(--color-hairline); }
   :global(.ga-jobs td) { padding: 10px; border-bottom: 1px solid var(--color-hairline); vertical-align: top; color: var(--color-body); text-wrap: pretty; }
   :global(.ga-jobs td:first-child) { font-family: var(--font-mono); color: var(--color-ink); white-space: nowrap; }
-  :global(.ga-chip) { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: var(--radius-pill); font-weight: 600; font-size: 12px; white-space: nowrap; }
-  :global(.ga-chip.runs) { background: var(--color-success-soft); color: var(--color-success-deep); box-shadow: inset 0 0 0 1px var(--color-success); }
-  :global(.ga-chip.skipped) { background: var(--color-canvas-soft-2); color: var(--color-body); box-shadow: inset 0 0 0 1px var(--color-hairline-strong); }
-  :global(.ga-chip.not-evaluated) { background: var(--color-canvas-soft-2); color: var(--color-mute); }
+  :global(.ga-decision) { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: var(--radius-pill); font-weight: 600; font-size: 12px; white-space: nowrap; }
+  :global(.ga-decision.runs) { background: var(--color-success-soft); color: var(--color-success-deep); box-shadow: inset 0 0 0 1px var(--color-success); }
+  :global(.ga-decision.skipped) { background: var(--color-canvas-soft-2); color: var(--color-body); box-shadow: inset 0 0 0 1px var(--color-hairline-strong); }
+  :global(.ga-decision.not-evaluated) { background: var(--color-canvas-soft-2); color: var(--color-mute); }
   /* `unknown` is an honest "cannot tell", not a verdict — amber annotation ink. */
-  :global(.ga-chip.unknown) { background: var(--color-warning-soft); color: var(--color-accent-ink); box-shadow: inset 0 0 0 1px var(--color-accent-ink); }
+  :global(.ga-decision.unknown) { background: var(--color-warning-soft); color: var(--color-accent-ink); box-shadow: inset 0 0 0 1px var(--color-accent-ink); }
   :global(.ga-jobs-wrap) { overflow-x: auto; }
 
   :global(.ga-error) { display: flex; gap: 10px; padding: 12px 14px; border-radius: var(--radius-md); background: var(--color-error-soft); box-shadow: inset 0 0 0 1px var(--color-error); color: var(--color-error-deep); }
@@ -513,18 +342,81 @@ const seedExprSummary = seedExprResult ? exprSummaryText(seedExprResult) : '';
   @media (prefers-reduced-motion: reduce) {
     :global(.ga-verdict), :global(.ga-warn), :global(.ga-explanation), :global(.ga-wf-banner) { animation: none; }
   }
+
+  /* ── Instrument re-skin — both results sit on the L2 result slab (dark in
+     BOTH themes), so everything rendered into them uses the slab ink tier. */
+  .ga-results :global(.ga-verdict),
+  .ga-results :global(.ga-explanation),
+  .ga-results :global(.ga-part),
+  .ga-results :global(.ga-empty),
+  .ga-results :global(.ga-warn.is-info),
+  .ga-results :global(.ga-wf-banner.is-no) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-fg);
+  }
+  .ga-results :global(.ga-verdict__text),
+  .ga-results :global(.ga-rendered),
+  .ga-results :global(.ga-part__meaning),
+  .ga-results :global(.ga-jobs td),
+  .ga-results :global(.ga-jobs td:first-child) {
+    color: var(--color-inverse-fg);
+  }
+  .ga-results :global(.ga-empty),
+  .ga-results :global(.ga-jobs th) {
+    color: var(--color-inverse-mute);
+  }
+  .ga-results :global(.ga-verdict__badge.is-true),
+  .ga-results :global(.ga-wf-banner.is-yes),
+  .ga-results :global(.ga-decision.runs) {
+    background: #8fc97a1f;
+    color: var(--color-inverse-brand);
+    box-shadow: inset 0 0 0 1px var(--color-inverse-brand);
+  }
+  .ga-results :global(.ga-verdict__badge.is-false),
+  .ga-results :global(.ga-decision.skipped) {
+    background: #ffffff0a;
+    color: var(--color-inverse-fg);
+    box-shadow: inset 0 0 0 1px var(--color-inverse-control-edge);
+  }
+  .ga-results :global(.ga-decision.not-evaluated) {
+    background: #ffffff0a;
+    color: var(--color-inverse-mute);
+  }
+  .ga-results :global(.ga-warn),
+  .ga-results :global(.ga-decision.unknown) {
+    background: #e0a45814;
+    color: var(--color-inverse-accent);
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+  }
+  .ga-results :global(.ga-part__token) {
+    background: #ffffff14;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-fg);
+  }
+  .ga-results :global(.ga-jobs th),
+  .ga-results :global(.ga-jobs td) {
+    border-bottom-color: #ffffff12;
+  }
+  .ga-results :global(.ga-error) {
+    background: #ff9d9514;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-error);
+    color: var(--color-inverse-error);
+  }
   .is-busy { opacity: .65; pointer-events: none; cursor: progress; }
 </style>
 
 <script>
   import type { EditorView } from '@codemirror/view';
   import { escapeHtml } from '../lib/escape-html';
-  import { copyTextToClipboard } from '../lib/clipboard';
   import { base64UrlEncode, base64UrlDecode } from '../lib/codec';
+  import { wireCopyButtons } from '../lib/playground-kit/copy';
+  import { syncChips, clearChips, CHIP_SELECTOR } from '../lib/playground-kit/chips';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
   // Tab 1's pure HTML builders, shared with this component's frontmatter so the
   // server-rendered seed and every client repaint come from one implementation.
   import {
+    WARN_SVG,
     evalErrorHtml,
     exprResultHtml,
     exprSummaryText,
@@ -540,6 +432,8 @@ const seedExprSummary = seedExprResult ? exprSummaryText(seedExprResult) : '';
 
   const ROOT_SEL = '.ga-pg';
   const SLUG = 'github-actions-expression-tester';
+  /** Inside the 130–220ms band the playground UX contract specifies. */
+  const DEBOUNCE_MS = 180;
 
   function boot(): void {
     document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
@@ -553,19 +447,8 @@ const seedExprSummary = seedExprResult ? exprSummaryText(seedExprResult) : '';
     return root.querySelector<T>(sel);
   }
 
-  /** The example chips inside one server-rendered `role="group"`, in DOM order. */
-  function chipsIn(root: ParentNode, groupSel: string): HTMLButtonElement[] {
-    const group = el<HTMLElement>(root, groupSel);
-    return group ? Array.from(group.querySelectorAll<HTMLButtonElement>('.ga-chip')) : [];
-  }
-
-  /** Move the pressed/active state within one group; null for "none of them". */
-  function setActiveChip(chips: HTMLButtonElement[], active: HTMLButtonElement | null): void {
-    chips.forEach((chip) => {
-      const on = chip === active;
-      chip.classList.toggle('is-active', on);
-      chip.setAttribute('aria-pressed', on ? 'true' : 'false');
-    });
+  function isCoarsePointer(): boolean {
+    return window.matchMedia?.('(pointer: coarse)').matches ?? false;
   }
 
   /* ── share-link codec ──────────────────────────────────────────────────── */
@@ -589,7 +472,11 @@ const seedExprSummary = seedExprResult ? exprSummaryText(seedExprResult) : '';
     }
   }
 
-  const WARN_SVG = '<svg class="ga-warn__icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5L18.5 17H1.5z"></path><path d="M10 8v4"></path><path d="M10 14.6v.01"></path></svg>';
+  function setSummary(summary: HTMLElement, text: string, isError: boolean): void {
+    summary.textContent = text;
+    summary.classList.toggle('text-inverse-error', isError);
+    summary.classList.toggle('text-inverse-mute', !isError);
+  }
 
   async function init(root: HTMLElement): Promise<void> {
     let engine: EngineModule;
@@ -599,18 +486,19 @@ const seedExprSummary = seedExprResult ? exprSummaryText(seedExprResult) : '';
     let makeEditor: (
       host: HTMLElement,
       doc: string,
-      opts?: { yaml?: boolean; onChange?: () => void },
+      opts: { label: string; yaml?: boolean; onChange?: () => void },
     ) => EditorView;
     let setDoc: (v: EditorView, doc: string) => void;
     try {
-      // Load CodeMirror + the engine + examples together so the ~200KB CM
-      // runtime code-splits into its own chunk off the initial page JS.
+      // Load CodeMirror + the kit's plate theme + the engine + examples
+      // together so the ~200KB CM runtime code-splits into its own chunk off
+      // the initial page JS.
       const [
         { EditorState },
         { EditorView, keymap, lineNumbers, highlightActiveLine },
         { defaultKeymap, history, historyKeymap, indentWithTab },
         { yaml: yamlLang },
-        { oneDark },
+        { plate },
         engineMod,
         examplesMod,
       ] = await Promise.all([
@@ -618,32 +506,37 @@ const seedExprSummary = seedExprResult ? exprSummaryText(seedExprResult) : '';
         import('@codemirror/view'),
         import('@codemirror/commands'),
         import('@codemirror/lang-yaml'),
-        import('@codemirror/theme-one-dark'),
+        import('../lib/playground-kit/cm-theme'),
         import('../lib/github-actions-expression-tester/engine'),
         import('../lib/github-actions-expression-tester/examples'),
       ]);
       engine = engineMod;
       examples = examplesMod;
 
+      const runKey = {
+        key: 'Mod-Enter',
+        run: (v: EditorView) => {
+          runActive();
+          if (isCoarsePointer()) v.contentDOM.blur();
+          return true;
+        },
+      };
       const escAndBlur = { key: 'Escape', run: (v: EditorView) => { v.contentDOM.blur(); return true; } };
-      const baseTheme = EditorView.theme({
-        '&': { color: '#e6e6e6' },
-        '.cm-content': { caretColor: '#e6e6e6' },
-        '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
-        '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: 'rgba(0,112,243,.32)' },
-        '.cm-activeLine': { backgroundColor: 'rgba(255,255,255,.035)' },
-        '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+      // Sizing only — colours, gutters and the focus ring come from the plate
+      // theme and the EditorPane rule in global.css.
+      const sizing = EditorView.theme({
+        '&': { fontSize: '13px', maxHeight: '360px' },
+        '.cm-scroller': { overflow: 'auto' },
+        '.cm-content, .cm-gutter': { minHeight: '120px' },
       });
 
-      makeEditor = (
-        host: HTMLElement,
-        doc: string,
-        opts: { yaml?: boolean; onChange?: () => void } = {},
-      ): EditorView => {
+      makeEditor = (host, doc, opts): EditorView => {
         const ext = [
           lineNumbers(), history(), highlightActiveLine(), EditorView.lineWrapping,
-          keymap.of([escAndBlur, ...defaultKeymap, ...historyKeymap, indentWithTab]),
-          oneDark, baseTheme,
+          // Ours FIRST, so Mod-Enter wins over defaultKeymap's Enter.
+          keymap.of([runKey, escAndBlur, ...defaultKeymap, ...historyKeymap, indentWithTab]),
+          plate, sizing,
+          EditorView.contentAttributes.of({ 'aria-label': opts.label }),
         ];
         if (opts.yaml) ext.push(yamlLang());
         if (opts.onChange) {
@@ -662,24 +555,37 @@ const seedExprSummary = seedExprResult ? exprSummaryText(seedExprResult) : '';
     const ver = el<HTMLElement>(root, '#ga-version');
     if (ver) ver.textContent = 'semantics: ' + engine.GHA_SEMANTICS_VERSION;
 
+    // ── Tabs (resolved first: runActive needs the panels) ──
+    const tabExpr = el<HTMLButtonElement>(root, '#ga-tab-expr');
+    const tabTrig = el<HTMLButtonElement>(root, '#ga-tab-trig');
+    const panelExpr = el<HTMLElement>(root, '#ga-panel-expr');
+    const panelTrig = el<HTMLElement>(root, '#ga-panel-trig');
+    const exprActive = (): boolean => panelExpr?.classList.contains('ga-panel--active') ?? true;
+
     // ── Editors ──
     const exprHost = el<HTMLElement>(root, '#ga-expr-editor');
     const ctxHost = el<HTMLElement>(root, '#ga-ctx-editor');
     const wfHost = el<HTMLElement>(root, '#ga-wf-editor');
-    if (!exprHost || !ctxHost || !wfHost) return;
+    if (!exprHost || !ctxHost || !wfHost || !panelExpr || !panelTrig) return;
 
     /**
      * Live-eval plumbing. runExpr/runSim are declared further down, after the
      * result containers exist, so the editors cannot reference them directly at
      * construction time — these mutable hooks bridge the gap and stay no-ops
      * until they are assigned.
-     *
-     * Debounced at 180ms, inside the 130–220ms band the playground UX contract
-     * in CLAUDE.md specifies.
      */
     let onExprInput: () => void = () => {};
     let onSimInput: () => void = () => {};
-    function debounce(fn: () => void, ms = 180): () => void {
+    let runActive: () => void = () => {};
+    // Programmatic document writes (examples, presets, deep link, restore)
+    // are not typing: they run their own evaluation and must not schedule a
+    // debounced, recorded one behind it.
+    let quiet = false;
+    const write = (v: EditorView, doc: string): void => {
+      quiet = true;
+      try { setDoc(v, doc); } finally { quiet = false; }
+    };
+    function debounce(fn: () => void, ms = DEBOUNCE_MS): () => void {
       let t: number | undefined;
       return () => {
         if (t !== undefined) clearTimeout(t);
@@ -688,39 +594,35 @@ const seedExprSummary = seedExprResult ? exprSummaryText(seedExprResult) : '';
     }
 
     const exprView = makeEditor(exprHost, examples.expressionExamples[0]?.expression ?? '', {
+      label: 'GitHub Actions if condition or expression',
       onChange: () => onExprInput(),
     });
     const ctxView = makeEditor(ctxHost, JSON.stringify(engine.defaultContext(), null, 2), {
+      label: 'Editable mock evaluation context (JSON)',
       onChange: () => onExprInput(),
     });
 
     // The build-time text stand-ins have done their job (no-JS visitors and
     // crawlers); CodeMirror appended its editors beside them, so drop them.
+    // The #s= / restore tiers below overwrite the documents in place.
     root.querySelectorAll('[data-cm-fallback]').forEach((node) => node.remove());
     const wfView = makeEditor(wfHost, examples.triggerExamples[0]?.workflow ?? '', {
+      label: 'Workflow YAML',
       yaml: true,
       onChange: () => onSimInput(),
     });
 
-    // ── Tabs ──
-    const tabExpr = el<HTMLButtonElement>(root, '#ga-tab-expr');
-    const tabTrig = el<HTMLButtonElement>(root, '#ga-tab-trig');
-    const panelExpr = el<HTMLElement>(root, '#ga-panel-expr');
-    const panelTrig = el<HTMLElement>(root, '#ga-panel-trig');
-
     function activate(which: 'expr' | 'trig'): void {
       const isExpr = which === 'expr';
-      tabExpr?.classList.toggle('is-active', isExpr);
-      tabTrig?.classList.toggle('is-active', !isExpr);
       tabExpr?.setAttribute('aria-selected', String(isExpr));
       tabTrig?.setAttribute('aria-selected', String(!isExpr));
-      tabExpr && (tabExpr.tabIndex = isExpr ? 0 : -1);
-      tabTrig && (tabTrig.tabIndex = isExpr ? -1 : 0);
-      // Visibility is driven solely by the is-active class (NOT the hidden
-      // attribute) — Tailwind v4's `[hidden]{display:none!important}` would
-      // otherwise win over the class and leave CodeMirror measuring at 0 height.
-      panelExpr?.classList.toggle('is-active', isExpr);
-      panelTrig?.classList.toggle('is-active', !isExpr);
+      if (tabExpr) tabExpr.tabIndex = isExpr ? 0 : -1;
+      if (tabTrig) tabTrig.tabIndex = isExpr ? -1 : 0;
+      // Visibility is driven solely by the ga-panel--active class (NOT the
+      // hidden attribute) — Tailwind v4's `[hidden]{display:none!important}`
+      // would otherwise win over the class and leave CodeMirror measuring at 0.
+      panelExpr?.classList.toggle('ga-panel--active', isExpr);
+      panelTrig?.classList.toggle('ga-panel--active', !isExpr);
       // CodeMirror must re-measure once its panel is visible.
       requestAnimationFrame(() => {
         (isExpr ? [exprView, ctxView] : [wfView]).forEach((v) => v.requestMeasure());
@@ -747,46 +649,18 @@ const seedExprSummary = seedExprResult ? exprSummaryText(seedExprResult) : '';
     });
 
     // ── Examples ──
-    // Both chip groups are server-rendered from the same `examples` module, in
-    // the same order, so `data-example-idx` indexes those arrays directly.
-    const exprChips = chipsIn(root, '#ga-expr-chips');
-    const trigChips = chipsIn(root, '#ga-trig-chips');
+    // Both chip groups are server-rendered (ExampleChips) from the same
+    // `examples` module, in the same order, so `data-example-idx` indexes those
+    // arrays directly.
+    const exprChipsWrap = el<HTMLElement>(root, '#ga-expr-chips');
+    const trigChipsWrap = el<HTMLElement>(root, '#ga-trig-chips');
+    const exprChips = Array.from(exprChipsWrap?.querySelectorAll<HTMLButtonElement>(CHIP_SELECTOR) ?? []);
+    const trigChips = Array.from(trigChipsWrap?.querySelectorAll<HTMLButtonElement>(CHIP_SELECTOR) ?? []);
 
-    exprChips.forEach((chip) => {
-      chip.addEventListener('click', () => {
-        const ex = examples.expressionExamples[Number(chip.dataset.exampleIdx)];
-        if (!ex) return;
-        setActiveChip(exprChips, chip);
-        setDoc(exprView, ex.expression);
-      });
-    });
-    trigChips.forEach((chip) => {
-      chip.addEventListener('click', () => {
-        const ex = examples.triggerExamples[Number(chip.dataset.exampleIdx)];
-        if (!ex) return;
-        setActiveChip(trigChips, chip);
-        setDoc(wfView, ex.workflow);
-        applyEventToForm(ex.event);
-      });
-    });
-
-    // ── Context presets ──
-    root.querySelectorAll<HTMLButtonElement>('.ga-preset').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const ctx = engine.defaultContext();
-        const preset = btn.dataset.preset;
-        const gh = (ctx.github ?? {}) as Record<string, unknown>;
-        if (preset === 'pull_request') {
-          gh.event_name = 'pull_request'; gh.ref = 'refs/pull/42/merge'; gh.ref_name = '42/merge'; gh.base_ref = 'main'; gh.head_ref = 'feature/x';
-        } else if (preset === 'tag') {
-          gh.event_name = 'push'; gh.ref = 'refs/tags/v1.2.3'; gh.ref_name = 'v1.2.3'; gh.ref_type = 'tag';
-        } else {
-          gh.event_name = 'push'; gh.ref = 'refs/heads/main'; gh.ref_name = 'main'; gh.ref_type = 'branch';
-        }
-        ctx.github = gh as never;
-        setDoc(ctxView, JSON.stringify(ctx, null, 2));
-      });
-    });
+    /** Press `active` within one group; null for "none of them". */
+    function pressChip(group: HTMLElement | null, active: HTMLButtonElement | null): void {
+      syncChips(group, (c) => c === active);
+    }
 
     // ── Event form ──
     const evEvent = el<HTMLSelectElement>(root, '#ga-ev-event');
@@ -800,7 +674,6 @@ const seedExprSummary = seedExprResult ? exprSummaryText(seedExprResult) : '';
       fieldTag?.classList.toggle('hidden', !isTag);
       fieldBranch?.classList.toggle('hidden', isTag);
     }
-    evEvent?.addEventListener('change', syncEventFields);
     syncEventFields();
     function applyEventToForm(ev: { event: string; branch?: string; tag?: string; changedFiles?: string[] }): void {
       if (evEvent) evEvent.value = ev.tag ? 'tag' : ev.event;
@@ -825,34 +698,71 @@ const seedExprSummary = seedExprResult ? exprSummaryText(seedExprResult) : '';
     const exprSummary = el<HTMLElement>(root, '#ga-expr-summary')!;
     const trigResults = el<HTMLElement>(root, '#ga-trig-results')!;
     const trigSummary = el<HTMLElement>(root, '#ga-trig-summary')!;
+    const shareExpr = el<HTMLButtonElement>(root, '#ga-share-expr');
+    const shareTrig = el<HTMLButtonElement>(root, '#ga-share-trig');
 
+    // Copy plumbing — one delegated listener per tab panel, each announcing in
+    // its own result panel's #<prefix>-copy-status.
+    wireCopyButtons(panelExpr, { status: el<HTMLElement>(root, '#ga-expr-copy-status') });
+    wireCopyButtons(panelTrig, { status: el<HTMLElement>(root, '#ga-trig-copy-status') });
 
-    function runExpr(): void {
+    /** The share URL for a state, or '' (button stays hidden). */
+    function shareUrlFor(state: Record<string, unknown>): string {
+      const hash = encodeState(state);
+      return hash ? `${location.origin}${location.pathname}#s=${hash}` : '';
+    }
+    function setShare(btn: HTMLButtonElement | null, url: string): void {
+      if (!btn) return;
+      btn.dataset.copy = url;
+      btn.hidden = url.length === 0;
+    }
+
+    function exprState(): Record<string, unknown> {
+      return { t: 'expr', e: exprView.state.doc.toString(), c: ctxView.state.doc.toString() };
+    }
+    function trigState(): Record<string, unknown> {
+      return { t: 'trig', w: wfView.state.doc.toString(), v: readEvent() };
+    }
+
+    /** `user` false = the boot seed / deep link / restore: never recorded. */
+    function runExpr(user = true): void {
       const raw = exprView.state.doc.toString();
       const parsed = engine.parseContext(ctxView.state.doc.toString());
       let result;
       try { result = engine.evaluateIfCondition(raw, parsed.ctx); }
-      catch (err) { exprResults.innerHTML = evalErrorHtml('Could not evaluate', String(err)); return; }
+      catch (err) {
+        setSummary(exprSummary, 'error', true);
+        exprResults.innerHTML = evalErrorHtml('Could not evaluate', String(err));
+        setShare(shareExpr, '');
+        return;
+      }
 
-      exprSummary.textContent = exprSummaryText(result);
+      setSummary(exprSummary, exprSummaryText(result), false);
       exprResults.innerHTML = exprResultHtml(result, { contextError: parsed.error });
-      recordToolLastInput(SLUG, JSON.stringify({ t: 'expr', e: raw, c: ctxView.state.doc.toString() }));
+      setShare(shareExpr, shareUrlFor(exprState()));
+      if (user) recordToolLastInput(SLUG, JSON.stringify(exprState()));
     }
 
-    function runSim(): void {
+    function runSim(user = true): void {
       const wf = wfView.state.doc.toString();
       const ev = readEvent();
       let result;
       try { result = engine.simulateTriggers(wf, ev as never); }
-      catch (err) { trigResults.innerHTML = `<div class="ga-error" role="alert">${WARN_SVG}<div><p class="ga-warn__title">Could not simulate</p><p class="ga-error__detail">${escapeHtml(String(err))}</p></div></div>`; return; }
+      catch (err) {
+        setSummary(trigSummary, 'error', true);
+        trigResults.innerHTML = `<div class="ga-error" role="alert">${WARN_SVG}<div><p class="ga-warn__title">Could not simulate</p><p class="ga-error__detail">${escapeHtml(String(err))}</p></div></div>`;
+        setShare(shareTrig, '');
+        return;
+      }
 
       if (result.error) {
-        trigSummary.textContent = 'error';
+        setSummary(trigSummary, 'error', true);
         trigResults.innerHTML = `<div class="ga-error" role="alert">${WARN_SVG}<div><p class="ga-warn__title">Workflow could not be parsed</p><p class="ga-error__detail">${escapeHtml(result.error)}</p></div></div>`;
+        setShare(shareTrig, '');
         return;
       }
       const runs = result.jobs.filter((j) => j.decision === 'runs').length;
-      trigSummary.textContent = `${runs}/${result.jobs.length} run`;
+      setSummary(trigSummary, `${runs}/${result.jobs.length} run`, false);
       const banner = `<div class="ga-wf-banner ${result.workflowTriggered ? 'is-yes' : 'is-no'}">${result.workflowTriggered ? '✓' : '✕'} ${escapeHtml(result.workflowReason)}</div>`;
       const warns = result.warnings.map(warnHtml).join('');
       const rows = result.jobs.map((j) => {
@@ -861,80 +771,118 @@ const seedExprSummary = seedExprResult ? exprSummaryText(seedExprResult) : '';
         // "NOT RUN" would restate the confident-false bug the engine just fixed.
         const decClass = j.decision === 'runs' || j.decision === 'skipped' || j.decision === 'unknown' || j.decision === 'not-evaluated' ? j.decision : 'not-evaluated';
         const decLabel = j.decision === 'runs' ? 'RUNS' : j.decision === 'skipped' ? 'SKIPPED' : j.decision === 'unknown' ? 'UNKNOWN' : 'NOT RUN';
-        return `<tr><td>${escapeHtml(j.jobId)}</td><td><span class="ga-chip ${decClass}">${decLabel}</span></td><td>${escapeHtml(j.reason)}</td></tr>`;
+        return `<tr><td>${escapeHtml(j.jobId)}</td><td><span class="ga-decision ${decClass}">${decLabel}</span></td><td>${escapeHtml(j.reason)}</td></tr>`;
       }).join('');
       const table = result.jobs.length
         ? `<div class="ga-jobs-wrap"><table class="ga-jobs"><thead><tr><th>Job</th><th>Decision</th><th>Reason</th></tr></thead><tbody>${rows}</tbody></table></div>`
-        : '<p class="ga-empty body-sm text-mute">No jobs found in this workflow.</p>';
+        : '<p class="ga-empty body-sm">No jobs found in this workflow.</p>';
       trigResults.innerHTML = banner + warns + table;
-      recordToolLastInput(SLUG, JSON.stringify({ t: 'trig', w: wf, v: ev }));
+      setShare(shareTrig, shareUrlFor(trigState()));
+      if (user) recordToolLastInput(SLUG, JSON.stringify(trigState()));
     }
 
     // ── Wire actions ──
-    // Activate live eval now that both runners exist. The explicit buttons and
-    // ⌘/Ctrl+Enter stay — they run immediately, skipping the debounce.
-    onExprInput = debounce(runExpr);
-    onSimInput = debounce(runSim);
+    // Activate live eval now that both runners exist. "Run now" and
+    // ⌘/Ctrl+Enter run immediately, skipping the debounce.
+    onExprInput = debounce(() => runExpr(true));
+    onSimInput = debounce(() => runSim(true));
+    runActive = () => { if (exprActive()) runExpr(true); else runSim(true); };
 
-    el<HTMLButtonElement>(root, '#ga-eval')?.addEventListener('click', runExpr);
-    el<HTMLButtonElement>(root, '#ga-sim')?.addEventListener('click', runSim);
+    el<HTMLButtonElement>(root, '#ga-eval')?.addEventListener('click', () => runExpr(true));
+    el<HTMLButtonElement>(root, '#ga-sim')?.addEventListener('click', () => runSim(true));
+
     // Picking an example must show its result without a second click — that is
-    // the entire point of an example. These listeners are registered after the
-    // ones that load the doc, so they run second, on the new document.
-    exprChips.forEach((chip) => chip.addEventListener('click', runExpr));
-    trigChips.forEach((chip) => chip.addEventListener('click', runSim));
-    root.querySelectorAll<HTMLButtonElement>('.ga-preset').forEach((b) =>
-      b.addEventListener('click', runExpr),
-    );
-    root.addEventListener('keydown', (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        e.preventDefault();
-        if (panelExpr?.classList.contains('is-active')) runExpr(); else runSim();
-      }
+    // the entire point of an example. The doc write releases nothing here (the
+    // pressed chip is set after it) and the debounced run is superseded.
+    exprChips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const ex = examples.expressionExamples[Number(chip.dataset.exampleIdx)];
+        if (!ex) return;
+        write(exprView, ex.expression);
+        pressChip(exprChipsWrap, chip);
+        runExpr(true);
+      });
+    });
+    trigChips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const ex = examples.triggerExamples[Number(chip.dataset.exampleIdx)];
+        if (!ex) return;
+        write(wfView, ex.workflow);
+        applyEventToForm(ex.event);
+        pressChip(trigChipsWrap, chip);
+        runSim(true);
+      });
     });
 
-    // ── Share ──
-    function wireShare(id: string, build: () => Record<string, unknown>): void {
-      const btn = el<HTMLButtonElement>(root, id);
-      btn?.addEventListener('click', async () => {
-        const hash = encodeState(build());
-        const url = `${location.origin}${location.pathname}#s=${hash}`;
-        await copyTextToClipboard(url);
-        const label = btn.querySelector('.ga-share-label');
-        if (label) { const prev = label.textContent; label.textContent = 'Copied!'; setTimeout(() => { label.textContent = prev; }, 1400); }
+    // Typing in an editor means the on-screen state is no longer an example.
+    const exprTyped = onExprInput;
+    onExprInput = () => { if (quiet) return; clearChips(exprChipsWrap); exprTyped(); };
+    const simTyped = onSimInput;
+    onSimInput = () => { if (quiet) return; clearChips(trigChipsWrap); simTyped(); };
+
+    // The event scenario form is part of the simulation input.
+    evEvent?.addEventListener('change', () => { syncEventFields(); onSimInput(); });
+    [evBranch, evTag, evFiles].forEach((f) => f?.addEventListener('input', () => onSimInput()));
+
+    // ── Context presets ──
+    root.querySelectorAll<HTMLButtonElement>('.ga-preset').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const ctx = engine.defaultContext();
+        const preset = btn.dataset.preset;
+        const gh = (ctx.github ?? {}) as Record<string, unknown>;
+        if (preset === 'pull_request') {
+          gh.event_name = 'pull_request'; gh.ref = 'refs/pull/42/merge'; gh.ref_name = '42/merge'; gh.base_ref = 'main'; gh.head_ref = 'feature/x';
+        } else if (preset === 'tag') {
+          gh.event_name = 'push'; gh.ref = 'refs/tags/v1.2.3'; gh.ref_name = 'v1.2.3'; gh.ref_type = 'tag';
+        } else {
+          gh.event_name = 'push'; gh.ref = 'refs/heads/main'; gh.ref_name = 'main'; gh.ref_type = 'branch';
+        }
+        ctx.github = gh as never;
+        write(ctxView, JSON.stringify(ctx, null, 2));
+        runExpr(true);
+      });
+    });
+
+    // ── Share — Copy link copies the #s= URL (copy.ts); the click also puts
+    // that state in the address bar, as the old Share button did. ──
+    [shareExpr, shareTrig].forEach((btn) => {
+      btn?.addEventListener('click', () => {
+        const url = btn.dataset.copy ?? '';
+        const at = url.indexOf('#s=');
+        if (at < 0) return;
         // NB: window.history — keep it explicit; `history` (unprefixed) is the
         // CodeMirror commands extension, imported dynamically inside init().
-        window.history.replaceState(null, '', `#s=${hash}`);
+        try { window.history.replaceState(null, '', url.slice(at)); } catch { /* Safari throttle */ }
       });
-    }
-    wireShare('#ga-share-expr', () => ({ t: 'expr', e: exprView.state.doc.toString(), c: ctxView.state.doc.toString() }));
-    wireShare('#ga-share-trig', () => ({ t: 'trig', w: wfView.state.doc.toString(), v: readEvent() }));
+    });
 
     // ── Snapshot save/restore — applies to whichever tab is active ──
     const snapSaveBtn = el<HTMLButtonElement>(root, '#ga-snap-save');
     const snapSelect = el<HTMLSelectElement>(root, '#ga-snap-select');
     const snapDeleteBtn = el<HTMLButtonElement>(root, '#ga-snap-delete');
-    function applyRestoredState(raw: string): void {
-      try {
-        const st = JSON.parse(raw) as Record<string, unknown>;
-        if (st && st.t === 'expr') {
-          // Restored state is the visitor's own, not one of the examples — so
-          // no chip is pressed (a chip group has no synthetic "Restored" entry).
-          setActiveChip(exprChips, null);
-          if (typeof st.e === 'string') setDoc(exprView, st.e);
-          if (typeof st.c === 'string') setDoc(ctxView, st.c);
-          activate('expr');
-          runExpr();
-        } else if (st && st.t === 'trig') {
-          setActiveChip(trigChips, null);
-          if (typeof st.w === 'string') setDoc(wfView, st.w);
-          if (st.v) applyEventToForm(st.v as never);
-          activate('trig');
-          runSim();
-        }
-      } catch {
-        /* malformed snapshot/restore payload — leave current state as-is */
+    function applyState(st: Record<string, unknown> | null, user: boolean): boolean {
+      if (st && st.t === 'expr') {
+        // Restored state is the visitor's own, not one of the examples — so
+        // no chip is pressed.
+        if (typeof st.e === 'string') write(exprView, st.e);
+        if (typeof st.c === 'string') write(ctxView, st.c);
+        clearChips(exprChipsWrap);
+        activate('expr');
+        runExpr(user);
+        return true;
       }
+      if (st && st.t === 'trig') {
+        if (typeof st.w === 'string') write(wfView, st.w);
+        if (st.v) applyEventToForm(st.v as never);
+        clearChips(trigChipsWrap);
+        activate('trig');
+        runSim(user);
+        return true;
+      }
+      return false;
+    }
+    function parseState(raw: string): Record<string, unknown> | null {
+      try { return JSON.parse(raw) as Record<string, unknown>; } catch { return null; }
     }
     if (snapSaveBtn && snapSelect && snapDeleteBtn) {
       wireSnapshotUI({
@@ -942,52 +890,26 @@ const seedExprSummary = seedExprResult ? exprSummaryText(seedExprResult) : '';
         saveBtn: snapSaveBtn,
         snapshotSelect: snapSelect,
         deleteBtn: snapDeleteBtn,
-        getValue: () =>
-          panelExpr?.classList.contains('is-active')
-            ? JSON.stringify({ t: 'expr', e: exprView.state.doc.toString(), c: ctxView.state.doc.toString() })
-            : JSON.stringify({ t: 'trig', w: wfView.state.doc.toString(), v: readEvent() }),
-        setValue: applyRestoredState,
+        getValue: () => JSON.stringify(exprActive() ? exprState() : trigState()),
+        setValue: (raw) => { applyState(parseState(raw), true); },
       });
     }
 
-    // ── Restore from hash ──
+    // ── First load ──
     // Seed priority: #s= deep link > restored last input > seeded example
-    // (already populated into the editors above). Only the #s= tier is a
-    // deliberate user share; the restored-last-input tier is the new,
-    // net-new-for-this-tool auto-restore.
-    if (location.hash.startsWith('#s=')) {
-      const st = decodeState(location.hash.slice(3));
-      if (st && st.t === 'expr') {
-        // Shared state is not one of the examples: leave every chip unpressed.
-        setActiveChip(exprChips, null);
-        if (typeof st.e === 'string') setDoc(exprView, st.e);
-        if (typeof st.c === 'string') setDoc(ctxView, st.c);
-        activate('expr'); runExpr();
-      } else if (st && st.t === 'trig') {
-        setActiveChip(trigChips, null);
-        if (typeof st.w === 'string') setDoc(wfView, st.w);
-        if (st.v) applyEventToForm(st.v as never);
-        activate('trig'); runSim();
-      }
-    } else {
-      const restored = getRestoredLastInput(SLUG);
-      if (restored) applyRestoredState(restored);
-    }
-
-    // Evaluate whatever the editors ended up holding, so the page never opens on
-    // an empty results panel.
-    //
-    // Before this, a first-time visitor saw the seeded footgun example beside the
-    // text "…then Evaluate" and had to press a button to learn anything. The
-    // highest-intent visitor arrives from "github actions if condition always
-    // runs" with seconds of patience and does not press it — so the one insight
-    // this tool exists to deliver was hidden behind a click.
-    //
-    // Both runners only read editor state and write to their own result
-    // container, so calling them here is idempotent and safe after any of the
-    // seed tiers above (#s= deep link, restored input, or the default example).
-    runExpr();
-    runSim();
+    // (already in the editors). None of these is user input: nothing is
+    // recorded and no hash is written. Then evaluate whatever the editors
+    // ended up holding, so the page never opens on an empty results panel —
+    // the highest-intent visitor ("github actions if condition always runs")
+    // must not have to press a button to see the footgun verdict.
+    let seededExpr = false;
+    let seededTrig = false;
+    const fromHash = location.hash.startsWith('#s=') ? decodeState(location.hash.slice(3)) : null;
+    const st = fromHash ?? (location.hash.startsWith('#s=') ? null : parseState(getRestoredLastInput(SLUG) ?? ''));
+    if (st && st.t === 'expr') seededExpr = applyState(st, false);
+    else if (st && st.t === 'trig') seededTrig = applyState(st, false);
+    if (!seededExpr) runExpr(false);
+    if (!seededTrig) runSim(false);
   }
 
   boot();

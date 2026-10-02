@@ -4,9 +4,15 @@
  *
  * A no-framework, server-rendered shell hydrated by a single module <script>
  * that lazily boots ONE CodeMirror 6 editor (YAML highlighting) plus a mode
- * toggle (run → compose | compose → run), an example picker, a Convert action,
- * a read-only output pane, and Copy buttons. It runs entirely client-side and
- * is fully usable offline once loaded.
+ * toggle (run → compose | compose → run) and the example chips. Conversion is
+ * live and debounced; "Run now" and ⌘/Ctrl + Enter convert immediately.
+ *
+ * Built on the playground kit (src/components/playground/*): ExampleChips,
+ * EditorPane (the input slab), RunHint, SnapshotBar, ResultPanel (figure cap,
+ * live summary, copy status) and CopyButton. The two seeded containers
+ * (`#drc-output`, `#drc-warnings`) stay here with `set:html` +
+ * `data-results`; their slab overrides anchor on `.drc-output` /
+ * `.drc-warnings`.
  *
  * Runtime contract (imported lazily in the script):
  *   ../lib/docker-run-to-compose/engine →
@@ -14,18 +20,11 @@
  *     composeToRun(yaml: string) => { ok, command?, warnings, error? }
  *   ../lib/docker-run-to-compose/examples →
  *     examples: Array<{ id; label; run; compose }>
- *
- * The dark editor + output surfaces follow the code-editor-mockup treatment;
- * warnings use the semantic warning token, errors the error token. All
- * runtime-injected markup is styled via :global(...) because Astro scoped
- * styles do not reach innerHTML-injected nodes.
  */
 // Build-time import of the same `examples` the client script loads lazily.
-// Used ONLY to server-render the example CHIPS below (the playground UX
-// contract's picker — never a <select>), so the static HTML carries real
-// example names rather than a "Loading examples…" placeholder that crawlers
-// and no-JS visitors would otherwise be served. The script re-reads the
-// examples module at hydration and addresses each chip by its
+// Used to server-render the example chips (ExampleChips), so the static HTML
+// carries real example names for crawlers and no-JS visitors. The script
+// re-reads the examples module at hydration and addresses each chip by its
 // `data-example-idx`, so this adds nothing to the client bundle.
 import { examples as prerenderedExamples } from '../lib/docker-run-to-compose/examples';
 import { runToCompose } from '../lib/docker-run-to-compose/engine';
@@ -35,6 +34,12 @@ import {
   statusText,
   EMPTY_HTML,
 } from '../lib/docker-run-to-compose/render';
+import ExampleChips from './playground/ExampleChips.astro';
+import EditorPane from './playground/EditorPane.astro';
+import RunHint from './playground/RunHint.astro';
+import SnapshotBar from './playground/SnapshotBar.astro';
+import ResultPanel from './playground/ResultPanel.astro';
+import CopyButton from './playground/CopyButton.astro';
 
 /**
  * Server-rendered seed. The client re-converts the same example on boot, so
@@ -58,15 +63,16 @@ const seedHtml = seedOk ? resultHtml('docker-compose.yml', seedOk.yaml ?? '') : 
 const seedWarnings = seedOk ? (seedOk.warnings ?? []) : [];
 const seedWarningsHtml = seedOk ? warningsHtml(seedWarnings) : '';
 const seedStatus = seedOk ? statusText(seedWarnings) : '';
+const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
 ---
 
 <section class="drc" aria-label="Docker Run to Compose converter playground">
-  <div class="card shadow-float rounded-lg overflow-hidden">
-    {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Toolbar: direction, examples, Run now ────────────────────────── */}
     <div
-      class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5"
+      class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-end sm:justify-between sm:px-5"
     >
-      <div class="flex min-w-0 flex-wrap items-center gap-3">
+      <div class="flex min-w-0 flex-wrap items-end gap-3">
         {/* Mode toggle — mutually-exclusive direction switch (radio group). */}
         <div
           class="drc-modes inline-flex shrink-0 rounded-md p-0.5"
@@ -96,148 +102,42 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
         </div>
 
         <div class="flex min-w-0 flex-col gap-1">
-          <span class="eyebrow">Example</span>
-          {/* Chips, not a <select> — the playground UX contract's example
-              picker. Server-rendered so the examples are in the static HTML;
-              the hydration script addresses each by its data-example-idx. */}
-          <div id="drc-chips" class="drc-chips" role="group" aria-label="Examples">
-            {
-              prerenderedExamples.map((ex, i) => (
-                <button
-                  type="button"
-                  class:list={['drc-chip', { 'is-active': i === 0 }]}
-                  data-example-idx={i}
-                  aria-pressed={i === 0 ? 'true' : 'false'}
-                >
-                  {ex.label}
-                </button>
-              ))
-            }
-          </div>
+          <span class="eyebrow">Examples</span>
+          <ExampleChips prefix="drc" items={chipItems} active={seedExample ? 0 : null} ariaLabel="Examples" />
         </div>
       </div>
 
-      <div class="flex shrink-0 flex-wrap items-center gap-2">
-        <span class="caption text-mute hidden items-center sm:inline-flex">⌘/Ctrl + Enter</span>
-        <button id="drc-run" type="button" class="btn btn-primary btn-sm drc-tap" title="Convert (⌘/Ctrl + Enter)" aria-keyshortcuts="Meta+Enter Control+Enter">
-          <svg
-            class="drc-run-icon h-4 w-4 shrink-0"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M2.5 4.5l4 3.5-4 3.5M8 12.5h5.5"></path>
-          </svg>
-          <span class="drc-run-label">Convert</span>
-        </button>
-      </div>
+      <button
+        id="drc-run"
+        type="button"
+        class="btn-tool drc-tap"
+        title="Run now (⌘/Ctrl + Enter)"
+        aria-keyshortcuts="Meta+Enter Control+Enter"
+      >
+        Run now
+      </button>
     </div>
 
-    {/* ── Input editor (dark mockup surface) ───────────────────────────── */}
-    <div class="drc-pane flex min-w-0 flex-col bg-inverse">
-      <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
-        <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
-          <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-          <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-          <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-        </span>
-        <span id="drc-input-name" class="code-mono text-white/45">docker run</span>
-        <span class="code-mono text-white/30 ml-auto">input</span>
-      </div>
-      <p class="body-sm text-mute px-4 pt-2">Runs entirely in your browser — nothing is uploaded.</p>
-      <div id="drc-editor" class="drc-editor min-h-56" aria-label="Converter input">
-        <pre class="drc-cm-fallback code-mono" data-cm-fallback>{seedInput}</pre>
-      </div>
-      <p class="text-xs text-mute px-4 pb-2 pt-1">
-        Tip: press <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd>
-        to release keyboard focus from the editor.
-      </p>
-      <div class="drc-snap-row mt-1 mb-3 flex flex-wrap items-center gap-2" style="padding: 0 16px;">
-        <button id="drc-snap-save" type="button" class="drc-snap-btn">Save snapshot</button>
-        <select id="drc-snap-select" class="drc-snap-select" aria-label="Load a saved snapshot" disabled>
-          <option value="">No snapshots yet</option>
-        </select>
-        <button id="drc-snap-delete" type="button" class="drc-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
-      </div>
+    {/* ── Input editor ──────────────────────────────────────────────────── */}
+    <div class="border-b border-hairline px-4 py-4 sm:px-5">
+      <EditorPane prefix="drc" id="drc-editor" label="docker run">
+        <pre class="editor-pane__fallback code-mono" data-cm-fallback>{seedInput}</pre>
+      </EditorPane>
+      <RunHint variant="cm" class="mt-2" />
+      <SnapshotBar prefix="drc" />
     </div>
 
-    {/* ── Output pane ──────────────────────────────────────────────────── */}
-    <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <span class="flex items-center gap-2">
-          <span class="eyebrow" id="drc-output-label">Output</span>
-          <button id="drc-share" type="button" class="drc-share-btn" data-copy="" hidden>
-            <svg
-              class="drc-share-icon"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M6.75 9.25l2.5-2.5"></path>
-              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
-              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
-            </svg>
-            <span class="drc-share-label">Copy link</span>
-          </button>
-          <button id="drc-md" type="button" class="drc-share-btn" data-copy="" hidden>
-            <svg
-              class="drc-share-icon"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M2.5 4.5h11v7h-11z"></path>
-              <path d="M4.5 10V6l1.75 2L8 6v4"></path>
-              <path d="M9.75 6.5v3.25M9.75 9.75l1.25-1.25M9.75 9.75l-1.25-1.25"></path>
-            </svg>
-            <span class="drc-md-label">Copy as Markdown</span>
-          </button>
-        </span>
-        <div class="flex items-center gap-3">
-          <span id="drc-status" class="drc-status code-mono text-mute" role="status" aria-live="polite">{seedStatus}</span>
-          <button
-            id="drc-copy"
-            type="button"
-            class="btn btn-secondary btn-sm drc-tap"
-            data-default-label="Copy"
-          >
-            <svg
-              class="h-4 w-4 shrink-0"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.4"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <rect x="5.5" y="5.5" width="8" height="8" rx="1.5"></rect>
-              <path d="M3.5 10.5h-.5a1.5 1.5 0 0 1-1.5-1.5v-6A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5"></path>
-            </svg>
-            <span class="drc-copy-label">Copy</span>
-          </button>
-        </div>
-      </div>
+    {/* ── Result: the converted output + migration notes ───────────────── */}
+    <ResultPanel slug="docker-run-to-compose" prefix="drc" summary={seedStatus} summaryClass="whitespace-nowrap" split>
+      <Fragment slot="actions">
+        <CopyButton kind="link" id="drc-share" />
+        <CopyButton kind="all" id="drc-copy" label="Copy output" />
+        <CopyButton kind="value" id="drc-md" label="Copy as Markdown" icon="markdown" />
+      </Fragment>
 
       {/* Seeded at build time (see `seedHtml` above) so the converted YAML is
           in the static HTML; the client rebuilds the same markup on boot. */}
-      <div id="drc-output" class="drc-output" set:html={seedHtml}></div>
+      <div id="drc-output" class="drc-output" set:html={seedHtml} data-results></div>
 
       <div
         id="drc-warnings"
@@ -246,11 +146,10 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
         aria-live="polite"
         aria-atomic="false"
         set:html={seedWarningsHtml}
+        data-results
       ></div>
-    </div>
+    </ResultPanel>
   </div>
-
-  <span id="drc-announce" class="sr-only" role="status" aria-live="polite"></span>
 </section>
 
 <style>
@@ -277,8 +176,8 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
     cursor: pointer;
     touch-action: manipulation;
     transition:
-      background 0.15s ease,
-      color 0.15s ease;
+      background-color var(--dur-fast) var(--ease-brand),
+      color var(--dur-fast) var(--ease-brand);
   }
   .drc-mode:hover {
     color: var(--color-body);
@@ -288,244 +187,44 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
     color: var(--color-ink);
     box-shadow: var(--shadow-hairline);
   }
-
-  /* The example picker: squared chips (playground UX contract), not a select. */
-  .drc-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .drc-chip {
-    display: inline-flex;
-    align-items: center;
-    padding: 5px 11px;
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--color-hairline-muted);
-    background: var(--color-canvas);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    line-height: 16px;
-    letter-spacing: 0.01em;
-    color: var(--color-brand-strong);
-    cursor: pointer;
-    touch-action: manipulation;
-    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
-  }
-  .drc-chip:hover {
-    border-color: var(--color-hairline-strong);
-    background: var(--color-canvas-hover);
-  }
-  .drc-chip.is-active {
-    background: var(--color-brand-soft);
-    border-color: var(--color-brand-strong);
-    color: var(--color-brand-strong);
-  }
-  .drc-chip:focus-visible {
-    outline: 2px solid var(--color-focus);
-    outline-offset: 2px;
-  }
-  .drc-chip:disabled {
-    cursor: not-allowed;
-    color: var(--color-mute);
-    opacity: 0.7;
-  }
-  @media (pointer: coarse) {
-    .drc-chip {
-      min-height: 44px;
-    }
-  }
-
-  .drc-snap-btn {
-    flex: 0 0 auto;
-    height: 30px;
-    padding: 0 12px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-    cursor: pointer;
-    transition: background 0.12s ease, box-shadow 0.12s ease;
-  }
-  .drc-snap-btn:hover {
-    background: var(--color-canvas-soft);
-    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
-  }
-  .drc-snap-select {
-    height: 30px;
-    max-width: 220px;
-    padding: 0 8px;
-    border-radius: var(--radius-sm);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-  }
-  .drc-snap-select:disabled {
-    color: var(--color-mute);
-    cursor: not-allowed;
-  }
-  .drc-snap-delete {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: transparent;
-    color: var(--color-mute);
-    cursor: pointer;
-    transition: background 0.12s ease, color 0.12s ease;
-  }
-  .drc-snap-delete:hover {
-    background: var(--color-error-soft);
-    color: var(--color-error-deep);
-  }
-
-  /* CodeMirror host — fills the dark pane, scrolls internally. */
-  .drc-editor {
-    overflow: hidden;
-    padding-inline: 4px;
-  }
-  /* Build-time text stand-in for the editor, sized like the CM content so the
-     pane does not jump when the script swaps it out. Removed on mount. */
-  .drc-cm-fallback {
-    margin: 0;
-    padding: 14px 16px 16px;
-    max-height: 320px;
-    overflow: auto;
-    color: #e6e6e6;
-    font-size: 13px;
-    line-height: 20px;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-  .drc-editor :global(.cm-editor) {
-    height: 100%;
-    background: transparent;
-    font-family: var(--font-mono);
-    font-size: 13px;
-    line-height: 20px;
-  }
-  .drc-editor :global(.cm-editor.cm-focused) {
-    outline: 2px solid var(--color-link);
-    outline-offset: -2px;
-  }
-  .drc-editor :global(.cm-scroller) {
-    overflow: auto;
-    max-height: 420px;
-    font-family: var(--font-mono);
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
-  }
-  .drc-editor :global(.cm-scroller)::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  .drc-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.16);
-    border-radius: var(--radius-pill);
-    border: 3px solid transparent;
-    background-clip: content-box;
-  }
-  .drc-editor :global(.cm-scroller)::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.28);
-    background-clip: content-box;
-  }
-  .drc-editor :global(.cm-gutters) {
-    background: transparent;
-    border-right: 1px solid rgba(255, 255, 255, 0.08);
-  }
-  .drc-editor :global(.cm-lineNumbers .cm-gutterElement) {
-    color: rgba(255, 255, 255, 0.32);
-  }
-  .drc-editor :global(.cm-content) {
-    padding: 14px 0 16px;
-  }
-  .drc-editor :global(.cm-line) {
-    padding-inline: 4px;
-  }
-
-  .drc-status {
-    white-space: nowrap;
-  }
-
-  /* Share / Copy-as-Markdown pills — small ghost pills next to the Output
-     eyebrow, shown only once there's a valid result (see hideShare() in the
-     script). Mirrors CronTesterPlayground's `.cron-share-btn`. */
-  .drc-share-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: 26px;
-    padding: 0 10px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-mute);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 16px;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition:
-      color 0.12s ease,
-      background 0.12s ease;
-  }
-  .drc-share-btn:hover {
-    color: var(--color-brand-strong);
-    background: var(--color-hairline);
-  }
-  .drc-share-btn:focus-visible {
+  .drc-mode:focus-visible {
     outline: 2px solid var(--color-link);
     outline-offset: 1px;
   }
-  .drc-share-btn.drc-share-btn--copied {
-    color: var(--color-brand-strong);
-    background: var(--color-brand-soft);
-  }
   @media (pointer: coarse) {
-    .drc-share-btn {
-      height: auto;
-      min-height: 36px;
+    .drc-mode {
+      min-height: var(--control-h-lg);
     }
   }
 
-  .drc-output {
-    min-height: 44px;
-  }
-
-  /* The result code block — a dark mockup surface mirroring the input pane. */
+  /* ── Runtime-injected markup (render.ts; styled with :global) ──────────
+     Light rules first as the documented defaults; the slab re-skin follows,
+     anchored on this component's own `.drc-output` / `.drc-warnings`. */
   :global(.drc-result) {
     border-radius: var(--radius-md);
     background: var(--color-inverse);
     box-shadow: var(--shadow-hairline);
     overflow: hidden;
-    animation: drc-rise 0.18s ease both;
+    animation: drc-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.drc-result__bar) {
     display: flex;
     align-items: center;
     gap: 6px;
     padding: 8px 12px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid var(--color-inverse-hairline);
   }
   :global(.drc-result__dot) {
     width: 9px;
     height: 9px;
-    border-radius: 9999px;
-    background: rgba(255, 255, 255, 0.15);
+    border-radius: 50%;
+    background: var(--color-inverse-hairline);
   }
   :global(.drc-result__name) {
     margin-left: 4px;
     font-family: var(--font-mono);
     font-size: 12px;
-    color: rgba(255, 255, 255, 0.45);
+    color: var(--color-inverse-mute);
   }
   :global(.drc-result__pre) {
     margin: 0;
@@ -534,7 +233,7 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
     font-family: var(--font-mono);
     font-size: 13px;
     line-height: 20px;
-    color: #e6e6e6;
+    color: var(--color-inverse-fg);
     white-space: pre;
     tab-size: 2;
   }
@@ -548,7 +247,7 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
     background: var(--color-error-soft);
     box-shadow: inset 0 0 0 1px var(--color-error);
     color: var(--color-error-deep);
-    animation: drc-rise 0.18s ease both;
+    animation: drc-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.drc-error__icon) {
     flex: 0 0 auto;
@@ -585,7 +284,7 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
     background: var(--color-warning-soft);
     box-shadow: var(--shadow-hairline);
     color: var(--color-warning-deep);
-    animation: drc-rise 0.18s ease both;
+    animation: drc-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.drc-warn + .drc-warn) {
     margin-top: 8px;
@@ -642,6 +341,37 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
     }
   }
 
+  /* ── Instrument re-skin — the output and notes sit on the L2 result slab
+     (dark in BOTH themes), so everything render.ts emits uses the slab ink
+     tier. The converted file reads as a hairline frame on the plate, not a
+     second slab. ─────────────────────────────────────────────────────── */
+  .drc-output :global(.drc-result) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+  }
+  .drc-output :global(.drc-empty) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-mute);
+  }
+  .drc-output :global(.drc-error) {
+    background: #ff9d9514;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-error);
+    color: var(--color-inverse-error);
+  }
+  .drc-warnings :global(.drc-warn) {
+    background: #e0a45814;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-accent);
+  }
+  .drc-warnings :global(.drc-warn__text) {
+    color: var(--color-inverse-fg);
+  }
+  .drc-warnings :global(.drc-warn code) {
+    background: #ffffff14;
+    color: var(--color-inverse-fg);
+  }
+
   .is-busy {
     opacity: 0.65;
     pointer-events: none;
@@ -650,9 +380,10 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
 </style>
 
 <script>
-  import { copyTextToClipboard as copyText } from '../lib/clipboard';
   import type { EditorView } from '@codemirror/view';
   import { buildMarkdownBlock } from '../lib/share-md';
+  import { wireCopyButtons } from '../lib/playground-kit/copy';
+  import { syncChipsByIndex, CHIP_SELECTOR } from '../lib/playground-kit/chips';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
   // The HTML builders are shared with the frontmatter's build-time seed —
   // one implementation, so the no-JS markup and the live markup never drift.
@@ -678,10 +409,13 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
   type ExampleRaw = Record<string, unknown>;
   type Example = { id: string; label: string; run: string; compose: string };
   type Mode = 'run' | 'compose';
+  /** `seed` = boot / deep link / restore (never written or recorded); `type` = debounced edit; `run` = explicit. */
+  type Source = 'seed' | 'type' | 'run';
 
   const ROOT_SEL = '.drc';
-  const COPIED_RESET_MS = 1800;
   const SLUG = 'docker-run-to-compose';
+  const DEBOUNCE_MS = 180;
+  const ERROR_HOLD_MS = 600;
 
   function boot(): void {
     document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
@@ -718,25 +452,38 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
     return root.querySelector<T>(sel);
   }
 
+  function isCoarsePointer(): boolean {
+    return window.matchMedia?.('(pointer: coarse)').matches ?? false;
+  }
+
+  /**
+   * Rename an EditorPane's figure cap (the input's name follows the mode).
+   * EditorPane renders a static label; the cap's label span is the only text
+   * in it, so this rewrites that span and its title.
+   */
+  function setPaneLabel(host: HTMLElement, text: string): void {
+    const label = host.closest('[data-editor-pane]')?.querySelector<HTMLElement>('.figcap__label');
+    if (!label) return;
+    label.textContent = text;
+    label.title = text;
+  }
+
   /* ---- Result rendering (DOM writes over the shared pure builders) --------- */
 
-  function renderEmpty(output: HTMLElement, warnings: HTMLElement, status: HTMLElement): void {
-    status.textContent = '';
-    status.classList.remove('text-error');
-    status.classList.add('text-mute');
+  function setSummary(summary: HTMLElement, text: string, isError: boolean): void {
+    summary.textContent = text;
+    summary.classList.toggle('text-inverse-error', isError);
+    summary.classList.toggle('text-inverse-mute', !isError);
+  }
+
+  function renderEmpty(output: HTMLElement, warnings: HTMLElement, summary: HTMLElement): void {
+    setSummary(summary, '', false);
     output.innerHTML = EMPTY_HTML;
     warnings.innerHTML = '';
   }
 
-  function renderError(
-    output: HTMLElement,
-    warnings: HTMLElement,
-    status: HTMLElement,
-    message: string,
-  ): void {
-    status.textContent = 'Error';
-    status.classList.add('text-error');
-    status.classList.remove('text-mute');
+  function renderError(output: HTMLElement, warnings: HTMLElement, summary: HTMLElement, message: string): void {
+    setSummary(summary, 'Error', true);
     output.innerHTML = errorHtml(message);
     warnings.innerHTML = '';
   }
@@ -744,19 +491,15 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
   function renderResult(
     output: HTMLElement,
     warningsBox: HTMLElement,
-    status: HTMLElement,
+    summary: HTMLElement,
     name: string,
     code: string,
     warnings: string[],
   ): void {
     output.innerHTML = resultHtml(name, code);
-    status.textContent = statusText(warnings);
-    status.classList.remove('text-error');
-    status.classList.add('text-mute');
+    setSummary(summary, statusText(warnings), false);
     warningsBox.innerHTML = warningsHtml(warnings);
   }
-
-  /* ---- Clipboard ------------------------------------------------------------ */
 
   /* ---- Instance init -------------------------------------------------------- */
 
@@ -767,29 +510,37 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
     const copyBtn = el<HTMLButtonElement>(root, '#drc-copy');
     const shareBtn = el<HTMLButtonElement>(root, '#drc-share');
     const mdBtn = el<HTMLButtonElement>(root, '#drc-md');
+    const copyStatus = el<HTMLElement>(root, '#drc-copy-status');
     const outputBox = el<HTMLElement>(root, '#drc-output');
     const warningsBox = el<HTMLElement>(root, '#drc-warnings');
-    const statusEl = el<HTMLElement>(root, '#drc-status');
-    const announce = el<HTMLElement>(root, '#drc-announce');
+    const summaryEl = el<HTMLElement>(root, '#drc-summary');
     const modeRunBtn = el<HTMLButtonElement>(root, '#drc-mode-run');
     const modeComposeBtn = el<HTMLButtonElement>(root, '#drc-mode-compose');
-    const inputName = el<HTMLElement>(root, '#drc-input-name');
-    const outputLabel = el<HTMLElement>(root, '#drc-output-label');
     const snapSaveBtn = el<HTMLButtonElement>(root, '#drc-snap-save');
     const snapSelect = el<HTMLSelectElement>(root, '#drc-snap-select');
     const snapDeleteBtn = el<HTMLButtonElement>(root, '#drc-snap-delete');
 
     if (
-      !editorHost || !chipsWrap || !runBtn || !copyBtn || !shareBtn || !mdBtn ||
-      !outputBox || !warningsBox ||
-      !statusEl || !modeRunBtn || !modeComposeBtn || !inputName || !outputLabel ||
+      !editorHost || !chipsWrap || !runBtn || !copyBtn || !shareBtn || !mdBtn || !copyStatus ||
+      !outputBox || !warningsBox || !summaryEl || !modeRunBtn || !modeComposeBtn ||
       !snapSaveBtn || !snapSelect || !snapDeleteBtn
     ) {
       return;
     }
 
-    // Lazily load the sibling engine + examples + CodeMirror (kept out of the
-    // initial path so CM code-splits into its own chunk).
+    // The notes list keeps its server-rendered attributes byte-for-byte (the
+    // ssr-diff gate compares them), but once hydrated the result panel's
+    // summary is the ONE live region: the results are not re-announced.
+    warningsBox.removeAttribute('role');
+    warningsBox.removeAttribute('aria-live');
+    warningsBox.removeAttribute('aria-atomic');
+
+    // Copy plumbing (Copy output, Copy link, Copy as Markdown) — the kit
+    // helper: one delegated listener; outcomes announced in #drc-copy-status.
+    wireCopyButtons(root, { status: copyStatus });
+
+    // Lazily load the sibling engine + examples + CodeMirror + the kit's plate
+    // theme (kept out of the initial path so CM code-splits into its own chunk).
     let engine: EngineModule;
     let examples: Example[] = [];
     let EditorState: typeof import('@codemirror/state').EditorState;
@@ -802,7 +553,7 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
     let historyKeymap: typeof import('@codemirror/commands').historyKeymap;
     let indentWithTab: typeof import('@codemirror/commands').indentWithTab;
     let yaml: typeof import('@codemirror/lang-yaml').yaml;
-    let oneDark: typeof import('@codemirror/theme-one-dark').oneDark;
+    let plate: typeof import('../lib/playground-kit/cm-theme').plate;
     try {
       const [engineMod, examplesMod, stateMod, viewMod, commandsMod, yamlMod, themeMod] =
         await Promise.all([
@@ -812,7 +563,7 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
           import('@codemirror/view'),
           import('@codemirror/commands'),
           import('@codemirror/lang-yaml'),
-          import('@codemirror/theme-one-dark'),
+          import('../lib/playground-kit/cm-theme'),
         ]);
       engine = engineMod as unknown as EngineModule;
       examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
@@ -820,9 +571,9 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
       ({ EditorView: EditorViewCtor, keymap, lineNumbers, highlightActiveLine } = viewMod);
       ({ defaultKeymap, history, historyKeymap, indentWithTab } = commandsMod);
       ({ yaml } = yamlMod);
-      ({ oneDark } = themeMod);
+      ({ plate } = themeMod);
     } catch (err) {
-      renderError(outputBox, warningsBox, statusEl, 'The converter engine failed to load. Reload the page to try again.');
+      renderError(outputBox, warningsBox, summaryEl, 'The converter engine failed to load. Reload the page to try again.');
       // eslint-disable-next-line no-console
       console.error('[DockerRunToCompose] engine/examples import failed:', err);
       return;
@@ -831,22 +582,18 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
     let mode: Mode = 'run';
     let lastOutput = '';
 
-    /* ---- Live conversion (debounced) ---------------------------------------- */
-    // Mirrors SubnetCalculatorPlayground's ~300ms-debounced live update. Gated by
-    // `liveReady` so programmatic doc swaps during init/seeding don't fire it
-    // before run() exists; the explicit Convert button stays the primary action.
-    const LIVE_DEBOUNCE_MS = 300;
-    let liveReady = false;
-    let liveTimer: number | undefined;
-    function scheduleLiveConvert(): void {
-      if (!liveReady) return;
-      window.clearTimeout(liveTimer);
-      liveTimer = window.setTimeout(() => {
-        void run();
-      }, LIVE_DEBOUNCE_MS);
-    }
+    // Live conversion hook, called by the editor's update listener; a no-op
+    // until run() exists below, so the seed's own doc writes never fire it.
+    let onInputEdit: () => void = () => {};
 
     /* ---- Editor factory (CM symbols now in async scope) --------------------- */
+
+    // Sizing only — colours, gutters and the focus ring come from the plate
+    // theme and the EditorPane rule in global.css.
+    const sizing = EditorViewCtor.theme({
+      '&': { fontSize: '13px', maxHeight: '420px' },
+      '.cm-scroller': { overflow: 'auto' },
+    });
 
     function makeEditor(host: HTMLElement, doc: string): EditorView {
       const state = EditorState.create({
@@ -856,26 +603,27 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
           history(),
           highlightActiveLine(),
           yaml(),
-          oneDark,
+          plate,
+          sizing,
           EditorViewCtor.lineWrapping,
+          EditorViewCtor.contentAttributes.of({ 'aria-label': 'Converter input' }),
           keymap.of([
+            // Ours FIRST, so it wins over defaultKeymap's Enter.
+            {
+              key: 'Mod-Enter',
+              run: (v) => {
+                void run('run');
+                if (isCoarsePointer()) v.contentDOM.blur();
+                return true;
+              },
+            },
+            { key: 'Escape', run: (v) => { v.contentDOM.blur(); return true; } },
             ...defaultKeymap,
             ...historyKeymap,
             indentWithTab,
-            { key: 'Escape', run: (view) => { view.contentDOM.blur(); return true; } },
           ]),
-          // Re-run the conversion ~300ms after the document changes (live update).
           EditorViewCtor.updateListener.of((u) => {
-            if (u.docChanged) scheduleLiveConvert();
-          }),
-          EditorViewCtor.theme({
-            '&': { color: '#e6e6e6' },
-            '.cm-content': { caretColor: '#e6e6e6' },
-            '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
-            '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection':
-              { backgroundColor: 'rgba(0, 112, 243, 0.32)' },
-            '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
-            '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+            if (u.docChanged) onInputEdit();
           }),
         ],
       });
@@ -890,8 +638,8 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
     const seedExample = examples[0] ?? { id: 'example', label: 'Example', run: '', compose: '' };
 
     // Seed content: prefer a shared `#s=` URL, else a restored last input,
-    // else the first example. Neither seed path writes the hash — only
-    // user-initiated evaluations do (see run()'s `userInitiated` gate below).
+    // else the first example. No seed path writes the hash or records the
+    // input — only user-initiated evaluations do.
     let seedText = seedExample.run;
     let fromShare = false;
     try {
@@ -936,20 +684,15 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
     // a deep link or a remembered input.
     root.querySelectorAll('[data-cm-fallback]').forEach((node) => node.remove());
 
-    // The example chips are server-rendered from the same module; wire them by
-    // index. The old "Custom input" sentinel becomes "no chip active" (-1),
-    // which is what a shared-link or restored input gets.
-    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>('.drc-chip'));
+    // The example chips are server-rendered (ExampleChips); wire them by index.
+    // A shared-link or restored input matches no example: no chip pressed.
+    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>(CHIP_SELECTOR));
     let selectedIdx = -1;
 
-    /** Mark one chip active (idx < 0 clears the whole group). */
+    /** Press one chip (idx < 0 releases the whole group). */
     function setActiveChip(idx: number): void {
       selectedIdx = idx;
-      chips.forEach((chip) => {
-        const active = Number(chip.dataset.exampleIdx) === idx;
-        chip.classList.toggle('is-active', active);
-        chip.setAttribute('aria-pressed', active ? 'true' : 'false');
-      });
+      syncChipsByIndex(chipsWrap, idx < 0 ? null : idx);
     }
 
     if (examples.length === 0) {
@@ -966,11 +709,14 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
      *  toggling mode doesn't silently discard it. */
     function seedFromExample(): void {
       if (selectedIdx < 0) return;
+      const keep = selectedIdx;
       const ex =
         Number.isInteger(selectedIdx) && selectedIdx < examples.length
           ? examples[selectedIdx]
           : seedExample;
       setEditorDoc(view, mode === 'run' ? ex.run : ex.compose);
+      // The doc write released every chip (update listener); press it again.
+      setActiveChip(keep);
     }
 
     /** Update labels + checked styling + roving tabindex for the current mode. */
@@ -981,8 +727,7 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
       // Roving tabindex: only the checked radio is in the tab order.
       modeRunBtn!.tabIndex = isRun ? 0 : -1;
       modeComposeBtn!.tabIndex = isRun ? -1 : 0;
-      inputName!.textContent = isRun ? 'docker run' : 'docker-compose.yml';
-      outputLabel!.textContent = isRun ? 'Compose YAML' : 'docker run command';
+      setPaneLabel(editorHost!, isRun ? 'docker run' : 'docker-compose.yml');
     }
 
     function setMode(next: Mode, focus = false): void {
@@ -994,8 +739,7 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
       applyModeChrome();
       if (focus) (next === 'run' ? modeRunBtn! : modeComposeBtn!).focus();
       seedFromExample();
-      renderEmpty(outputBox!, warningsBox!, statusEl!);
-      void run();
+      void run('run');
     }
 
     modeRunBtn.addEventListener('click', () => setMode('run'));
@@ -1007,9 +751,6 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
       switch (e.key) {
         case 'ArrowRight':
         case 'ArrowDown':
-          e.preventDefault();
-          setMode(mode === 'run' ? 'compose' : 'run', true);
-          break;
         case 'ArrowLeft':
         case 'ArrowUp':
           e.preventDefault();
@@ -1034,23 +775,21 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
         if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
         setActiveChip(idx);
         seedFromExample();
-        renderEmpty(outputBox!, warningsBox!, statusEl!);
-        void run();
+        void run('run');
       });
     });
 
-    // Share / Copy-as-Markdown — hidden until there's a valid, non-empty
-    // result; cleared on every empty/error path (mirrors CronTesterPlayground's
-    // hideShare() discipline).
-    function hideShare(): void {
-      shareBtn!.hidden = true;
-      shareBtn!.dataset.copy = '';
-      mdBtn!.hidden = true;
-      mdBtn!.dataset.copy = '';
+    // Copy actions — hidden until there's a valid, non-empty result; cleared
+    // on every empty/error path.
+    function hideActions(): void {
+      for (const btn of [shareBtn!, mdBtn!, copyBtn!]) {
+        btn.hidden = true;
+        btn.dataset.copy = '';
+      }
     }
 
-    /** Populate both buttons' dataset.copy from the just-produced result. */
-    function showShare(input: string, directionLabel: string): void {
+    /** Populate the copy payloads from the just-produced result. */
+    function showActions(input: string, directionLabel: string): void {
       let shareUrl = window.location.href;
       try {
         const hash = engine.encodeState(mode, input);
@@ -1064,6 +803,9 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
       }
       shareBtn!.hidden = false;
       shareBtn!.dataset.copy = shareUrl;
+
+      copyBtn!.hidden = false;
+      copyBtn!.dataset.copy = lastOutput;
 
       mdBtn!.hidden = false;
       mdBtn!.dataset.copy = buildMarkdownBlock('Docker Run → Compose Converter', [
@@ -1095,128 +837,114 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
       }
     }
 
-    // Convert — non-blocking; yield a frame before (cheap) work. `userInitiated`
-    // gates the `#s=` hash write/clear: seeding paths (init, decoded share
-    // state) pass false so loading a page never rewrites its own URL.
+    // Convert. `source` gates the `#s=` hash write/clear and the last-input
+    // record: the seed (init, decoded share state, restore) never rewrites the
+    // page's own URL.
+    let timer: number | undefined;
     let running = false;
-    const runLabel = runBtn.querySelector<HTMLElement>('.drc-run-label');
-    async function run(userInitiated = true): Promise<void> {
-      if (running) return;
-      running = true;
-      runBtn!.classList.add('is-busy');
-      runBtn!.setAttribute('aria-busy', 'true');
-      if (runLabel) runLabel.textContent = 'Converting…';
+    let queued: Source | null = null;
 
-      await new Promise<void>((resolve) => {
-        if ('requestAnimationFrame' in window) requestAnimationFrame(() => resolve());
-        else setTimeout(resolve, 0);
-      });
+    // Calm errors (playground UX contract): mid-typing, keep the last good
+    // output and hold the diagnostic until ERROR_HOLD_MS of idle, a blur,
+    // Ctrl/Cmd+Enter, Run now, a mode switch or a chip, so a half-typed
+    // command never flashes red.
+    let errTimer: number | undefined;
+    let heldError: string | null = null;
+
+    function showError(message: string): void {
+      window.clearTimeout(errTimer);
+      heldError = null;
+      renderError(outputBox!, warningsBox!, summaryEl!, message);
+    }
+
+    function fail(source: Source, message: string): void {
+      lastOutput = '';
+      hideActions();
+      if (source !== 'seed') clearShareHash();
+      if (source !== 'type') {
+        showError(message);
+        return;
+      }
+      heldError = message;
+      setSummary(summaryEl!, '', false);
+      window.clearTimeout(errTimer);
+      errTimer = window.setTimeout(() => showError(message), ERROR_HOLD_MS);
+    }
+
+    view.contentDOM.addEventListener('blur', () => {
+      if (heldError !== null) showError(heldError);
+    });
+
+    async function run(source: Source): Promise<void> {
+      window.clearTimeout(timer);
+      window.clearTimeout(errTimer);
+      heldError = null;
+      if (running) {
+        queued = source;
+        return;
+      }
+      running = true;
+      const userInitiated = source !== 'seed';
+      if (source === 'run') {
+        runBtn!.classList.add('is-busy');
+        runBtn!.setAttribute('aria-busy', 'true');
+        // Yield so the busy state paints before the work runs.
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      }
 
       try {
         const input = view.state.doc.toString();
-        if (mode === 'run') {
-          const res = engine.runToCompose(input);
-          if (!res.ok || res.error) {
-            renderError(outputBox!, warningsBox!, statusEl!, res.error ?? 'Could not convert the command.');
-            lastOutput = '';
-            hideShare();
-            if (userInitiated) clearShareHash();
-          } else {
-            lastOutput = res.yaml ?? '';
-            renderResult(outputBox!, warningsBox!, statusEl!, 'docker-compose.yml', lastOutput, res.warnings ?? []);
-            showShare(input, 'docker run → Compose');
-            if (userInitiated) writeShareHash();
-            if (userInitiated) recordToolLastInput(SLUG, JSON.stringify({ dir: mode, text: input }));
-          }
+        if (input.trim().length === 0) {
+          renderEmpty(outputBox!, warningsBox!, summaryEl!);
+          lastOutput = '';
+          hideActions();
+          if (userInitiated) clearShareHash();
+          return;
+        }
+        const res: RunResult | ComposeResult =
+          mode === 'run' ? engine.runToCompose(input) : engine.composeToRun(input);
+        if (!res.ok || res.error) {
+          fail(
+            source,
+            res.error ?? (mode === 'run' ? 'Could not convert the command.' : 'Could not convert the service.'),
+          );
         } else {
-          const res = engine.composeToRun(input);
-          if (!res.ok || res.error) {
-            renderError(outputBox!, warningsBox!, statusEl!, res.error ?? 'Could not convert the service.');
-            lastOutput = '';
-            hideShare();
-            if (userInitiated) clearShareHash();
-          } else {
-            lastOutput = res.command ?? '';
-            renderResult(outputBox!, warningsBox!, statusEl!, 'docker run', lastOutput, res.warnings ?? []);
-            showShare(input, 'Compose → docker run');
-            if (userInitiated) writeShareHash();
-            if (userInitiated) recordToolLastInput(SLUG, JSON.stringify({ dir: mode, text: input }));
+          lastOutput = mode === 'run' ? ((res as RunResult).yaml ?? '') : ((res as ComposeResult).command ?? '');
+          renderResult(
+            outputBox!,
+            warningsBox!,
+            summaryEl!,
+            mode === 'run' ? 'docker-compose.yml' : 'docker run',
+            lastOutput,
+            res.warnings ?? [],
+          );
+          showActions(input, mode === 'run' ? 'docker run → Compose' : 'Compose → docker run');
+          if (userInitiated) {
+            writeShareHash();
+            recordToolLastInput(SLUG, JSON.stringify({ dir: mode, text: input }));
           }
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Unexpected error while converting.';
-        renderError(outputBox!, warningsBox!, statusEl!, msg);
-        lastOutput = '';
-        hideShare();
-        if (userInitiated) clearShareHash();
+        fail(source, msg);
       } finally {
         running = false;
         runBtn!.classList.remove('is-busy');
         runBtn!.removeAttribute('aria-busy');
-        if (runLabel) runLabel.textContent = 'Convert';
+        if (queued) {
+          const next = queued;
+          queued = null;
+          void run(next);
+        }
       }
     }
 
-    runBtn.addEventListener('click', () => void run());
+    function schedule(): void {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => void run('type'), DEBOUNCE_MS);
+    }
 
-    root.addEventListener('keydown', (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        e.preventDefault();
-        void run();
-      }
-    });
-
-    // Copy — copies the converted OUTPUT (not the input).
-    const copyLabel = copyBtn.querySelector<HTMLElement>('.drc-copy-label');
-    let copyTimer: number | undefined;
-    copyBtn.addEventListener('click', async () => {
-      const text = lastOutput || view.state.doc.toString();
-      const ok = await copyText(text);
-      if (copyLabel) copyLabel.textContent = ok ? 'Copied' : 'Copy Failed';
-      if (announce) {
-        announce.textContent = ok
-          ? 'Converted output copied to your clipboard.'
-          : 'Could not copy. Select the output text and copy it manually.';
-      }
-      window.clearTimeout(copyTimer);
-      copyTimer = window.setTimeout(() => {
-        if (copyLabel) copyLabel.textContent = copyBtn.dataset.defaultLabel ?? 'Copy';
-      }, COPIED_RESET_MS);
-    });
-
-    // Share — copy the current `#s=` URL to the clipboard.
-    const shareLabel = shareBtn.querySelector<HTMLElement>('.drc-share-label');
-    let shareCopyTimer: number | undefined;
-    shareBtn.addEventListener('click', () => {
-      const text = shareBtn.dataset.copy ?? '';
-      void copyText(text).then((ok) => {
-        if (!ok) return;
-        shareBtn.classList.add('drc-share-btn--copied');
-        if (shareLabel) shareLabel.textContent = 'Copied';
-        window.clearTimeout(shareCopyTimer);
-        shareCopyTimer = window.setTimeout(() => {
-          shareBtn.classList.remove('drc-share-btn--copied');
-          if (shareLabel) shareLabel.textContent = 'Copy link';
-        }, COPIED_RESET_MS);
-      });
-    });
-
-    // Copy as Markdown — a pasteable summary of the current conversion.
-    const mdLabel = mdBtn.querySelector<HTMLElement>('.drc-md-label');
-    let mdCopyTimer: number | undefined;
-    mdBtn.addEventListener('click', () => {
-      const text = mdBtn.dataset.copy ?? '';
-      void copyText(text).then((ok) => {
-        if (!ok) return;
-        mdBtn.classList.add('drc-share-btn--copied');
-        if (mdLabel) mdLabel.textContent = 'Copied';
-        window.clearTimeout(mdCopyTimer);
-        mdCopyTimer = window.setTimeout(() => {
-          mdBtn.classList.remove('drc-share-btn--copied');
-          if (mdLabel) mdLabel.textContent = 'Copy as Markdown';
-        }, COPIED_RESET_MS);
-      });
-    });
+    runBtn.addEventListener('click', () => void run('run'));
 
     wireSnapshotUI({
       slug: SLUG,
@@ -1238,22 +966,23 @@ const seedStatus = seedOk ? statusText(seedWarnings) : '';
         applyModeChrome();
         setEditorDoc(view, parsed.text);
         setActiveChip(-1);
-        void run();
+        void run('run');
       },
     });
 
-    // Initial chrome + auto-convert the seeded example/shared state. Passing
-    // `false` here means this first render never rewrites the URL hash — only
-    // subsequent user-initiated conversions do. The output pane is already
-    // server-rendered from `examples[0]` in the default run → compose
-    // direction, so there is nothing to clear first; renderEmpty stays for the
-    // mode/example switches below.
+    // Initial chrome + auto-convert the seeded example/shared state. The seed
+    // run never rewrites the URL hash or records the input. The output pane is
+    // already server-rendered from `examples[0]` in the default run → compose
+    // direction, so there is nothing to clear first.
     applyModeChrome();
-    void run(false);
-    // Now that run() exists and the initial convert is queued, enable the
-    // debounced live conversion on every subsequent user edit.
-    liveReady = true;
-    // Settle CM layout once the dark pane is laid out.
+    void run('seed');
+    // Now that run() exists, every subsequent user edit converts live: no
+    // example is on screen any more, so the pressed chip is released.
+    onInputEdit = () => {
+      setActiveChip(-1);
+      schedule();
+    };
+    // Settle CM layout once the pane is laid out.
     requestAnimationFrame(() => view.requestMeasure());
   }
 

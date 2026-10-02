@@ -4,12 +4,17 @@
  *
  * A no-framework, server-rendered shell hydrated by a single module <script>
  * that lazily boots a CodeMirror 6 input editor and a read-only output editor,
- * wires a direction toggle (LogQL → PromQL / PromQL → LogQL), an example
- * picker, a "Convert" action, a "Copy output" action, a shareable-URL encoder
- * ("Copy link") and a "Copy as Markdown" action. It runs entirely client-side
- * — no upload, no network.
+ * wires a direction toggle (LogQL → PromQL / PromQL → LogQL) and the example
+ * chips. Conversion is live and debounced; "Run now" and ⌘/Ctrl + Enter
+ * convert immediately.
  *
- * Runtime contract (built by sibling agents — imported lazily in the script):
+ * Built on the playground kit (src/components/playground/*): ExampleChips,
+ * EditorPane (source query | translated query, side by side from 768px),
+ * RunHint, SnapshotBar, ResultPanel (figure cap, live summary, copy status)
+ * and CopyButton. The notes container stays here, seeded with `set:html` +
+ * `data-results`; its slab overrides anchor on `.lp-notes`.
+ *
+ * Runtime contract (imported lazily in the script):
  *   ../lib/logql-promql/types →
  *     type Direction = "logql-to-promql" | "promql-to-logql"
  *     interface ConvertResult { output: string; notes: string[]; error?: string }
@@ -20,34 +25,30 @@
  *     decodeState(): ShareState | null
  *   ../lib/logql-promql/examples →
  *     examples: { id: string; label: string; direction: Direction; query: string }[]
- *
- * The example picker is a row of squared chips, server-rendered at build time
- * from the same `examples` module the script loads lazily (see the import
- * below); the script only wires clicks onto them, it never rebuilds them.
- *
- * The dark editor surface follows DESIGN.md `code-editor-mockup`; notes use the
- * neutral / semantic tokens, errors the error tokens. Headlines stay
- * sentence-case, weight 600.
  */
 // Build-time import of the same `examples` the client script loads lazily.
-// Used ONLY to server-render the example chips below, so the static HTML
-// carries real example names rather than a "Loading…" placeholder that
-// crawlers and no-JS visitors would otherwise be served. It adds nothing to
-// the client bundle.
+// Used to server-render the example chips (ExampleChips), so the static HTML
+// carries real example names for crawlers and no-JS visitors. It adds nothing
+// to the client bundle.
 import { examples as prerenderedExamples } from '../lib/logql-promql/examples';
 import { convert } from '../lib/logql-promql/engine';
 import { DIRECTIONS } from '../lib/logql-promql/types';
 import { EMPTY_HTML, errorHtml, filesFor, notesHtml, notesSummaryText, outputText } from '../lib/logql-promql/render';
+import ExampleChips from './playground/ExampleChips.astro';
+import EditorPane from './playground/EditorPane.astro';
+import RunHint from './playground/RunHint.astro';
+import SnapshotBar from './playground/SnapshotBar.astro';
+import ResultPanel from './playground/ResultPanel.astro';
+import CopyButton from './playground/CopyButton.astro';
 
 /**
  * Server-rendered seed. The client re-converts the same example on boot, so
  * this is pure progressive enhancement — but it means a no-JS visitor, and
  * every AI crawler (they do not execute JS), sees the real translated query
- * and the notes on what did not map, instead of two empty editors and a
- * "Loading…" direction toggle.
+ * and the notes on what did not map, instead of two empty editors.
  *
  * `convert` is pure and synchronous — no clock, no random, no network — so it
- * runs unchanged at build time. The translated query goes into a
+ * runs unchanged at build time. Both queries go into a
  * `<pre data-cm-fallback>` inside each CodeMirror host; CM appends its editor
  * to the host, so the script removes every fallback once mounted.
  *
@@ -66,35 +67,28 @@ const seedNotesHtml = !seedResult
     ? errorHtml(seedResult.error)
     : notesHtml(seedNotes);
 const seedSummary = !seedResult ? '' : seedResult.error ? 'Error' : notesSummaryText(seedNotes);
-const seedSummaryTone = seedResult && seedResult.error ? 'text-error' : 'text-mute';
 const seedFiles = filesFor(seedDirection);
+const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
 ---
 
 <section class="lp-pg" aria-label="LogQL to PromQL helper playground">
-  <div class="card shadow-float rounded-lg overflow-hidden">
-    {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Toolbar: direction, examples, Run now ────────────────────────── */}
     <div
       class="flex flex-col gap-3 border-b border-hairline px-4 py-3 lg:flex-row lg:items-end lg:justify-between lg:px-5"
     >
-      <div class="flex flex-wrap items-end gap-3">
+      <div class="flex min-w-0 flex-wrap items-end gap-3">
         <div class="flex min-w-0 flex-col gap-1.5">
           <span class="eyebrow" id="lp-dir-label">Direction</span>
           {/* Segmented direction toggle — server-rendered from the engine's
-              own DIRECTIONS list (it used to be injected by the script, so
-              crawlers and no-JS visitors saw only "Loading…"). The hydration
-              script adopts these buttons by their data-dir and never rebuilds
-              them. */}
-          <div
-            id="lp-direction"
-            class="lp-seg"
-            role="tablist"
-            aria-labelledby="lp-dir-label"
-          >
+              own DIRECTIONS list. The hydration script adopts these buttons by
+              their data-dir and never rebuilds them. */}
+          <div id="lp-direction" class="lp-seg" role="tablist" aria-labelledby="lp-dir-label">
             {
               DIRECTIONS.map((d) => (
                 <button
                   type="button"
-                  class:list={['lp-seg__btn lp-tap', { 'is-active': d.value === seedDirection }]}
+                  class="lp-seg__btn lp-tap"
                   data-dir={d.value}
                   role="tab"
                   aria-selected={d.value === seedDirection ? 'true' : 'false'}
@@ -108,230 +102,52 @@ const seedFiles = filesFor(seedDirection);
         </div>
 
         <div class="flex min-w-0 basis-full flex-col gap-1.5">
-          <span class="eyebrow">Example</span>
-          {/* Server-rendered from `examples`; the hydration script only wires
-              clicks onto these buttons, it never rebuilds them. */}
-          <div id="lp-chips" class="lp-chips" role="group" aria-label="Examples">
-            {prerenderedExamples.map((ex, i) => (
-              <button
-                type="button"
-                class:list={['lp-chip lp-tap', { 'is-active': i === 0 }]}
-                data-example-idx={i}
-                aria-pressed={i === 0 ? 'true' : 'false'}
-              >
-                {ex.label}
-              </button>
-            ))}
-          </div>
+          <span class="eyebrow">Examples</span>
+          <ExampleChips prefix="lp" items={chipItems} active={seedExample ? 0 : null} ariaLabel="Examples" />
         </div>
       </div>
 
-      <div class="flex shrink-0 flex-wrap items-center gap-2">
-        <span class="caption text-mute hidden items-center sm:inline-flex">⌘/Ctrl + Enter</span>
-        <button
-          id="lp-copy"
-          type="button"
-          class="btn btn-secondary btn-sm lp-tap"
-          data-default-label="Copy Output"
-          disabled
-        >
-          <svg
-            class="h-4 w-4 shrink-0"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <rect x="5.5" y="5.5" width="8" height="8" rx="1.5"></rect>
-            <path d="M3.5 10.5h-.5a1 1 0 01-1-1v-6a1 1 0 011-1h6a1 1 0 011 1v.5"></path>
-          </svg>
-          <span class="lp-copy-label">Copy Output</span>
-        </button>
-        <button
-          id="lp-convert"
-          type="button"
-          class="btn btn-primary btn-sm lp-tap"
-          title="Convert (⌘/Ctrl + Enter)"
-          aria-keyshortcuts="Meta+Enter Control+Enter"
-        >
-          <svg
-            class="lp-convert-icon h-4 w-4 shrink-0"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M3 5.5h8.5M9 3l2.5 2.5L9 8"></path>
-            <path d="M13 10.5H4.5M7 8l-2.5 2.5L7 13"></path>
-          </svg>
-          <span class="lp-convert-label">Convert</span>
-        </button>
-      </div>
-    </div>
-
-    {/* ── Snapshot row (save / restore / delete a saved query) ─────────── */}
-    <div class="lp-snap-row flex flex-wrap items-center gap-2 border-b border-hairline px-4 py-2 sm:px-5">
-      <button id="lp-snap-save" type="button" class="lp-snap-btn">Save snapshot</button>
-      <select id="lp-snap-select" class="lp-snap-select" aria-label="Load a saved snapshot" disabled>
-        <option value="">No snapshots yet</option>
-      </select>
-      <button id="lp-snap-delete" type="button" class="lp-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
-    </div>
-
-    {/* ── Mobile tab switch (single-pane on small screens) ─────────────── */}
-    <div
-      class="lp-tabs flex gap-1 border-b border-hairline px-4 py-2 md:hidden"
-      role="tablist"
-      aria-label="Editor panes"
-    >
       <button
-        id="lp-tab-input"
+        id="lp-convert"
         type="button"
-        class="lp-tab lp-tap is-active"
-        role="tab"
-        aria-selected="true"
-        aria-controls="lp-pane-input"
-        data-pane="input"
-        tabindex="0"
+        class="btn-tool lp-tap"
+        title="Run now (⌘/Ctrl + Enter)"
+        aria-keyshortcuts="Meta+Enter Control+Enter"
       >
-        Input
-      </button>
-      <button
-        id="lp-tab-output"
-        type="button"
-        class="lp-tab lp-tap"
-        role="tab"
-        aria-selected="false"
-        aria-controls="lp-pane-output"
-        data-pane="output"
-        tabindex="-1"
-      >
-        Output
+        Run now
       </button>
     </div>
 
-    {/* ── Editor split (side-by-side on desktop, tabbed on mobile) ─────── */}
-    <div class="lp-grid grid grid-cols-1 md:grid-cols-2">
-      <div
-        id="lp-pane-input"
-        class="lp-pane lp-pane--active flex min-w-0 flex-col bg-inverse md:border-r md:border-white/10"
-        role="tabpanel"
-        aria-labelledby="lp-tab-input"
-      >
-        <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
-          <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-          </span>
-          <span id="lp-input-name" class="code-mono text-white/45">{seedFiles.input}</span>
-        </div>
-        <div
-          id="lp-editor-input"
-          class="lp-editor min-h-72"
-          aria-label="Source query to convert"
-        >
-          <pre class="lp-cm-fallback code-mono" data-cm-fallback>{seedExample?.query}</pre>
-        </div>
-        <p class="text-xs text-mute mt-1 px-4 pb-2">Tip: press <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd> to release focus.</p>
+    {/* ── Editors: source query | translated query (side by side ≥768px) ─ */}
+    <div class="border-b border-hairline px-4 py-4 sm:px-5">
+      <div class="lp-grid">
+        <EditorPane prefix="lp" id="lp-editor-input" label={seedFiles.input}>
+          <pre class="editor-pane__fallback code-mono" data-cm-fallback>{seedExample?.query}</pre>
+        </EditorPane>
+        <EditorPane prefix="lp" id="lp-editor-output" label={seedFiles.output}>
+          <Fragment slot="actions">
+            <CopyButton kind="all" id="lp-copy" label="Copy output" />
+          </Fragment>
+          <pre class="editor-pane__fallback code-mono" data-cm-fallback>{seedOutput}</pre>
+        </EditorPane>
       </div>
-
-      <div
-        id="lp-pane-output"
-        class="lp-pane flex min-w-0 flex-col bg-inverse"
-        role="tabpanel"
-        aria-labelledby="lp-tab-output"
-      >
-        <div class="flex items-center justify-between gap-2 border-b border-white/10 px-4 py-2.5">
-          <div class="flex min-w-0 items-center gap-2">
-            <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
-              <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-              <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-              <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-            </span>
-            <span id="lp-output-name" class="code-mono truncate text-white/45">{seedFiles.output}</span>
-          </div>
-          <span class="code-mono shrink-0 text-white/30">read-only</span>
-        </div>
-        <div
-          id="lp-editor-output"
-          class="lp-editor min-h-72"
-          role="region"
-          aria-label="Converted query (read-only)"
-        >
-          <pre class="lp-cm-fallback code-mono" data-cm-fallback>{seedOutput}</pre>
-        </div>
-      </div>
+      <RunHint variant="cm" class="mt-2" />
+      <SnapshotBar prefix="lp" />
     </div>
 
-    {/* ── Notes panel (what mapped + what did not) ─────────────────────── */}
-    <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <span class="flex items-center gap-2">
-          <span class="eyebrow">Notes</span>
-          <button id="lp-share" type="button" class="lp-share-btn" data-copy="" hidden>
-            <svg
-              class="lp-share-icon"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M6.75 9.25l2.5-2.5"></path>
-              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
-              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
-            </svg>
-            <span class="lp-share-label">Copy link</span>
-          </button>
-          <button id="lp-copy-md" type="button" class="lp-share-btn" hidden>
-            <svg
-              class="lp-share-icon"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M3 2.5h6.5l3 3v7.75a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-9.75a1 1 0 0 1 1-1z"></path>
-              <path d="M9.5 2.5v3h3"></path>
-              <path d="M4.5 9h7M4.5 11.25h4.5"></path>
-            </svg>
-            <span class="lp-md-label">Copy as Markdown</span>
-          </button>
-          <a id="lp-explain-chip" class="lp-chain-chip" href="#" hidden>Explain this query &rarr;</a>
-        </span>
-        <span
-          id="lp-summary"
-          class:list={['lp-summary code-mono', seedSummaryTone]}
-          role="status"
-          aria-live="polite"
-        >{seedSummary}</span>
-      </div>
-
+    {/* ── Result: what mapped and what did not, on the L2 instrument ───── */}
+    <ResultPanel slug="logql-promql-helper" prefix="lp" summary={seedSummary} label="Notes" summaryClass="whitespace-nowrap" split>
+      <Fragment slot="actions">
+        <CopyButton kind="link" id="lp-share" />
+        <CopyButton kind="value" id="lp-copy-md" label="Copy as Markdown" icon="markdown" />
+        <a id="lp-explain-chip" class="chip" href="#" hidden>Explain this query &rarr;</a>
+      </Fragment>
       {/* Seeded at build time (see `seedNotesHtml` above) so the conversion
           notes are in the static HTML; the client replaces it with the same
           markup on boot. */}
-      <div id="lp-notes" class="lp-notes" set:html={seedNotesHtml}></div>
-    </div>
+      <div id="lp-notes" class="lp-notes" set:html={seedNotesHtml} data-results></div>
+    </ResultPanel>
   </div>
-
-  {/* Polite announcer for clipboard + transient toasts. */}
-  <span id="lp-announce" class="sr-only" role="status" aria-live="polite"></span>
 </section>
 
 <style>
@@ -352,315 +168,65 @@ const seedFiles = filesFor(seedDirection);
     background: var(--color-canvas-soft-2);
     box-shadow: var(--shadow-hairline);
   }
-  /* Segment buttons are server-rendered now, but the :global() form is kept —
-     it matches both the SSR markup and anything the script ever re-creates. */
-  :global(.lp-seg__btn) {
+  .lp-seg__btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 32px;
+    min-height: var(--control-h-md);
     padding: 0 12px;
     border-radius: var(--radius-sm);
     background: transparent;
     color: var(--color-body);
     font-family: var(--font-mono);
     font-size: 12px;
-    letter-spacing: 0.01em;
     white-space: nowrap;
     cursor: pointer;
     touch-action: manipulation;
-    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+    transition:
+      background-color var(--dur-fast) var(--ease-brand),
+      color var(--dur-fast) var(--ease-brand),
+      box-shadow var(--dur-fast) var(--ease-brand);
   }
-  :global(.lp-seg__btn:hover:not(.is-active)) {
+  .lp-seg__btn:hover:not([aria-selected='true']) {
     color: var(--color-ink);
   }
-  :global(.lp-seg__btn.is-active) {
+  .lp-seg__btn[aria-selected='true'] {
     background: var(--color-canvas);
     color: var(--color-ink);
     box-shadow: var(--shadow-subtle);
   }
-  :global(.lp-seg__btn:focus-visible) {
+  .lp-seg__btn:focus-visible {
     outline: 2px solid var(--color-link);
     outline-offset: 2px;
   }
-
-  /* ── Example chips ──────────────────────────────────────────────────── */
-  .lp-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .lp-chip {
-    display: inline-flex;
-    align-items: center;
-    padding: 5px 11px;
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--color-hairline-muted);
-    background: var(--color-canvas);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    line-height: 16px;
-    letter-spacing: 0.01em;
-    color: var(--color-brand-strong);
-    cursor: pointer;
-    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
-  }
-  .lp-chip:hover {
-    border-color: var(--color-hairline-strong);
-    background: var(--color-canvas-hover);
-  }
-  .lp-chip.is-active,
-  .lp-chip[aria-pressed='true'] {
-    background: var(--color-brand-soft);
-    border-color: var(--color-brand-strong);
-    color: var(--color-brand-strong);
-  }
-  .lp-chip:focus-visible {
-    outline: 2px solid var(--color-focus);
-    outline-offset: 2px;
-  }
   @media (pointer: coarse) {
-    .lp-chip {
-      min-height: 44px;
+    .lp-seg__btn {
+      min-height: var(--control-h-lg);
     }
   }
 
-  .lp-snap-btn {
-    flex: 0 0 auto;
-    height: 30px;
-    padding: 0 12px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-    cursor: pointer;
-    transition: background 0.12s ease, box-shadow 0.12s ease;
-  }
-  .lp-snap-btn:hover {
-    background: var(--color-canvas-soft);
-    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
-  }
-  .lp-snap-select {
-    height: 30px;
-    max-width: 220px;
-    padding: 0 8px;
-    border-radius: var(--radius-sm);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-  }
-  .lp-snap-select:disabled {
-    color: var(--color-mute);
-    cursor: not-allowed;
-  }
-  .lp-snap-delete {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: transparent;
-    color: var(--color-mute);
-    cursor: pointer;
-    transition: background 0.12s ease, color 0.12s ease;
-  }
-  .lp-snap-delete:hover {
-    background: var(--color-error-soft);
-    color: var(--color-error-deep);
-  }
-
-  /* Mobile tab pills (square in-app scale; never the 100px marketing pill). */
-  .lp-tab {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 1 1 0;
-    min-height: 44px;
-    border-radius: var(--radius-sm);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    color: var(--color-mute);
-    background: transparent;
-    cursor: pointer;
-    transition: background-color 0.15s ease, color 0.15s ease;
-  }
-  .lp-tab:hover:not(.is-active) {
-    color: var(--color-body);
-    background: var(--color-canvas-soft-2);
-  }
-  .lp-tab.is-active {
-    color: var(--color-on-primary);
-    background: var(--color-primary);
-  }
-
-  /* Visibility is driven by the .lp-pane--active class, NOT the [hidden]
-     attribute. Tailwind v4's layered `[hidden]{display:none!important}` (in
-     @layer base) beats any unlayered !important override, which would leave the
-     output pane invisible on desktop. */
-  @media (max-width: 767px) {
-    .lp-pane {
-      display: none;
-    }
-    .lp-pane.lp-pane--active {
-      display: flex;
-    }
+  /* Source | translated, side by side from 768px. */
+  .lp-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
   }
   @media (min-width: 768px) {
-    /* Desktop: both panes always visible side by side. */
-    .lp-pane {
-      display: flex;
+    .lp-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
-  }
-
-  /* CodeMirror host — fills the dark pane, scrolls internally. */
-  .lp-editor {
-    overflow: hidden;
-  }
-  /* Build-time text stand-in for each editor, sized like the CM content so the
-     pane does not jump when the script swaps it out. Removed on mount. */
-  .lp-cm-fallback {
-    margin: 0;
-    padding: 14px 16px 16px;
-    max-height: 360px;
-    overflow: auto;
-    color: #e6e6e6;
-    font-size: 13px;
-    line-height: 20px;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-  .lp-editor :global(.cm-editor) {
-    height: 100%;
-    background: transparent;
-    font-family: var(--font-mono);
-    font-size: 13px;
-    line-height: 20px;
-  }
-  .lp-editor :global(.cm-editor.cm-focused) {
-    /* Replace CM's default outline with a brand-blue ring (a11y: keep a ring). */
-    outline: 2px solid var(--color-link);
-    outline-offset: -2px;
-  }
-  .lp-editor :global(.cm-scroller) {
-    overflow: auto;
-    max-height: 420px;
-    font-family: var(--font-mono);
-    /* Thin, theme-matched scrollbars on the dark surface. */
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
-  }
-  .lp-editor :global(.cm-scroller)::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  .lp-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.16);
-    border-radius: var(--radius-pill);
-    border: 3px solid transparent;
-    background-clip: content-box;
-  }
-  .lp-editor :global(.cm-scroller)::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.28);
-    background-clip: content-box;
-  }
-  .lp-editor :global(.cm-gutters) {
-    background: transparent;
-    border-right: 1px solid rgba(255, 255, 255, 0.08);
-  }
-  .lp-editor :global(.cm-lineNumbers .cm-gutterElement) {
-    color: rgba(255, 255, 255, 0.32);
-  }
-  .lp-editor :global(.cm-content) {
-    padding: 14px 0 16px;
-  }
-  .lp-editor :global(.cm-line) {
-    padding-inline: 4px;
-  }
-  /* The read-only output pane: dim the (hidden) cursor and selection chrome. */
-  .lp-editor--ro :global(.cm-cursor),
-  .lp-editor--ro :global(.cm-dropCursor) {
-    display: none;
-  }
-
-  /* Summary — right-aligned counts use tabular figures so they don't jitter. */
-  .lp-summary {
-    white-space: nowrap;
-  }
-
-  /* Share-link / Copy-as-Markdown pill buttons next to the "Notes" eyebrow. */
-  .lp-share-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: 26px;
-    padding: 0 10px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-mute);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 16px;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: color 0.12s ease, background 0.12s ease;
-  }
-  .lp-share-btn:hover {
-    color: var(--color-brand-strong);
-    background: var(--color-hairline);
-  }
-  .lp-share-btn:focus-visible {
-    outline: 2px solid var(--color-link);
-    outline-offset: 1px;
-  }
-  .lp-share-btn.lp-share-btn--copied {
-    color: var(--color-brand-strong);
-    background: var(--color-brand-soft);
-  }
-  @media (pointer: coarse) {
-    .lp-share-btn {
-      height: auto;
-      min-height: 36px;
-    }
-  }
-
-  .lp-chain-chip {
-    display: inline-flex;
-    align-items: center;
-    padding: 4px 12px;
-    border-radius: var(--radius-pill);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    font-size: 12px;
-    line-height: 18px;
-    color: var(--color-brand-strong);
-    text-decoration: none;
-    transition: background 0.12s ease, box-shadow 0.12s ease;
-  }
-  .lp-chain-chip:hover {
-    background: var(--color-brand-soft);
-    box-shadow: inset 0 0 0 1px var(--color-brand);
   }
 
   /* Notes list (mapping notes / success / empty). */
   .lp-notes {
-    min-height: 44px;
     display: flex;
     flex-direction: column;
     gap: 8px;
   }
 
-  /* Mapping-notes row (what mapped / what was approximated or dropped). */
+  /* ── Runtime-injected markup (render.ts; styled with :global) ──────────
+     Light rules first as the documented defaults; the slab re-skin follows,
+     anchored on this component's own `.lp-notes` container. */
   :global(.lp-note) {
     display: flex;
     gap: 10px;
@@ -669,7 +235,7 @@ const seedFiles = filesFor(seedDirection);
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
     color: var(--color-body);
-    animation: lp-rise 0.18s ease both;
+    animation: lp-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.lp-note__icon) {
     flex: 0 0 auto;
@@ -710,7 +276,7 @@ const seedFiles = filesFor(seedDirection);
     top: 7px;
     width: 4px;
     height: 4px;
-    border-radius: 9999px;
+    border-radius: 50%;
     background: currentColor;
     opacity: 0.55;
   }
@@ -725,7 +291,7 @@ const seedFiles = filesFor(seedDirection);
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
     color: var(--color-body);
-    animation: lp-rise 0.18s ease both;
+    animation: lp-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.lp-ok__icon) {
     flex: 0 0 auto;
@@ -747,7 +313,7 @@ const seedFiles = filesFor(seedDirection);
     background: var(--color-error-soft);
     box-shadow: inset 0 0 0 1px var(--color-error);
     color: var(--color-error-deep);
-    animation: lp-rise 0.18s ease both;
+    animation: lp-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.lp-error__icon) {
     flex: 0 0 auto;
@@ -804,43 +370,29 @@ const seedFiles = filesFor(seedDirection);
     box-shadow: var(--shadow-hairline);
   }
 
-  /* Loading dots — animate opacity only; reduced-motion handled globally. */
-  :global(.lp-loading) {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 14px;
-    font-size: 14px;
-    line-height: 20px;
-    color: var(--color-body);
+  /* ── Instrument re-skin — the notes sit on the L2 result slab (dark in
+     BOTH themes), so everything render.ts emits uses the slab ink tier. ── */
+  .lp-notes :global(.lp-note),
+  .lp-notes :global(.lp-ok),
+  .lp-notes :global(.lp-empty) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-fg);
   }
-  :global(.lp-loading__dot) {
-    width: 6px;
-    height: 6px;
-    border-radius: 9999px;
-    background: var(--color-mute);
-    animation: lp-pulse 1.1s ease-in-out infinite;
+  .lp-notes :global(.lp-note__title) {
+    color: var(--color-inverse-fg);
   }
-  :global(.lp-loading__dot:nth-child(2)) {
-    animation-delay: 0.18s;
+  .lp-notes :global(.lp-note__icon),
+  .lp-notes :global(.lp-empty) {
+    color: var(--color-inverse-mute);
   }
-  :global(.lp-loading__dot:nth-child(3)) {
-    animation-delay: 0.36s;
+  .lp-notes :global(.lp-ok__icon) {
+    color: var(--color-inverse-brand);
   }
-  @keyframes lp-pulse {
-    0%,
-    100% {
-      opacity: 0.3;
-    }
-    50% {
-      opacity: 1;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    :global(.lp-loading__dot) {
-      animation: none;
-      opacity: 0.6;
-    }
+  .lp-notes :global(.lp-error) {
+    background: #ff9d9514;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-error);
+    color: var(--color-inverse-error);
   }
 
   .is-busy {
@@ -848,22 +400,19 @@ const seedFiles = filesFor(seedDirection);
     pointer-events: none;
     cursor: progress;
   }
-  .is-busy .lp-convert-icon {
-    display: none;
-  }
 </style>
 
 <script>
-  import { copyTextToClipboard as copyText } from '../lib/clipboard';
   import { buildMarkdownBlock } from '../lib/share-md';
   import { buildHashValue } from '../lib/hash-state';
   import type { EditorView } from '@codemirror/view';
+  import { wireCopyButtons } from '../lib/playground-kit/copy';
+  import { syncChipsByIndex, clearChips, CHIP_SELECTOR } from '../lib/playground-kit/chips';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
   // The same pure builders the frontmatter used for the SSR seed — one
   // implementation, so the seeded panel and every later conversion agree.
   import {
     EMPTY_HTML,
-    LOADING_HTML,
     errorHtml,
     filesFor,
     notesHtml,
@@ -884,9 +433,13 @@ const seedFiles = filesFor(seedDirection);
     decodeState: () => ShareState | null;
   };
   type Example = { id: string; label: string; direction: Direction; query: string };
+  /** `seed` = boot / deep link / restore (never written or recorded); `type` = debounced edit; `run` = explicit. */
+  type Source = 'seed' | 'type' | 'run';
 
   const ROOT_SEL = '.lp-pg';
-  const COPIED_RESET_MS = 1800;
+  const SLUG = 'logql-promql-helper';
+  const DEBOUNCE_MS = 180;
+  const ERROR_HOLD_MS = 600;
   const DIRECTIONS: { value: Direction; label: string; from: string; to: string }[] = [
     { value: 'logql-to-promql', label: 'LogQL → PromQL', from: 'LogQL', to: 'PromQL' },
     { value: 'promql-to-logql', label: 'PromQL → LogQL', from: 'PromQL', to: 'LogQL' },
@@ -911,6 +464,22 @@ const seedFiles = filesFor(seedDirection);
     return v === 'logql-to-promql' || v === 'promql-to-logql';
   }
 
+  function isCoarsePointer(): boolean {
+    return window.matchMedia?.('(pointer: coarse)').matches ?? false;
+  }
+
+  /**
+   * Rename an EditorPane's figure cap (the file names follow the direction).
+   * EditorPane renders a static label; the cap's label span is the only text
+   * in it, so this rewrites that span and its title.
+   */
+  function setPaneLabel(host: HTMLElement, text: string): void {
+    const label = host.closest('[data-editor-pane]')?.querySelector<HTMLElement>('.figcap__label');
+    if (!label) return;
+    label.textContent = text;
+    label.title = text;
+  }
+
   /** Normalise the sibling examples list defensively. */
   function normaliseExamples(raw: unknown): Example[] {
     if (!Array.isArray(raw)) return [];
@@ -929,44 +498,31 @@ const seedFiles = filesFor(seedDirection);
       .filter((e) => e.query.length > 0);
   }
 
-  /* ---- Note rendering (mapping notes / errors / success / empty) ------------
+  /* ---- Summary + note rendering (slab inks) ---------------------------------
      The HTML itself is built by ../lib/logql-promql/render, which the Astro
      frontmatter also calls for the SSR seed. Only the DOM writes and the
      summary's tone classes live here. */
 
+  function setSummary(summary: HTMLElement, text: string, isError: boolean): void {
+    summary.textContent = text;
+    summary.classList.toggle('text-inverse-error', isError);
+    summary.classList.toggle('text-inverse-mute', !isError);
+  }
+
   function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
-    summary.textContent = '';
-    summary.classList.remove('text-error');
-    summary.classList.add('text-mute');
+    setSummary(summary, '', false);
     container.innerHTML = EMPTY_HTML;
   }
 
-  function renderLoading(container: HTMLElement, summary: HTMLElement): void {
-    summary.textContent = '';
-    summary.classList.remove('text-error');
-    summary.classList.add('text-mute');
-    container.innerHTML = LOADING_HTML;
-  }
-
   function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
-    summary.textContent = 'Error';
-    summary.classList.remove('text-mute');
-    summary.classList.add('text-error');
+    setSummary(summary, 'Error', true);
     container.innerHTML = errorHtml(message);
   }
 
-  function renderNotes(
-    container: HTMLElement,
-    summary: HTMLElement,
-    notes: string[]
-  ): void {
-    summary.textContent = notesSummaryText(notes);
-    summary.classList.remove('text-error');
-    summary.classList.add('text-mute');
+  function renderNotes(container: HTMLElement, summary: HTMLElement, notes: string[]): void {
+    setSummary(summary, notesSummaryText(notes), false);
     container.innerHTML = notesHtml(notes);
   }
-
-  /* ---- Clipboard ------------------------------------------------------------ */
 
   /* ---- Instance init -------------------------------------------------------- */
 
@@ -979,13 +535,10 @@ const seedFiles = filesFor(seedDirection);
     const copyBtn = el<HTMLButtonElement>(root, '#lp-copy');
     const notesBox = el<HTMLElement>(root, '#lp-notes');
     const summaryEl = el<HTMLElement>(root, '#lp-summary');
-    const announce = el<HTMLElement>(root, '#lp-announce');
-    const inputNameEl = el<HTMLElement>(root, '#lp-input-name');
-    const outputNameEl = el<HTMLElement>(root, '#lp-output-name');
+    const copyStatus = el<HTMLElement>(root, '#lp-copy-status');
     const shareBtn = el<HTMLButtonElement>(root, '#lp-share');
     const mdBtn = el<HTMLButtonElement>(root, '#lp-copy-md');
     const explainChip = el<HTMLAnchorElement>(root, '#lp-explain-chip');
-    const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('.lp-tab'));
     const snapSaveBtn = el<HTMLButtonElement>(root, '#lp-snap-save');
     const snapSelect = el<HTMLSelectElement>(root, '#lp-snap-select');
     const snapDeleteBtn = el<HTMLButtonElement>(root, '#lp-snap-delete');
@@ -999,6 +552,7 @@ const seedFiles = filesFor(seedDirection);
       !copyBtn ||
       !notesBox ||
       !summaryEl ||
+      !copyStatus ||
       !shareBtn ||
       !mdBtn ||
       !explainChip ||
@@ -1009,14 +563,23 @@ const seedFiles = filesFor(seedDirection);
       return;
     }
 
+    // Copy plumbing (Copy output, Copy link, Copy as Markdown) — the kit
+    // helper: one delegated listener; outcomes announced in #lp-copy-status.
+    wireCopyButtons(root, { status: copyStatus });
+
     /** Cross-tool chain — LogQL→PromQL output can be explained by PromQL Explainer. */
     function localePath(p: string): string {
       const m = window.location.pathname.match(/^\/(de|es|fr|pt-br)\//);
       return m ? `/${m[1]}${p}` : p;
     }
 
-    // Lazily load CodeMirror + the sibling engine + examples (off the initial
-    // path so the ~200KB CM runtime code-splits into its own chunk).
+    // Live conversion hook, called by the input editor's update listener; a
+    // no-op until convertNow exists below.
+    let onInputEdit: () => void = () => {};
+
+    // Lazily load CodeMirror + the kit's plate theme + the sibling engine +
+    // examples (off the initial path so the ~200KB CM runtime code-splits into
+    // its own chunk).
     let engine: EngineModule;
     let examples: Example[] = [];
     let makeInputEditor: (host: HTMLElement, doc: string) => EditorView;
@@ -1027,31 +590,25 @@ const seedFiles = filesFor(seedDirection);
         { EditorState },
         { EditorView, keymap, lineNumbers, highlightActiveLine },
         { defaultKeymap, history, historyKeymap, indentWithTab },
-        { oneDark },
+        { plate },
         engineMod,
         examplesMod,
       ] = await Promise.all([
         import('@codemirror/state'),
         import('@codemirror/view'),
         import('@codemirror/commands'),
-        import('@codemirror/theme-one-dark'),
+        import('../lib/playground-kit/cm-theme'),
         import('../lib/logql-promql/engine'),
         import('../lib/logql-promql/examples'),
       ]);
       engine = engineMod as unknown as EngineModule;
       examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
 
-      // Editor factories + doc-setter as closures over the freshly imported CM
-      // symbols (so no runtime CM reference lives at module top level).
-      const baseTheme = EditorView.theme({
-        '&': { color: '#e6e6e6' },
-        '.cm-content': { caretColor: '#e6e6e6' },
-        '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
-        '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
-          backgroundColor: 'rgba(0, 112, 243, 0.32)',
-        },
-        '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
-        '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+      // Sizing only — colours, gutters and the focus ring come from the plate
+      // theme and the EditorPane rule in global.css.
+      const sizing = EditorView.theme({
+        '&': { fontSize: '13px', maxHeight: '420px' },
+        '.cm-scroller': { overflow: 'auto' },
       });
 
       makeInputEditor = (host: HTMLElement, doc: string): EditorView => {
@@ -1061,15 +618,28 @@ const seedFiles = filesFor(seedDirection);
             lineNumbers(),
             history(),
             highlightActiveLine(),
-            oneDark,
+            plate,
+            sizing,
             EditorView.lineWrapping,
+            EditorView.contentAttributes.of({ 'aria-label': 'Source query to convert' }),
             keymap.of([
+              // Ours FIRST, so it wins over defaultKeymap's Enter.
+              {
+                key: 'Mod-Enter',
+                run: (view) => {
+                  void convertNow('run');
+                  if (isCoarsePointer()) view.contentDOM.blur();
+                  return true;
+                },
+              },
+              { key: 'Escape', run: (view) => { view.contentDOM.blur(); return true; } },
               ...defaultKeymap,
               ...historyKeymap,
               indentWithTab,
-              { key: 'Escape', run: function(view) { view.contentDOM.blur(); return true; } },
             ]),
-            baseTheme,
+            EditorView.updateListener.of((u) => {
+              if (u.docChanged) onInputEdit();
+            }),
           ],
         });
         return new EditorView({ state, parent: host });
@@ -1080,14 +650,14 @@ const seedFiles = filesFor(seedDirection);
           doc,
           extensions: [
             lineNumbers(),
-            oneDark,
+            plate,
+            sizing,
             EditorView.lineWrapping,
             EditorView.editable.of(false),
             EditorState.readOnly.of(true),
-            baseTheme,
+            EditorView.contentAttributes.of({ 'aria-label': 'Converted query (read-only)' }),
           ],
         });
-        host.classList.add('lp-editor--ro');
         return new EditorView({ state, parent: host });
       };
 
@@ -1106,9 +676,8 @@ const seedFiles = filesFor(seedDirection);
     }
 
     // Seed priority: a valid #s= deep link > a restored last input > the
-    // first example > LogQL → PromQL. Neither non-user seed path itself
-    // rewrites the URL hash or records a last-input — only a user-initiated
-    // convert (including the automatic one that fires for a shared link) does.
+    // first example > LogQL → PromQL. No seed path rewrites the URL hash or
+    // records a last-input — only a user-initiated convert does.
     let sharedState: ShareState | null = null;
     try {
       sharedState = engine.decodeState();
@@ -1119,7 +688,7 @@ const seedFiles = filesFor(seedDirection);
 
     let restoredState: ShareState | null = null;
     if (!fromShare) {
-      const restored = getRestoredLastInput('logql-promql-helper');
+      const restored = getRestoredLastInput(SLUG);
       if (restored) {
         try {
           const parsed = JSON.parse(restored) as unknown;
@@ -1142,40 +711,26 @@ const seedFiles = filesFor(seedDirection);
         : seed?.direction ?? 'logql-to-promql';
 
     // The direction toggle is server-rendered from the engine's own DIRECTIONS
-    // list, so adopt the existing buttons — rebuilding them here is what used
-    // to leave crawlers and no-JS visitors with a bare "Loading…".
-    const dirButtons = Array.from(
-      dirGroup.querySelectorAll<HTMLButtonElement>('.lp-seg__btn')
-    );
+    // list, so adopt the existing buttons.
+    const dirButtons = Array.from(dirGroup.querySelectorAll<HTMLButtonElement>('.lp-seg__btn'));
 
-    /** Reflect the active direction across the toggle + editor chrome. */
+    /** Reflect the active direction across the toggle + editor caps. */
     function syncDirection(): void {
       dirButtons.forEach((b) => {
         const active = b.dataset.dir === direction;
-        b.classList.toggle('is-active', active);
         b.setAttribute('aria-selected', active ? 'true' : 'false');
         b.tabIndex = active ? 0 : -1;
       });
       const files = filesFor(direction);
-      if (inputNameEl) inputNameEl.textContent = files.input;
-      if (outputNameEl) outputNameEl.textContent = files.output;
+      setPaneLabel(inputHost!, files.input);
+      setPaneLabel(outputHost!, files.output);
     }
 
-    // The chips are server-rendered from the same `examples` module, so their
-    // data-example-idx values index straight into `examples`. `null` clears the
-    // selection — a shared link or a restored input matches no example, so it
-    // leaves every chip unpressed (the old picker showed a "Custom" option).
-    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>('.lp-chip'));
-
-    function setActiveChip(idx: number | null): void {
-      chips.forEach((chip) => {
-        const active = idx !== null && chip.dataset.exampleIdx === String(idx);
-        chip.classList.toggle('is-active', active);
-        chip.setAttribute('aria-pressed', active ? 'true' : 'false');
-      });
-    }
-
-    setActiveChip(fromShare || fromRestored || !examples.length ? null : 0);
+    // The chips are server-rendered (ExampleChips); data-example-idx indexes
+    // straight into `examples`. A shared link or a restored input matches no
+    // example, so it leaves every chip unpressed.
+    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>(CHIP_SELECTOR));
+    syncChipsByIndex(chipsWrap, fromShare || fromRestored || !examples.length ? null : 0);
 
     // Editors — seed the input from the shared link, else a restored last
     // input, else the first example.
@@ -1190,18 +745,19 @@ const seedFiles = filesFor(seedDirection);
     const outputView = makeOutputEditor(outputHost, '');
     // The build-time text stand-ins have done their job (no-JS visitors and
     // crawlers); CodeMirror appended its editors beside them, so drop them —
-    // a fallback left behind renders the document twice.
+    // a fallback left behind renders the document twice. The share/restore
+    // tiers above already chose the document.
     root.querySelectorAll('[data-cm-fallback]').forEach((node) => node.remove());
 
     syncDirection();
 
-    /* ---- Share link + Copy as Markdown --------------------------------------- */
+    /* ---- Copy actions -------------------------------------------------------- */
 
-    /** Hide both the "Copy link" and "Copy as Markdown" buttons. */
-    function hideShare(): void {
-      shareBtn!.hidden = true;
-      shareBtn!.dataset.copy = '';
-      mdBtn!.hidden = true;
+    function hideActions(): void {
+      for (const btn of [shareBtn!, mdBtn!, copyBtn!]) {
+        btn.hidden = true;
+        btn.dataset.copy = '';
+      }
       explainChip!.hidden = true;
     }
 
@@ -1214,8 +770,8 @@ const seedFiles = filesFor(seedDirection);
       }
     }
 
-    /** Reveal both buttons for a freshly-converted, non-empty result. */
-    function revealShare(dir: Direction, query: string, output: string, userInitiated: boolean): void {
+    /** Reveal the copy actions for a freshly-converted, non-empty result. */
+    function revealActions(dir: Direction, query: string, output: string, userInitiated: boolean): void {
       try {
         const hash = engine.encodeState(dir, query);
         const frag = hash.startsWith('#') ? hash : `#${hash}`;
@@ -1226,10 +782,16 @@ const seedFiles = filesFor(seedDirection);
         // Fall back to the current URL; sharing degrades gracefully.
         shareBtn!.dataset.copy = window.location.href;
       }
-      if (userInitiated) {
-        recordToolLastInput('logql-promql-helper', JSON.stringify({ direction: dir, query }));
-      }
+      if (userInitiated) recordToolLastInput(SLUG, JSON.stringify({ direction: dir, query }));
       shareBtn!.hidden = false;
+      copyBtn!.dataset.copy = output;
+      copyBtn!.hidden = false;
+      const dirMeta = DIRECTIONS.find((d) => d.value === dir);
+      mdBtn!.dataset.copy = buildMarkdownBlock('LogQL ↔ PromQL Helper', [
+        { label: 'Direction', value: dirMeta?.label ?? dir },
+        { label: 'Query', value: query },
+        { label: 'Result', value: output },
+      ]);
       mdBtn!.hidden = false;
 
       // logql→promql output is itself a valid PromQL query — chain it into
@@ -1242,45 +804,141 @@ const seedFiles = filesFor(seedDirection);
       }
     }
 
-    /** Reset to the pre-conversion state (output cleared, copy disabled). */
-    function resetOutput(): void {
+    // ── Conversion ───────────────────────────────────────────────────────────
+    let timer: number | undefined;
+    let running = false;
+    let queued: Source | null = null;
+
+    // Calm errors (playground UX contract): mid-typing, keep the last good
+    // output and hold the diagnostic until ERROR_HOLD_MS of idle, a blur,
+    // Ctrl/Cmd+Enter, Run now or a chip, so a half-written query never
+    // flashes red.
+    let errTimer: number | undefined;
+    let heldError: string | null = null;
+
+    function showError(message: string): void {
+      window.clearTimeout(errTimer);
+      heldError = null;
       setEditorDoc(outputView, '');
-      copyBtn!.disabled = true;
-      renderEmpty(notesBox!, summaryEl!);
-      hideShare();
-      clearShareHash();
+      renderError(notesBox!, summaryEl!, message);
     }
 
-    // Editing the input or direction means the shown output is stale, so the
-    // example it came from is no longer what is on screen — drop the selection.
-    function markCustom(): void {
-      setActiveChip(null);
+    function fail(source: Source, message: string): void {
+      hideActions();
+      if (source !== 'seed') clearShareHash();
+      if (source !== 'type') {
+        showError(message);
+        return;
+      }
+      heldError = message;
+      setSummary(summaryEl!, '', false);
+      window.clearTimeout(errTimer);
+      errTimer = window.setTimeout(() => showError(message), ERROR_HOLD_MS);
     }
 
-    // Choosing an example swaps the input + direction, then clears the output.
+    inputView.contentDOM.addEventListener('blur', () => {
+      if (heldError !== null) showError(heldError);
+    });
+
+    async function convertNow(source: Source): Promise<void> {
+      window.clearTimeout(timer);
+      window.clearTimeout(errTimer);
+      heldError = null;
+      // Guaranteed present by the early return above; restated because
+      // TypeScript discards that narrowing inside a hoisted function declaration.
+      if (!convertBtn) return;
+      if (running) {
+        queued = source;
+        return;
+      }
+      running = true;
+      const userInitiated = source !== 'seed';
+      if (source === 'run') {
+        convertBtn.classList.add('is-busy');
+        convertBtn.setAttribute('aria-busy', 'true');
+        // Yield so the busy state paints before the work runs.
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      }
+
+      try {
+        const query = inputView.state.doc.toString();
+        if (query.trim().length === 0) {
+          setEditorDoc(outputView, '');
+          hideActions();
+          renderEmpty(notesBox!, summaryEl!);
+          if (userInitiated) clearShareHash();
+          return;
+        }
+        const result = await Promise.resolve(engine.convert(direction, query));
+
+        if (!result || result.error) {
+          fail(source, result?.error ?? 'Unknown error while converting.');
+          return;
+        }
+
+        const output = typeof result.output === 'string' ? result.output : '';
+        setEditorDoc(outputView, output);
+        const notes = Array.isArray(result.notes)
+          ? result.notes.filter((w): w is string => typeof w === 'string' && w.length > 0)
+          : [];
+        renderNotes(notesBox!, summaryEl!, notes);
+
+        if (output.length > 0) {
+          revealActions(direction, query, output, userInitiated);
+        } else {
+          hideActions();
+          if (userInitiated) clearShareHash();
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unexpected error while converting.';
+        fail(source, msg);
+      } finally {
+        running = false;
+        convertBtn.classList.remove('is-busy');
+        convertBtn.removeAttribute('aria-busy');
+        if (queued) {
+          const next = queued;
+          queued = null;
+          void convertNow(next);
+        }
+      }
+    }
+
+    function schedule(): void {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => void convertNow('type'), DEBOUNCE_MS);
+    }
+
+    // Typing in the source editor: no example is on screen any more; convert live.
+    onInputEdit = () => {
+      clearChips(chipsWrap);
+      schedule();
+    };
+
+    // Choosing an example swaps the input + direction and converts at once.
+    // The doc write fires the update listener (which releases every chip), so
+    // the chip is pressed again after it.
     chips.forEach((chip) => {
       chip.addEventListener('click', () => {
         const idx = Number(chip.dataset.exampleIdx);
         if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
         const ex = examples[idx];
-        setActiveChip(idx);
-        setEditorDoc(inputView, ex.query);
         direction = ex.direction;
         syncDirection();
-        resetOutput();
+        setEditorDoc(inputView, ex.query);
+        syncChipsByIndex(chipsWrap, idx);
+        void convertNow('run');
       });
     });
 
     // Direction toggle: roving-tabindex tablist with arrow-key navigation.
     function selectDirection(value: Direction, focusBtn: boolean): void {
-      if (value === direction) {
-        if (focusBtn) dirButtons.find((b) => b.dataset.dir === value)?.focus();
-        return;
+      if (value !== direction) {
+        direction = value;
+        clearChips(chipsWrap);
+        syncDirection();
+        void convertNow('run');
       }
-      direction = value;
-      markCustom();
-      syncDirection();
-      resetOutput();
       if (focusBtn) dirButtons.find((b) => b.dataset.dir === value)?.focus();
     }
 
@@ -1299,212 +957,10 @@ const seedFiles = filesFor(seedDirection);
       });
     });
 
-    // Mobile tab switching (panes are always visible on desktop via CSS).
-    const inputPane = el<HTMLElement>(root, '#lp-pane-input');
-    const outputPane = el<HTMLElement>(root, '#lp-pane-output');
-
-    function activateTab(tab: HTMLButtonElement, focusTab: boolean): void {
-      const showInput = tab.dataset.pane === 'input';
-      tabs.forEach((t) => {
-        const active = t === tab;
-        t.classList.toggle('is-active', active);
-        t.setAttribute('aria-selected', active ? 'true' : 'false');
-        t.tabIndex = active ? 0 : -1;
-      });
-      inputPane?.classList.toggle('lp-pane--active', showInput);
-      outputPane?.classList.toggle('lp-pane--active', !showInput);
-      if (focusTab) tab.focus();
-      requestAnimationFrame(() => (showInput ? inputView : outputView).requestMeasure());
-    }
-
-    tabs.forEach((tab, i) => {
-      tab.addEventListener('click', () => activateTab(tab, false));
-      tab.addEventListener('keydown', (e) => {
-        let next = -1;
-        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (i + 1) % tabs.length;
-        else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
-          next = (i - 1 + tabs.length) % tabs.length;
-        else if (e.key === 'Home') next = 0;
-        else if (e.key === 'End') next = tabs.length - 1;
-        if (next < 0) return;
-        e.preventDefault();
-        activateTab(tabs[next], true);
-      });
-    });
-
-    // Convert — non-blocking; show loading, yield a frame, then render.
-    let running = false;
-    const convertLabel = convertBtn.querySelector<HTMLElement>('.lp-convert-label');
-    let spinner: HTMLElement | null = null;
-
-    async function convertNow(userInitiated = true): Promise<void> {
-      // Guaranteed present by the early return in boot(); restated because TypeScript
-      // discards that narrowing inside a hoisted function declaration.
-      if (!convertBtn) return;
-      if (running) return;
-      running = true;
-      convertBtn.classList.add('is-busy');
-      convertBtn.setAttribute('aria-disabled', 'true');
-      convertBtn.setAttribute('aria-busy', 'true');
-      if (!spinner) {
-        spinner = document.createElement('span');
-        spinner.setAttribute('aria-hidden', 'true');
-        // Inline the visual — this span is created at runtime and would not
-        // receive the component's scoped-style hash.
-        spinner.style.cssText =
-          'display:inline-block;width:14px;height:14px;flex:0 0 auto;border-radius:9999px;' +
-          'border:2px solid currentColor;border-top-color:transparent;';
-        if (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-          spinner.animate(
-            [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }],
-            { duration: 700, iterations: Infinity }
-          );
-        }
-        convertBtn.insertBefore(spinner, convertBtn.firstChild);
-      }
-      if (convertLabel) convertLabel.textContent = 'Converting…';
-      renderLoading(notesBox!, summaryEl!);
-
-      // Yield so the loading state paints before (potentially heavy) work runs.
-      await new Promise<void>((resolve) => {
-        if ('requestAnimationFrame' in window) requestAnimationFrame(() => resolve());
-        else setTimeout(resolve, 0);
-      });
-
-      try {
-        const query = inputView.state.doc.toString();
-        const result = await Promise.resolve(engine.convert(direction, query));
-
-        if (!result || result.error) {
-          setEditorDoc(outputView, '');
-          copyBtn!.disabled = true;
-          renderError(
-            notesBox!,
-            summaryEl!,
-            result?.error ?? 'Unknown error while converting.'
-          );
-          hideShare();
-          if (userInitiated) clearShareHash();
-          return;
-        }
-
-        const output = typeof result.output === 'string' ? result.output : '';
-        setEditorDoc(outputView, output);
-        copyBtn!.disabled = output.length === 0;
-        const notes = Array.isArray(result.notes)
-          ? result.notes.filter((w): w is string => typeof w === 'string' && w.length > 0)
-          : [];
-        renderNotes(notesBox!, summaryEl!, notes);
-        if (announce) {
-          announce.textContent =
-            notes.length > 0
-              ? `Converted with ${notes.length} ${notes.length === 1 ? 'note' : 'notes'}.`
-              : 'Converted successfully.';
-        }
-
-        if (output.length > 0) {
-          revealShare(direction, query, output, userInitiated);
-        } else {
-          hideShare();
-          if (userInitiated) clearShareHash();
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Unexpected error while converting.';
-        setEditorDoc(outputView, '');
-        copyBtn!.disabled = true;
-        renderError(notesBox!, summaryEl!, msg);
-        hideShare();
-        if (userInitiated) clearShareHash();
-      } finally {
-        running = false;
-        convertBtn.classList.remove('is-busy');
-        convertBtn.removeAttribute('aria-disabled');
-        convertBtn.removeAttribute('aria-busy');
-        if (spinner) {
-          spinner.remove();
-          spinner = null;
-        }
-        if (convertLabel) convertLabel.textContent = 'Convert';
-      }
-    }
-
-    convertBtn.addEventListener('click', () => void convertNow());
-
-    // Cmd/Ctrl+Enter from inside the editor / toolbar triggers a conversion.
-    root.addEventListener('keydown', (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        e.preventDefault();
-        void convertNow();
-      }
-    });
-
-    // Copy output — copies the read-only editor's current document.
-    const copyLabel = copyBtn.querySelector<HTMLElement>('.lp-copy-label');
-    let copyTimer: number | undefined;
-    copyBtn.addEventListener('click', async () => {
-      const out = outputView.state.doc.toString();
-      if (!out) return;
-      const ok = await copyText(out);
-      if (copyLabel) copyLabel.textContent = ok ? 'Copied' : 'Copy Failed';
-      if (announce) {
-        announce.textContent = ok
-          ? 'Converted query copied to your clipboard.'
-          : 'Could not copy. Select the output text and copy it manually.';
-      }
-      window.clearTimeout(copyTimer);
-      copyTimer = window.setTimeout(() => {
-        if (copyLabel) copyLabel.textContent = copyBtn.dataset.defaultLabel ?? 'Copy Output';
-      }, COPIED_RESET_MS);
-    });
-
-    // Copy link — copies the shareable URL built by the last successful convert.
-    const shareLabel = shareBtn.querySelector<HTMLElement>('.lp-share-label');
-    let shareCopyTimer: number | undefined;
-    shareBtn.addEventListener('click', async () => {
-      const text = shareBtn.dataset.copy ?? '';
-      if (!text) return;
-      const ok = await copyText(text);
-      shareBtn.classList.toggle('lp-share-btn--copied', ok);
-      if (shareLabel) shareLabel.textContent = ok ? 'Copied' : 'Copy Failed';
-      if (announce) {
-        announce.textContent = ok
-          ? 'Share link copied to your clipboard.'
-          : 'Could not copy the link. Copy the URL from your address bar instead.';
-      }
-      window.clearTimeout(shareCopyTimer);
-      shareCopyTimer = window.setTimeout(() => {
-        shareBtn.classList.remove('lp-share-btn--copied');
-        if (shareLabel) shareLabel.textContent = 'Copy link';
-      }, COPIED_RESET_MS);
-    });
-
-    // Copy as Markdown — a fenced block with the current direction, query and result.
-    const mdLabel = mdBtn.querySelector<HTMLElement>('.lp-md-label');
-    let mdCopyTimer: number | undefined;
-    mdBtn.addEventListener('click', async () => {
-      const dirMeta = DIRECTIONS.find((d) => d.value === direction);
-      const md = buildMarkdownBlock('LogQL ↔ PromQL Helper', [
-        { label: 'Direction', value: dirMeta?.label ?? direction },
-        { label: 'Query', value: inputView.state.doc.toString() },
-        { label: 'Result', value: outputView.state.doc.toString() },
-      ]);
-      const ok = await copyText(md);
-      mdBtn.classList.toggle('lp-share-btn--copied', ok);
-      if (mdLabel) mdLabel.textContent = ok ? 'Copied' : 'Copy Failed';
-      if (announce) {
-        announce.textContent = ok
-          ? 'Markdown summary copied to your clipboard.'
-          : 'Could not copy. Select the text and copy it manually.';
-      }
-      window.clearTimeout(mdCopyTimer);
-      mdCopyTimer = window.setTimeout(() => {
-        mdBtn.classList.remove('lp-share-btn--copied');
-        if (mdLabel) mdLabel.textContent = 'Copy as Markdown';
-      }, COPIED_RESET_MS);
-    });
+    convertBtn.addEventListener('click', () => void convertNow('run'));
 
     wireSnapshotUI({
-      slug: 'logql-promql-helper',
+      slug: SLUG,
       saveBtn: snapSaveBtn,
       snapshotSelect: snapSelect,
       deleteBtn: snapDeleteBtn,
@@ -1521,19 +977,15 @@ const seedFiles = filesFor(seedDirection);
         if (isDirection(obj.direction)) direction = obj.direction;
         syncDirection();
         setEditorDoc(inputView, query);
-        markCustom();
-        void convertNow();
+        clearChips(chipsWrap);
+        void convertNow('run');
       },
     });
 
-    // Convert whatever the editor ended up holding — a #s= deep link, a restored
-    // last input, or the seeded example — so the panel is never empty on arrival.
-    //
-    // The seeded-example branch previously fell through to renderEmpty(), which
-    // is the case nearly every visitor gets: a query on screen and no translation
-    // beside it, behind a Convert button most never press. convertNow renders the
-    // empty state itself for a genuinely empty editor.
-    void convertNow(false);
+    // Convert whatever the editor ended up holding — a #s= deep link, a
+    // restored last input, or the seeded example — so the panel is never empty
+    // on arrival. The seed run never rewrites the hash or records the input.
+    void convertNow('seed');
   }
 
   boot();
