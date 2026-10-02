@@ -935,6 +935,42 @@ describe('Slab focus ring', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Editor-pane focus ring (playground kit, EditorPane.astro). CodeMirror
+// injects an UNLAYERED `.cm-focused { outline: 1px dotted #212121 }` at
+// runtime; #212121 is ~1.1:1 on the plate, i.e. invisible. The kit rule in
+// @layer components only wins because both declarations are `!important`
+// (a layered important beats every normal declaration). Pinned as a source
+// check, self-tested so it cannot pass vacuously.
+// ---------------------------------------------------------------------------
+
+describe('Editor pane focus ring', () => {
+  const css = readCss();
+  const light = extractTokensFromBlock(css, THEME_BLOCK);
+  const dark = extractTokensFromBlock(css, /html\[data-theme=['"]dark['"]\]\s*\{/);
+  const RULE =
+    /\.editor-pane__host\s+\.cm-editor\.cm-focused\s*\{\s*outline:\s*2px\s+solid\s+var\(--color-inverse-brand\)\s*!important\s*;\s*outline-offset:\s*-2px\s*!important\s*;?\s*\}/;
+
+  it('CodeMirror’s own dotted ring is invisible on the plate — the reason the rule exists', () => {
+    expect(contrastRatio('#212121', light['--color-inverse'])).toBeLessThan(3);
+    expect(contrastRatio('#212121', dark['--color-inverse'])).toBeLessThan(3);
+  });
+
+  it('the kit ring (inverse-brand) is >= 3:1 on both plate values', () => {
+    assertContrast(light['--color-inverse-brand'], light['--color-inverse'], 3, 'light: editor ring');
+    assertContrast(dark['--color-inverse-brand'], dark['--color-inverse'], 3, 'dark: editor ring');
+  });
+
+  it('global.css draws it solid 2px with !important on both declarations', () => {
+    const good = '.editor-pane__host .cm-editor.cm-focused {\n  outline: 2px solid var(--color-inverse-brand) !important;\n  outline-offset: -2px !important;\n}';
+    expect(good).toMatch(RULE);
+    expect(good.replace(') !important;', ');')).not.toMatch(RULE);
+    expect(good.replace('-2px !important', '-2px')).not.toMatch(RULE);
+    expect(good.replace('solid', 'dotted')).not.toMatch(RULE);
+    expect(css).toMatch(RULE);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Category hues — `--color-cat-<slug>` tokens (dots + 8% art tint, never text).
 // The registry map `categoryHue` in src/data/tools.ts is the source of truth
 // (the OG generator reads its hex); the CSS tokens must equal it, exist in BOTH
