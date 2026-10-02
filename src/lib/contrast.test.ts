@@ -15,6 +15,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { categories, categoryHue, categoryToSlug } from '../data/tools';
+import { CODE_PALETTE } from './code-palette';
+import { opscanopyPlate } from './shiki-theme.mjs';
 
 // ---------------------------------------------------------------------------
 // CSS parsing helpers
@@ -245,15 +247,83 @@ describe('WCAG contrast ratio math', () => {
   });
 });
 
-// Shiki's github-dark comment ink is an inline style, not a token, so the
-// override in global.css is pinned here as a literal pair.
-describe('WCAG AA contrast — Shiki code-block comments (pinned pair)', () => {
-  it('comment override #959da5 on github-dark #24292e >= 4.5:1 (AA)', () => {
-    assertContrast('#959da5', '#24292e', 4.5, 'shiki comment on github-dark');
+// The ONE code palette (src/lib/code-palette.ts) drives the Shiki theme
+// (src/lib/shiki-theme.mjs) and, from Wave 0, the CodeMirror theme. Every ink
+// sits on the slab, which has two plate values (light #1b1915, dark #0a0908
+// via global.css `.code-fig pre`), so each must clear AA on BOTH. This
+// replaced the github-dark #6A737D comment override (3.05:1) pinned here
+// until the palette landed.
+describe('Code palette (Shiki + CodeMirror)', () => {
+  const css = readCss();
+  const light = extractTokensFromBlock(css, THEME_BLOCK);
+  const dark = extractTokensFromBlock(css, /html\[data-theme=['"]dark['"]\]\s*\{/);
+  const inks = Object.entries(CODE_PALETTE).filter(([role]) => role !== 'bg');
+
+  for (const [role, hex] of inks) {
+    it(`${role} ${hex} >= 4.5:1 on both plate values`, () => {
+      assertContrast(hex, light['--color-inverse'], 4.5, `code ${role} on light plate`);
+      assertContrast(hex, dark['--color-inverse'], 4.5, `code ${role} on dark plate`);
+    });
+  }
+
+  it('every palette ink is an existing slab token (no new colours)', () => {
+    expect(CODE_PALETTE.bg).toBe(light['--color-inverse']);
+    expect(CODE_PALETTE.fg).toBe(light['--color-inverse-fg']);
+    expect(CODE_PALETTE.mute).toBe(light['--color-inverse-mute']);
+    expect(CODE_PALETTE.brand).toBe(light['--color-inverse-brand']);
+    expect(CODE_PALETTE.amber).toBe(light['--color-inverse-accent']);
+    expect(CODE_PALETTE.violet).toBe(dark['--color-violet-deep']);
+    expect(CODE_PALETTE.key).toBe(light['--color-inverse-fg']);
+    // The slab inks are identical in both themes, so the dark block agrees.
+    for (const t of ['--color-inverse-fg', '--color-inverse-mute', '--color-inverse-brand', '--color-inverse-accent']) {
+      expect(dark[t], t).toBe(light[t]);
+    }
   });
 
-  it('global.css still carries the override for the #6A737D comment span', () => {
-    expect(readCss()).toMatch(/\.astro-code span\[style\*='#6A737D' i\]\s*\{\s*color:\s*#959da5 !important;/);
+  it('no syntax colour is a category hue (colour means category)', () => {
+    const hues = new Set(Object.values(categoryHue).flatMap((h) => [h.light.toLowerCase(), h.dark.toLowerCase()]));
+    for (const [role, hex] of Object.entries(CODE_PALETTE)) expect(hues.has(hex.toLowerCase()), role).toBe(false);
+  });
+
+  it('the Shiki theme is built from the palette and nothing else', () => {
+    expect(opscanopyPlate.colors?.['editor.background']).toBe(light['--color-inverse']);
+    expect(opscanopyPlate.colors?.['editor.foreground']).toBe(CODE_PALETTE.fg);
+    expect(opscanopyPlate.bg).toBe(CODE_PALETTE.bg);
+    const allowed = new Set(Object.values(CODE_PALETTE).map((h) => h.toLowerCase()));
+    const used = (opscanopyPlate.settings ?? []).flatMap((r) => [r.settings.foreground, r.settings.background]).filter(Boolean);
+    expect(used.length).toBeGreaterThan(5);
+    for (const hex of used) expect(allowed.has(String(hex).toLowerCase()), String(hex)).toBe(true);
+  });
+
+  it('global.css re-points the Shiki plate to the token and drops the github-dark hack', () => {
+    const RULE =
+      /\.code-fig pre\s*\{[^}]*background:\s*var\(--color-inverse\)\s*!important;[^}]*color:\s*var\(--color-inverse-fg\)\s*!important;/;
+    expect('.code-fig pre {\n  margin: 0;\n  background: var(--color-inverse) !important;\n  color: var(--color-inverse-fg) !important;\n}').toMatch(RULE);
+    expect('.code-fig pre {\n  background: var(--color-inverse);\n  color: var(--color-inverse-fg);\n}').not.toMatch(RULE);
+    expect(css).toMatch(RULE);
+    expect(css).not.toMatch(/#6A737D/i);
+    expect(css).not.toMatch(/#959da5/i);
+  });
+});
+
+// --color-prose is the long-form reading ink (.rich-text at 18/30): a step
+// darker than body, held to AAA-level 7:1 on every surface an article sits on.
+describe('Prose ink', () => {
+  const css = readCss();
+  const light = extractTokensFromBlock(css, THEME_BLOCK);
+  const dark = extractTokensFromBlock(css, /html\[data-theme=['"]dark['"]\]\s*\{/);
+  for (const surface of ['--color-canvas', '--color-canvas-soft', '--color-card']) {
+    it(`prose >= 7:1 on ${surface} in both themes`, () => {
+      assertContrast(light['--color-prose'], light[surface], 7, `light: prose on ${surface}`);
+      assertContrast(dark['--color-prose'], dark[surface], 7, `dark: prose on ${surface}`);
+    });
+  }
+
+  it('.rich-text reads in the prose ink at 18/30', () => {
+    const RULE = /\n\.rich-text \{\s*color: var\(--color-prose\);\s*font-family: var\(--font-sans\);\s*font-size: 18px;\s*line-height: 30px;/;
+    expect('\r\n.rich-text {\r\n  color: var(--color-prose);\r\n  font-family: var(--font-sans);\r\n  font-size: 18px;\r\n  line-height: 30px;').toMatch(RULE);
+    expect('\n.rich-text {\n  color: var(--color-body);\n  font-family: var(--font-sans);\n  font-size: 18px;\n  line-height: 30px;').not.toMatch(RULE);
+    expect(css).toMatch(RULE);
   });
 });
 
@@ -268,6 +338,7 @@ describe('CSS token extraction', () => {
       '--color-canvas-soft-3',
       '--color-ink',
       '--color-body',
+      '--color-prose',
       '--color-mute',
       '--color-brand-strong',
       '--color-link',
@@ -310,6 +381,7 @@ describe('CSS token extraction', () => {
       '--color-canvas-soft-3',
       '--color-ink',
       '--color-body',
+      '--color-prose',
       '--color-mute',
       '--color-brand-strong',
       '--color-link',
@@ -847,16 +919,18 @@ describe('Slab focus ring', () => {
     expect(css).toMatch(RULE);
   });
 
-  // Markdown code blocks (Shiki github-dark, #24292e in both themes) carry an
-  // injected copy button; the base link ring there was 2.12:1.
-  it('Shiki code-block controls get the slab ring (>= 3:1 on #24292e)', () => {
-    const SHIKI_BG = '#24292e';
-    expect(contrastRatio(light['--color-link'], SHIKI_BG)).toBeLessThan(3);
-    assertContrast(light['--color-inverse-brand'], SHIKI_BG, 3, 'code-block ring');
-    const RULE = /\.rich-text\s+pre\s+:focus-visible\s*\{\s*outline-color:\s*var\(--color-inverse-brand\)\s*!important\s*;?\s*\}/;
-    expect('.rich-text pre :focus-visible {\n  outline-color: var(--color-inverse-brand) !important;\n}').toMatch(RULE);
-    expect('.rich-text pre :focus-visible {\n  outline-color: var(--color-link);\n}').not.toMatch(RULE);
+  // Markdown code blocks (<figure class="code-fig">, on the slab in both
+  // themes) carry the Copy button in their cap and a focusable <pre>; the base
+  // link ring is 2.54:1 on the light plate (asserted above).
+  it('code-block controls get the slab ring, pinned with !important', () => {
+    assertContrast(light['--color-inverse-brand'], light['--color-inverse'], 3, 'light: code-block ring');
+    assertContrast(dark['--color-inverse-brand'], dark['--color-inverse'], 3, 'dark: code-block ring');
+    const RULE = /\.rich-text\s+\.code-fig\s+:focus-visible\s*\{\s*outline-color:\s*var\(--color-inverse-brand\)\s*!important\s*;?\s*\}/;
+    expect('.rich-text .code-fig :focus-visible {\n  outline-color: var(--color-inverse-brand) !important;\n}').toMatch(RULE);
+    expect('.rich-text .code-fig :focus-visible {\n  outline-color: var(--color-link);\n}').not.toMatch(RULE);
     expect(css).toMatch(RULE);
+    // The old selector (a bare `pre` under .rich-text) is gone with github-dark.
+    expect(css).not.toMatch(/\.rich-text\s+pre\s+:focus-visible/);
   });
 });
 

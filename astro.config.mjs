@@ -7,6 +7,9 @@ import remarkCallouts from './src/lib/remark-callouts.mjs';
 import rehypeChapters from './src/lib/rehype-chapters.mjs';
 import rehypeImgDims from './src/lib/rehype-img-dims.mjs';
 import rehypeTableScroll from './src/lib/rehype-table-scroll.mjs';
+import rehypeCodeHeader from './src/lib/rehype-code-header.mjs';
+import { shikiConfig } from './src/lib/shiki-theme.mjs';
+import { unified } from '@astrojs/markdown-remark';
 import { applyLastmod } from './scripts/lastmod-core.mjs';
 
 // Real per-URL <lastmod>, written by scripts/gen-lastmod.mjs in `prebuild`.
@@ -104,8 +107,24 @@ export default defineConfig({
     }),
   ],
   markdown: {
-    remarkPlugins: [remarkCallouts],
-    rehypePlugins: [rehypeChapters, rehypeImgDims, rehypeTableScroll],
+    // The legacy unified pipeline, named explicitly. Astro 7 defaults to the
+    // Satteri processor and only ran these plugins through its
+    // `coerceLegacyMarkdownPlugins` shim (which builds this same `unified()`
+    // from top-level `remarkPlugins` / `rehypePlugins`); saying it here keeps
+    // the behaviour while the shim exists and after it is removed.
+    // `@astrojs/markdown-remark` must stay an explicit dependency (CLAUDE.md).
+    processor: unified({
+      remarkPlugins: [remarkCallouts],
+      // rehypeCodeHeader runs after Shiki (Astro highlights before user rehype
+      // plugins), so every `pre.astro-code[data-language]` exists to be wrapped
+      // in its <figure class="code-fig"> with a server-rendered figure cap.
+      rehypePlugins: [rehypeChapters, rehypeImgDims, rehypeTableScroll, rehypeCodeHeader],
+    }),
+    // One code palette (src/lib/code-palette.ts) for Shiki and CodeMirror.
+    // Shiki writes the plate as an inline background; global.css `.code-fig pre`
+    // re-points it to var(--color-inverse) so dark mode gets its own plate value.
+    // Grammar-less fences (promql, logql, …) are aliased to plaintext there.
+    shikiConfig,
   },
   vite: {
     plugins: [tailwindcss()],
