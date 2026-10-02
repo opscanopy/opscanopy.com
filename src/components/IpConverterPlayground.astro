@@ -3,8 +3,15 @@
  * IpConverterPlayground — the interactive IP Address Converter island.
  *
  * Single-input, live tool: type an IP in any form (dotted decimal, integer,
- * hexadecimal, binary, or IPv6) and every representation is rendered. No button,
- * fully client-side. A Bulk mode converts one IP per line into a table.
+ * hexadecimal, binary, or IPv6) and every representation is rendered. No button.
+ * A Bulk mode converts one IP per line into a table.
+ *
+ * Built on the playground kit (src/components/playground/*): ExampleChips,
+ * RunHint, SnapshotBar, ResultPanel (figure cap, live summary, copy status)
+ * and CopyButton. The results container stays here, seeded with
+ * `set:html` + `data-results`; its slab overrides anchor on `.ipc-results`.
+ * The `.ipc-chip` row under each result card is the cross-tool LINK row
+ * (global.css draws it), not the example chips.
  *
  * Runtime contract (lazy-imported):
  *   ../lib/ip-converter/engine   → convert(input: string): ConvertResult
@@ -21,6 +28,11 @@
 import { examples as prerenderedExamples } from '../lib/ip-converter/examples';
 import { convert } from '../lib/ip-converter/engine';
 import { resultHtml, summaryText, EMPTY_HTML } from '../lib/ip-converter/render';
+import ExampleChips from './playground/ExampleChips.astro';
+import RunHint from './playground/RunHint.astro';
+import SnapshotBar from './playground/SnapshotBar.astro';
+import ResultPanel from './playground/ResultPanel.astro';
+import CopyButton from './playground/CopyButton.astro';
 
 /**
  * Server-rendered seed. The client re-computes the same example on boot, so
@@ -38,6 +50,7 @@ const seedHtml =
     ? resultHtml(seedResult, { localePrefix, rawInput: seedExample.input })
     : EMPTY_HTML;
 const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '';
+const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
 ---
 
 <section class="ipc-pg" aria-label="IP Address Converter playground">
@@ -46,31 +59,16 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
       <div class="flex items-center gap-3">
         <span id="ipc-example-label" class="eyebrow shrink-0">Example</span>
         <div class="ipc-mode ml-auto" role="group" aria-label="Input mode">
-          <button type="button" class="ipc-mode-btn is-active" data-mode="single" aria-pressed="true">Single</button>
+          <button type="button" class="ipc-mode-btn" data-mode="single" aria-pressed="true">Single</button>
           <button type="button" class="ipc-mode-btn" data-mode="bulk" aria-pressed="false">Bulk</button>
         </div>
       </div>
       {/* Real <button> chips, server-rendered in DOM order so tab order and
-          no-JS legibility come for free. The first is pre-marked active to
-          match the boot seed; the script clears it when a typed value, an
-          `#ip=` deep link or a restored input wins instead.
-
-          Keeps `id="ipc-example-wrap"` — the script hides this whole group in
-          Bulk mode through that id. The classes are `-ex-` prefixed because
-          `.ipc-chips` / `.ipc-chip` already name the cross-tool link chips
-          rendered under each result card. */}
-      <div id="ipc-example-wrap" class="ipc-ex-chips" role="group" aria-label="Examples">
-        {prerenderedExamples.map((ex, i) => (
-          <button
-            type="button"
-            class:list={['ipc-ex-chip', { 'is-active': i === 0 }]}
-            data-example-idx={i}
-            aria-pressed={i === 0 ? 'true' : 'false'}
-          >
-            {ex.label}
-          </button>
-        ))}
-      </div>
+          no-JS legibility come for free. The first is pre-pressed to match
+          the boot seed; the script releases it when a typed value, an `#ip=`
+          deep link or a restored input wins instead. The row keeps
+          `id="ipc-example-wrap"` — the script hides it in Bulk mode. */}
+      <ExampleChips id="ipc-example-wrap" prefix="ipc" items={chipItems} active={seedExample ? 0 : null} ariaLabel="Examples" />
     </div>
 
     <div class="border-b border-hairline px-4 py-4 sm:px-5">
@@ -101,7 +99,7 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
             enterkeyhint="done"
             placeholder="192.168.1.10"
             value={seedExample?.input}
-            aria-describedby="ipc-input-hint"
+            aria-describedby="ipc-input-hint ipc-run-hint"
           />
         </div>
         <p id="ipc-input-hint" class="ipc-hint caption text-mute">
@@ -109,13 +107,8 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
           <span class="code-mono">3232235786</span>, hex <span class="code-mono">0xC0A8010A</span>,
           binary, or IPv6 <span class="code-mono">2001:db8::1</span> — the format is auto-detected.
         </p>
-        <div class="ipc-snap-row mt-3 flex flex-wrap items-center gap-2">
-          <button id="ipc-snap-save" type="button" class="ipc-snap-btn">Save snapshot</button>
-          <select id="ipc-snap-select" class="ipc-snap-select" aria-label="Load a saved snapshot" disabled>
-            <option value="">No snapshots yet</option>
-          </select>
-          <button id="ipc-snap-delete" type="button" class="ipc-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
-        </div>
+        <RunHint id="ipc-run-hint" />
+        <SnapshotBar prefix="ipc" />
       </div>
       <div id="ipc-bulk-wrap" hidden>
         <label class="eyebrow mb-2 block" for="ipc-bulk-input">IP addresses — one per line</label>
@@ -136,113 +129,21 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
       </noscript>
     </div>
 
-    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <span class="flex items-center gap-2">
-          <span class="eyebrow">Result</span>
-          <button
-            id="ipc-share"
-            type="button"
-            class="ipc-copy-btn ipc-copy-btn--labeled"
-            data-copy=""
-            data-copy-label="Copy link"
-            hidden
-          >
-            <svg
-              class="ipc-copy-icon"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M6.75 9.25l2.5-2.5"></path>
-              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
-              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
-            </svg>
-            <svg
-              class="ipc-check-icon hidden"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
-            </svg>
-            <span class="ipc-copy-label">Copy link</span>
-          </button>
-        </span>
-        <span id="ipc-summary" class="ipc-summary code-mono text-mute" role="status" aria-live="polite">{seedSummary}</span>
-      </div>
+    {/* ── Results panel — the L2 instrument (dark in both themes) under its
+        figure cap; the live summary reads out in the cap's actions slot. ── */}
+    <ResultPanel slug="ip-address-converter" prefix="ipc" summary={seedSummary} split>
+      <Fragment slot="actions">
+        <CopyButton kind="link" id="ipc-share" />
+      </Fragment>
       {/* Seeded at build time (see `seedHtml` above) so the answer is in the
           static HTML; the client replaces it with the same markup on boot. */}
-      <div id="ipc-results" class="ipc-results" set:html={seedHtml}></div>
-      <span id="ipc-copy-status" class="sr-only" role="status" aria-live="polite"></span>
-    </div>
+      <div id="ipc-results" class="ipc-results" set:html={seedHtml} data-results></div>
+    </ResultPanel>
   </div>
 </section>
 
 <style>
   @reference "../styles/global.css";
-
-  /* ── Example chips (playground UX contract; ported from SlugifyPlayground) ──
-     Named `.ipc-ex-chip` because `.ipc-chip` is already the cross-tool link
-     chip rendered under each result card — a different, unrelated affordance.
-
-     `.ipc-ex-chips` carries `display:flex` on the same element the script
-     toggles `hidden` on in Bulk mode. That is safe only because Tailwind's
-     preflight ships `[hidden]:where(:not([hidden='until-found'])){display:none
-     !important}` — an author rule with `!important`, so it outranks this one.
-     The UA's own `[hidden]` rule would NOT have, and the group would have
-     stayed visible in Bulk mode. Do not drop preflight from global.css. */
-  .ipc-ex-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .ipc-ex-chip {
-    display: inline-flex;
-    align-items: center;
-    padding: 5px 11px;
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--color-hairline-muted);
-    background: var(--color-canvas);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    line-height: 16px;
-    letter-spacing: 0.01em;
-    color: var(--color-brand-strong);
-    cursor: pointer;
-    touch-action: manipulation;
-    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
-  }
-  .ipc-ex-chip:hover {
-    border-color: var(--color-hairline-strong);
-    background: var(--color-canvas-hover);
-  }
-  .ipc-ex-chip.is-active {
-    background: var(--color-brand-soft);
-    border-color: var(--color-brand-strong);
-    color: var(--color-brand-strong);
-  }
-  .ipc-ex-chip:focus-visible {
-    outline: 2px solid var(--color-focus);
-    outline-offset: 2px;
-  }
-  @media (pointer: coarse) {
-    .ipc-ex-chip {
-      min-height: 44px;
-    }
-  }
 
   .ipc-mode {
     display: inline-flex;
@@ -252,6 +153,7 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
   }
+  /* Single | Bulk toggle — the pressed state IS aria-pressed. */
   .ipc-mode-btn {
     border: none;
     background: transparent;
@@ -259,12 +161,12 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
     padding: 3px 10px;
     border-radius: calc(var(--radius-sm) - 2px);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: 12px;
     line-height: 16px;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
     color: var(--color-mute);
-    transition: color 0.12s ease, background 0.12s ease;
+    transition:
+      color var(--dur-fast) var(--ease-brand),
+      background var(--dur-fast) var(--ease-brand);
   }
   .ipc-mode-btn:hover {
     color: var(--color-ink);
@@ -273,9 +175,14 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
     outline: 2px solid var(--color-link);
     outline-offset: 1px;
   }
-  .ipc-mode-btn.is-active {
+  .ipc-mode-btn[aria-pressed='true'] {
     background: var(--color-brand-soft);
     color: var(--color-brand-strong);
+  }
+  @media (pointer: coarse) {
+    .ipc-mode-btn {
+      min-height: var(--control-h-lg);
+    }
   }
 
   .ipc-input-wrap {
@@ -293,7 +200,7 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
   }
   .ipc-input {
     width: 100%;
-    height: 48px;
+    height: var(--control-h-lg);
     padding: 0 16px 0 42px;
     border-radius: var(--radius-md);
     background: var(--color-canvas);
@@ -301,8 +208,7 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
     box-shadow: var(--shadow-hairline);
     font-size: 15px;
     line-height: 24px;
-    letter-spacing: 0.01em;
-    transition: box-shadow 0.15s ease;
+    transition: box-shadow var(--dur-fast) var(--ease-brand);
   }
   .ipc-input::placeholder {
     color: var(--color-mute);
@@ -334,7 +240,7 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
     font-size: 13px;
     line-height: 20px;
     resize: vertical;
-    transition: box-shadow 0.15s ease;
+    transition: box-shadow var(--dur-fast) var(--ease-brand);
   }
   .ipc-textarea::placeholder {
     color: var(--color-mute);
@@ -358,60 +264,6 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
   .ipc-hint .code-mono {
     font-size: 12px;
   }
-  .ipc-snap-btn {
-    flex: 0 0 auto;
-    height: 30px;
-    padding: 0 12px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-    cursor: pointer;
-    transition: background 0.12s ease, box-shadow 0.12s ease;
-  }
-  .ipc-snap-btn:hover {
-    background: var(--color-canvas-soft);
-    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
-  }
-  .ipc-snap-select {
-    height: 30px;
-    max-width: 220px;
-    padding: 0 8px;
-    border-radius: var(--radius-sm);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-  }
-  .ipc-snap-select:disabled {
-    color: var(--color-mute);
-    cursor: not-allowed;
-  }
-  .ipc-snap-delete {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: transparent;
-    color: var(--color-mute);
-    cursor: pointer;
-    transition: background 0.12s ease, color 0.12s ease;
-  }
-  .ipc-snap-delete:hover {
-    background: var(--color-error-soft);
-    color: var(--color-error-deep);
-  }
-  .ipc-summary {
-    min-width: 0;
-    text-align: right;
-    overflow-wrap: anywhere;
-  }
   /* Sized to the seeded 7-row IPv4 card so empty/error states don't collapse
      the panel; smaller content is vertically centered within it. */
   .ipc-results {
@@ -419,21 +271,17 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
     display: grid;
     align-content: center;
   }
-  /* Copy failure message flips from sr-only to a visible caption. */
-  .ipc-copy-status--fail {
-    display: block;
-    margin-top: 10px;
-    font-size: 12px;
-    line-height: 18px;
-    color: var(--color-error-deep);
-  }
 
+  /* ── Runtime-injected markup (render.ts; styled with :global) ──────────
+     Light rules first as the documented defaults; the slab re-skin follows,
+     anchored on this component's own `.ipc-results` container (the panel
+     wrapper is ResultPanel's and carries no scope attribute). */
   :global(.ipc-card) {
     border-radius: var(--radius-md);
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
     overflow: hidden;
-    animation: ipc-rise 0.18s ease both;
+    animation: ipc-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.ipc-title) {
     display: flex;
@@ -451,7 +299,7 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
     font-size: 11px;
     line-height: 16px;
     padding: 1px 8px;
-    border-radius: 9999px;
+    border-radius: var(--radius-pill);
     background: var(--color-brand-soft);
     color: var(--color-brand-strong);
   }
@@ -479,25 +327,18 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
   :global(.ipc-row + .ipc-row) {
     border-top: 1px solid var(--color-hairline);
   }
+  /* Row-key role (label-field): mono 11/16 uppercase, the only label. */
   :global(.ipc-row__k) {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 18px;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    color: var(--color-mute);
+    @apply label-field;
   }
+  /* The "input" tag beside the echoed row's key — same label role, boxed. */
   :global(.ipc-chip-input) {
+    @apply label-field;
     display: inline-block;
     margin-left: 6px;
     padding: 0 6px;
     border-radius: var(--radius-pill);
     background: var(--color-hairline);
-    font-size: 11px;
-    line-height: 16px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--color-mute);
     vertical-align: middle;
   }
   :global(.ipc-row__v-wrap) {
@@ -532,19 +373,22 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
     color: var(--color-brand-strong);
     text-decoration: underline;
   }
+  /* ── Per-row copy buttons (render.ts; copy.ts drives them) ──────────── */
   :global(.ipc-copy-btn) {
     flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
+    width: var(--control-h-sm);
+    height: var(--control-h-sm);
     border-radius: var(--radius-sm);
     border: none;
     background: transparent;
     color: var(--color-mute);
     cursor: pointer;
-    transition: color 0.12s ease, background 0.12s ease;
+    transition:
+      color var(--dur-fast) var(--ease-brand),
+      background var(--dur-fast) var(--ease-brand);
     padding: 0;
   }
   :global(.ipc-copy-btn:hover) {
@@ -555,32 +399,14 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
     outline: 2px solid var(--color-link);
     outline-offset: 1px;
   }
-  :global(.ipc-copy-btn--labeled) {
-    width: auto;
-    height: 26px;
-    gap: 6px;
-    padding: 0 10px;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 16px;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-  }
-  :global(.ipc-copy-btn--copied) {
+  :global(.ipc-copy-btn[data-copied]) {
     color: var(--color-brand-strong);
     background: var(--color-brand-soft);
   }
   @media (pointer: coarse) {
     :global(.ipc-copy-btn) {
-      width: 44px;
-      height: 44px;
-    }
-    :global(.ipc-copy-btn--labeled) {
-      width: auto;
-      height: auto;
-      min-height: 36px;
+      width: var(--control-h-lg);
+      height: var(--control-h-lg);
     }
   }
 
@@ -599,30 +425,6 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
   }
   :global(.ipc-warnings__item + .ipc-warnings__item) {
     margin-top: 4px;
-  }
-
-  :global(.ipc-chips) {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 12px;
-  }
-  :global(.ipc-chip) {
-    display: inline-flex;
-    align-items: center;
-    padding: 4px 12px;
-    border-radius: var(--radius-pill);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    font-size: 12px;
-    line-height: 18px;
-    color: var(--color-brand-strong);
-    text-decoration: none;
-    transition: background 0.12s ease, box-shadow 0.12s ease;
-  }
-  :global(.ipc-chip:hover) {
-    background: var(--color-brand-soft);
-    box-shadow: inset 0 0 0 1px var(--color-brand);
   }
 
   :global(.ipc-bulk-note) {
@@ -650,17 +452,12 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
     font-size: 13px;
     line-height: 18px;
   }
+  /* Column heads — the label-field role. */
   :global(.ipc-bulk-table th) {
+    @apply label-field;
     padding: 8px 12px;
     border-bottom: 1px solid var(--color-hairline);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 16px;
-    font-weight: 500;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
     text-align: left;
-    color: var(--color-mute);
   }
   :global(.ipc-bulk-table td) {
     padding: 7px 12px;
@@ -736,6 +533,98 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
   }
+
+  /* ── Instrument re-skin — the result panel is the L2 slab (dark in BOTH
+     themes). Everything below it uses the slab ink tier; the light rules
+     above remain the documented defaults. The cross-tool `.ipc-chip` link
+     row takes the slab chip recipe from global.css. ───────────────────── */
+  .ipc-results :global(.ipc-empty),
+  .ipc-results :global(.ipc-card),
+  .ipc-results :global(.ipc-bulk-scroll) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+  }
+  .ipc-results :global(.ipc-empty) {
+    color: var(--color-inverse-mute);
+  }
+  .ipc-results :global(.ipc-error) {
+    background: #ff9d9514;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-error);
+    color: var(--color-inverse-error);
+  }
+  .ipc-results :global(.ipc-warnings) {
+    background: #e0a45814;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-accent);
+  }
+  .ipc-results :global(.ipc-bulk-note) {
+    color: var(--color-inverse-accent);
+  }
+  .ipc-results :global(.ipc-title) {
+    border-bottom-color: var(--color-inverse-hairline);
+    color: var(--color-inverse-mute);
+  }
+  .ipc-results :global(.ipc-title__badge) {
+    background: #8fc97a1f;
+    color: var(--color-inverse-brand);
+  }
+  .ipc-results :global(.ipc-title__detected),
+  .ipc-results :global(.ipc-row__v),
+  .ipc-results :global(.ipc-bulk-table td) {
+    color: var(--color-inverse-fg);
+  }
+  .ipc-results :global(.ipc-row + .ipc-row) {
+    border-top-color: #ffffff12;
+  }
+  .ipc-results :global(.ipc-row__k),
+  .ipc-results :global(.ipc-bulk-table th),
+  .ipc-results :global(.ipc-row__zone-link) {
+    color: var(--color-inverse-mute);
+  }
+  .ipc-results :global(.ipc-row__zone-link:hover) {
+    color: var(--color-inverse-brand);
+  }
+  .ipc-results :global(.ipc-chip-input) {
+    background: #ffffff14;
+    color: var(--color-inverse-mute);
+  }
+  .ipc-results :global(.ipc-bulk-table th),
+  .ipc-results :global(.ipc-bulk-table td) {
+    border-bottom-color: #ffffff12;
+  }
+  .ipc-results :global(.ipc-bulk-status--ok) {
+    color: var(--color-inverse-brand);
+  }
+  .ipc-results :global(.ipc-bulk-status--fail) {
+    color: var(--color-inverse-error);
+  }
+  /* Values right-align like every instrument readout; the stacked <480px
+     layout returns to the left edge. */
+  .ipc-results :global(.ipc-row__v-wrap) {
+    justify-content: flex-end;
+  }
+  .ipc-results :global(.ipc-row__v) {
+    text-align: right;
+  }
+  @media (max-width: 479px) {
+    .ipc-results :global(.ipc-row__v-wrap) {
+      justify-content: flex-start;
+    }
+    .ipc-results :global(.ipc-row__v) {
+      text-align: left;
+    }
+  }
+  .ipc-results :global(.ipc-copy-btn) {
+    color: var(--color-inverse-mute);
+  }
+  .ipc-results :global(.ipc-copy-btn:hover) {
+    color: var(--color-inverse-brand);
+    background: #ffffff14;
+  }
+  .ipc-results :global(.ipc-copy-btn[data-copied]) {
+    color: var(--color-inverse-brand);
+    background: #8fc97a1f;
+  }
 </style>
 
 <script>
@@ -750,7 +639,8 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
   } from '../lib/ip-converter/render';
   import { wireRunKeys } from '../lib/run-keys';
   import { readIpHash, buildIpHash } from '../lib/ip-hash';
-  import { copyTextToClipboard } from '../lib/clipboard';
+  import { wireCopyButtons } from '../lib/playground-kit/copy';
+  import { syncChipsByIndex, CHIP_SELECTOR } from '../lib/playground-kit/chips';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
 
   // Type-only import: erased at build, so the engine is still lazily imported
@@ -760,7 +650,6 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
 
   const ROOT_SEL = '.ipc-pg';
   const DEBOUNCE_MS = 140;
-  const RESET_MS = 1800;
   const MAX_BULK_LINES = 1000;
 
   function boot(): void {
@@ -797,8 +686,8 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
 
   function setSummary(summary: HTMLElement, text: string, isError: boolean): void {
     summary.textContent = text;
-    summary.classList.toggle('text-error-deep', isError);
-    summary.classList.toggle('text-mute', !isError);
+    summary.classList.toggle('text-inverse-error', isError);
+    summary.classList.toggle('text-inverse-mute', !isError);
   }
 
   function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
@@ -880,70 +769,23 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
 
     // The chips are already in the DOM (server-rendered from the same module),
     // so there is nothing to build — only to wire and to mark.
-    const chips = Array.from(exampleWrap.querySelectorAll<HTMLButtonElement>('.ipc-ex-chip'));
+    const chips = Array.from(exampleWrap.querySelectorAll<HTMLButtonElement>(CHIP_SELECTOR));
 
     /**
-     * Mark one chip active, or none for -1 — the chip equivalent of the old
+     * Press one chip, or none for -1 — the chip equivalent of the old
      * "Custom input" option: hand-typed text, an `#ip=` deep link, a restored
      * last input or a snapshot belongs to no example.
      */
     const setActiveChip = (index: number): void => {
-      chips.forEach((chip, i) => {
-        const active = i === index;
-        chip.classList.toggle('is-active', active);
-        chip.setAttribute('aria-pressed', active ? 'true' : 'false');
-      });
+      syncChipsByIndex(exampleWrap, index >= 0 ? index : null);
     };
 
     /* ------------------------------------------------------------------ */
-    /* Copy plumbing (shared by row buttons, Copy link, bulk Copy all)     */
+    /* Copy plumbing (row buttons, Copy link, bulk Copy all) — the kit     */
+    /* helper: one delegated listener; outcomes in #ipc-copy-status.       */
     /* ------------------------------------------------------------------ */
 
-    function setCopyStatus(message: string, failed: boolean): void {
-      copyStatus!.textContent = message;
-      copyStatus!.classList.toggle('sr-only', !failed);
-      copyStatus!.classList.toggle('ipc-copy-status--fail', failed);
-    }
-
-    function setCopied(btn: HTMLButtonElement, copied: boolean): void {
-      btn.classList.toggle('ipc-copy-btn--copied', copied);
-      btn.querySelector('.ipc-copy-icon')?.classList.toggle('hidden', copied);
-      btn.querySelector('.ipc-check-icon')?.classList.toggle('hidden', !copied);
-      const label = btn.querySelector<HTMLElement>('.ipc-copy-label');
-      if (label) {
-        label.textContent = copied ? 'Copied' : (btn.dataset.copyLabel ?? 'Copy');
-      } else if (copied) {
-        btn.dataset.prevAriaLabel = btn.getAttribute('aria-label') ?? '';
-        btn.setAttribute('aria-label', 'Copied');
-      } else if (btn.dataset.prevAriaLabel) {
-        btn.setAttribute('aria-label', btn.dataset.prevAriaLabel);
-        delete btn.dataset.prevAriaLabel;
-      }
-    }
-
-    async function handleCopy(btn: HTMLButtonElement): Promise<void> {
-      const text = btn.dataset.copy ?? '';
-      const ok = await copyTextToClipboard(text);
-      if (ok) {
-        setCopied(btn, true);
-        setCopyStatus('Copied to clipboard.', false);
-        window.clearTimeout(Number(btn.dataset.copyTimer));
-        btn.dataset.copyTimer = String(
-          window.setTimeout(() => {
-            setCopied(btn, false);
-            if (copyStatus!.textContent === 'Copied to clipboard.') setCopyStatus('', false);
-          }, RESET_MS)
-        );
-      } else {
-        setCopyStatus('Copy failed — select the value manually.', true);
-      }
-    }
-
-    root.addEventListener('click', (e) => {
-      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.ipc-copy-btn');
-      if (!btn) return;
-      void handleCopy(btn);
-    });
+    wireCopyButtons(root, { status: copyStatus });
 
     /* ------------------------------------------------------------------ */
     /* Single mode                                                          */
@@ -1100,16 +942,18 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
       resultsBox!.innerHTML =
         noteHtml +
         '<div class="ipc-bulk-bar">' +
-        '<button class="ipc-copy-btn ipc-copy-btn--labeled" type="button" data-copy="" data-copy-label="Copy all">' +
+        // The kit's labelled copy recipe (CopyButton.astro's markup, built at
+        // runtime because bulk results are client-only).
+        '<button class="copy-btn copy-btn--labeled" type="button" data-copy="" data-copy-all data-copy-label="Copy all">' +
         COPY_ICON_SVG +
         CHECK_ICON_SVG +
-        '<span class="ipc-copy-label">Copy all</span></button></div>' +
+        '<span class="copy-btn__label" data-copy-text>Copy all</span></button></div>' +
         '<div class="ipc-bulk-scroll"><table class="ipc-bulk-table">' +
         '<thead><tr><th>Input</th><th>Version</th><th>Canonical</th><th>Integer</th><th>Hexadecimal</th><th>Status</th></tr></thead>' +
         `<tbody>${bodyHtml.join('')}</tbody></table></div>`;
       // The delegated copy handler reads dataset.copy — set the raw TSV directly
       // instead of round-tripping tabs/newlines through the HTML attribute.
-      const copyAllBtn = resultsBox!.querySelector<HTMLButtonElement>('.ipc-bulk-bar .ipc-copy-btn');
+      const copyAllBtn = resultsBox!.querySelector<HTMLButtonElement>('.ipc-bulk-bar [data-copy-all]');
       if (copyAllBtn) copyAllBtn.dataset.copy = tsvLines.join('\n');
       const scrollBox = resultsBox!.querySelector<HTMLElement>('.ipc-bulk-scroll');
       if (scrollBox && prevScrollLeft) scrollBox.scrollLeft = prevScrollLeft;
@@ -1131,7 +975,6 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
       const bulk = next === 'bulk';
       modeBtns.forEach((b) => {
         const active = (b.dataset.mode === 'bulk') === bulk;
-        b.classList.toggle('is-active', active);
         b.setAttribute('aria-pressed', active ? 'true' : 'false');
       });
       exampleLabel!.hidden = bulk;

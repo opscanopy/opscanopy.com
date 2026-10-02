@@ -7,8 +7,13 @@
  * HMAC section keys one SHA algorithm with a UTF-8 secret; when a key is
  * present an extra "HMAC-<algo>" row appears. SHA digests come from the Web
  * Crypto API (SubtleCrypto), so evaluation is asynchronous and stale results
- * are discarded via a per-instance request id. Fully client-side — nothing is
- * sent anywhere.
+ * are discarded via a per-instance request id.
+ *
+ * Built on the playground kit (src/components/playground/*): ExampleChips,
+ * RunHint, SnapshotBar and ResultPanel (figure cap, live summary, copy
+ * status). The results container stays here, seeded with `set:html` +
+ * `data-results`; its slab overrides anchor on `.hash-results`. No share link
+ * and no Copy all: inputs may be secrets, so each digest copies on its own.
  *
  * Runtime contract (lazy-imported):
  *   ../lib/hash-generator/engine   → async hash(input): Promise<HashResult>
@@ -25,6 +30,10 @@
 import { examples as prerenderedExamples } from '../lib/hash-generator/examples';
 import { hash } from '../lib/hash-generator/engine';
 import { resultHtml, summaryText, EMPTY_HTML } from '../lib/hash-generator/render';
+import ExampleChips from './playground/ExampleChips.astro';
+import RunHint from './playground/RunHint.astro';
+import SnapshotBar from './playground/SnapshotBar.astro';
+import ResultPanel from './playground/ResultPanel.astro';
 
 /**
  * Server-rendered seed. The client re-computes the same example on boot, so
@@ -42,6 +51,7 @@ const seedResult = seedExample ? await hash(seedExample.input) : null;
 const seedHtml =
   seedResult && seedResult.valid && seedExample ? resultHtml(seedResult, null, seedExample.input) : EMPTY_HTML;
 const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult, null) : '';
+const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
 ---
 
 <section class="hash-pg" aria-label="Hash Generator playground">
@@ -49,23 +59,10 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult, nul
     <div class="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:px-5">
       <span class="eyebrow shrink-0">Example</span>
       {/* Real <button> chips, server-rendered in DOM order so tab order and
-          no-JS legibility come for free. The first is pre-marked active to
-          match the boot seed; the script clears it when a handoff wins, or
-          once the text is edited by hand. The id and classes are `-ex-`
-          prefixed because `.hash-chips` / `.hash-chip` already name the
-          cross-tool handoff chips rendered into the results panel. */}
-      <div id="hash-example-chips" class="hash-ex-chips" role="group" aria-label="Examples">
-        {prerenderedExamples.map((ex, i) => (
-          <button
-            type="button"
-            class:list={['hash-ex-chip', { 'is-active': i === 0 }]}
-            data-example-idx={i}
-            aria-pressed={i === 0 ? 'true' : 'false'}
-          >
-            {ex.label}
-          </button>
-        ))}
-      </div>
+          no-JS legibility come for free. The first is pre-pressed to match
+          the boot seed; the script releases it when a handoff wins, or once
+          the text is edited by hand. */}
+      <ExampleChips prefix="hash" items={chipItems} active={seedExample ? 0 : null} ariaLabel="Examples" />
     </div>
 
     <div class="border-b border-hairline px-4 py-4 sm:px-5">
@@ -79,18 +76,13 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult, nul
         autocomplete="off"
         rows="5"
         placeholder="The quick brown fox jumps over the lazy dog"
-        aria-describedby="hash-input-hint">{seedExample?.input}</textarea>
+        aria-describedby="hash-input-hint hash-run-hint">{seedExample?.input}</textarea>
       <p id="hash-input-hint" class="hash-hint caption text-mute">
         Hashed as UTF-8. The empty string is valid — its digests are well-known (MD5
         <span class="code-mono">d41d8cd9…</span>).
       </p>
-      <div class="hash-snap-row mt-3 flex flex-wrap items-center gap-2">
-        <button id="hash-snap-save" type="button" class="hash-snap-btn">Save snapshot</button>
-        <select id="hash-snap-select" class="hash-snap-select" aria-label="Load a saved snapshot" disabled>
-          <option value="">No snapshots yet</option>
-        </select>
-        <button id="hash-snap-delete" type="button" class="hash-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
-      </div>
+      <RunHint id="hash-run-hint" />
+      <SnapshotBar prefix="hash" />
     </div>
 
     <div class="border-b border-hairline px-4 py-4 sm:px-5">
@@ -134,74 +126,33 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult, nul
       </p>
     </div>
 
-    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex items-center justify-between gap-3">
-        <span class="eyebrow">Digests</span>
-        <span id="hash-summary" class="hash-summary code-mono text-mute" role="status" aria-live="polite">{seedSummary}</span>
-      </div>
-      <p class="caption text-mute mb-3">No share links on this tool — inputs may be secrets.</p>
+    {/* ── Digests — the L2 instrument (dark in both themes) under its figure
+        cap; the digest count reads out in the cap's actions slot. ─────── */}
+    <ResultPanel
+      slug="hash-generator"
+      prefix="hash"
+      summary={seedSummary}
+      label="Digests"
+      summaryClass="whitespace-nowrap"
+      split
+    >
+      <p class="caption text-inverse-mute mb-3">No share links on this tool — inputs may be secrets.</p>
       {/* Seeded at build time (see `seedHtml` above) so the digests are in the
           static HTML; the client replaces it with the same markup on boot. */}
-      <div id="hash-results" class="hash-results" set:html={seedHtml}></div>
-    </div>
+      <div id="hash-results" class="hash-results" set:html={seedHtml} data-results></div>
+    </ResultPanel>
   </div>
-
-  {/* Polite announcer for clipboard feedback. */}
-  <span id="hash-announce" class="sr-only" role="status" aria-live="polite"></span>
 </section>
 
 <style>
   @reference "../styles/global.css";
-
-  /* ── Example chips (playground UX contract; ported from SlugifyPlayground) ──
-     Named `.hash-ex-chip` because `.hash-chip` is already the cross-tool
-     handoff chip injected into the results panel. */
-  .hash-ex-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .hash-ex-chip {
-    display: inline-flex;
-    align-items: center;
-    padding: 5px 11px;
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--color-hairline-muted);
-    background: var(--color-canvas);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    line-height: 16px;
-    letter-spacing: 0.01em;
-    color: var(--color-brand-strong);
-    cursor: pointer;
-    touch-action: manipulation;
-    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
-  }
-  .hash-ex-chip:hover {
-    border-color: var(--color-hairline-strong);
-    background: var(--color-canvas-hover);
-  }
-  .hash-ex-chip.is-active {
-    background: var(--color-brand-soft);
-    border-color: var(--color-brand-strong);
-    color: var(--color-brand-strong);
-  }
-  .hash-ex-chip:focus-visible {
-    outline: 2px solid var(--color-focus);
-    outline-offset: 2px;
-  }
-  @media (pointer: coarse) {
-    .hash-ex-chip {
-      min-height: 44px;
-    }
-  }
 
   /* The HMAC algorithm picker — the one remaining <select> on this island. */
   .hash-select {
     appearance: none;
     -webkit-appearance: none;
     width: 100%;
-    height: 32px;
+    height: var(--control-h-md);
     min-width: 0;
     max-width: 320px;
     padding: 0 32px 0 12px;
@@ -214,7 +165,7 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult, nul
     cursor: pointer;
     text-overflow: ellipsis;
     touch-action: manipulation;
-    transition: box-shadow 0.15s ease;
+    transition: box-shadow var(--dur-fast) var(--ease-brand);
   }
   @media (min-width: 640px) {
     .hash-select {
@@ -254,7 +205,7 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult, nul
     font-size: 14px;
     line-height: 22px;
     resize: vertical;
-    transition: box-shadow 0.15s ease;
+    transition: box-shadow var(--dur-fast) var(--ease-brand);
   }
   .hash-input::placeholder {
     color: var(--color-mute);
@@ -279,7 +230,7 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult, nul
   .hash-hmac-input {
     flex: 1 1 200px;
     min-width: 0;
-    height: 40px;
+    height: var(--control-h-lg);
     padding: 0 14px;
     border-radius: var(--radius-md);
     background: var(--color-canvas);
@@ -287,7 +238,7 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult, nul
     box-shadow: var(--shadow-hairline);
     font-size: 14px;
     line-height: 22px;
-    transition: box-shadow 0.15s ease;
+    transition: box-shadow var(--dur-fast) var(--ease-brand);
   }
   .hash-hmac-input::placeholder {
     color: var(--color-mute);
@@ -307,69 +258,20 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult, nul
     margin-top: 8px;
     text-wrap: pretty;
   }
-  .hash-snap-btn {
-    flex: 0 0 auto;
-    height: 30px;
-    padding: 0 12px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-    cursor: pointer;
-    transition: background 0.12s ease, box-shadow 0.12s ease;
-  }
-  .hash-snap-btn:hover {
-    background: var(--color-canvas-soft);
-    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
-  }
-  .hash-snap-select {
-    height: 30px;
-    max-width: 220px;
-    padding: 0 8px;
-    border-radius: var(--radius-sm);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-  }
-  .hash-snap-select:disabled {
-    color: var(--color-mute);
-    cursor: not-allowed;
-  }
-  .hash-snap-delete {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: transparent;
-    color: var(--color-mute);
-    cursor: pointer;
-    transition: background 0.12s ease, color 0.12s ease;
-  }
-  .hash-snap-delete:hover {
-    background: var(--color-error-soft);
-    color: var(--color-error-deep);
-  }
-  .hash-summary {
-    white-space: nowrap;
-  }
   .hash-results {
-    min-height: 44px;
+    min-height: var(--control-h-lg);
   }
 
-  /* ── Runtime-injected markup ─────────────────────────────────────────── */
+  /* ── Runtime-injected markup (render.ts; styled with :global) ──────────
+     Light rules first as the documented defaults; the slab re-skin follows,
+     anchored on this component's own `.hash-results` container (the panel
+     wrapper is ResultPanel's and carries no scope attribute). */
   :global(.hash-card) {
     border-radius: var(--radius-md);
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
     overflow: hidden;
-    animation: hash-rise 0.18s ease both;
+    animation: hash-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.hash-row) {
     display: grid;
@@ -384,13 +286,9 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult, nul
   :global(.hash-row--hmac) {
     background: var(--color-brand-soft);
   }
+  /* Row-key role (label-field): mono 11/16 uppercase, the only label. */
   :global(.hash-row__k) {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 18px;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    color: var(--color-mute);
+    @apply label-field;
     white-space: nowrap;
   }
   :global(.hash-row--hmac .hash-row__k) {
@@ -408,25 +306,28 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult, nul
     font-size: 13px;
   }
 
+  /* Per-row labelled copy button (render.ts) — the kit's labelled copy
+     recipe: sentence case, sans, never uppercase. */
   :global(.hash-copy) {
     flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    height: 26px;
+    height: var(--control-h-sm);
     padding: 0 9px;
     border-radius: var(--radius-sm);
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
     color: var(--color-body);
-    font-family: var(--font-mono);
-    font-size: 11px;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
     line-height: 1;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
     cursor: pointer;
     touch-action: manipulation;
-    transition: box-shadow 0.15s ease, color 0.15s ease;
+    transition:
+      box-shadow var(--dur-fast) var(--ease-brand),
+      color var(--dur-fast) var(--ease-brand);
   }
   :global(.hash-copy:hover) {
     color: var(--color-ink);
@@ -441,10 +342,15 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult, nul
     height: 13px;
     flex: 0 0 auto;
   }
-  :global(.hash-copy.is-copied) {
+  :global(.hash-copy[data-copied]) {
     /* Use the AA-safe brand link colour (emerald-strong on light, bright on dark)
        rather than --color-success, which is too light for label text on white. */
     color: var(--color-link);
+  }
+  @media (pointer: coarse) {
+    :global(.hash-copy) {
+      height: var(--control-h-lg);
+    }
   }
 
   @keyframes hash-rise {
@@ -502,37 +408,99 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult, nul
     box-shadow: var(--shadow-hairline);
   }
 
-  :global(.hash-chips) {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 12px;
-  }
-  :global(.hash-chip) {
+  /* Hand-off button ("View as Base64 →") under the digests. render.ts
+     emits it as `<button data-handoff-to>` in a `-chips` row; global.css
+     lays the row out and draws the LINK form (`a[class$='-chip']`), so the
+     button form takes the same slab chip recipe here, keyed on its hook
+     rather than its render.ts class. */
+  .hash-results :global(button[data-handoff-to]) {
     display: inline-flex;
     align-items: center;
+    min-height: var(--control-h-sm);
     padding: 4px 12px;
-    border-radius: var(--radius-pill);
     border: none;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
+    border-radius: var(--radius-pill);
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    font-family: var(--font-sans);
     font-size: 12px;
     line-height: 18px;
-    color: var(--color-brand-strong);
+    color: var(--color-inverse-brand);
     cursor: pointer;
-    transition: background 0.12s ease, box-shadow 0.12s ease;
+    transition:
+      background-color var(--dur-fast) var(--ease-brand),
+      box-shadow var(--dur-fast) var(--ease-brand);
   }
-  :global(.hash-chip:hover) {
-    background: var(--color-brand-soft);
-    box-shadow: inset 0 0 0 1px var(--color-brand);
+  .hash-results :global(button[data-handoff-to]:hover) {
+    background: #ffffff14;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-control-edge);
+  }
+  .hash-results :global(button[data-handoff-to]:focus-visible) {
+    outline: 2px solid var(--color-inverse-brand);
+    outline-offset: 1px;
+  }
+  @media (pointer: coarse) {
+    .hash-results :global(button[data-handoff-to]) {
+      min-height: var(--control-h-lg);
+    }
+  }
+
+  /* ── Instrument re-skin — the result panel is the L2 slab (dark in BOTH
+     themes). Everything below it uses the slab ink tier; the light rules
+     above remain the documented defaults. ──────────────────────────────── */
+  .hash-results :global(.hash-empty) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-mute);
+  }
+  .hash-results :global(.hash-error) {
+    background: #ff9d9514;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-error);
+    color: var(--color-inverse-error);
+  }
+  .hash-results :global(.hash-card) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+  }
+  .hash-results :global(.hash-row + .hash-row) {
+    border-top-color: #ffffff12;
+  }
+  .hash-results :global(.hash-row--hmac) {
+    background: #8fc97a1f;
+  }
+  .hash-results :global(.hash-row__k) {
+    color: var(--color-inverse-mute);
+  }
+  .hash-results :global(.hash-row--hmac .hash-row__k) {
+    color: var(--color-inverse-brand);
+  }
+  .hash-results :global(.hash-row__v) {
+    color: var(--color-inverse-fg);
+  }
+  .hash-results :global(.hash-copy) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-mute);
+  }
+  .hash-results :global(.hash-copy:hover) {
+    color: var(--color-inverse-brand);
+    background: #ffffff14;
+  }
+  .hash-results :global(.hash-copy[data-copied]) {
+    color: var(--color-inverse-brand);
+    background: #8fc97a1f;
+  }
+  .hash-results :global(.hash-copy:focus-visible) {
+    outline-color: var(--color-inverse-brand);
   }
 </style>
 
 <script>
-  import { copyTextToClipboard as copyText } from '../lib/clipboard';
   import { wireRunKeys } from '../lib/run-keys';
   import { writeHandoff, readHandoffOnce } from '../lib/tool-state/handoff';
   import { wireSnapshotUI } from '../lib/tool-state/wire';
+  import { copyButtonFor, copyFromButton, COPIED_TEXT, RESET_MS } from '../lib/playground-kit/copy';
+  import { syncChipsByIndex, CHIP_SELECTOR } from '../lib/playground-kit/chips';
   // The HTML builders are shared with the frontmatter's build-time seed —
   // one implementation, so the no-JS markup and the live markup never drift.
   import { resultHtml, summaryText, errorHtml, EMPTY_HTML } from '../lib/hash-generator/render';
@@ -546,7 +514,6 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult, nul
 
   const ROOT_SEL = '.hash-pg';
   const DEBOUNCE_MS = 180;
-  const COPIED_RESET_MS = 1400;
 
   function boot(): void {
     document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
@@ -574,17 +541,19 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult, nul
     // are well-defined and a useful fixture — so we do NOT filter on length.
   }
 
+  function setSummary(summary: HTMLElement, text: string, isError: boolean): void {
+    summary.textContent = text;
+    summary.classList.toggle('text-inverse-error', isError);
+    summary.classList.toggle('text-inverse-mute', !isError);
+  }
+
   function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
-    summary.textContent = '';
-    summary.classList.remove('text-error');
-    summary.classList.add('text-mute');
+    setSummary(summary, '', false);
     container.innerHTML = EMPTY_HTML;
   }
 
   function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
-    summary.textContent = 'Unavailable';
-    summary.classList.remove('text-mute');
-    summary.classList.add('text-error');
+    setSummary(summary, 'Unavailable', true);
     container.innerHTML = errorHtml(message);
   }
 
@@ -601,9 +570,7 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult, nul
     hmacRow: Row | null,
     rawInput: string
   ): void {
-    summary.textContent = summaryText(result, hmacRow);
-    summary.classList.remove('text-error');
-    summary.classList.add('text-mute');
+    setSummary(summary, summaryText(result, hmacRow), false);
     container.innerHTML = resultHtml(result, hmacRow, rawInput);
   }
 
@@ -611,10 +578,10 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult, nul
     const input = el<HTMLTextAreaElement>(root, '#hash-input');
     const keyInput = el<HTMLInputElement>(root, '#hash-hmac-key');
     const algoSel = el<HTMLSelectElement>(root, '#hash-hmac-algo');
-    const chipsWrap = el<HTMLElement>(root, '#hash-example-chips');
+    const chipsWrap = el<HTMLElement>(root, '#hash-chips');
     const resultsBox = el<HTMLElement>(root, '#hash-results');
     const summaryEl = el<HTMLElement>(root, '#hash-summary');
-    const announce = el<HTMLElement>(root, '#hash-announce');
+    const copyStatus = el<HTMLElement>(root, '#hash-copy-status');
     const snapSaveBtn = el<HTMLButtonElement>(root, '#hash-snap-save');
     const snapSelect = el<HTMLSelectElement>(root, '#hash-snap-select');
     const snapDeleteBtn = el<HTMLButtonElement>(root, '#hash-snap-delete');
@@ -625,12 +592,31 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult, nul
       !chipsWrap ||
       !resultsBox ||
       !summaryEl ||
+      !copyStatus ||
       !snapSaveBtn ||
       !snapSelect ||
       !snapDeleteBtn
     ) {
       return;
     }
+
+    // Copy any digest: the kit's copy cycle (icon / aria-label swap, the
+    // `data-copied` state, the #hash-copy-status announcement). render.ts's
+    // labelled row button names its label `hash-copy__lbl`, which the kit's
+    // label hooks do not match, so the visible "Copy" → "Copied" swap is
+    // mirrored here on the same reset clock.
+    root.addEventListener('click', (e) => {
+      const btn = copyButtonFor(root, e.target);
+      if (!btn) return;
+      void copyFromButton(btn, { status: copyStatus }).then((ok) => {
+        const lbl = btn.querySelector('.hash-copy__lbl');
+        if (!ok || !lbl) return;
+        lbl.textContent = COPIED_TEXT;
+        window.setTimeout(() => {
+          lbl.textContent = 'Copy';
+        }, RESET_MS);
+      });
+    });
 
     let engine: EngineModule;
     let examples: Example[] = [];
@@ -649,19 +635,15 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult, nul
 
     // The chips are already in the DOM (server-rendered from the same module),
     // so there is nothing to build — only to wire and to mark.
-    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>('.hash-ex-chip'));
+    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>(CHIP_SELECTOR));
 
     /**
-     * Mark one chip active, or none for -1 — the chip equivalent of the old
+     * Press one chip, or none for -1 — the chip equivalent of the old
      * "Custom input" option: hand-typed text, a restored snapshot, or a
      * handoff from another tool belongs to no example.
      */
     const setActiveChip = (index: number): void => {
-      chips.forEach((chip, i) => {
-        const active = i === index;
-        chip.classList.toggle('is-active', active);
-        chip.setAttribute('aria-pressed', active ? 'true' : 'false');
-      });
+      syncChipsByIndex(chipsWrap, index >= 0 ? index : null);
     };
 
     // Monotonic request id: only the latest async run is allowed to paint, so a
@@ -773,32 +755,6 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult, nul
       if (!to) return;
       writeHandoff(input!.value);
       window.location.href = localePath(to);
-    });
-
-    // Copy any digest via event delegation on the results container.
-    let copyResetTimer: number | undefined;
-    resultsBox.addEventListener('click', (e) => {
-      const target = e.target as HTMLElement | null;
-      const btn = target?.closest<HTMLButtonElement>('.hash-copy');
-      if (!btn) return;
-      const text = btn.dataset.copy ?? '';
-      if (!text) return;
-      void (async () => {
-        const ok = await copyText(text);
-        const lbl = btn.querySelector<HTMLElement>('.hash-copy__lbl');
-        if (lbl) lbl.textContent = ok ? 'Copied' : 'Failed';
-        btn.classList.toggle('is-copied', ok);
-        if (announce) {
-          announce.textContent = ok
-            ? 'Copied the digest to your clipboard.'
-            : 'Could not copy. Select the value and copy it manually.';
-        }
-        window.clearTimeout(copyResetTimer);
-        copyResetTimer = window.setTimeout(() => {
-          if (lbl) lbl.textContent = 'Copy';
-          btn.classList.remove('is-copied');
-        }, COPIED_RESET_MS);
-      })();
     });
 
     // Seed priority: a secret-safe handoff (e.g. from Base64's "Hash this

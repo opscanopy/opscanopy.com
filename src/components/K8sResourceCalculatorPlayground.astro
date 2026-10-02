@@ -5,7 +5,12 @@
  * Given a Pod's CPU request / limit, memory request / limit, and a replica
  * count, it renders a per-pod and total-across-replicas breakdown as a rows
  * table (mono values) plus any advisory warnings (limit below request, no
- * limit set, …). Updates live (debounced), fully client-side.
+ * limit set, …). Updates live (debounced).
+ *
+ * Built on the playground kit (src/components/playground/*): ExampleChips,
+ * RunHint, SnapshotBar, ResultPanel (figure cap, live summary, copy status)
+ * and CopyButton. The results container stays here, seeded with
+ * `set:html` + `data-results`; its slab overrides anchor on `.k8s-results`.
  *
  * Runtime contract (lazy-imported):
  *   ../lib/k8s-resources/engine   → calculate({ cpuRequest, cpuLimit, memRequest, memLimit, replicas }) → K8sResult
@@ -20,6 +25,11 @@
 import { examples as prerenderedExamples } from '../lib/k8s-resources/examples';
 import { calculate } from '../lib/k8s-resources/engine';
 import { resultHtml, summaryText, EMPTY_HTML } from '../lib/k8s-resources/render';
+import ExampleChips from './playground/ExampleChips.astro';
+import RunHint from './playground/RunHint.astro';
+import SnapshotBar from './playground/SnapshotBar.astro';
+import ResultPanel from './playground/ResultPanel.astro';
+import CopyButton from './playground/CopyButton.astro';
 
 /**
  * Server-rendered seed. The client re-computes the same example on boot, so
@@ -36,6 +46,7 @@ const seedReplicas = seedExample ? Number(seedExample.input.replicas) || 1 : 1;
 const seedHtml =
   seedResult && seedResult.valid ? resultHtml(seedResult, seedReplicas) : EMPTY_HTML;
 const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '';
+const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
 ---
 
 <section class="k8s-pg" aria-label="Kubernetes Resource Calculator playground">
@@ -44,18 +55,7 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
       <span class="eyebrow shrink-0">Example</span>
       {/* Server-rendered so the examples are in the static HTML; the hydration
           script only wires clicks onto these buttons, it never rebuilds them. */}
-      <div id="k8s-chips" class="k8s-chips" role="group" aria-label="Examples">
-        {prerenderedExamples.map((ex, i) => (
-          <button
-            type="button"
-            class:list={['k8s-chip', { 'is-active': i === 0 }]}
-            data-example-idx={i}
-            aria-pressed={i === 0 ? 'true' : 'false'}
-          >
-            {ex.label}
-          </button>
-        ))}
-      </div>
+      <ExampleChips prefix="k8s" items={chipItems} active={seedExample ? 0 : null} ariaLabel="Examples" />
     </div>
 
     <div class="border-b border-hairline px-4 py-4 sm:px-5">
@@ -72,7 +72,7 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
             autocomplete="off"
             placeholder="500m"
             value={seedExample?.input.cpuRequest}
-            aria-describedby="k8s-input-hint"
+            aria-describedby="k8s-input-hint k8s-run-hint"
           />
         </div>
         <div class="k8s-field" data-k8s-field="cpuLimit">
@@ -87,7 +87,7 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
             autocomplete="off"
             placeholder="1"
             value={seedExample?.input.cpuLimit}
-            aria-describedby="k8s-input-hint"
+            aria-describedby="k8s-input-hint k8s-run-hint"
           />
         </div>
         <div class="k8s-field" data-k8s-field="memRequest">
@@ -102,7 +102,7 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
             autocomplete="off"
             placeholder="256Mi"
             value={seedExample?.input.memRequest}
-            aria-describedby="k8s-input-hint"
+            aria-describedby="k8s-input-hint k8s-run-hint"
           />
         </div>
         <div class="k8s-field" data-k8s-field="memLimit">
@@ -117,7 +117,7 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
             autocomplete="off"
             placeholder="512Mi"
             value={seedExample?.input.memLimit}
-            aria-describedby="k8s-input-hint"
+            aria-describedby="k8s-input-hint k8s-run-hint"
           />
         </div>
         <div class="k8s-field" data-k8s-field="replicas">
@@ -141,7 +141,7 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
             autocomplete="off"
             placeholder="1"
             value={seedExample?.input.replicas}
-            aria-describedby="k8s-input-hint"
+            aria-describedby="k8s-input-hint k8s-run-hint"
           />
         </div>
       </div>
@@ -151,110 +151,32 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
         <span class="code-mono">4Gi</span>) or decimal (<span class="code-mono">1G</span>) suffixes, or bytes.
         Leave a field blank to skip it.
       </p>
-      <div class="k8s-snap-row mt-3 flex flex-wrap items-center gap-2">
-        <button id="k8s-snap-save" type="button" class="k8s-snap-btn">Save snapshot</button>
-        <select id="k8s-snap-select" class="k8s-snap-select" aria-label="Load a saved snapshot" disabled>
-          <option value="">No snapshots yet</option>
-        </select>
-        <button id="k8s-snap-delete" type="button" class="k8s-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
-      </div>
+      <RunHint id="k8s-run-hint" />
+      <SnapshotBar prefix="k8s" />
     </div>
 
-    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <span class="flex flex-wrap items-center gap-2">
-          <span class="eyebrow">Result</span>
-          <button id="k8s-share" type="button" class="k8s-share-btn" data-copy="" hidden>
-            <svg
-              class="k8s-share-icon"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M6.75 9.25l2.5-2.5"></path>
-              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
-              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
-            </svg>
-            <span class="k8s-share-label">Copy link</span>
-          </button>
-          <button id="k8s-copy-md" type="button" class="k8s-share-btn" hidden>
-            <svg
-              class="k8s-share-icon"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <rect x="3.25" y="3.25" width="7" height="9" rx="1.25"></rect>
-              <path d="M6.25 3.25V2.75A1.25 1.25 0 0 1 7.5 1.5h3.25a1.25 1.25 0 0 1 1.25 1.25V10a1.25 1.25 0 0 1-1.25 1.25h-.5"></path>
-            </svg>
-            <span class="k8s-copy-md-label">Copy as Markdown</span>
-          </button>
-        </span>
-        <span id="k8s-summary" class="k8s-summary code-mono text-mute" role="status" aria-live="polite">{seedSummary}</span>
-      </div>
+    {/* ── Results panel — the L2 instrument (dark in both themes) under its
+        figure cap; the live summary reads out in the cap's actions slot. ── */}
+    <ResultPanel
+      slug="kubernetes-resource-calculator"
+      prefix="k8s"
+      summary={seedSummary}
+      summaryClass="whitespace-nowrap"
+      split
+    >
+      <Fragment slot="actions">
+        <CopyButton kind="link" id="k8s-share" />
+        <CopyButton kind="value" id="k8s-copy-md" label="Copy as Markdown" icon="markdown" />
+      </Fragment>
       {/* Seeded at build time (see `seedHtml` above) so the answer is in the
           static HTML; the client replaces it with the same markup on boot. */}
-      <div id="k8s-results" class="k8s-results" set:html={seedHtml}></div>
-    </div>
+      <div id="k8s-results" class="k8s-results" set:html={seedHtml} data-results></div>
+    </ResultPanel>
   </div>
 </section>
 
 <style>
   @reference "../styles/global.css";
-
-  /* ── Example chips ────────────────────────────────────── */
-  .k8s-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .k8s-chip {
-    display: inline-flex;
-    align-items: center;
-    padding: 5px 11px;
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--color-hairline-muted);
-    background: var(--color-canvas);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    line-height: 16px;
-    letter-spacing: 0.01em;
-    color: var(--color-brand-strong);
-    cursor: pointer;
-    touch-action: manipulation;
-    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
-  }
-  .k8s-chip:hover {
-    border-color: var(--color-hairline-strong);
-    background: var(--color-canvas-hover);
-  }
-  .k8s-chip.is-active,
-  .k8s-chip[aria-pressed='true'] {
-    background: var(--color-brand-soft);
-    border-color: var(--color-brand-strong);
-    color: var(--color-brand-strong);
-  }
-  .k8s-chip:focus-visible {
-    outline: 2px solid var(--color-focus);
-    outline-offset: 2px;
-  }
-  @media (pointer: coarse) {
-    .k8s-chip {
-      min-height: 44px;
-    }
-  }
 
   .k8s-fields {
     display: grid;
@@ -277,7 +199,7 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
 
   .k8s-text {
     width: 100%;
-    height: 40px;
+    height: var(--control-h-lg);
     padding: 0 14px;
     border-radius: var(--radius-md);
     background: var(--color-canvas);
@@ -285,7 +207,7 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
     box-shadow: var(--shadow-hairline);
     font-size: 14px;
     line-height: 22px;
-    transition: box-shadow 0.15s ease;
+    transition: box-shadow var(--dur-fast) var(--ease-brand);
   }
   .k8s-text::placeholder {
     color: var(--color-mute);
@@ -304,108 +226,20 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
     margin-top: 12px;
     text-wrap: pretty;
   }
-  .k8s-snap-btn {
-    flex: 0 0 auto;
-    height: 30px;
-    padding: 0 12px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-    cursor: pointer;
-    transition: background 0.12s ease, box-shadow 0.12s ease;
-  }
-  .k8s-snap-btn:hover {
-    background: var(--color-canvas-soft);
-    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
-  }
-  .k8s-snap-select {
-    height: 30px;
-    max-width: 220px;
-    padding: 0 8px;
-    border-radius: var(--radius-sm);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-  }
-  .k8s-snap-select:disabled {
-    color: var(--color-mute);
-    cursor: not-allowed;
-  }
-  .k8s-snap-delete {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: transparent;
-    color: var(--color-mute);
-    cursor: pointer;
-    transition: background 0.12s ease, color 0.12s ease;
-  }
-  .k8s-snap-delete:hover {
-    background: var(--color-error-soft);
-    color: var(--color-error-deep);
-  }
-  .k8s-summary {
-    white-space: nowrap;
-  }
   .k8s-results {
-    min-height: 44px;
+    min-height: var(--control-h-lg);
   }
 
-  .k8s-share-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: 26px;
-    padding: 0 10px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-mute);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 16px;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    cursor: pointer;
-    touch-action: manipulation;
-    transition: color 0.12s ease, background 0.12s ease;
-  }
-  .k8s-share-btn:hover {
-    color: var(--color-brand-strong);
-    background: var(--color-hairline);
-  }
-  .k8s-share-btn:focus-visible {
-    outline: 2px solid var(--color-link);
-    outline-offset: 1px;
-  }
-  .k8s-share-btn.k8s-share-btn--copied {
-    color: var(--color-brand-strong);
-    background: var(--color-brand-soft);
-  }
-  @media (pointer: coarse) {
-    .k8s-share-btn {
-      height: auto;
-      min-height: 36px;
-    }
-  }
-
-  /* ── Runtime-injected markup ─────────────────────────────────────────── */
+  /* ── Runtime-injected markup (render.ts; styled with :global) ──────────
+     Light rules first as the documented defaults; the slab re-skin follows,
+     anchored on this component's own `.k8s-results` container (the panel
+     wrapper is ResultPanel's and carries no scope attribute). */
   :global(.k8s-table) {
     border-radius: var(--radius-md);
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
     overflow: hidden;
-    animation: k8s-rise 0.18s ease both;
+    animation: k8s-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.k8s-row) {
     display: flex;
@@ -419,10 +253,11 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
   :global(.k8s-row + .k8s-row) {
     border-top: 1px solid var(--color-hairline);
   }
+  /* Row-key role (label-field): mono 11/16 uppercase, the only label. */
   :global(.k8s-row__label) {
+    @apply label-field;
     flex: 1 1 auto;
     min-width: 0;
-    color: var(--color-mute);
     word-break: break-word;
   }
   :global(.k8s-row__value) {
@@ -524,6 +359,37 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
   }
+
+  /* ── Instrument re-skin — the result panel is the L2 slab (dark in BOTH
+     themes). Everything below it uses the slab ink tier; the light rules
+     above remain the documented defaults. ──────────────────────────────── */
+  .k8s-results :global(.k8s-empty),
+  .k8s-results :global(.k8s-table) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+  }
+  .k8s-results :global(.k8s-empty) {
+    color: var(--color-inverse-mute);
+  }
+  .k8s-results :global(.k8s-error) {
+    background: #ff9d9514;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-error);
+    color: var(--color-inverse-error);
+  }
+  .k8s-results :global(.k8s-row + .k8s-row) {
+    border-top-color: #ffffff12;
+  }
+  .k8s-results :global(.k8s-row__label) {
+    color: var(--color-inverse-mute);
+  }
+  .k8s-results :global(.k8s-row__value) {
+    color: var(--color-inverse-fg);
+  }
+  .k8s-results :global(.k8s-warn) {
+    background: #e0a45814;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-accent);
+  }
 </style>
 
 <script>
@@ -535,8 +401,9 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
     markdownFields,
   } from '../lib/k8s-resources/render';
   import { wireRunKeys } from '../lib/run-keys';
-  import { copyTextToClipboard } from '../lib/clipboard';
   import { buildMarkdownBlock } from '../lib/share-md';
+  import { wireCopyButtons } from '../lib/playground-kit/copy';
+  import { syncChipsByIndex, CHIP_SELECTOR } from '../lib/playground-kit/chips';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
   import type { K8sInput as Input, K8sResult as Result } from '../lib/k8s-resources/types';
 
@@ -627,6 +494,7 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
     const summaryEl = el<HTMLElement>(root, '#k8s-summary');
     const shareBtn = el<HTMLButtonElement>(root, '#k8s-share');
     const mdBtn = el<HTMLButtonElement>(root, '#k8s-copy-md');
+    const copyStatus = el<HTMLElement>(root, '#k8s-copy-status');
     const snapSaveBtn = el<HTMLButtonElement>(root, '#k8s-snap-save');
     const snapSelect = el<HTMLSelectElement>(root, '#k8s-snap-select');
     const snapDeleteBtn = el<HTMLButtonElement>(root, '#k8s-snap-delete');
@@ -641,15 +509,16 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
       !summaryEl ||
       !shareBtn ||
       !mdBtn ||
+      !copyStatus ||
       !snapSaveBtn ||
       !snapSelect ||
       !snapDeleteBtn
     )
       return;
 
-    const shareLabel = shareBtn.querySelector<HTMLElement>('.k8s-share-label');
-    const mdLabel = mdBtn.querySelector<HTMLElement>('.k8s-copy-md-label');
-    let lastMarkdownFields: Array<{ label: string; value: string }> = [];
+    // Copy link and Copy as Markdown: the kit's delegated copy listener;
+    // outcomes announced in #k8s-copy-status.
+    wireCopyButtons(root, { status: copyStatus });
 
     function hideShare(): void {
       shareBtn!.hidden = true;
@@ -657,6 +526,7 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
     }
     function hideMarkdown(): void {
       mdBtn!.hidden = true;
+      mdBtn!.dataset.copy = '';
     }
     /** Replace the URL hash without adding a history entry; null clears it. */
     function writeHash(hash: string | null): void {
@@ -683,14 +553,10 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
     // The chips are server-rendered from the same `examples` module, so their
     // data-example-idx values index straight into `examples`. `null` clears the
     // selection — used whenever the fields no longer match any example.
-    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>('.k8s-chip'));
+    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>(CHIP_SELECTOR));
 
     function setActiveChip(idx: number | null): void {
-      chips.forEach((chip) => {
-        const active = idx !== null && chip.dataset.exampleIdx === String(idx);
-        chip.classList.toggle('is-active', active);
-        chip.setAttribute('aria-pressed', active ? 'true' : 'false');
-      });
+      syncChipsByIndex(chipsWrap, idx);
     }
 
     // ── Per-field error helpers ──────────────────────────────────────────────
@@ -810,38 +676,8 @@ const seedSummary = seedResult && seedResult.valid ? summaryText(seedResult) : '
       }
 
       mdBtn!.hidden = false;
-      lastMarkdownFields = markdownFields(result, replicas);
+      mdBtn!.dataset.copy = buildMarkdownBlock('Kubernetes Resource Calculator', markdownFields(result, replicas));
     }
-
-    let shareCopyTimer: number | undefined;
-    shareBtn.addEventListener('click', () => {
-      const text = shareBtn!.dataset.copy ?? '';
-      void copyTextToClipboard(text).then((ok) => {
-        if (!ok) return;
-        shareBtn!.classList.add('k8s-share-btn--copied');
-        if (shareLabel) shareLabel.textContent = 'Copied';
-        window.clearTimeout(shareCopyTimer);
-        shareCopyTimer = window.setTimeout(() => {
-          shareBtn!.classList.remove('k8s-share-btn--copied');
-          if (shareLabel) shareLabel.textContent = 'Copy link';
-        }, 1500);
-      });
-    });
-
-    let mdCopyTimer: number | undefined;
-    mdBtn.addEventListener('click', () => {
-      const text = buildMarkdownBlock('Kubernetes Resource Calculator', lastMarkdownFields);
-      void copyTextToClipboard(text).then((ok) => {
-        if (!ok) return;
-        mdBtn!.classList.add('k8s-share-btn--copied');
-        if (mdLabel) mdLabel.textContent = 'Copied';
-        window.clearTimeout(mdCopyTimer);
-        mdCopyTimer = window.setTimeout(() => {
-          mdBtn!.classList.remove('k8s-share-btn--copied');
-          if (mdLabel) mdLabel.textContent = 'Copy as Markdown';
-        }, 1500);
-      });
-    });
 
     let timer: number | undefined;
     function scheduleEvaluate(): void {
