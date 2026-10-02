@@ -75,17 +75,26 @@ describe('FigureCap split wiring', () => {
 
   // Playground components are tool-date inputs (gen-tool-meta.mjs): opting a
   // result panel into the split edits the component and re-dates the tool's
-  // URLs and every hub that lists it. The three FigureCap playgrounds stay
-  // byte-identical to main until Wave 1 moves them onto ResultPanel, which
-  // re-dates them honestly and turns the split on there. Flip this to
-  // `toMatch` in that wave.
+  // URLs and every hub that lists it. Wave 1 moved the three FigureCap
+  // playgrounds onto the kit's ResultPanel — which re-dated them honestly —
+  // and turned the split on there. Their cap now comes only from ResultPanel,
+  // which forwards `split` to its one FigureCap.
+  it('ResultPanel forwards split to its one FigureCap', () => {
+    const caps = [...read('playground/ResultPanel.astro').matchAll(/<FigureCap\b[^>]*>/g)].map((m) => m[0]);
+    expect(caps.length).toBe(1);
+    expect(caps[0]).toMatch(/\bsplit=\{split\}/);
+  });
+
   it.each([
     'SubnetCalculatorPlayground.astro',
     'CidrCheckerPlayground.astro',
     'CronTesterPlayground.astro',
-  ])('%s result panel does not opt in before Wave 1', (f) => {
-    const caps = [...read(f).matchAll(/<FigureCap\b[^>]*>/g)].map((m) => m[0]);
-    expect(caps.length).toBe(1);
-    expect(caps[0]).not.toMatch(/\bsplit\b/);
+  ])('%s result panel opts into the split (Wave 1)', (f) => {
+    const src = read(f);
+    expect([...src.matchAll(/<FigureCap\b/g)].length, 'the cap comes from ResultPanel only').toBe(0);
+    const panels = [...src.matchAll(/<ResultPanel\b[^>]*>/g)].map((m) => m[0]);
+    expect(panels.length).toBe(1);
+    expect(panels[0]).toMatch(/\bsplit\b/);
+    expect(panels[0]).not.toMatch(/\bsplit=\{false\}/);
   });
 });

@@ -25,11 +25,9 @@
  *   - self-tests: a GOLDEN kit-shaped mini playground passes every rule and one
  *     mutation per rule fails exactly that rule, so no rule can pass vacuously.
  *
- * Not here yet: the `tokens` rule (no raw `letter-spacing` / `tracking-*`, no
- * raw uppercase outside eyebrow / label-field). It needs the
- * `--tracking-label` token and the `label-field` utility, which land with
- * Wave 0's CSS; adding it before the tokens exist would allowlist all 39 files
- * against a rule nobody can satisfy.
+ * The `tokens` rule (no raw `letter-spacing` / `tracking-*`, no raw
+ * uppercase outside eyebrow / label-field) landed with Wave 0, once
+ * `--tracking-label` and the `label-field` utility existed to satisfy it.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -289,6 +287,39 @@ const controlHeight: Rule = (r) => {
   return n ? [`${n} literal control height(s)`] : [];
 };
 
+/**
+ * Tracking and case come from the label roles, never raw values: a
+ * `letter-spacing` must be a `--tracking-*` token (or a reset: normal / 0 /
+ * inherit), no `tracking-*` utility, and uppercase only through `eyebrow` /
+ * `label-field` (`@apply label-field` is the way to give a render.ts label
+ * the role). Counts CSS declarations in `<style>` and inline styles, class
+ * tokens (any variant prefix, `!` important) and `@apply` lists.
+ */
+const TRACKING_OK = /^(?:var\(--tracking-[\w-]+\)|normal|0|inherit)$/;
+const bareUtility = (tok: string) => tok.replace(/^(?:[\w-]+:)*!?/, '');
+const isRawCaseOrTracking = (tok: string) => {
+  const u = bareUtility(tok);
+  return u === 'uppercase' || /^-?tracking-/.test(u);
+};
+export function tokenViolations(r: Regions): string[] {
+  const css = `${r.style}\n${r.template}`;
+  let tracking = 0;
+  for (const m of css.matchAll(/(?<![\w-])letter-spacing\s*:\s*([^;}"'\n]+)/g)) if (!TRACKING_OK.test(m[1].trim())) tracking++;
+  const upper = count(css, /(?<![\w-])text-transform\s*:\s*uppercase\b/);
+  let classes = 0;
+  for (const t of tags(r.template) as Iterable<Tag>) {
+    if (t.kind !== 'open') continue;
+    for (const tok of classText(t.attrs).match(/[\w:!./[\]()-]+/g) ?? []) if (isRawCaseOrTracking(tok)) classes++;
+  }
+  for (const m of r.style.matchAll(/@apply\b([^;]*)/g)) for (const tok of m[1].trim().split(/\s+/)) if (isRawCaseOrTracking(tok)) classes++;
+  const out: string[] = [];
+  if (tracking) out.push(`${tracking} raw letter-spacing value(s)`);
+  if (upper) out.push(`${upper} raw text-transform: uppercase`);
+  if (classes) out.push(`${classes} raw uppercase / tracking-* utility class(es)`);
+  return out;
+}
+const tokensRule: Rule = (r) => tokenViolations(r);
+
 export const RULES: Record<string, Rule> = {
   'local-chip': localChip,
   'pill-radius': pillRadius,
@@ -303,6 +334,7 @@ export const RULES: Record<string, Rule> = {
   'kit-selectors': kitSelectors,
   'no-one-dark': noOneDark,
   'control-height': controlHeight,
+  tokens: tokensRule,
 };
 const RULE_NAMES = Object.keys(RULES);
 
@@ -323,50 +355,50 @@ export function failingRules(raw: string, name: string): string[] {
 // ---------------------------------------------------------------------------
 // Ratchet — every rule each file fails today. Computed from source on
 // 2026-10-02 (main @ f7331d8), and recomputed unchanged after no-primary
-// learned to count buttons and local-chip to skip link chips; shrink it as
-// the waves land, never grow it.
+// learned to count buttons and local-chip to skip link chips. Wave 1
+// (2026-10-02) removed SubnetCalculator, CidrChecker and CronTester (they
+// pass every rule), and the Wave 0 `tokens` rule was appended to the 36
+// files that fail it today — a new rule's first allowlist, recomputed with
+// KIT_GATE_DUMP, not a regression. Shrink it as the waves land, never grow it.
 // ---------------------------------------------------------------------------
 
 const UNMIGRATED: Record<string, string[]> = {
-  AlertLintPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'one-trust-line', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height'],
-  AlertmanagerRouteTesterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'one-trust-line', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height'],
-  Base64Playground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height'],
-  CaseConverterPlayground: ['local-chip', 'raw-duration', 'result-panel', 'one-trust-line', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height'],
-  CertificateDecoderPlayground: ['local-chip', 'raw-duration', 'result-panel', 'snapshot-bar', 'kit-selectors', 'control-height'],
-  ChmodCalculatorPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height'],
-  CidrCheckerPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height'],
-  CronTesterPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height'],
-  CronToSystemdPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height'],
-  CveConverterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height'],
-  DataSizeConverterPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height'],
-  DockerRunToComposePlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'one-trust-line', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height'],
-  DockerfileLinterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height'],
-  EnvCheckerPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'one-trust-line', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height'],
-  GhaValidatorPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'one-trust-line', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height'],
-  GithubActionsExpressionPlayground: ['local-chip', 'raw-duration', 'result-panel', 'slab-ink', 'one-trust-line', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height'],
-  GitlabCiValidatorPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'one-trust-line', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height'],
-  GrafanaDashboardValidatorPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'one-trust-line', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height'],
-  HashGeneratorPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height'],
-  IpConverterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height'],
-  JqPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height'],
-  JsonYamlConverterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height'],
-  JwtDecoderPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'one-trust-line', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height'],
-  K8sLabelSelectorTesterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height'],
-  K8sResourceCalculatorPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height'],
-  LogqlPromqlPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height'],
-  MacFormatterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height'],
-  PrometheusRelabelTesterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'one-trust-line', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height'],
-  PromqlExplainerPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height'],
-  PtrHelperPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height'],
-  RegexLogTesterPlayground: ['local-chip', 'raw-duration', 'result-panel', 'slab-ink', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height'],
-  SlugifyPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height'],
-  SubnetCalculatorPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height'],
-  SubnetSplitterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height'],
-  SystemdUnitValidatorPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height'],
-  TerraformPlanSummarizerPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height'],
-  TimestampConverterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height'],
-  UrlCodecPlayground: ['local-chip', 'raw-duration', 'result-panel', 'one-trust-line', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height'],
-  UuidUlidGeneratorPlayground: ['local-chip', 'raw-duration', 'result-panel', 'one-trust-line', 'kit-selectors', 'control-height'],
+  AlertLintPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'one-trust-line', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
+  AlertmanagerRouteTesterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'one-trust-line', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
+  Base64Playground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
+  CaseConverterPlayground: ['local-chip', 'raw-duration', 'result-panel', 'one-trust-line', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
+  CertificateDecoderPlayground: ['local-chip', 'raw-duration', 'result-panel', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
+  ChmodCalculatorPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
+  CronToSystemdPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
+  CveConverterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
+  DataSizeConverterPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
+  DockerRunToComposePlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'one-trust-line', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
+  DockerfileLinterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
+  EnvCheckerPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'one-trust-line', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
+  GhaValidatorPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'one-trust-line', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
+  GithubActionsExpressionPlayground: ['local-chip', 'raw-duration', 'result-panel', 'slab-ink', 'one-trust-line', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
+  GitlabCiValidatorPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'one-trust-line', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
+  GrafanaDashboardValidatorPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'one-trust-line', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
+  HashGeneratorPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
+  IpConverterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
+  JqPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
+  JsonYamlConverterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
+  JwtDecoderPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'one-trust-line', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
+  K8sLabelSelectorTesterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
+  K8sResourceCalculatorPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
+  LogqlPromqlPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
+  MacFormatterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
+  PrometheusRelabelTesterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'one-trust-line', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
+  PromqlExplainerPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
+  PtrHelperPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
+  RegexLogTesterPlayground: ['local-chip', 'raw-duration', 'result-panel', 'slab-ink', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
+  SlugifyPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
+  SubnetSplitterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
+  SystemdUnitValidatorPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
+  TerraformPlanSummarizerPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
+  TimestampConverterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
+  UrlCodecPlayground: ['local-chip', 'raw-duration', 'result-panel', 'one-trust-line', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
+  UuidUlidGeneratorPlayground: ['local-chip', 'raw-duration', 'result-panel', 'one-trust-line', 'kit-selectors', 'control-height', 'tokens'],
 };
 
 // ---------------------------------------------------------------------------
@@ -493,6 +525,7 @@ const MUTATIONS: Record<string, (s: string) => string> = {
   'kit-selectors': (s) => s.replace("'[data-chips] .chip[aria-pressed]'", "'.gx-copy-btn'"),
   'no-one-dark': (s) => s.replace("document.addEventListener", "import('@codemirror/theme-one-dark');\n  document.addEventListener"),
   'control-height': (s) => s.replace('min-height: var(--control-h-md);', 'min-height: 32px;'),
+  tokens: (s) => s.replace('line-height: 20px;', 'line-height: 20px;\n    letter-spacing: 0.04em;'),
 };
 
 describe('playground-kit gate — self-tests', () => {
@@ -537,6 +570,27 @@ describe('playground-kit gate — self-tests', () => {
     );
     expect(failingRules(link, 'GoldenPlayground')).toEqual([]);
     expect(failingRules(link.replace('class="ipc-chip"', 'class="snc-chip"'), 'GoldenPlayground')).toEqual(['local-chip']);
+  });
+
+  it('tokens: label roles and tracking tokens pass; raw tracking, raw uppercase and their utilities fail', () => {
+    const style = (css: string) => GOLDEN.replace('</style>', `  ${css}\n</style>`);
+    const tpl = (cls: string) => GOLDEN.replace('<RunHint variant="live" />', `<RunHint variant="live" />\n  <span class="${cls}">x</span>`);
+    for (const ok of [
+      style('.gx-k { letter-spacing: var(--tracking-label); }'),
+      style('.gx-k { letter-spacing: normal; text-transform: none; }'),
+      style(':global(.gx-k) { @apply label-field; }'),
+      tpl('eyebrow label-field'),
+      tpl('gx-tracking-note'),
+    ]) expect(failingRules(ok, 'GoldenPlayground')).toEqual([]);
+    for (const bad of [
+      style('.gx-k { letter-spacing: 0.05em; }'),
+      style('.gx-k { text-transform: uppercase; }'),
+      style('.gx-k { @apply font-mono uppercase; }'),
+      tpl('uppercase'),
+      tpl('sm:tracking-wide'),
+      tpl('!tracking-[0.04em]'),
+      GOLDEN.replace('<RunHint variant="live" />', '<RunHint variant="live" />\n  <span style="letter-spacing:.1em">x</span>'),
+    ]) expect(failingRules(bad, 'GoldenPlayground')).toEqual(['tokens']);
   });
 
   it('kit-purity: a markup-only kit file passes; a <script> or @codemirror/state fails', () => {
