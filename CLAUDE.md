@@ -152,6 +152,14 @@ icon entry in `scripts/blog-hero-icons.mjs`. `src/lib/blog-cover.test.ts` fails 
 cover's stamp no longer matches its post or the file is not byte-identical to a fresh
 render, so editing a title without re-running the generator goes red. The Mono package is
 held back in `.github/dependabot.yml` for that reason: bump it by hand and regenerate.
+The 23 in-article diagrams (`public/blog/<slug>-diagram.svg`) are generated the same way:
+edit the live-`<text>` source in `scripts/diagram-src/`, then run `node
+scripts/replate-diagrams.mjs`. It outlines every label in Plex (Sans Regular/SemiBold/Italic
+vendored in `scripts/fonts/`) at its source position, condensing only a label that would
+collide, and maps colours onto the light card palette (the plate stays light in both themes,
+being an `<img>`); `src/lib/blog-diagram.test.ts` fails on live text, a changed
+viewBox/size/aria-label, moved geometry, an off-palette colour or a public copy that is not a
+fresh render.
 
 ### Adding a tool — the four-file pattern
 
