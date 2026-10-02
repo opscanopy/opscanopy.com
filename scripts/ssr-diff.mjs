@@ -372,7 +372,17 @@ export function comparePage(base, cand) {
   // opt-in split wraps the ` · category` tail in a span and renames the
   // summary's class, so caps compare by collapsed text, never by markup.
   const capText = (x, y) => (x === y ? 'strict' : collapseWs(textContent(x)) === collapseWs(textContent(y)) ? 'semantic' : 'fail');
-  list('figcap', base.figcaps, cand.figcaps, capText);
+  const baseCaps = base.figcaps ?? [];
+  const candCaps = cand.figcaps ?? [];
+  if (baseCaps.length === 0 && candCaps.length > 0) {
+    // A tool that never had a figure cap gains one when it adopts the kit's
+    // ResultPanel / EditorPane. That is new visible text, not a change to an
+    // existing cap: report each as EXPLAIN with its text, so a run must name
+    // it (--allow-new figcap) instead of either failing or passing silently.
+    candCaps.forEach((c, i) => push(`figcap+[${i}]`, 'explain', `new cap: ${collapseWs(textContent(c))}`));
+  } else {
+    list('figcap', baseCaps, candCaps, capText);
+  }
   return out;
 }
 
@@ -431,9 +441,24 @@ export function postbuildNotice(base, cand) {
 }
 
 function summarise(results) {
-  const by = { strict: 0, semantic: 0, fail: 0, explain: 0 };
+  const by = { strict: 0, semantic: 0, fail: 0, explain: 0, allowed: 0 };
   for (const r of results) by[r.status]++;
   return by;
+}
+
+/**
+ * Turn EXPLAIN results whose field matches one of the `--allow-new` regexes
+ * into ALLOWED (an addition the run named on purpose: a new figure cap, a new
+ * seeded container). FAILs are never converted, so a removed or changed cap,
+ * container or text still fails whatever is allowed.
+ */
+export function applyAllowNew(results, patterns) {
+  const res = patterns.map((p) => [p, new RegExp(p)]);
+  return results.map((r) => {
+    if (r.status !== 'explain') return r;
+    const hit = res.find(([, re]) => re.test(r.field));
+    return hit ? { ...r, status: 'allowed', allowedBy: hit[0] } : r;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -500,6 +525,32 @@ export function selfTest() {
     const why = bad.map((b) => `${b.field}: ${b.detail ?? b.status}`).join('; ');
     lines.push(`${ok ? 'ok  ' : 'FAIL'} ${name} → ${passed ? 'pass' : `fail (${why})`} [expected ${shouldPass ? 'pass' : 'fail'}${wantDetail ? ` with "${wantDetail}"` : ''}]`);
   }
+  // New figure caps on a page that had none: EXPLAIN unless named by
+  // --allow-new; a removed cap or a text change is never excused.
+  const capRe = /<div class="figcap"[^]*?<\/span><\/div>/;
+  const noCap = base.replace(capRe, '');
+  const noCapRec = extractPage(noCap, ids);
+  const allowCases = [
+    ['new cap, not allowed → fail', noCapRec, base, [], false],
+    ['new cap, --allow-new ^figcap\\+ → pass', noCapRec, base, ['^figcap\\+'], true],
+    ['cap removed, --allow-new ^figcap\\+ → fail', baseRec, noCap, ['^figcap\\+'], false],
+    ['new cap allowed but container text changed → fail', noCapRec, base.replace('>254<', '>253<'), ['^figcap\\+'], false],
+    ['allow pattern for a different field does not excuse a new cap → fail', noCapRec, base, ['^#jq-results$'], false],
+    // A FAIL whose field the pattern matches must still fail: --allow-new
+    // only ever converts EXPLAIN (a broad ^figcap must not excuse a changed cap).
+    ['broad --allow-new ^figcap does not excuse a changed cap → fail', baseRec, base.replaceAll('subnet-calculator · networking', 'subnet-splitter · networking'), ['^figcap'], false],
+  ];
+  const capPinOk = noCapRec.figcaps.length === 0 && noCap !== base;
+  if (!capPinOk) failed++;
+  lines.push(`${capPinOk ? 'ok  ' : 'FAIL'} pin: cap-less baseline built from the fixture`);
+  for (const [name, b, html, pats, shouldPass] of allowCases) {
+    const res = applyAllowNew(comparePage(b, extractPage(html, ids)), pats);
+    const bad = res.filter((r) => r.status === 'fail' || r.status === 'explain');
+    const passed = bad.length === 0;
+    const ok = passed === shouldPass;
+    if (!ok) failed++;
+    lines.push(`${ok ? 'ok  ' : 'FAIL'} ${name} [${passed ? 'pass' : `fail: ${bad.map((x) => x.field).join(', ')}`}]`);
+  }
   // Source-side derivation: multi-line tag, dynamic id, commented-out target.
   const src = `---\nconst x = a < b;\n---\n<div\n  id="rx-highlight"\n  class="a"\n  set:html={seed}\n></div>\n{/* <div id="ghost" set:html={x}></div> */}\n<p id={dyn} set:html={y}></p>\n<script>const s = '<div id="inscript" set:html={z}>';</script>`;
   const r = setHtmlTargets(src, 'fixture');
@@ -541,6 +592,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--dist' || a === '--postbuild-log') args[a.slice(2)] = argv[++i];
+    else if (a === '--allow-new') (args['allow-new'] ??= []).push(argv[++i]);
     else if (a.startsWith('--')) args[a.slice(2)] = true;
     else args._.push(a);
   }
@@ -584,11 +636,11 @@ function main() {
     process.exit(2);
   }
   const base = JSON.parse(readFileSync(basePath, 'utf-8'));
-  const results = compareSnapshots(base, snapshot);
+  const results = applyAllowNew(compareSnapshots(base, snapshot), args['allow-new'] ?? []);
   const sum = summarise(results);
   const pagesBy = {};
   for (const r of results) {
-    const p = (pagesBy[r.page] ??= { strict: 0, semantic: 0, fail: 0, explain: 0 });
+    const p = (pagesBy[r.page] ??= { strict: 0, semantic: 0, fail: 0, explain: 0, allowed: 0 });
     p[r.status]++;
   }
   const pageEntries = Object.entries(pagesBy).filter(([k]) => k !== '(postbuild)');
@@ -600,7 +652,12 @@ function main() {
       console.log(`ssr-diff: ${r.status.toUpperCase().padEnd(8)} ${r.page} ${r.field}${r.detail ? ` — ${r.detail}` : ''}`);
     }
   }
-  console.log(`ssr-diff: compare ${basename(dir)} — fields strict ${sum.strict}, semantic ${sum.semantic}, FAIL ${sum.fail}, EXPLAIN ${sum.explain}; pages fully strict ${strictPages}/${pageEntries.length}; postbuild ${pb ? `${pb.strict} strict, ${pb.fail} FAIL` : 'NOT COMPARED'}`);
+  const allowed = results.filter((r) => r.status === 'allowed');
+  for (const r of allowed) if (args.verbose) console.log(`ssr-diff: ALLOWED  ${r.page} ${r.field}${r.detail ? ` — ${r.detail}` : ''}`);
+  const unusedAllow = (args['allow-new'] ?? []).filter((pat) => !allowed.some((r) => r.allowedBy === pat));
+  for (const pat of unusedAllow) console.error(`ssr-diff: FAIL --allow-new ${pat} matched nothing (stale or mistyped)`);
+  if (unusedAllow.length) hard.push(...unusedAllow.map((p) => `unused --allow-new ${p}`));
+  console.log(`ssr-diff: compare ${basename(dir)} — fields strict ${sum.strict}, semantic ${sum.semantic}, ALLOWED-NEW ${allowed.length}, FAIL ${sum.fail}, EXPLAIN ${sum.explain}; pages fully strict ${strictPages}/${pageEntries.length}; postbuild ${pb ? `${pb.strict} strict, ${pb.fail} FAIL` : 'NOT COMPARED'}`);
   if (notice) console.error(`ssr-diff: ${notice}`);
   const ok = hard.length === 0 && sum.fail === 0 && sum.explain === 0;
   console.log(`ssr-diff: ${ok ? 'PASS' : 'FAIL'}${notice ? ' (page fields only — POSTBUILD COUNTS NOT COMPARED)' : ''}`);
