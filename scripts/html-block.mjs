@@ -318,6 +318,9 @@ export function collapseWs(s) {
  */
 export function normalizeHtml(html) {
   let out = html.replace(/\s+data-astro-cid-[\w-]+(?:="[^"]*")?/g, '');
+  // The playground kit's `data-results` hook marks a seeded container for the
+  // gate and this diff; it is not content. Plan: the semantic compare drops it.
+  out = out.replace(/\s+data-results(?:="[^"]*")?(?=[\s>/])/g, '');
   out = out.replace(/\sclass="([^"]*)"/g, (_, c) => ` class="${c.split(/\s+/).filter(Boolean).sort().join(' ')}"`);
   out = out.replace(/>\s+</g, '><');
   return collapseWs(out);
