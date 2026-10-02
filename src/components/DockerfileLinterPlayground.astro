@@ -9,20 +9,24 @@
  * (`#rule-df007`), and a copy button that yields one plain-text line fit for
  * pasting into a code review.
  *
- * UX contract (CLAUDE.md), ported from CidrCheckerPlayground /
- * JsonYamlConverterPlayground: example chips at `var(--radius-pill)`, ONE ~160ms
- * debounce with the exact hint line, a ~600ms calm-error hold before anything
- * goes red, per-row copy + `data-copy-all` + `data-copy-link`, a single visible
- * `role="status"` summary plus an sr-only copy-status span, a results container
- * that is NOT `aria-live`, glossary captions instead of tooltips, and
- * `escapeHtml()` on every injected value — including values that land inside an
- * HTML attribute.
+ * Built on the playground kit (src/components/playground/*): ExampleChips,
+ * EditorPane (the editor slab under its figure cap), RunHint, SnapshotBar,
+ * ResultPanel (the L2 instrument: figure cap, the one live summary, copy
+ * status) and CopyButton. The results container stays here, seeded with
+ * `set:html` + `data-results`; its slab inks anchor on `.df-results`.
+ *
+ * UX contract (CLAUDE.md): ONE ~160ms debounce, a ~600ms calm-error hold
+ * before anything goes red, per-row copy + `data-copy-all` + `data-copy-link`,
+ * a results container that is NOT `aria-live`, glossary captions instead of
+ * tooltips, and `escapeHtml()` on every injected value — including values
+ * that land inside an HTML attribute.
  *
  * Runtime contract (lazy-imported inside the boot closure so the engine, the
- * CodeMirror runtime and the Dockerfile stream mode all code-split away from the
- * page shell):
+ * CodeMirror runtime, the plate theme and the Dockerfile stream mode all
+ * code-split away from the page shell):
  *   ../lib/dockerfile-linter/engine   → lint, summaryLine
  *   ../lib/dockerfile-linter/examples → examples: DockerfileExample[]
+ *   ../lib/playground-kit/cm-theme    → plate
  *
  * Only the example LABELS are read at build time (so the chips are
  * server-rendered and exist before hydration); the Dockerfiles themselves come
@@ -32,6 +36,12 @@
 import { examples } from '../lib/dockerfile-linter/examples';
 import { lint, summaryLine } from '../lib/dockerfile-linter/engine';
 import { resultHtml, EMPTY_HTML } from '../lib/dockerfile-linter/render';
+import ExampleChips from './playground/ExampleChips.astro';
+import EditorPane from './playground/EditorPane.astro';
+import RunHint from './playground/RunHint.astro';
+import SnapshotBar from './playground/SnapshotBar.astro';
+import ResultPanel from './playground/ResultPanel.astro';
+import CopyButton from './playground/CopyButton.astro';
 
 /**
  * Server-rendered seed. The client re-lints the same example on boot, so this
@@ -52,7 +62,8 @@ const seedOk = seedResult && seedResult.ok ? seedResult : null;
 const seedText = seedExample?.dockerfile ?? '';
 const seedHtml = seedOk ? resultHtml(seedOk) : EMPTY_HTML;
 const seedSummary = seedOk ? summaryLine(seedOk) : '';
-const seedSummaryTone = seedOk && seedOk.summary.errors > 0 ? 'text-error-deep' : 'text-mute';
+const seedHasErrors = Boolean(seedOk && seedOk.summary.errors > 0);
+const chipItems = examples.map((ex) => ({ label: ex.label }));
 ---
 
 <section class="df-pg" aria-label="Dockerfile Linter playground">
@@ -60,20 +71,7 @@ const seedSummaryTone = seedOk && seedOk.summary.errors > 0 ? 'text-error-deep' 
     {/* ── Example chips ────────────────────────────────────────────────── */}
     <div class="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:px-5">
       <span class="eyebrow shrink-0">Examples</span>
-      <div id="df-chips" class="df-chips" role="group" aria-label="Examples">
-        {
-          examples.map((ex, i) => (
-            <button
-              type="button"
-              class="df-chip"
-              data-example-idx={String(i)}
-              aria-pressed={i === 0 ? 'true' : 'false'}
-            >
-              {ex.label}
-            </button>
-          ))
-        }
-      </div>
+      <ExampleChips prefix="df" items={chipItems} active={seedExample ? 0 : null} ariaLabel="Examples" />
       <p class="df-gloss caption text-mute">
         A <strong class="font-medium text-body">build stage</strong> is one
         <span class="code-mono">FROM</span> and every instruction under it; a multi-stage file has
@@ -83,536 +81,234 @@ const seedSummaryTone = seedOk && seedOk.summary.errors > 0 ? 'text-error-deep' 
       </p>
     </div>
 
-    {/* ── Input editor (dark instrument slab) ──────────────────────────── */}
-    <div class="df-pane bg-inverse">
-      <div class="df-pane__bar">
-        <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
-          <span class="df-pane__dot"></span>
-          <span class="df-pane__dot"></span>
-          <span class="df-pane__dot"></span>
-        </span>
-        <span class="df-pane__name code-mono">Dockerfile</span>
-        <span class="df-pane__tag code-mono">input</span>
-      </div>
-      <div id="df-input" class="df-editor">
-        <pre class="df-cm-fallback code-mono" data-cm-fallback>{seedText}</pre>
-      </div>
-    </div>
+    {/* ── Input editor: the plate under its figure cap ─────────────────── */}
+    <EditorPane prefix="df" label="Dockerfile" id="df-input">
+      <pre class="df-fallback editor-pane__fallback code-mono" data-cm-fallback>{seedText}</pre>
+    </EditorPane>
 
-    {/* ── Hints + snapshots ────────────────────────────────────────────── */}
+    {/* ── Hints + snapshots (on paper) ─────────────────────────────────── */}
     <div class="border-b border-hairline px-4 pt-3 pb-4 sm:px-5">
-      <p id="df-run-hint" class="df-hint caption text-mute">
-        Results update as you type — press Enter to run now.
-      </p>
+      <RunHint variant="cm" id="df-run-hint" />
       <p class="df-hint caption text-mute">
-        Press <kbd class="df-kbd">Esc</kbd> to release keyboard focus from the editor;
-        <kbd class="df-kbd">⌘</kbd>/<kbd class="df-kbd">Ctrl</kbd> + <kbd class="df-kbd">Enter</kbd>
-        lints and leaves the editor. Tap a <span class="code-mono">Line</span> badge to jump to that
-        line. Nothing you paste is uploaded.
+        Tap a <span class="code-mono">Line</span> badge to jump to that line in the editor.
       </p>
-      <div class="df-snap-row mt-3 flex flex-wrap items-center gap-2">
-        <button id="df-snap-save" type="button" class="df-snap-btn">Save snapshot</button>
-        <select id="df-snap-select" class="df-snap-select" aria-label="Load a saved snapshot" disabled>
-          <option value="">No snapshots yet</option>
-        </select>
-        <button
-          id="df-snap-delete"
-          type="button"
-          class="df-snap-delete"
-          aria-label="Delete this snapshot"
-          hidden>&times;</button
-        >
-      </div>
+      <SnapshotBar prefix="df" />
     </div>
 
-    {/* ── Findings ─────────────────────────────────────────────────────── */}
-    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <span class="flex flex-wrap items-center gap-2">
-          <span class="eyebrow">Findings</span>
-          <button
-            id="df-share"
-            type="button"
-            class="df-copy df-copy--labeled"
-            data-copy-link
-            data-copy=""
-            data-copy-label="Copy link"
-            hidden
-          >
-            <svg
-              class="df-copy-icon"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M6.75 9.25l2.5-2.5"></path>
-              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
-              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
-            </svg>
-            <svg
-              class="df-check-icon hidden"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
-            </svg>
-            <span class="df-copy-label">Copy link</span>
-          </button>
-          <button
-            id="df-copy-all"
-            type="button"
-            class="df-copy df-copy--labeled"
-            data-copy-all
-            data-copy=""
-            data-copy-label="Copy report"
-            hidden
-          >
-            <svg
-              class="df-copy-icon"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <rect x="5" y="5" width="9" height="9" rx="1.5"></rect>
-              <path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"></path>
-            </svg>
-            <svg
-              class="df-check-icon hidden"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
-            </svg>
-            <span class="df-copy-label">Copy report</span>
-          </button>
-        </span>
-        <span
-          id="df-summary"
-          class:list={['df-summary code-mono', seedSummaryTone]}
-          role="status"
-          aria-live="polite">{seedSummary}</span
-        >
-      </div>
+    {/* ── Findings — the L2 instrument; the live summary reads out in the
+        figure cap's actions slot. ────────────────────────────────────── */}
+    <ResultPanel
+      slug="dockerfile-linter"
+      prefix="df"
+      summary={seedSummary}
+      summaryClass={seedHasErrors ? 'text-inverse-error' : undefined}
+      label="Findings"
+      split
+    >
+      <Fragment slot="actions">
+        <CopyButton kind="link" id="df-share" />
+        <CopyButton kind="all" id="df-copy-all" label="Copy report" />
+      </Fragment>
       {/* Seeded at build time (see `seedHtml` above) so the findings are in the
           static HTML; the client replaces them with the same markup on boot and
           binds the per-row copy payloads. */}
-      <div id="df-results" class="df-results" set:html={seedHtml}></div>
-      <span id="df-copy-status" class="sr-only" role="status" aria-live="polite"></span>
-    </div>
+      <div id="df-results" class="df-results" set:html={seedHtml} data-results></div>
+    </ResultPanel>
   </div>
 </section>
 
 <style>
   @reference "../styles/global.css";
 
-  /* ── Example chips ───────────────────────────────────────────────────── */
-  .df-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .df-chip {
-    display: inline-flex;
-    align-items: center;
-    padding: 4px 12px;
-    border: none;
-    border-radius: var(--radius-pill);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    font-size: 12px;
-    line-height: 18px;
-    color: var(--color-brand-strong);
-    cursor: pointer;
-    touch-action: manipulation;
-    transition:
-      background 0.12s ease,
-      box-shadow 0.12s ease;
-  }
-  .df-chip:hover,
-  .df-chip[aria-pressed='true'] {
-    background: var(--color-brand-soft);
-    box-shadow: inset 0 0 0 1px var(--color-brand);
-  }
-  .df-chip:focus-visible {
-    outline: 2px solid var(--color-link);
-    outline-offset: 1px;
-  }
   .df-gloss {
     margin: 0;
     font-size: 12px;
     line-height: 17px;
     text-wrap: pretty;
   }
-
-  /* ── Input pane (dark instrument slab) ───────────────────────────────── */
-  .df-pane {
-    display: flex;
-    min-width: 0;
-    flex-direction: column;
-  }
-  .df-pane__bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 9px 16px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  }
-  .df-pane__dot {
-    width: 9px;
-    height: 9px;
-    border-radius: 9999px;
-    background: rgba(255, 255, 255, 0.18);
-  }
-  .df-pane__name {
-    /* 0.72 alpha over --color-inverse clears 4.5:1 in both themes. */
-    color: rgba(255, 255, 255, 0.72);
-    font-size: 12px;
-  }
-  .df-pane__tag {
-    margin-left: auto;
-    color: rgba(255, 255, 255, 0.6);
-    font-size: 11px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-
-  /* CodeMirror host. Background stays transparent so the slab shows through:
-     One Dark's own #282c34 is LIGHTER than --color-inverse, and its dimmest
-     token only clears 4.5:1 against the darker slab. */
-  .df-editor {
-    overflow: hidden;
-    padding-inline: 4px;
-  }
-  /* Build-time text stand-in for the editor, sized like the CM content so the
-     pane does not jump when the script swaps it out. Removed on mount. */
-  .df-cm-fallback {
-    margin: 0;
-    padding: 14px 16px 16px;
-    min-height: 260px;
-    max-height: 460px;
-    overflow: auto;
-    color: #eae7e0;
-    font-size: 13px;
-    line-height: 20px;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-  .df-editor :global(.cm-editor) {
-    background: transparent;
-    font-family: var(--font-mono);
-    font-size: 13px;
-    line-height: 20px;
-  }
-  .df-editor :global(.cm-editor.cm-focused) {
-    outline: 2px solid var(--color-link);
-    outline-offset: -2px;
-  }
-  .df-editor :global(.cm-scroller) {
-    overflow: auto;
-    min-height: 260px;
-    max-height: 460px;
-    font-family: var(--font-mono);
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
-  }
-  .df-editor :global(.cm-scroller)::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  .df-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: var(--radius-pill);
-    border: 3px solid transparent;
-    background-clip: content-box;
-  }
-  .df-editor :global(.cm-gutters) {
-    background: transparent;
-    border-right: 1px solid rgba(255, 255, 255, 0.1);
-  }
-  /* One Dark's gutter foreground is below 4.5:1 on this slab — lift it. */
-  .df-editor :global(.cm-lineNumbers .cm-gutterElement) {
-    color: #a9a39a;
-  }
-  .df-editor :global(.cm-content) {
-    padding: 14px 0 16px;
-  }
-  .df-editor :global(.cm-line) {
-    padding-inline: 4px;
-  }
-  /* Invalid input: a hairline red rule down the editor, never a flash. */
-  .df-pane.df-pane--error .df-editor :global(.cm-editor) {
-    box-shadow: inset 2px 0 0 0 var(--color-error);
-  }
-
   .df-hint {
-    margin-top: 8px;
+    margin-top: 4px;
     font-size: 12px;
     line-height: 18px;
     text-wrap: pretty;
   }
-  .df-hint + .df-hint {
-    margin-top: 4px;
-  }
   .df-hint .code-mono {
     font-size: 12px;
   }
-  .df-kbd {
-    border: 1px solid currentColor;
-    border-radius: var(--radius-xs);
-    padding: 0 3px;
-    font-size: 0.85em;
-  }
 
-  /* ── Snapshot row ────────────────────────────────────────────────────── */
-  .df-snap-btn {
-    flex: 0 0 auto;
-    height: 30px;
-    padding: 0 12px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-    cursor: pointer;
-    transition:
-      background 0.12s ease,
-      box-shadow 0.12s ease;
-  }
-  .df-snap-btn:hover {
-    background: var(--color-canvas-soft);
-    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
-  }
-  .df-snap-select {
-    height: 30px;
-    max-width: 220px;
-    padding: 0 8px;
-    border-radius: var(--radius-sm);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-  }
-  .df-snap-select:disabled {
-    color: var(--color-mute);
-    cursor: not-allowed;
-  }
-  .df-snap-delete {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: transparent;
-    color: var(--color-mute);
-    cursor: pointer;
-    transition:
-      background 0.12s ease,
-      color 0.12s ease;
-  }
-  .df-snap-delete:hover {
-    background: var(--color-error-soft);
-    color: var(--color-error-deep);
-  }
-
-  /* ── Findings panel ──────────────────────────────────────────────────── */
-  .df-summary {
-    min-width: 0;
-    text-align: right;
+  /* The build-time stand-in for the editor (global .editor-pane__fallback
+     matches the CodeMirror metrics), held to the editor's scroller box and
+     wrapped like its lineWrapping so the swap does not jump. */
+  .df-fallback {
+    min-height: 260px;
+    max-height: 460px;
+    overflow: auto;
+    white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
+  /* Invalid input: a hairline slab-red rule down the editor, never a flash.
+     The pane root is EditorPane's (no scope hash), hence :global. */
+  .df-pg :global([data-editor-pane][data-invalid] .cm-editor) {
+    box-shadow: inset 2px 0 0 0 var(--color-inverse-error);
+  }
+
   .df-results {
     min-height: 120px;
   }
-  .df-copy-status--fail {
-    display: block;
-    margin-top: 10px;
-    font-size: 12px;
-    line-height: 18px;
-    color: var(--color-error-deep);
+  /* The seeded summary carries the error tone server-side too (the span is
+     ResultPanel's, so its base mute class is also present). */
+  .df-pg :global(.result-panel__summary.text-inverse-error) {
+    color: var(--color-inverse-error);
   }
 
-  /* ── Runtime-injected markup (Astro scoped styles never reach it) ────── */
-  :global(.df-group) {
+  /* ── Runtime-injected markup (render.ts) — on the slab, so slab inks only.
+     Anchored on this component's own `.df-results` container (the panel
+     wrapper is ResultPanel's and carries no scope attribute). ─────────── */
+  .df-results :global(.df-group) {
     margin-top: 12px;
     border-radius: var(--radius-md);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
     overflow: hidden;
-    animation: df-rise 0.18s ease both;
+    animation: df-rise var(--dur-base) var(--ease-brand) both;
   }
-  :global(.df-group:first-child) {
+  .df-results :global(.df-group:first-child) {
     margin-top: 0;
   }
-  :global(.df-group__head) {
+  /* Group-heading role (a sans heading over its rows, not one more label). */
+  .df-results :global(.df-group__head) {
     display: flex;
     align-items: center;
     gap: 8px;
     margin: 0;
     padding: 9px 14px;
-    border-bottom: 1px solid var(--color-hairline);
-    font-family: var(--font-mono);
-    font-size: 11px;
+    border-bottom: 1px solid var(--color-inverse-hairline);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 600;
     line-height: 16px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--color-mute);
+    color: var(--color-inverse-fg);
   }
-  :global(.df-group__count) {
+  .df-results :global(.df-group__count) {
     margin-left: auto;
-    text-transform: none;
-    letter-spacing: 0;
+    font-family: var(--font-mono);
+    font-weight: 400;
+    color: var(--color-inverse-mute);
     white-space: nowrap;
   }
-  :global(.df-row) {
+  .df-results :global(.df-row) {
     display: flex;
     align-items: flex-start;
     gap: 10px;
     padding: 10px 10px 12px 14px;
   }
-  :global(.df-row + .df-row) {
-    border-top: 1px solid var(--color-hairline);
+  .df-results :global(.df-row + .df-row) {
+    border-top: 1px solid #ffffff12;
   }
-  :global(.df-row__body) {
+  .df-results :global(.df-row__body) {
     min-width: 0;
     flex: 1 1 auto;
   }
-  :global(.df-row__head) {
+  .df-results :global(.df-row__head) {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 6px;
   }
-  :global(.df-pill) {
+  /* Severity: the row-key role (label-field), tinted in slab inks. */
+  .df-results :global(.df-pill) {
+    @apply label-field;
     flex: 0 0 auto;
     padding: 1px 7px;
-    border-radius: var(--radius-pill);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 16px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    border-radius: var(--radius-xs);
   }
-  :global(.df-pill--error) {
-    background: var(--color-error-soft);
-    color: var(--color-error-deep);
+  .df-results :global(.df-pill--error) {
+    background: #ff9d951f;
+    color: var(--color-inverse-error);
   }
-  :global(.df-pill--warning) {
-    background: var(--color-warning-soft);
-    color: var(--color-warning-deep);
+  .df-results :global(.df-pill--warning) {
+    background: #e0a4581f;
+    color: var(--color-inverse-accent);
   }
-  :global(.df-pill--info) {
-    background: var(--color-canvas-soft-2);
-    color: var(--color-body);
+  .df-results :global(.df-pill--info) {
+    background: #ffffff14;
+    color: var(--color-inverse-mute);
   }
-  :global(.df-rule) {
+  .df-results :global(.df-rule) {
     flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
     padding: 1px 7px;
-    border-radius: var(--radius-pill);
-    background: var(--color-canvas-soft);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-brand-strong);
+    border-radius: var(--radius-xs);
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-brand);
     font-family: var(--font-mono);
     font-size: 11px;
     line-height: 16px;
-    letter-spacing: 0.03em;
     text-decoration: none;
   }
-  :global(.df-rule:hover) {
-    background: var(--color-brand-soft);
+  .df-results :global(.df-rule:hover) {
+    background: #ffffff14;
     text-decoration: underline;
   }
-  :global(.df-jump) {
+  .df-results :global(.df-jump) {
     flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
     padding: 1px 7px;
     border: none;
-    border-radius: var(--radius-pill);
-    background: var(--color-canvas-soft-2);
-    color: var(--color-body);
+    border-radius: var(--radius-xs);
+    background: #ffffff14;
+    color: var(--color-inverse-fg);
     font-family: var(--font-mono);
     font-size: 11px;
     line-height: 16px;
     cursor: pointer;
     touch-action: manipulation;
   }
-  :global(.df-jump:hover) {
-    background: var(--color-canvas-soft-3);
-    color: var(--color-ink);
+  .df-results :global(.df-jump:hover) {
+    background: #ffffff24;
   }
-  :global(.df-jump:focus-visible),
-  :global(.df-rule:focus-visible) {
-    outline: 2px solid var(--color-link);
+  .df-results :global(.df-jump:focus-visible),
+  .df-results :global(.df-rule:focus-visible),
+  .df-results :global(.df-copy:focus-visible) {
+    outline: 2px solid var(--color-inverse-brand);
     outline-offset: 1px;
   }
-  :global(.df-row__title) {
+  .df-results :global(.df-row__title) {
     flex: 1 1 100%;
     margin: 4px 0 0;
     font-size: 14px;
-    line-height: 19px;
-    color: var(--color-ink);
+    line-height: 20px;
+    color: var(--color-inverse-fg);
     overflow-wrap: anywhere;
     text-wrap: pretty;
   }
-  :global(.df-row__detail) {
+  .df-results :global(.df-row__detail) {
     margin: 4px 0 0;
     font-size: 13px;
     line-height: 18px;
-    color: var(--color-body);
+    color: var(--color-inverse-mute);
     overflow-wrap: anywhere;
     text-wrap: pretty;
   }
-  :global(.df-fix) {
+  .df-results :global(.df-fix) {
     display: flex;
     gap: 7px;
     margin-top: 7px;
     padding: 7px 9px;
     border-radius: var(--radius-sm);
-    background: var(--color-canvas-soft);
-    color: var(--color-body);
+    background: #ffffff0a;
+    color: var(--color-inverse-fg);
   }
-  :global(.df-fix__label) {
+  .df-results :global(.df-fix__label) {
+    @apply label-field;
     flex: 0 0 auto;
-    font-family: var(--font-mono);
-    font-size: 11px;
     line-height: 17px;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: var(--color-accent-ink);
+    color: var(--color-inverse-accent);
   }
-  :global(.df-fix__text) {
+  .df-results :global(.df-fix__text) {
     margin: 0;
     min-width: 0;
     font-size: 13px;
@@ -620,77 +316,75 @@ const seedSummaryTone = seedOk && seedOk.summary.errors > 0 ? 'text-error-deep' 
     overflow-wrap: anywhere;
     text-wrap: pretty;
   }
-  :global(.df-fix__text code) {
+  .df-results :global(.df-fix__text code) {
     font-family: var(--font-mono);
     font-size: 0.94em;
   }
-  :global(.df-note) {
+  .df-results :global(.df-note) {
     margin: 0;
     padding: 9px 14px;
-    border-top: 1px solid var(--color-hairline);
+    border-top: 1px solid var(--color-inverse-hairline);
     font-size: 12px;
     line-height: 17px;
-    color: var(--color-mute);
+    color: var(--color-inverse-mute);
     text-wrap: pretty;
   }
-  :global(.df-clean) {
+  .df-results :global(.df-clean) {
     display: flex;
     align-items: flex-start;
     gap: 10px;
     padding: 14px;
     border-radius: var(--radius-md);
-    background: var(--color-brand-soft);
-    box-shadow: var(--shadow-hairline);
+    background: #8fc97a14;
+    box-shadow: inset 0 0 0 1px #8fc97a4d;
   }
-  :global(.df-clean__icon) {
+  .df-results :global(.df-clean__icon) {
     flex: 0 0 auto;
-    width: 22px;
-    height: 22px;
-    color: var(--color-brand-strong);
+    color: var(--color-inverse-brand);
   }
-  :global(.df-clean__title) {
+  .df-results :global(.df-clean__title) {
     margin: 0;
     font-size: 14px;
     font-weight: 500;
     line-height: 20px;
-    color: var(--color-ink);
+    color: var(--color-inverse-fg);
   }
-  :global(.df-clean__sub) {
+  .df-results :global(.df-clean__sub) {
     margin: 2px 0 0;
     font-size: 13px;
     line-height: 18px;
-    color: var(--color-body);
+    color: var(--color-inverse-mute);
     text-wrap: pretty;
   }
-  :global(.df-error) {
+  .df-results :global(.df-error) {
     display: flex;
     gap: 10px;
     padding: 12px 14px;
     border-radius: var(--radius-md);
-    background: var(--color-error-soft);
-    box-shadow: inset 0 0 0 1px var(--color-error);
-    color: var(--color-error-deep);
+    background: #ff9d9514;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-error);
+    color: var(--color-inverse-error);
   }
-  :global(.df-error__icon) {
+  .df-results :global(.df-error__icon) {
     flex: 0 0 auto;
     width: 18px;
     height: 18px;
     margin-top: 1px;
   }
-  :global(.df-error__title) {
+  .df-results :global(.df-error__title) {
     margin: 0;
     font-size: 14px;
     font-weight: 500;
     line-height: 20px;
   }
-  :global(.df-error__detail) {
+  .df-results :global(.df-error__detail) {
     margin-top: 2px;
     font-size: 13px;
     line-height: 19px;
     text-wrap: pretty;
     overflow-wrap: anywhere;
   }
-  :global(.df-empty) {
+  .df-results :global(.df-empty) {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -699,75 +393,47 @@ const seedSummaryTone = seedOk && seedOk.summary.errors > 0 ? 'text-error-deep' 
     text-align: center;
     text-wrap: pretty;
     border-radius: var(--radius-md);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-mute);
   }
 
-  /* ── Copy buttons: icon-only per row, labeled in the header ──────────── */
-  :global(.df-copy) {
+  /* Per-row copy (render.ts emits the button; playground-kit/copy.ts drives
+     it, and marks success with [data-copied]). */
+  .df-results :global(.df-copy) {
     flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
+    width: var(--control-h-sm);
+    height: var(--control-h-sm);
     padding: 0;
     border: none;
     border-radius: var(--radius-sm);
     background: transparent;
-    color: var(--color-mute);
+    color: var(--color-inverse-mute);
     cursor: pointer;
     touch-action: manipulation;
     transition:
-      color 0.12s ease,
-      background 0.12s ease;
+      color var(--dur-fast) var(--ease-brand),
+      background-color var(--dur-fast) var(--ease-brand);
   }
-  :global(.df-copy:hover) {
-    color: var(--color-brand-strong);
-    background: var(--color-hairline);
+  .df-results :global(.df-copy:hover) {
+    color: var(--color-inverse-brand);
+    background: #ffffff14;
   }
-  :global(.df-copy:focus-visible) {
-    outline: 2px solid var(--color-link);
-    outline-offset: 1px;
+  .df-results :global(.df-copy[data-copied]) {
+    color: var(--color-inverse-brand);
+    background: #8fc97a1f;
   }
-  :global(.df-copy--labeled) {
-    width: auto;
-    height: 26px;
-    gap: 6px;
-    padding: 0 10px;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 16px;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-  }
-  :global(.df-copy--copied) {
-    color: var(--color-brand-strong);
-    background: var(--color-brand-soft);
-  }
-
-  /* Coarse-pointer tap targets, in the two tiers the contract defines: chips
-     and icon-only per-row copy buttons at 44px, labeled header copy controls at
-     36px (wide text targets, not the primary in-result action). The row's own
-     line/rule badges sit at the labeled tier too. */
   @media (pointer: coarse) {
-    .df-chip {
-      min-height: 44px;
+    .df-results :global(.df-copy) {
+      width: var(--control-h-lg);
+      height: var(--control-h-lg);
     }
-    :global(.df-copy) {
-      width: 44px;
-      height: 44px;
-    }
-    :global(.df-copy--labeled) {
-      width: auto;
-      height: auto;
-      min-height: 36px;
-    }
-    :global(.df-jump),
-    :global(.df-rule) {
-      min-height: 36px;
+    .df-results :global(.df-jump),
+    .df-results :global(.df-rule) {
+      min-height: var(--control-h-md);
       padding-inline: 10px;
     }
   }
@@ -783,17 +449,18 @@ const seedSummaryTone = seedOk && seedOk.summary.errors > 0 ? 'text-error-deep' 
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    :global(.df-group),
-    :global(.df-clean) {
+    .df-results :global(.df-group),
+    .df-results :global(.df-clean) {
       animation: none;
     }
   }
 </style>
 
 <script>
-  import { copyTextToClipboard } from '../lib/clipboard';
   import { base64UrlDecode, base64UrlEncode } from '../lib/codec';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  import { wireCopyButtons } from '../lib/playground-kit/copy';
+  import { syncChipsByIndex, CHIP_SELECTOR } from '../lib/playground-kit/chips';
   import type { EditorView } from '@codemirror/view';
   // The HTML builders are shared with the frontmatter's build-time seed —
   // one implementation, so the no-JS markup and the live markup never drift.
@@ -822,7 +489,6 @@ const seedSummaryTone = seedOk && seedOk.summary.errors > 0 ? 'text-error-deep' 
   const DEBOUNCE_MS = 160;
   /* Nothing goes red until the typing has been idle this long. */
   const ERROR_HOLD_MS = 600;
-  const RESET_MS = 1800;
   /* Past ~2000 chars a fragment stops being a dependable URL (browser, proxy and
      chat-client limits), so we neither write it nor offer the share link — the
      linter itself keeps working on files of any size. */
@@ -893,7 +559,7 @@ const seedSummaryTone = seedOk && seedOk.summary.errors > 0 ? 'text-error-deep' 
 
   async function init(root: HTMLElement): Promise<void> {
     const editorHost = el<HTMLElement>(root, '#df-input');
-    const paneEl = el<HTMLElement>(root, '.df-pane');
+    const paneEl = el<HTMLElement>(root, '[data-editor-pane]');
     const resultsBox = el<HTMLElement>(root, '#df-results');
     const summaryEl = el<HTMLElement>(root, '#df-summary');
     const shareBtn = el<HTMLButtonElement>(root, '#df-share');
@@ -902,7 +568,8 @@ const seedSummaryTone = seedOk && seedOk.summary.errors > 0 ? 'text-error-deep' 
     const snapSaveBtn = el<HTMLButtonElement>(root, '#df-snap-save');
     const snapSelect = el<HTMLSelectElement>(root, '#df-snap-select');
     const snapDeleteBtn = el<HTMLButtonElement>(root, '#df-snap-delete');
-    const chips = Array.from(root.querySelectorAll<HTMLButtonElement>('#df-chips .df-chip'));
+    const chipsWrap = el<HTMLElement>(root, '#df-chips');
+    const chips = Array.from(chipsWrap?.querySelectorAll<HTMLButtonElement>(CHIP_SELECTOR) ?? []);
 
     if (
       !editorHost ||
@@ -919,58 +586,14 @@ const seedSummaryTone = seedOk && seedOk.summary.errors > 0 ? 'text-error-deep' 
       return;
     }
 
-    /* ---- Copy plumbing --------------------------------------------------- */
+    /* ---- Copy plumbing (row buttons, Copy link, Copy report) — the kit
+       helper: one delegated listener; outcomes announced in #df-copy-status. */
 
-    function setCopyStatus(message: string, failed: boolean): void {
-      copyStatus!.textContent = message;
-      copyStatus!.classList.toggle('sr-only', !failed);
-      copyStatus!.classList.toggle('df-copy-status--fail', failed);
-    }
-
-    function setCopied(btn: HTMLButtonElement, copied: boolean): void {
-      btn.classList.toggle('df-copy--copied', copied);
-      btn.querySelector('.df-copy-icon')?.classList.toggle('hidden', copied);
-      btn.querySelector('.df-check-icon')?.classList.toggle('hidden', !copied);
-      const label = btn.querySelector<HTMLElement>('.df-copy-label');
-      if (label) {
-        label.textContent = copied ? 'Copied' : (btn.dataset.copyLabel ?? 'Copy');
-      } else if (copied) {
-        btn.dataset.prevAriaLabel = btn.getAttribute('aria-label') ?? '';
-        btn.setAttribute('aria-label', 'Copied');
-      } else if (btn.dataset.prevAriaLabel) {
-        btn.setAttribute('aria-label', btn.dataset.prevAriaLabel);
-        delete btn.dataset.prevAriaLabel;
-      }
-    }
-
-    async function handleCopy(btn: HTMLButtonElement): Promise<void> {
-      const ok = await copyTextToClipboard(btn.dataset.copy ?? '');
-      if (ok) {
-        setCopied(btn, true);
-        setCopyStatus('Copied to clipboard.', false);
-        window.clearTimeout(Number(btn.dataset.copyTimer));
-        btn.dataset.copyTimer = String(
-          window.setTimeout(() => {
-            setCopied(btn, false);
-            if (copyStatus!.textContent === 'Copied to clipboard.') setCopyStatus('', false);
-          }, RESET_MS),
-        );
-      } else {
-        setCopyStatus('Copy failed — select the value manually.', true);
-      }
-    }
+    wireCopyButtons(root, { status: copyStatus });
 
     root.addEventListener('click', (e) => {
-      const target = e.target as HTMLElement;
-      const copyBtn = target.closest<HTMLButtonElement>('.df-copy');
-      if (copyBtn && root.contains(copyBtn)) {
-        void handleCopy(copyBtn);
-        return;
-      }
-      const jumpBtn = target.closest<HTMLButtonElement>('[data-df-jump]');
-      if (jumpBtn && root.contains(jumpBtn)) {
-        jumpToLine(Number(jumpBtn.dataset.dfJump));
-      }
+      const jumpBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-df-jump]');
+      if (jumpBtn && root.contains(jumpBtn)) jumpToLine(Number(jumpBtn.dataset.dfJump));
     });
 
     /* ---- Lazy engine + examples + CodeMirror ----------------------------- */
@@ -990,7 +613,7 @@ const seedSummaryTone = seedOk && seedOk.summary.errors > 0 ? 'text-error-deep' 
     let indentWithTab: typeof import('@codemirror/commands').indentWithTab;
     let StreamLanguage: typeof import('@codemirror/language').StreamLanguage;
     let dockerFileMode: typeof import('@codemirror/legacy-modes/mode/dockerfile').dockerFile;
-    let oneDark: typeof import('@codemirror/theme-one-dark').oneDark;
+    let plate: typeof import('../lib/playground-kit/cm-theme').plate;
 
     try {
       const [engineMod, examplesMod, stateMod, viewMod, commandsMod, langMod, modeMod, themeMod] =
@@ -1002,7 +625,10 @@ const seedSummaryTone = seedOk && seedOk.summary.errors > 0 ? 'text-error-deep' 
           import('@codemirror/commands'),
           import('@codemirror/language'),
           import('@codemirror/legacy-modes/mode/dockerfile'),
-          import('@codemirror/theme-one-dark'),
+          // The plate theme + highlight (the ONE code palette), in the same
+          // closure as the languages — a static import would pull
+          // @codemirror/view into the page shell.
+          import('../lib/playground-kit/cm-theme'),
         ]);
       engine = engineMod as unknown as EngineModule;
       examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
@@ -1011,7 +637,7 @@ const seedSummaryTone = seedOk && seedOk.summary.errors > 0 ? 'text-error-deep' 
       ({ history: cmHistory, defaultKeymap, historyKeymap, indentWithTab } = commandsMod);
       ({ StreamLanguage } = langMod);
       ({ dockerFile: dockerFileMode } = modeMod);
-      ({ oneDark } = themeMod);
+      ({ plate } = themeMod);
     } catch (err) {
       summaryEl.textContent = '';
       resultsBox.innerHTML = errorCardHtml(
@@ -1048,11 +674,17 @@ const seedSummaryTone = seedOk && seedOk.summary.errors > 0 ? 'text-error-deep' 
           cmHistory(),
           highlightActiveLine(),
           StreamLanguage.define(dockerFileMode),
-          oneDark,
+          plate,
+          // This pane's size only; colours, gutter and focus ring are the
+          // kit's (cm-theme.ts + global.css .editor-pane__host).
+          EditorViewCtor.theme({
+            '&': { fontSize: '13px' },
+            '.cm-scroller': { minHeight: '260px', maxHeight: '460px', scrollbarWidth: 'thin' },
+          }),
           EditorViewCtor.lineWrapping,
           // CodeMirror puts role="textbox" on the content DOM; without a name
           // that is an unlabelled input field for a screen reader (and an axe
-          // violation). aria-describedby points at the live-eval hint line.
+          // violation). aria-describedby points at the run hint line.
           EditorViewCtor.contentAttributes.of({
             'aria-label': 'Dockerfile input',
             'aria-describedby': 'df-run-hint',
@@ -1096,19 +728,9 @@ const seedSummaryTone = seedOk && seedOk.summary.errors > 0 ? 'text-error-deep' 
           ]),
           EditorViewCtor.updateListener.of((u) => {
             if (!u.docChanged || !liveReady) return;
-            clearChips();
+            setActiveChip(null);
             clearTimers();
             evalTimer = window.setTimeout(() => evaluate('type'), DEBOUNCE_MS);
-          }),
-          EditorViewCtor.theme({
-            '&': { color: '#eae7e0' },
-            '.cm-content': { caretColor: '#eae7e0' },
-            '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#eae7e0' },
-            '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
-              backgroundColor: 'rgba(79, 138, 200, 0.34)',
-            },
-            '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.04)' },
-            '.cm-activeLineGutter': { backgroundColor: 'transparent' },
           }),
         ],
       });
@@ -1136,12 +758,12 @@ const seedSummaryTone = seedOk && seedOk.summary.errors > 0 ? 'text-error-deep' 
 
     function setSummary(text: string, isError: boolean): void {
       summaryEl!.textContent = text;
-      summaryEl!.classList.toggle('text-error-deep', isError);
-      summaryEl!.classList.toggle('text-mute', !isError);
+      summaryEl!.classList.toggle('text-inverse-error', isError);
+      summaryEl!.classList.toggle('text-inverse-mute', !isError);
     }
 
     function setErrorState(on: boolean): void {
-      paneEl!.classList.toggle('df-pane--error', on);
+      paneEl!.toggleAttribute('data-invalid', on);
       if (on) {
         view.contentDOM.setAttribute('aria-invalid', 'true');
         view.contentDOM.setAttribute('aria-describedby', 'df-run-hint df-error-detail');
@@ -1159,16 +781,7 @@ const seedSummaryTone = seedOk && seedOk.summary.errors > 0 ? 'text-error-deep' 
     }
 
     function setActiveChip(idx: number | null): void {
-      chips.forEach((chip) => {
-        chip.setAttribute(
-          'aria-pressed',
-          idx !== null && chip.dataset.exampleIdx === String(idx) ? 'true' : 'false',
-        );
-      });
-    }
-
-    function clearChips(): void {
-      setActiveChip(null);
+      syncChipsByIndex(chipsWrap, idx);
     }
 
     /* ---- Deep link ------------------------------------------------------- */
@@ -1351,7 +964,7 @@ const seedSummaryTone = seedOk && seedOk.summary.errors > 0 ? 'text-error-deep' 
         liveReady = false;
         setEditorDoc(value);
         liveReady = true;
-        clearChips();
+        setActiveChip(null);
         clearTimers();
         evaluate('commit');
       },

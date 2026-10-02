@@ -16,23 +16,28 @@
  * annotation, because `NotIn`/`!=` matching a resource that has no such label is
  * the one piece of apimachinery semantics people answer backwards.
  *
- * UX contract (CLAUDE.md), ported from `CidrCheckerPlayground` /
- * `DockerfileLinterPlayground`: example chips at `var(--radius-pill)`, ONE ~170ms
- * debounce with the exact hint line, a ~600ms calm-error hold before anything
- * goes red, per-row copy + `data-copy-all` + `data-copy-link`, a single visible
- * `role="status"` summary plus an sr-only copy-status span, a results container
- * that is NOT `aria-live`, glossary captions instead of tooltips, and
- * `escapeHtml()` on every injected value — attribute contexts included.
+ * Built on the playground kit (src/components/playground/*): ExampleChips,
+ * EditorPane (the resources slab under its figure cap), RunHint, SnapshotBar,
+ * ResultPanel (the L2 instrument: figure cap, the one live summary, copy
+ * status) and CopyButton. The results container stays here, seeded with
+ * `set:html` + `data-results`; its slab inks anchor on `.klt-results`.
+ *
+ * UX contract (CLAUDE.md): ONE ~170ms debounce, a ~600ms calm-error hold
+ * before anything goes red, per-row copy + `data-copy-all` + `data-copy-link`,
+ * a results container that is NOT `aria-live`, glossary captions instead of
+ * tooltips, `wireRunKeys()` on the selector fields, and `escapeHtml()` on every
+ * injected value — attribute contexts included.
  *
  * Deep link + snapshots both carry the SAME `#s=` payload (resources + selector
  * + mode), so a restored snapshot brings the grammar toggle back with it. The
  * hash is written ONLY on a user-initiated eval that came back fully valid — a
  * boot seed never writes it, and neither does a run with an error diagnostic.
  *
- * Runtime contract (lazy-imported inside the boot closure so the engine and the
- * CodeMirror runtime code-split away from the page shell):
+ * Runtime contract (lazy-imported inside the boot closure so the engine, the
+ * CodeMirror runtime and the plate theme code-split away from the page shell):
  *   ../lib/kubernetes-label-selector-tester/engine   → testSelector, encodeState, decodeState
  *   ../lib/kubernetes-label-selector-tester/examples → examples: SelectorExample[]
+ *   ../lib/playground-kit/cm-theme                   → plate
  *
  * Only the example LABELS are read at build time (so the chips are
  * server-rendered and exist before hydration); the manifests themselves come
@@ -42,6 +47,12 @@
 import { examples } from '../lib/kubernetes-label-selector-tester/examples';
 import { testSelector } from '../lib/kubernetes-label-selector-tester/engine';
 import { canonicalHtml, resultHtml, EMPTY_HTML } from '../lib/kubernetes-label-selector-tester/render';
+import ExampleChips from './playground/ExampleChips.astro';
+import EditorPane from './playground/EditorPane.astro';
+import RunHint from './playground/RunHint.astro';
+import SnapshotBar from './playground/SnapshotBar.astro';
+import ResultPanel from './playground/ResultPanel.astro';
+import CopyButton from './playground/CopyButton.astro';
 
 /**
  * Server-rendered seed. `testSelector` is pure and synchronous, so the first
@@ -64,6 +75,7 @@ const seedOk = seedResult && seedResult.ok ? seedResult : null;
 const seedHtml = seedOk ? resultHtml(seedOk).html : EMPTY_HTML;
 const seedSummary = seedOk ? seedOk.summary : '';
 const seedCanonicalHtml = seedOk ? canonicalHtml(seedOk) : '';
+const chipItems = examples.map((ex) => ({ label: ex.label }));
 ---
 
 <section class="klt-pg" aria-label="Kubernetes Label Selector Tester playground">
@@ -71,20 +83,7 @@ const seedCanonicalHtml = seedOk ? canonicalHtml(seedOk) : '';
     {/* ── Example chips ────────────────────────────────────────────────── */}
     <div class="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:px-5">
       <span class="eyebrow shrink-0">Examples</span>
-      <div id="klt-chips" class="klt-chips" role="group" aria-label="Examples">
-        {
-          examples.map((ex, i) => (
-            <button
-              type="button"
-              class:list={['klt-chip', { 'is-active': i === 0 }]}
-              data-example-idx={String(i)}
-              aria-pressed={i === 0 ? 'true' : 'false'}
-            >
-              {ex.label}
-            </button>
-          ))
-        }
-      </div>
+      <ExampleChips prefix="klt" items={chipItems} active={seedExample ? 0 : null} ariaLabel="Examples" />
     </div>
 
     {/* ── Selector row ─────────────────────────────────────────────────── */}
@@ -151,207 +150,43 @@ const seedCanonicalHtml = seedOk ? canonicalHtml(seedOk) : '';
           placeholder="matchLabels:&#10;  app: web&#10;matchExpressions:&#10;  - key: env&#10;    operator: NotIn&#10;    values: [dev]"
           aria-describedby="klt-run-hint"
           hidden></textarea>
-        <p id="klt-canonical" class="klt-canonical caption text-mute" set:html={seedCanonicalHtml}></p>
+        <p id="klt-canonical" class="klt-canonical caption text-mute" set:html={seedCanonicalHtml} data-results></p>
       </div>
     </div>
 
-    {/* ── Resources editor (dark instrument slab) ──────────────────────── */}
-    <div class="klt-pane bg-inverse">
-      <div class="klt-pane__bar">
-        <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
-          <span class="klt-pane__dot"></span>
-          <span class="klt-pane__dot"></span>
-          <span class="klt-pane__dot"></span>
-        </span>
-        <span class="klt-pane__name code-mono">resources.yaml</span>
-        <span class="klt-pane__tag code-mono">input</span>
-      </div>
-      <div id="klt-input" class="klt-editor">
-        <pre class="klt-cm-fallback code-mono" data-cm-fallback>{seedExample?.resources}</pre>
-      </div>
-    </div>
+    {/* ── Resources editor: the plate under its figure cap ─────────────── */}
+    <EditorPane prefix="klt" label="resources.yaml" id="klt-input">
+      <pre class="klt-fallback editor-pane__fallback code-mono" data-cm-fallback>{seedExample?.resources}</pre>
+    </EditorPane>
 
-    {/* ── Hints + snapshots ────────────────────────────────────────────── */}
+    {/* ── Hints + snapshots (on paper) ─────────────────────────────────── */}
     <div class="border-b border-hairline px-4 pt-3 pb-4 sm:px-5">
-      <p id="klt-run-hint" class="klt-hint caption text-mute">
-        Results update as you type — press Enter to run now.
-      </p>
+      <RunHint variant="cm" id="klt-run-hint" />
       <p class="klt-hint caption text-mute">
         Paste one manifest, a <span class="code-mono">---</span> stream, a
-        <span class="code-mono">kind: List</span> or a YAML list. Press
-        <kbd class="klt-kbd">Esc</kbd> to release keyboard focus from the editor;
-        <kbd class="klt-kbd">⌘</kbd>/<kbd class="klt-kbd">Ctrl</kbd> +
-        <kbd class="klt-kbd">Enter</kbd> runs and leaves it. Nothing you paste is uploaded.
+        <span class="code-mono">kind: List</span> or a YAML list.
       </p>
-      <div class="klt-snap-row mt-3 flex flex-wrap items-center gap-2">
-        <button id="klt-snap-save" type="button" class="klt-snap-btn">Save snapshot</button>
-        <select
-          id="klt-snap-select"
-          class="klt-snap-select"
-          aria-label="Load a saved snapshot"
-          disabled
-        >
-          <option value="">No snapshots yet</option>
-        </select>
-        <button
-          id="klt-snap-delete"
-          type="button"
-          class="klt-snap-delete"
-          aria-label="Delete this snapshot"
-          hidden>&times;</button
-        >
-      </div>
+      <SnapshotBar prefix="klt" />
     </div>
 
-    {/* ── Verdicts ─────────────────────────────────────────────────────── */}
-    <div class="bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <span class="flex flex-wrap items-center gap-2">
-          <span class="eyebrow">Verdicts</span>
-          <button
-            id="klt-share"
-            type="button"
-            class="klt-copy klt-copy--labeled"
-            data-copy-link
-            data-copy=""
-            data-copy-label="Copy link"
-            hidden
-          >
-            <svg
-              class="klt-copy-icon"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M6.75 9.25l2.5-2.5"></path>
-              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
-              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
-            </svg>
-            <svg
-              class="klt-check-icon hidden"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
-            </svg>
-            <span class="klt-copy-label">Copy link</span>
-          </button>
-          <button
-            id="klt-copy-all"
-            type="button"
-            class="klt-copy klt-copy--labeled"
-            data-copy-all
-            data-copy=""
-            data-copy-label="Copy report"
-            hidden
-          >
-            <svg
-              class="klt-copy-icon"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <rect x="5" y="5" width="9" height="9" rx="1.5"></rect>
-              <path d="M3 11H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"></path>
-            </svg>
-            <svg
-              class="klt-check-icon hidden"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M3 8.5l3.5 3.5L13 4.5"></path>
-            </svg>
-            <span class="klt-copy-label">Copy report</span>
-          </button>
-        </span>
-        <span id="klt-summary" class="klt-summary code-mono text-mute" role="status" aria-live="polite"
-        >{seedSummary}</span>
-      </div>
+    {/* ── Verdicts — the L2 instrument; the live summary reads out in the
+        figure cap's actions slot. ────────────────────────────────────── */}
+    <ResultPanel slug="kubernetes-label-selector-tester" prefix="klt" summary={seedSummary} label="Verdicts" split>
+      <Fragment slot="actions">
+        <CopyButton kind="link" id="klt-share" />
+        <CopyButton kind="all" id="klt-copy-all" label="Copy report" />
+      </Fragment>
       {/* Seeded at build time (see `seedHtml` above) so every per-resource verdict
           is in the static HTML; the script repaints this same node on each run. */}
-      <div id="klt-results" class="klt-results" set:html={seedHtml}></div>
-      <span id="klt-copy-status" class="sr-only" role="status" aria-live="polite"></span>
-    </div>
+      <div id="klt-results" class="klt-results" set:html={seedHtml} data-results></div>
+    </ResultPanel>
   </div>
 </section>
 
 <style>
   @reference "../styles/global.css";
 
-  /* ── Example chips ───────────────────────────────────────────────────── */
-  /* Build-time text stand-in for the CodeMirror document: what a no-JS visitor
-     and every AI crawler read. `init` removes it once CM mounts. */
-  .klt-cm-fallback {
-    margin: 0;
-    padding: 14px 16px 16px;
-    max-height: 360px;
-    overflow: auto;
-    color: #e6e6e6;
-    font-size: 13px;
-    line-height: 20px;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-
-  .klt-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .klt-chip {
-    display: inline-flex;
-    align-items: center;
-    padding: 4px 12px;
-    border: none;
-    border-radius: var(--radius-pill);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    font-size: 12px;
-    line-height: 18px;
-    color: var(--color-brand-strong);
-    cursor: pointer;
-    touch-action: manipulation;
-    transition:
-      background 0.12s ease,
-      box-shadow 0.12s ease;
-  }
-  .klt-chip:hover,
-  .klt-chip[aria-pressed='true'] {
-    background: var(--color-brand-soft);
-    box-shadow: inset 0 0 0 1px var(--color-brand);
-  }
-  .klt-chip:focus-visible {
-    outline: 2px solid var(--color-link);
-    outline-offset: 1px;
-  }
-
-  /* ── Selector row ────────────────────────────────────────────────────── */
+  /* ── Selector row (paper) ────────────────────────────────────────────── */
   .klt-controls {
     display: grid;
     gap: 16px;
@@ -391,8 +226,8 @@ const seedCanonicalHtml = seedOk ? canonicalHtml(seedOk) : '';
     white-space: nowrap;
     touch-action: manipulation;
     transition:
-      background 0.15s ease,
-      color 0.15s ease;
+      background-color var(--dur-fast) var(--ease-brand),
+      color var(--dur-fast) var(--ease-brand);
   }
   .klt-seg__btn:hover {
     color: var(--color-body);
@@ -405,6 +240,11 @@ const seedCanonicalHtml = seedOk ? canonicalHtml(seedOk) : '';
   .klt-seg__btn:focus-visible {
     outline: 2px solid var(--color-link);
     outline-offset: 1px;
+  }
+  @media (pointer: coarse) {
+    .klt-seg__btn {
+      min-height: var(--control-h-md);
+    }
   }
   .klt-gloss {
     margin: 0;
@@ -422,7 +262,7 @@ const seedCanonicalHtml = seedOk ? canonicalHtml(seedOk) : '';
     box-shadow: var(--shadow-hairline);
     font-size: 13px;
     line-height: 20px;
-    transition: box-shadow 0.15s ease;
+    transition: box-shadow var(--dur-fast) var(--ease-brand);
   }
   .klt-area {
     min-height: 118px;
@@ -456,297 +296,152 @@ const seedCanonicalHtml = seedOk ? canonicalHtml(seedOk) : '';
     line-height: 17px;
     overflow-wrap: anywhere;
   }
-  .klt-canonical .code-mono {
+  .klt-canonical :global(.code-mono) {
     font-size: 12px;
     color: var(--color-body);
   }
 
-  /* ── Resources pane (dark instrument slab) ───────────────────────────── */
-  .klt-pane {
-    display: flex;
-    min-width: 0;
-    flex-direction: column;
-  }
-  .klt-pane__bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 9px 16px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  }
-  .klt-pane__dot {
-    width: 9px;
-    height: 9px;
-    border-radius: 9999px;
-    background: rgba(255, 255, 255, 0.18);
-  }
-  .klt-pane__name {
-    /* 0.72 alpha over --color-inverse clears 4.5:1 in both themes. */
-    color: rgba(255, 255, 255, 0.72);
-    font-size: 12px;
-  }
-  .klt-pane__tag {
-    margin-left: auto;
-    color: rgba(255, 255, 255, 0.6);
-    font-size: 11px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-
-  /* CodeMirror host. Background stays transparent so the slab shows through:
-     One Dark's own #282c34 is LIGHTER than --color-inverse, and its dimmest
-     token only clears 4.5:1 against the darker slab. */
-  .klt-editor {
-    overflow: hidden;
-    padding-inline: 4px;
-  }
-  .klt-editor :global(.cm-editor) {
-    background: transparent;
-    font-family: var(--font-mono);
-    font-size: 13px;
-    line-height: 20px;
-  }
-  .klt-editor :global(.cm-editor.cm-focused) {
-    outline: 2px solid var(--color-link);
-    outline-offset: -2px;
-  }
-  .klt-editor :global(.cm-scroller) {
-    overflow: auto;
-    min-height: 230px;
-    max-height: 420px;
-    font-family: var(--font-mono);
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
-  }
-  .klt-editor :global(.cm-scroller)::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  .klt-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: var(--radius-pill);
-    border: 3px solid transparent;
-    background-clip: content-box;
-  }
-  .klt-editor :global(.cm-gutters) {
-    background: transparent;
-    border-right: 1px solid rgba(255, 255, 255, 0.1);
-  }
-  /* One Dark's gutter foreground is below 4.5:1 on this slab — lift it. */
-  .klt-editor :global(.cm-lineNumbers .cm-gutterElement) {
-    color: #a9a39a;
-  }
-  .klt-editor :global(.cm-content) {
-    padding: 14px 0 16px;
-  }
-  .klt-editor :global(.cm-line) {
-    padding-inline: 4px;
-  }
-  /* Invalid input: a hairline red rule down the editor, never a flash. */
-  .klt-pane.klt-pane--error .klt-editor :global(.cm-editor) {
-    box-shadow: inset 2px 0 0 0 var(--color-error);
-  }
-
   .klt-hint {
-    margin-top: 8px;
+    margin-top: 4px;
     font-size: 12px;
     line-height: 18px;
     text-wrap: pretty;
   }
-  .klt-hint + .klt-hint {
-    margin-top: 4px;
-  }
   .klt-hint .code-mono {
     font-size: 12px;
   }
-  .klt-kbd {
-    border: 1px solid currentColor;
-    border-radius: var(--radius-xs);
-    padding: 0 3px;
-    font-size: 0.85em;
-  }
 
-  /* ── Snapshot row ────────────────────────────────────────────────────── */
-  .klt-snap-btn {
-    flex: 0 0 auto;
-    height: 30px;
-    padding: 0 12px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-    cursor: pointer;
-    transition:
-      background 0.12s ease,
-      box-shadow 0.12s ease;
-  }
-  .klt-snap-btn:hover {
-    background: var(--color-canvas-soft);
-    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
-  }
-  .klt-snap-select {
-    height: 30px;
-    max-width: 220px;
-    padding: 0 8px;
-    border-radius: var(--radius-sm);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-  }
-  .klt-snap-select:disabled {
-    color: var(--color-mute);
-    cursor: not-allowed;
-  }
-  .klt-snap-delete {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: transparent;
-    color: var(--color-mute);
-    cursor: pointer;
-    transition:
-      background 0.12s ease,
-      color 0.12s ease;
-  }
-  .klt-snap-delete:hover {
-    background: var(--color-error-soft);
-    color: var(--color-error-deep);
-  }
-
-  /* ── Verdict panel ───────────────────────────────────────────────────── */
-  .klt-summary {
-    min-width: 0;
-    text-align: right;
+  /* The build-time stand-in for the editor (global .editor-pane__fallback
+     matches the CodeMirror metrics), held to the editor's scroller box and
+     wrapped like its lineWrapping so the swap does not jump. */
+  .klt-fallback {
+    min-height: 230px;
+    max-height: 420px;
+    overflow: auto;
+    white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
+  /* Invalid input: a hairline slab-red rule down the editor, never a flash.
+     The pane root is EditorPane's (no scope hash), hence :global. */
+  .klt-pg :global([data-editor-pane][data-invalid] .cm-editor) {
+    box-shadow: inset 2px 0 0 0 var(--color-inverse-error);
+  }
+
   .klt-results {
     min-height: 120px;
   }
-  .klt-copy-status--fail {
-    display: block;
-    margin-top: 10px;
-    font-size: 12px;
-    line-height: 18px;
-    color: var(--color-error-deep);
+  .klt-pg :global(.result-panel__summary.text-inverse-error) {
+    color: var(--color-inverse-error);
   }
 
-  /* ── Runtime-injected markup (Astro scoped styles never reach it) ────── */
-  :global(.klt-card) {
+  /* ── Runtime-injected markup (render.ts) — on the slab, so slab inks only.
+     Anchored on this component's own `.klt-results` container (the panel
+     wrapper is ResultPanel's and carries no scope attribute). ─────────── */
+  .klt-results :global(.klt-card) {
     margin-top: 12px;
     border-radius: var(--radius-md);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
     overflow: hidden;
-    animation: klt-rise 0.18s ease both;
+    animation: klt-rise var(--dur-base) var(--ease-brand) both;
   }
-  :global(.klt-card:first-child) {
+  .klt-results :global(.klt-card:first-child) {
     margin-top: 0;
   }
-  :global(.klt-card__head) {
+  .klt-results :global(.klt-card__head) {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     margin: 0;
     padding: 9px 10px 9px 14px;
-    border-bottom: 1px solid var(--color-hairline);
+    border-bottom: 1px solid var(--color-inverse-hairline);
   }
-  :global(.klt-verdict) {
+  /* MATCH / NO MATCH: the row-key role (label-field), tinted in slab inks. */
+  .klt-results :global(.klt-verdict) {
+    @apply label-field;
     flex: 0 0 auto;
     padding: 1px 8px;
-    border-radius: var(--radius-pill);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 16px;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
+    border-radius: var(--radius-xs);
   }
-  :global(.klt-verdict--match) {
-    background: var(--color-brand-soft);
-    color: var(--color-brand-strong);
+  .klt-results :global(.klt-verdict--match) {
+    background: #8fc97a1f;
+    color: var(--color-inverse-brand);
   }
-  :global(.klt-verdict--miss) {
-    background: var(--color-canvas-soft-2);
-    color: var(--color-body);
+  .klt-results :global(.klt-verdict--miss) {
+    background: #ffffff14;
+    color: var(--color-inverse-mute);
   }
-  :global(.klt-name) {
+  .klt-results :global(.klt-name) {
     min-width: 0;
     font-family: var(--font-mono);
     font-size: 13px;
     line-height: 19px;
-    color: var(--color-ink);
+    color: var(--color-inverse-fg);
     overflow-wrap: anywhere;
   }
-  :global(.klt-ns) {
-    color: var(--color-mute);
+  .klt-results :global(.klt-ns) {
+    color: var(--color-inverse-mute);
   }
-  :global(.klt-card__actions) {
+  .klt-results :global(.klt-card__actions) {
     display: inline-flex;
     align-items: center;
     margin-left: auto;
   }
-  :global(.klt-labels) {
+  .klt-results :global(.klt-labels) {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
     padding: 9px 14px;
-    border-bottom: 1px solid var(--color-hairline);
+    border-bottom: 1px solid #ffffff12;
   }
-  :global(.klt-label) {
+  .klt-results :global(.klt-label) {
     padding: 1px 7px;
-    border-radius: var(--radius-pill);
-    background: var(--color-canvas-soft);
-    box-shadow: var(--shadow-hairline);
+    border-radius: var(--radius-xs);
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
     font-family: var(--font-mono);
     font-size: 11px;
     line-height: 17px;
-    color: var(--color-body);
+    color: var(--color-inverse-fg);
     overflow-wrap: anywhere;
   }
-  :global(.klt-label--none) {
+  .klt-results :global(.klt-label--none) {
     background: transparent;
     box-shadow: none;
-    color: var(--color-mute);
+    color: var(--color-inverse-mute);
     font-family: var(--font-sans);
   }
   /* A key the document carries whose value YAML did not read as a string. */
-  :global(.klt-label--unreadable) {
-    color: var(--color-accent-ink);
+  .klt-results :global(.klt-label--unreadable) {
+    color: var(--color-inverse-accent);
   }
-  :global(.klt-path) {
+  .klt-results :global(.klt-path) {
     margin-left: auto;
     align-self: center;
     font-family: var(--font-mono);
     font-size: 11px;
     line-height: 16px;
-    color: var(--color-mute);
+    color: var(--color-inverse-mute);
     /* `spec.jobTemplate.spec.template.metadata.labels` is 44 mono characters —
        nowrap would push the row past a 390px viewport. */
     overflow-wrap: anywhere;
   }
-  :global(.klt-clauses) {
+  .klt-results :global(.klt-clauses) {
     margin: 0;
     padding: 0;
     list-style: none;
   }
-  :global(.klt-clause) {
+  .klt-results :global(.klt-clause) {
     display: flex;
     align-items: flex-start;
     gap: 9px;
     padding: 8px 14px;
   }
-  :global(.klt-clause + .klt-clause) {
-    border-top: 1px solid var(--color-hairline);
+  .klt-results :global(.klt-clause + .klt-clause) {
+    border-top: 1px solid #ffffff12;
   }
-  :global(.klt-clause__mark) {
+  .klt-results :global(.klt-clause__mark) {
     flex: 0 0 auto;
     width: 15px;
     margin-top: 1px;
@@ -755,148 +450,137 @@ const seedCanonicalHtml = seedOk ? canonicalHtml(seedOk) : '';
     line-height: 19px;
     text-align: center;
   }
-  :global(.klt-clause--hold .klt-clause__mark) {
-    color: var(--color-success);
+  .klt-results :global(.klt-clause--hold .klt-clause__mark) {
+    color: var(--color-inverse-brand);
   }
-  :global(.klt-clause--fail .klt-clause__mark) {
-    color: var(--color-error-deep);
+  .klt-results :global(.klt-clause--fail .klt-clause__mark) {
+    color: var(--color-inverse-error);
   }
-  :global(.klt-clause__body) {
+  .klt-results :global(.klt-clause__body) {
     min-width: 0;
     flex: 1 1 auto;
   }
-  :global(.klt-req) {
+  .klt-results :global(.klt-req) {
     font-family: var(--font-mono);
     font-size: 13px;
     line-height: 19px;
-    color: var(--color-ink);
+    color: var(--color-inverse-fg);
     overflow-wrap: anywhere;
   }
-  :global(.klt-reason) {
+  .klt-results :global(.klt-reason) {
     display: block;
     margin-top: 2px;
     font-size: 13px;
     line-height: 18px;
-    color: var(--color-body);
+    color: var(--color-inverse-mute);
     overflow-wrap: anywhere;
     text-wrap: pretty;
   }
-  :global(.klt-annot) {
+  /* The "holds because the key is absent" annotation — amber's annotation job. */
+  .klt-results :global(.klt-annot) {
     display: block;
     margin-top: 6px;
     padding: 5px 8px;
     border-radius: var(--radius-sm);
-    background: var(--color-canvas-soft);
-    color: var(--color-accent-ink);
+    background: #e0a45814;
+    color: var(--color-inverse-accent);
     font-size: 12px;
     line-height: 17px;
     text-wrap: pretty;
   }
-  :global(.klt-issue) {
+  .klt-results :global(.klt-issue),
+  .klt-results :global(.klt-note) {
     margin: 0;
-    padding: 8px 14px;
-    border-top: 1px solid var(--color-hairline);
+    padding: 9px 14px;
+    border-top: 1px solid #ffffff12;
     font-size: 12px;
     line-height: 17px;
-    color: var(--color-mute);
+    color: var(--color-inverse-mute);
     overflow-wrap: anywhere;
     text-wrap: pretty;
   }
-  :global(.klt-note) {
-    margin: 0;
-    padding: 9px 14px;
-    border-top: 1px solid var(--color-hairline);
-    font-size: 12px;
-    line-height: 17px;
-    color: var(--color-mute);
-    text-wrap: pretty;
-  }
-  :global(.klt-diag) {
+  .klt-results :global(.klt-diag) {
     display: flex;
     align-items: flex-start;
     gap: 8px;
     padding: 9px 14px;
   }
-  :global(.klt-diag + .klt-diag) {
-    border-top: 1px solid var(--color-hairline);
+  .klt-results :global(.klt-diag + .klt-diag) {
+    border-top: 1px solid #ffffff12;
   }
-  :global(.klt-diag__pill) {
+  .klt-results :global(.klt-diag__pill) {
+    @apply label-field;
     flex: 0 0 auto;
     padding: 1px 7px;
-    border-radius: var(--radius-pill);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 16px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    border-radius: var(--radius-xs);
   }
-  :global(.klt-diag__pill--error) {
-    background: var(--color-error-soft);
-    color: var(--color-error-deep);
+  .klt-results :global(.klt-diag__pill--error) {
+    background: #ff9d951f;
+    color: var(--color-inverse-error);
   }
-  :global(.klt-diag__pill--warning) {
-    background: var(--color-warning-soft);
-    color: var(--color-warning-deep);
+  .klt-results :global(.klt-diag__pill--warning) {
+    background: #e0a4581f;
+    color: var(--color-inverse-accent);
   }
-  :global(.klt-diag__pill--note) {
-    background: var(--color-canvas-soft-2);
-    color: var(--color-body);
+  .klt-results :global(.klt-diag__pill--note) {
+    background: #ffffff14;
+    color: var(--color-inverse-mute);
   }
-  :global(.klt-diag__text) {
+  .klt-results :global(.klt-diag__text) {
     margin: 0;
     min-width: 0;
     font-size: 13px;
     line-height: 18px;
-    color: var(--color-body);
+    color: var(--color-inverse-fg);
     overflow-wrap: anywhere;
     text-wrap: pretty;
   }
-  :global(.klt-group__head) {
+  /* Group-heading role (a sans heading over its rows, not one more label). */
+  .klt-results :global(.klt-group__head) {
     display: flex;
     align-items: center;
     gap: 8px;
     margin: 0;
     padding: 9px 14px;
-    border-bottom: 1px solid var(--color-hairline);
-    font-family: var(--font-mono);
-    font-size: 11px;
+    border-bottom: 1px solid var(--color-inverse-hairline);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 600;
     line-height: 16px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--color-mute);
+    color: var(--color-inverse-fg);
   }
-  :global(.klt-error) {
+  .klt-results :global(.klt-error) {
     display: flex;
     gap: 10px;
     padding: 12px 14px;
     border-radius: var(--radius-md);
-    background: var(--color-error-soft);
-    box-shadow: inset 0 0 0 1px var(--color-error);
-    color: var(--color-error-deep);
+    background: #ff9d9514;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-error);
+    color: var(--color-inverse-error);
   }
-  :global(.klt-error + .klt-card) {
+  .klt-results :global(.klt-error + .klt-card) {
     margin-top: 12px;
   }
-  :global(.klt-error__icon) {
+  .klt-results :global(.klt-error__icon) {
     flex: 0 0 auto;
     width: 18px;
     height: 18px;
     margin-top: 1px;
   }
-  :global(.klt-error__title) {
+  .klt-results :global(.klt-error__title) {
     margin: 0;
     font-size: 14px;
     font-weight: 500;
     line-height: 20px;
   }
-  :global(.klt-error__detail) {
+  .klt-results :global(.klt-error__detail) {
     margin-top: 2px;
     font-size: 13px;
     line-height: 19px;
     text-wrap: pretty;
     overflow-wrap: anywhere;
   }
-  :global(.klt-empty) {
+  .klt-results :global(.klt-empty) {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -905,74 +589,47 @@ const seedCanonicalHtml = seedOk ? canonicalHtml(seedOk) : '';
     text-align: center;
     text-wrap: pretty;
     border-radius: var(--radius-md);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-mute);
   }
 
-  /* ── Copy buttons: icon-only per row, labeled in the header ──────────── */
-  :global(.klt-copy) {
+  /* Per-row copy (render.ts emits the button; playground-kit/copy.ts runs the
+     feedback cycle and marks success with [data-copied]). */
+  .klt-results :global(.klt-copy) {
     flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
+    width: var(--control-h-sm);
+    height: var(--control-h-sm);
     padding: 0;
     border: none;
     border-radius: var(--radius-sm);
     background: transparent;
-    color: var(--color-mute);
+    color: var(--color-inverse-mute);
     cursor: pointer;
     touch-action: manipulation;
     transition:
-      color 0.12s ease,
-      background 0.12s ease;
+      color var(--dur-fast) var(--ease-brand),
+      background-color var(--dur-fast) var(--ease-brand);
   }
-  :global(.klt-copy:hover) {
-    color: var(--color-brand-strong);
-    background: var(--color-hairline);
+  .klt-results :global(.klt-copy:hover) {
+    color: var(--color-inverse-brand);
+    background: #ffffff14;
   }
-  :global(.klt-copy:focus-visible) {
-    outline: 2px solid var(--color-link);
+  .klt-results :global(.klt-copy[data-copied]) {
+    color: var(--color-inverse-brand);
+    background: #8fc97a1f;
+  }
+  .klt-results :global(.klt-copy:focus-visible) {
+    outline: 2px solid var(--color-inverse-brand);
     outline-offset: 1px;
   }
-  :global(.klt-copy--labeled) {
-    width: auto;
-    height: 26px;
-    gap: 6px;
-    padding: 0 10px;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 16px;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-  }
-  :global(.klt-copy--copied) {
-    color: var(--color-brand-strong);
-    background: var(--color-brand-soft);
-  }
-
-  /* Coarse-pointer tap targets, in the two tiers the contract defines: chips
-     and icon-only per-row copy buttons at 44px, labeled header copy controls and
-     the grammar toggle at 36px (wide text targets, not the primary in-result
-     action). */
   @media (pointer: coarse) {
-    .klt-chip {
-      min-height: 44px;
-    }
-    .klt-seg__btn {
-      min-height: 36px;
-    }
-    :global(.klt-copy) {
-      width: 44px;
-      height: 44px;
-    }
-    :global(.klt-copy--labeled) {
-      width: auto;
-      height: auto;
-      min-height: 36px;
+    .klt-results :global(.klt-copy) {
+      width: var(--control-h-lg);
+      height: var(--control-h-lg);
     }
   }
 
@@ -987,7 +644,7 @@ const seedCanonicalHtml = seedOk ? canonicalHtml(seedOk) : '';
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    :global(.klt-card) {
+    .klt-results :global(.klt-card) {
       animation: none;
     }
   }
@@ -996,6 +653,9 @@ const seedCanonicalHtml = seedOk ? canonicalHtml(seedOk) : '';
 <script>
   import { copyTextToClipboard } from '../lib/clipboard';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  import { copyButtonFor, copyFromButton, setCopyStatus } from '../lib/playground-kit/copy';
+  import { syncChipsByIndex, CHIP_SELECTOR } from '../lib/playground-kit/chips';
+  import { wireRunKeys } from '../lib/run-keys';
   import type { EditorView } from '@codemirror/view';
   // The pure HTML/text builders, shared with this component's frontmatter so the
   // server-rendered seed and every client repaint come from one implementation.
@@ -1036,7 +696,6 @@ const seedCanonicalHtml = seedOk ? canonicalHtml(seedOk) : '';
   const DEBOUNCE_MS = 170;
   /* Nothing goes red until the typing has been idle this long. */
   const ERROR_HOLD_MS = 600;
-  const RESET_MS = 1800;
   /* Past ~2000 chars a fragment stops being a dependable URL (browser, proxy and
      chat-client limits), so we neither write it nor offer the share link — the
      tester itself keeps working on pastes of any size. */
@@ -1082,7 +741,7 @@ const seedCanonicalHtml = seedOk ? canonicalHtml(seedOk) : '';
 
   async function init(root: HTMLElement): Promise<void> {
     const editorHost = el<HTMLElement>(root, '#klt-input');
-    const paneEl = el<HTMLElement>(root, '.klt-pane');
+    const paneEl = el<HTMLElement>(root, '[data-editor-pane]');
     const modeExprBtn = el<HTMLButtonElement>(root, '#klt-mode-expr');
     const modeYamlBtn = el<HTMLButtonElement>(root, '#klt-mode-yaml');
     const exprInput = el<HTMLInputElement>(root, '#klt-selector');
@@ -1098,7 +757,8 @@ const seedCanonicalHtml = seedOk ? canonicalHtml(seedOk) : '';
     const snapSaveBtn = el<HTMLButtonElement>(root, '#klt-snap-save');
     const snapSelect = el<HTMLSelectElement>(root, '#klt-snap-select');
     const snapDeleteBtn = el<HTMLButtonElement>(root, '#klt-snap-delete');
-    const chips = Array.from(root.querySelectorAll<HTMLButtonElement>('#klt-chips .klt-chip'));
+    const chipsWrap = el<HTMLElement>(root, '#klt-chips');
+    const chips = Array.from(chipsWrap?.querySelectorAll<HTMLButtonElement>(CHIP_SELECTOR) ?? []);
 
     if (
       !editorHost ||
@@ -1130,67 +790,32 @@ const seedCanonicalHtml = seedOk ? canonicalHtml(seedOk) : '';
      * matters for security review — `innerHTML` serialization does not re-escape
      * `<` inside an attribute value, so a correctly-escaped payload in an
      * attribute still shows up as literal markup in the serialized HTML. The
-     * buttons still carry an EMPTY `data-copy` so the shared selectors and
-     * Layout.astro's `result_copied` listener find them.
+     * buttons still carry an EMPTY `data-copy` so the kit's copy selectors and
+     * Layout.astro's `result_copied` listener find them. The row buttons are
+     * numbered `data-payload="<i>"` by render.ts into `rowPayloads`.
      */
     let rowPayloads: string[] = [];
     let reportPayload = '';
 
-    function payloadFor(btn: HTMLButtonElement): string {
-      if (btn.dataset.kltRow !== undefined) return rowPayloads[Number(btn.dataset.kltRow)] ?? '';
+    function payloadFor(btn: HTMLElement): string {
+      if (btn.dataset.payload !== undefined) return rowPayloads[Number(btn.dataset.payload)] ?? '';
       if (btn.hasAttribute('data-copy-all')) return reportPayload;
       return btn.dataset.copy ?? '';
     }
 
-    function setCopyStatus(message: string, failed: boolean): void {
-      copyStatus!.textContent = message;
-      copyStatus!.classList.toggle('sr-only', !failed);
-      copyStatus!.classList.toggle('klt-copy-status--fail', failed);
-    }
-
-    function setCopied(btn: HTMLButtonElement, copied: boolean): void {
-      btn.classList.toggle('klt-copy--copied', copied);
-      btn.querySelector('.klt-copy-icon')?.classList.toggle('hidden', copied);
-      btn.querySelector('.klt-check-icon')?.classList.toggle('hidden', !copied);
-      const label = btn.querySelector<HTMLElement>('.klt-copy-label');
-      if (label) {
-        label.textContent = copied ? 'Copied' : (btn.dataset.copyLabel ?? 'Copy');
-      } else if (copied) {
-        btn.dataset.prevAriaLabel = btn.getAttribute('aria-label') ?? '';
-        btn.setAttribute('aria-label', 'Copied');
-      } else if (btn.dataset.prevAriaLabel) {
-        btn.setAttribute('aria-label', btn.dataset.prevAriaLabel);
-        delete btn.dataset.prevAriaLabel;
-      }
-    }
-
-    async function handleCopy(btn: HTMLButtonElement): Promise<void> {
+    // The kit's feedback cycle (icon swap, "Copied", the sr-only announcer),
+    // fed from the JS-held payload rather than the attribute.
+    root.addEventListener('click', (e) => {
+      const btn = copyButtonFor(root, e.target) as HTMLElement | null;
+      if (!btn) return;
       const payload = payloadFor(btn);
       // Never report success for an empty payload — a ✓ and "Copied to
       // clipboard." over an untouched clipboard is a lie the user acts on.
       if (payload.length === 0) {
-        setCopyStatus('Nothing to copy yet.', true);
+        setCopyStatus(copyStatus, 'Nothing to copy yet.', true);
         return;
       }
-      const ok = await copyTextToClipboard(payload);
-      if (ok) {
-        setCopied(btn, true);
-        setCopyStatus('Copied to clipboard.', false);
-        window.clearTimeout(Number(btn.dataset.copyTimer));
-        btn.dataset.copyTimer = String(
-          window.setTimeout(() => {
-            setCopied(btn, false);
-            if (copyStatus!.textContent === 'Copied to clipboard.') setCopyStatus('', false);
-          }, RESET_MS),
-        );
-      } else {
-        setCopyStatus('Copy failed — select the value manually.', true);
-      }
-    }
-
-    root.addEventListener('click', (e) => {
-      const copyBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('.klt-copy');
-      if (copyBtn && root.contains(copyBtn)) void handleCopy(copyBtn);
+      void copyFromButton(btn, { status: copyStatus, copy: () => copyTextToClipboard(payload) });
     });
 
     /* ---- Lazy engine + examples + CodeMirror ----------------------------- */
@@ -1209,7 +834,7 @@ const seedCanonicalHtml = seedOk ? canonicalHtml(seedOk) : '';
     let historyKeymap: typeof import('@codemirror/commands').historyKeymap;
     let indentWithTab: typeof import('@codemirror/commands').indentWithTab;
     let yamlLang: typeof import('@codemirror/lang-yaml').yaml;
-    let oneDark: typeof import('@codemirror/theme-one-dark').oneDark;
+    let plate: typeof import('../lib/playground-kit/cm-theme').plate;
 
     try {
       const [engineMod, examplesMod, stateMod, viewMod, commandsMod, yamlMod, themeMod] =
@@ -1220,7 +845,10 @@ const seedCanonicalHtml = seedOk ? canonicalHtml(seedOk) : '';
           import('@codemirror/view'),
           import('@codemirror/commands'),
           import('@codemirror/lang-yaml'),
-          import('@codemirror/theme-one-dark'),
+          // The plate theme + highlight (the ONE code palette), in the same
+          // closure as the language — a static import would pull
+          // @codemirror/view into the page shell.
+          import('../lib/playground-kit/cm-theme'),
         ]);
       engine = engineMod as unknown as EngineModule;
       examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
@@ -1228,7 +856,7 @@ const seedCanonicalHtml = seedOk ? canonicalHtml(seedOk) : '';
       ({ EditorView: EditorViewCtor, keymap, lineNumbers, highlightActiveLine } = viewMod);
       ({ history: cmHistory, defaultKeymap, historyKeymap, indentWithTab } = commandsMod);
       ({ yaml: yamlLang } = yamlMod);
-      ({ oneDark } = themeMod);
+      ({ plate } = themeMod);
     } catch (err) {
       summaryEl.textContent = '';
       resultsBox.innerHTML = errorHtml(
@@ -1277,7 +905,13 @@ const seedCanonicalHtml = seedOk ? canonicalHtml(seedOk) : '';
           cmHistory(),
           highlightActiveLine(),
           yamlLang(),
-          oneDark,
+          plate,
+          // This pane's size only; colours, gutter and focus ring are the
+          // kit's (cm-theme.ts + global.css .editor-pane__host).
+          EditorViewCtor.theme({
+            '&': { fontSize: '13px' },
+            '.cm-scroller': { minHeight: '230px', maxHeight: '420px', scrollbarWidth: 'thin' },
+          }),
           EditorViewCtor.lineWrapping,
           // CodeMirror puts role="textbox" on the content DOM; without a name
           // that is an unlabelled input field for a screen reader (and an axe
@@ -1336,16 +970,6 @@ const seedCanonicalHtml = seedOk ? canonicalHtml(seedOk) : '';
             clearTimers();
             evalTimer = window.setTimeout(() => evaluate('type'), DEBOUNCE_MS);
           }),
-          EditorViewCtor.theme({
-            '&': { color: '#eae7e0' },
-            '.cm-content': { caretColor: '#eae7e0' },
-            '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#eae7e0' },
-            '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
-              backgroundColor: 'rgba(79, 138, 200, 0.34)',
-            },
-            '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.04)' },
-            '.cm-activeLineGutter': { backgroundColor: 'transparent' },
-          }),
         ],
       });
       return new EditorViewCtor({ state, parent: host });
@@ -1360,14 +984,14 @@ const seedCanonicalHtml = seedOk ? canonicalHtml(seedOk) : '';
 
     function setSummary(text: string, isError: boolean): void {
       summaryEl!.textContent = text;
-      summaryEl!.classList.toggle('text-error-deep', isError);
-      summaryEl!.classList.toggle('text-mute', !isError);
+      summaryEl!.classList.toggle('text-inverse-error', isError);
+      summaryEl!.classList.toggle('text-inverse-mute', !isError);
     }
 
     /** Red only on the field that is actually wrong — never on both. */
     function setErrorState(where: 'selector' | 'resources' | null): void {
       const onResources = where === 'resources';
-      paneEl!.classList.toggle('klt-pane--error', onResources);
+      paneEl!.toggleAttribute('data-invalid', onResources);
       if (onResources) {
         view.contentDOM.setAttribute('aria-invalid', 'true');
         view.contentDOM.setAttribute('aria-describedby', 'klt-run-hint klt-error-detail');
@@ -1401,12 +1025,7 @@ const seedCanonicalHtml = seedOk ? canonicalHtml(seedOk) : '';
     }
 
     function setActiveChip(idx: number | null): void {
-      chips.forEach((chip) => {
-        chip.setAttribute(
-          'aria-pressed',
-          idx !== null && chip.dataset.exampleIdx === String(idx) ? 'true' : 'false',
-        );
-      });
+      syncChipsByIndex(chipsWrap, idx);
     }
 
     function setCanonical(result: Result | null): void {
@@ -1672,29 +1291,18 @@ const seedCanonicalHtml = seedOk ? canonicalHtml(seedOk) : '';
         clearTimers();
         evalTimer = window.setTimeout(() => evaluate('type'), DEBOUNCE_MS);
       });
-      // `evt` is typed `Event`, not `KeyboardEvent`: `field` is a UNION of two
-      // element types, and TypeScript collapses `addEventListener` to the
-      // intersection of their overloads, which loses the event map. Narrowing
-      // here keeps the loop (both fields behave identically apart from the
-      // newline) instead of duplicating the handler twice.
-      field.addEventListener('keydown', (evt) => {
-        const e = evt as KeyboardEvent;
-        if (e.key !== 'Enter') return;
-        const isTextarea = field instanceof HTMLTextAreaElement;
-        if (e.ctrlKey || e.metaKey || !isTextarea) {
-          e.preventDefault();
+      // The shared keyboard contract (src/lib/run-keys.ts): ⌘/Ctrl+Enter always
+      // runs (and releases focus on a coarse pointer); plain Enter runs in the
+      // one-line field and, in the textarea, lands its newline first. It also
+      // respects IME composition and Shift+Enter.
+      wireRunKeys(
+        field,
+        () => {
           clearTimers();
           evaluate('commit');
-          if (window.matchMedia?.('(pointer: coarse)').matches) field.blur();
-          return;
-        }
-        // Plain Enter in the textarea must still insert the newline — flush on
-        // the next tick, once the value includes it.
-        window.setTimeout(() => {
-          clearTimers();
-          evaluate('commit');
-        }, 0);
-      });
+        },
+        { enter: field instanceof HTMLTextAreaElement ? 'insert-then-run' : 'run' },
+      );
       // Committing on blur means a half-typed selector that the user tabbed away
       // from still explains itself, instead of sitting silently in `pending`.
       field.addEventListener('blur', () => {
