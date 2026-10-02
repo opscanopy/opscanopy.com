@@ -363,8 +363,6 @@ export function failingRules(raw: string, name: string): string[] {
 // ---------------------------------------------------------------------------
 
 const UNMIGRATED: Record<string, string[]> = {
-  AlertLintPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'one-trust-line', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
-  AlertmanagerRouteTesterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'one-trust-line', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
   Base64Playground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
   CaseConverterPlayground: ['local-chip', 'raw-duration', 'result-panel', 'one-trust-line', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
   CertificateDecoderPlayground: ['local-chip', 'raw-duration', 'result-panel', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
@@ -374,10 +372,7 @@ const UNMIGRATED: Record<string, string[]> = {
   DataSizeConverterPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
   DockerRunToComposePlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'one-trust-line', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
   DockerfileLinterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
-  EnvCheckerPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'one-trust-line', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
-  GhaValidatorPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'one-trust-line', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
   GithubActionsExpressionPlayground: ['local-chip', 'raw-duration', 'result-panel', 'slab-ink', 'one-trust-line', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
-  GitlabCiValidatorPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'one-trust-line', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
   GrafanaDashboardValidatorPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'one-trust-line', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
   HashGeneratorPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
   IpConverterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
@@ -388,8 +383,6 @@ const UNMIGRATED: Record<string, string[]> = {
   K8sResourceCalculatorPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
   LogqlPromqlPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
   MacFormatterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
-  PrometheusRelabelTesterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'one-trust-line', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
-  PromqlExplainerPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
   PtrHelperPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
   RegexLogTesterPlayground: ['local-chip', 'raw-duration', 'result-panel', 'slab-ink', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
   SlugifyPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],

@@ -4,11 +4,17 @@
  *
  * A no-framework, server-rendered shell hydrated by a single module <script>
  * that lazily boots one CodeMirror 6 editor for a PromQL query, wires the
- * example chips and an "Explain" action, then renders a plain-English
- * explanation card plus a token → meaning breakdown list. It runs entirely
- * client-side — no upload, no network.
+ * example chips and live explanation with a "Run now" control, then renders
+ * a plain-English explanation card plus a token → meaning breakdown list.
  *
- * Runtime contract (built by sibling agents — imported lazily in the script):
+ * Built on the playground kit (src/components/playground/*): ExampleChips,
+ * EditorPane (the editor on the plate, its FigureCap and the seeded
+ * `<pre data-cm-fallback>`), RunHint and SnapshotBar on paper, and
+ * ResultPanel (figure cap, live summary, copy status) with CopyButtons (Copy
+ * link, Copy as Markdown). The results container stays here, seeded with
+ * `set:html` + `data-results`; its slab overrides anchor on `.pq-results`.
+ *
+ * Runtime contract (imported lazily in the script):
  *   ../lib/promql-explainer/engine →
  *     explain(query: string) => ExplainResult
  *   ../lib/promql-explainer/types →
@@ -16,10 +22,6 @@
  *     type ExplainResult = { error?: string; explanation: string; breakdown: ExplainPart[] }
  *   ../lib/promql-explainer/examples →
  *     examples: { id: string; label: string; query: string }[]
- *
- * The dark editor surface follows DESIGN.md `code-editor-mockup`; the
- * explanation uses the canvas surface, errors the semantic error tokens.
- * Headlines stay sentence-case, weight 600.
  */
 // Build-time import of the same `examples` the client script loads lazily.
 // Used ONLY to server-render the example chips below, so the static HTML
@@ -31,6 +33,12 @@
 import { examples as prerenderedExamples } from '../lib/promql-explainer/examples';
 import { explain } from '../lib/promql-explainer/engine';
 import { resultHtml, summaryText, EMPTY_HTML } from '../lib/promql-explainer/render';
+import ExampleChips from './playground/ExampleChips.astro';
+import EditorPane from './playground/EditorPane.astro';
+import RunHint from './playground/RunHint.astro';
+import SnapshotBar from './playground/SnapshotBar.astro';
+import ResultPanel from './playground/ResultPanel.astro';
+import CopyButton from './playground/CopyButton.astro';
 
 /**
  * Server-rendered seed. The client re-explains the same example on boot, so
@@ -48,144 +56,72 @@ const seedResult = seedExample ? explain(seedExample.query) : null;
 const seedOk = seedResult && !seedResult.error ? seedResult : null;
 const seedHtml = seedOk ? resultHtml(seedOk) : EMPTY_HTML;
 const seedSummary = seedOk ? summaryText(seedOk) : '';
+const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
 ---
 
 <section class="pq-pg" aria-label="PromQL Explainer playground">
-  <div class="card shadow-float rounded-lg overflow-hidden">
-    {/* ── Example chips ────────────────────────────────────────────────── */}
-    <div class="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:px-5">
-      <span class="eyebrow shrink-0">Example</span>
-      {/* Server-rendered chips: the labels are in the static HTML, and the
-          hydration script only wires the clicks. */}
-      <div id="pq-chips" class="pq-chips" role="group" aria-label="Examples">
-        {prerenderedExamples.map((ex, i) => (
-          <button
-            type="button"
-            class:list={['pq-chip', { 'is-active': i === 0 }]}
-            data-example-idx={String(i)}
-            aria-pressed={i === 0 ? 'true' : 'false'}
-          >
-            {ex.label}
-          </button>
-        ))}
-      </div>
-    </div>
-
-    {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Toolbar: example chips + Run now (paper) ─────────────────────── */}
     <div
-      class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-center sm:justify-end sm:px-5"
+      class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-end sm:justify-between sm:px-5"
     >
-      <div class="flex shrink-0 flex-wrap items-center gap-2">
-        <span class="caption text-mute hidden items-center sm:inline-flex">⌘/Ctrl + Enter</span>
-        <button
-          id="pq-explain"
-          type="button"
-          class="btn btn-primary btn-sm pq-tap"
-          title="Explain (⌘/Ctrl + Enter)"
-          aria-keyshortcuts="Meta+Enter Control+Enter"
-        >
-          <svg
-            class="pq-explain-icon h-4 w-4 shrink-0"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <circle cx="8" cy="8" r="6"></circle>
-            <path d="M8 7.5v3"></path>
-            <path d="M8 5.4v.01"></path>
-          </svg>
-          <span class="pq-explain-label">Explain</span>
-        </button>
+      <div class="flex min-w-0 flex-col gap-2">
+        <span class="eyebrow shrink-0">Example</span>
+        <ExampleChips prefix="pq" items={chipItems} active={seedExample ? 0 : null} ariaLabel="Examples" />
       </div>
-    </div>
-
-    {/* ── Query editor (single dark pane) ──────────────────────────────── */}
-    <div class="flex min-w-0 flex-col bg-inverse">
-      <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
-        <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
-          <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-          <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-          <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-        </span>
-        <span class="code-mono text-white/45">query.promql</span>
-      </div>
-      <div
-        id="pq-editor"
-        class="pq-editor min-h-40"
-        aria-label="PromQL query"
+      <button
+        id="pq-explain"
+        type="button"
+        class="btn-tool pq-tap self-start sm:self-auto"
+        title="Run now (⌘/Ctrl + Enter)"
+        aria-keyshortcuts="Meta+Enter Control+Enter"
       >
-        <pre class="pq-cm-fallback code-mono" data-cm-fallback>{seedExample?.query}</pre>
-      </div>
-      <p class="text-xs text-mute mt-1" style="padding: 0 16px 8px;">Tip: press <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd> to release focus.</p>
-      <div class="pq-snap-row flex flex-wrap items-center gap-2" style="padding: 0 16px 12px;">
-        <button id="pq-snap-save" type="button" class="pq-snap-btn">Save snapshot</button>
-        <select id="pq-snap-select" class="pq-snap-select" aria-label="Load a saved snapshot" disabled>
-          <option value="">No snapshots yet</option>
-        </select>
-        <button id="pq-snap-delete" type="button" class="pq-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
-      </div>
+        <svg
+          class="pq-explain-icon h-4 w-4 shrink-0"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.4"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="8" cy="8" r="6"></circle>
+          <path d="M8 7.5v3"></path>
+          <path d="M8 5.4v.01"></path>
+        </svg>
+        <span class="pq-explain-label">Run now</span>
+      </button>
     </div>
 
-    {/* ── Explanation panel ────────────────────────────────────────────── */}
-    <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <span class="flex items-center gap-2">
-          <span class="eyebrow">Explanation</span>
-          <button id="pq-share" type="button" class="pq-share-btn" data-copy="" hidden>
-            <svg
-              class="pq-share-icon"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M6.75 9.25l2.5-2.5"></path>
-              <path d="M8.75 4.25l1.5-1.5a2.47 2.47 0 0 1 3.5 3.5l-1.5 1.5"></path>
-              <path d="M7.25 11.75l-1.5 1.5a2.47 2.47 0 0 1-3.5-3.5l1.5-1.5"></path>
-            </svg>
-            <span class="pq-share-label">Copy link</span>
-          </button>
-          <button id="pq-md" type="button" class="pq-share-btn" data-copy="" hidden>
-            <svg
-              class="pq-share-icon"
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M2.5 4.5h11v7h-11z"></path>
-              <path d="M4.5 10V6l1.75 2L8 6v4"></path>
-              <path d="M9.75 6.5v3.25M9.75 9.75l1.25-1.25M9.75 9.75l-1.25-1.25"></path>
-            </svg>
-            <span class="pq-md-label">Copy as Markdown</span>
-          </button>
-        </span>
-        <span
-          id="pq-summary"
-          class="pq-summary code-mono text-mute"
-          role="status"
-          aria-live="polite"
-        >{seedSummary}</span>
-      </div>
+    {/* ── Query editor on the plate ────────────────────────────────────── */}
+    <EditorPane prefix="pq" label="query.promql">
+      <pre class="editor-pane__fallback code-mono pq-fallback" data-cm-fallback>{seedExample?.query}</pre>
+    </EditorPane>
 
+    {/* ── Run hint + snapshots, on paper (never inside the slab) ──────── */}
+    <div class="border-b border-hairline px-4 py-3 sm:px-5">
+      <RunHint variant="cm" />
+      <SnapshotBar prefix="pq" />
+    </div>
+
+    {/* ── Explanation — the L2 instrument under its figure cap ─────────── */}
+    <ResultPanel
+      slug="promql-explainer"
+      prefix="pq"
+      label="Explanation"
+      summary={seedSummary}
+      summaryClass="whitespace-nowrap"
+      split
+    >
+      <Fragment slot="actions">
+        <CopyButton kind="link" id="pq-share" />
+        <CopyButton kind="all" id="pq-md" label="Copy as Markdown" icon="markdown" />
+      </Fragment>
       {/* Seeded at build time (see `seedHtml` above) so the explanation is in
           the static HTML; the client replaces it with the same markup on boot. */}
-      <div id="pq-results" class="pq-results" set:html={seedHtml}></div>
-    </div>
+      <div id="pq-results" class="pq-results" set:html={seedHtml} data-results></div>
+    </ResultPanel>
   </div>
 </section>
 
@@ -197,214 +133,20 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     touch-action: manipulation;
   }
 
-  /* ── Example chips ──────────────────────────────────────────────────── */
-  .pq-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    min-width: 0;
-  }
-  .pq-chip {
-    display: inline-flex;
-    align-items: center;
-    padding: 5px 11px;
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--color-hairline-muted);
-    background: var(--color-canvas);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    line-height: 16px;
-    letter-spacing: 0.01em;
-    color: var(--color-brand-strong);
-    cursor: pointer;
-    touch-action: manipulation;
-    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
-  }
-  .pq-chip:hover {
-    border-color: var(--color-hairline-strong);
-    background: var(--color-canvas-hover);
-  }
-  .pq-chip.is-active,
-  .pq-chip[aria-pressed='true'] {
-    background: var(--color-brand-soft);
-    border-color: var(--color-brand-strong);
-    color: var(--color-brand-strong);
-  }
-  .pq-chip:focus-visible {
-    outline: 2px solid var(--color-focus);
-    outline-offset: 2px;
-  }
-  .pq-chip:disabled {
-    cursor: not-allowed;
-    color: var(--color-mute);
-    opacity: 0.7;
-  }
-  @media (pointer: coarse) {
-    .pq-chip {
-      min-height: 44px;
-    }
-  }
-
-  /* CodeMirror host — fills the dark pane, scrolls internally. */
-  .pq-editor {
-    overflow: hidden;
-  }
-  /* Build-time text stand-in for the editor, sized like the CM content so the
-     pane does not jump when the script swaps it out. Removed on mount. */
-  .pq-cm-fallback {
-    margin: 0;
-    padding: 14px 16px 16px;
+  /* The seeded query a crawler reads (global .editor-pane__fallback sets the
+     metrics), boxed to the editor's own min/max height (the script's size
+     theme) so the swap on hydration does not move the page. */
+  .pq-fallback {
+    min-height: 160px;
     max-height: 320px;
     overflow: auto;
-    color: #e6e6e6;
-    font-size: 13px;
-    line-height: 20px;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-  .pq-editor :global(.cm-editor) {
-    height: 100%;
-    background: transparent;
-    font-family: var(--font-mono);
-    font-size: 13px;
-    line-height: 20px;
-  }
-  .pq-editor :global(.cm-editor.cm-focused) {
-    /* Replace CM's default outline with a brand-blue ring (a11y: keep a ring). */
-    outline: 2px solid var(--color-link);
-    outline-offset: -2px;
-  }
-  .pq-editor :global(.cm-scroller) {
-    overflow: auto;
-    max-height: 320px;
-    font-family: var(--font-mono);
-    /* Thin, theme-matched scrollbars on the dark surface. */
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
-  }
-  .pq-editor :global(.cm-scroller)::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  .pq-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.16);
-    border-radius: var(--radius-pill);
-    border: 3px solid transparent;
-    background-clip: content-box;
-  }
-  .pq-editor :global(.cm-scroller)::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.28);
-    background-clip: content-box;
-  }
-  .pq-editor :global(.cm-gutters) {
-    background: transparent;
-    border-right: 1px solid rgba(255, 255, 255, 0.08);
-  }
-  .pq-editor :global(.cm-lineNumbers .cm-gutterElement) {
-    color: rgba(255, 255, 255, 0.32);
-  }
-  .pq-editor :global(.cm-content) {
-    padding: 14px 0 16px;
-  }
-  .pq-editor :global(.cm-line) {
-    padding-inline: 4px;
   }
 
-  .pq-snap-btn {
-    flex: 0 0 auto;
-    height: 30px;
-    padding: 0 12px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-    cursor: pointer;
-    transition: background 0.12s ease, box-shadow 0.12s ease;
-  }
-  .pq-snap-btn:hover {
-    background: var(--color-canvas-soft);
-    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
-  }
-  .pq-snap-select {
-    height: 30px;
-    max-width: 220px;
-    padding: 0 8px;
-    border-radius: var(--radius-sm);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-  }
-  .pq-snap-select:disabled {
-    color: var(--color-mute);
-    cursor: not-allowed;
-  }
-  .pq-snap-delete {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: transparent;
-    color: var(--color-mute);
-    cursor: pointer;
-    transition: background 0.12s ease, color 0.12s ease;
-  }
-  .pq-snap-delete:hover {
-    background: var(--color-error-soft);
-    color: var(--color-error-deep);
-  }
-
-  /* Summary — right-aligned counts use tabular figures so they don't jitter. */
-  .pq-summary {
-    white-space: nowrap;
-  }
-  .pq-share-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: 26px;
-    padding: 0 10px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-mute);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 16px;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: color 0.12s ease, background 0.12s ease;
-  }
-  .pq-share-btn:hover {
-    color: var(--color-brand-strong);
-    background: var(--color-hairline);
-  }
-  .pq-share-btn:focus-visible {
-    outline: 2px solid var(--color-link);
-    outline-offset: 1px;
-  }
-  .pq-share-btn.pq-share-btn--copied {
-    color: var(--color-brand-strong);
-    background: var(--color-brand-soft);
-  }
-  @media (pointer: coarse) {
-    .pq-share-btn {
-      height: auto;
-      min-height: 36px;
-    }
-  }
-
-  /* Results region. */
+  /* ── Results (runtime-injected → :global). Light rules first as the
+     documented defaults; the slab re-skin follows, anchored on this
+     component's own `.pq-results` container. ──────────────────────────── */
   .pq-results {
-    min-height: 44px;
+    min-height: var(--control-h-lg);
   }
 
   /* The plain-English explanation card. */
@@ -413,12 +155,11 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     border-radius: var(--radius-md);
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
-    animation: pq-rise 0.18s ease both;
+    animation: pq-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.pq-explanation__text) {
     font-size: 15px;
     line-height: 24px;
-    letter-spacing: -0.01em;
     color: var(--color-ink);
     text-wrap: pretty;
     word-break: break-word;
@@ -440,10 +181,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     border-radius: var(--radius-md);
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
-    animation: pq-rise 0.18s ease both;
-  }
-  :global(.pq-part:hover) {
-    box-shadow: var(--shadow-subtle);
+    animation: pq-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.pq-part__token) {
     flex: 0 0 auto;
@@ -482,7 +220,8 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
   }
   @media (prefers-reduced-motion: reduce) {
     :global(.pq-explanation),
-    :global(.pq-part) {
+    :global(.pq-part),
+    :global(.pq-error) {
       animation: none;
     }
   }
@@ -496,12 +235,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     background: var(--color-error-soft);
     box-shadow: inset 0 0 0 1px var(--color-error);
     color: var(--color-error-deep);
-    animation: pq-rise 0.18s ease both;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    :global(.pq-error) {
-      animation: none;
-    }
+    animation: pq-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.pq-error__icon) {
     flex: 0 0 auto;
@@ -526,7 +260,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     word-break: break-word;
   }
 
-  /* Empty state — generous, centered frame (ex-empty-state-card scale). */
+  /* Empty state — generous, centered frame. */
   :global(.pq-empty) {
     display: flex;
     align-items: center;
@@ -540,7 +274,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     box-shadow: var(--shadow-hairline);
   }
 
-  /* Loading dots — animate opacity only; reduced-motion handled globally. */
+  /* Loading dots — animate opacity only. */
   :global(.pq-loading) {
     display: inline-flex;
     align-items: center;
@@ -553,15 +287,15 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
   :global(.pq-loading__dot) {
     width: 6px;
     height: 6px;
-    border-radius: 9999px;
+    border-radius: 50%;
     background: var(--color-mute);
-    animation: pq-pulse 1.1s ease-in-out infinite;
+    animation: pq-pulse calc(var(--dur-base) * 6) ease-in-out infinite;
   }
   :global(.pq-loading__dot:nth-child(2)) {
-    animation-delay: 0.18s;
+    animation-delay: var(--dur-base);
   }
   :global(.pq-loading__dot:nth-child(3)) {
-    animation-delay: 0.36s;
+    animation-delay: calc(var(--dur-base) * 2);
   }
   @keyframes pq-pulse {
     0%,
@@ -587,27 +321,58 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
   .is-busy .pq-explain-icon {
     display: none;
   }
-  /* Reduced motion is handled globally (animations clamped); the “Explaining…”
-     label + aria-busy still convey the in-flight state without a spin. */
+
+  /* ── Instrument re-skin — the result panel is the L2 slab (dark in BOTH
+     themes). Everything below uses the slab ink tier. ─────────────────── */
+  .pq-results :global(.pq-empty) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-mute);
+  }
+  .pq-results :global(.pq-loading) {
+    color: var(--color-inverse-mute);
+  }
+  .pq-results :global(.pq-loading__dot) {
+    background: var(--color-inverse-mute);
+  }
+  .pq-results :global(.pq-error) {
+    background: #ff9d9514;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-error);
+    color: var(--color-inverse-error);
+  }
+  .pq-results :global(.pq-explanation),
+  .pq-results :global(.pq-part) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+  }
+  .pq-results :global(.pq-explanation__text) {
+    color: var(--color-inverse-fg);
+  }
+  .pq-results :global(.pq-part__token) {
+    background: #ffffff14;
+    box-shadow: none;
+    color: var(--color-inverse-brand);
+  }
+  .pq-results :global(.pq-part__meaning) {
+    color: var(--color-inverse-mute);
+  }
 </style>
 
 <script>
   import type { EditorView } from '@codemirror/view';
   import { createHashState } from '../lib/hash-state';
-  import { copyTextToClipboard } from '../lib/clipboard';
   import { buildMarkdownBlock } from '../lib/share-md';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  import { wireCopyButtons } from '../lib/playground-kit/copy';
+  import { syncChipsByIndex, CHIP_SELECTOR } from '../lib/playground-kit/chips';
   // The HTML builders are shared with the frontmatter's build-time seed —
   // one implementation, so the no-JS markup and the live markup never drift.
-  import {
-    resultHtml,
-    summaryText,
-    normaliseBreakdown,
-    errorHtml,
-    EMPTY_HTML,
-    LOADING_HTML,
-  } from '../lib/promql-explainer/render';
+  import { resultHtml, summaryText, normaliseBreakdown, errorHtml, EMPTY_HTML, LOADING_HTML } from '../lib/promql-explainer/render';
   import type { ExplainResult } from '../lib/promql-explainer/types';
+
+  // CodeMirror (and the kit's plate theme, which imports @codemirror/view) is
+  // loaded via dynamic import inside init() so its runtime code-splits into
+  // its own chunk instead of shipping in the page's initial JS.
 
   type EngineModule = {
     explain: (query: string) => ExplainResult | Promise<ExplainResult>;
@@ -615,6 +380,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
   type Example = { id: string; label: string; query: string };
 
   const ROOT_SEL = '.pq-pg';
+  const SLUG = 'promql-explainer';
 
   /** Boot every (so far un-hydrated) playground instance on the page. */
   function boot(): void {
@@ -648,36 +414,30 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
 
   /* ---- Result rendering (DOM writes over the shared pure builders) --------- */
 
+  /** Summary ink on the slab: inverse tier only (never paper text-mute). */
+  function setSummary(summary: HTMLElement, text: string, isError: boolean): void {
+    summary.textContent = text;
+    summary.classList.toggle('text-inverse-error', isError);
+    summary.classList.toggle('text-inverse-mute', !isError);
+  }
+
   function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
-    summary.textContent = '';
-    summary.classList.remove('text-error');
-    summary.classList.add('text-mute');
+    setSummary(summary, '', false);
     container.innerHTML = EMPTY_HTML;
   }
 
   function renderLoading(container: HTMLElement, summary: HTMLElement): void {
-    summary.textContent = '';
-    summary.classList.remove('text-error');
-    summary.classList.add('text-mute');
+    setSummary(summary, '', false);
     container.innerHTML = LOADING_HTML;
   }
 
   function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
-    summary.textContent = 'Error';
-    summary.classList.remove('text-mute');
-    summary.classList.add('text-error');
+    setSummary(summary, 'Error', true);
     container.innerHTML = errorHtml(message);
   }
 
-  function renderResult(
-    container: HTMLElement,
-    summary: HTMLElement,
-    result: ExplainResult
-  ): void {
-    const isError = !result || Boolean(result.error);
-    summary.textContent = summaryText(result);
-    summary.classList.toggle('text-error', isError);
-    summary.classList.toggle('text-mute', !isError);
+  function renderResult(container: HTMLElement, summary: HTMLElement, result: ExplainResult): void {
+    setSummary(summary, summaryText(result), !result || Boolean(result.error));
     container.innerHTML = resultHtml(result);
   }
 
@@ -691,6 +451,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     const summaryEl = el<HTMLElement>(root, '#pq-summary');
     const shareBtn = el<HTMLButtonElement>(root, '#pq-share');
     const mdBtn = el<HTMLButtonElement>(root, '#pq-md');
+    const copyStatus = el<HTMLElement>(root, '#pq-copy-status');
     const snapSaveBtn = el<HTMLButtonElement>(root, '#pq-snap-save');
     const snapSelect = el<HTMLSelectElement>(root, '#pq-snap-select');
     const snapDeleteBtn = el<HTMLButtonElement>(root, '#pq-snap-delete');
@@ -710,124 +471,127 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
       return;
     }
 
+    // Copy link + Copy as Markdown: the kit's one delegated listener;
+    // outcomes are announced in ResultPanel's #pq-copy-status.
+    wireCopyButtons(root, { status: copyStatus });
+
     const hashState = createHashState('q');
 
     function hideShare(): void {
       shareBtn!.hidden = true;
       shareBtn!.dataset.copy = '';
       mdBtn!.hidden = true;
+      mdBtn!.dataset.copy = '';
     }
 
-    let shareCopyTimer: number | undefined;
-    shareBtn.addEventListener('click', () => {
-      const text = shareBtn.dataset.copy ?? '';
-      void copyTextToClipboard(text).then((ok) => {
-        if (!ok) return;
-        shareBtn.classList.add('pq-share-btn--copied');
-        const label = shareBtn.querySelector('.pq-share-label');
-        if (label) label.textContent = 'Copied';
-        window.clearTimeout(shareCopyTimer);
-        shareCopyTimer = window.setTimeout(() => {
-          shareBtn.classList.remove('pq-share-btn--copied');
-          if (label) label.textContent = 'Copy link';
-        }, 1500);
-      });
-    });
-
-    let mdCopyTimer: number | undefined;
-    mdBtn.addEventListener('click', () => {
-      const text = mdBtn.dataset.copy ?? '';
-      void copyTextToClipboard(text).then((ok) => {
-        if (!ok) return;
-        mdBtn.classList.add('pq-share-btn--copied');
-        const label = mdBtn.querySelector('.pq-md-label');
-        if (label) label.textContent = 'Copied';
-        window.clearTimeout(mdCopyTimer);
-        mdCopyTimer = window.setTimeout(() => {
-          mdBtn.classList.remove('pq-share-btn--copied');
-          if (label) label.textContent = 'Copy as Markdown';
-        }, 1500);
-      });
-    });
-
-    // Lazily load the sibling engine + examples + CodeMirror (kept out of the
-    // initial path so CM code-splits into its own chunk).
+    // Lazily load CodeMirror + the plate theme + the engine + examples (kept
+    // out of the initial path so the CM runtime code-splits into its own chunk).
     let engine: EngineModule;
     let examples: Example[] = [];
-    let EditorState: typeof import('@codemirror/state').EditorState;
-    let EditorViewCtor: typeof import('@codemirror/view').EditorView;
-    let keymap: typeof import('@codemirror/view').keymap;
-    let lineNumbers: typeof import('@codemirror/view').lineNumbers;
-    let highlightActiveLine: typeof import('@codemirror/view').highlightActiveLine;
-    let defaultKeymap: typeof import('@codemirror/commands').defaultKeymap;
-    let history: typeof import('@codemirror/commands').history;
-    let historyKeymap: typeof import('@codemirror/commands').historyKeymap;
-    let indentWithTab: typeof import('@codemirror/commands').indentWithTab;
-    let oneDark: typeof import('@codemirror/theme-one-dark').oneDark;
+    let makeEditor: (host: HTMLElement, doc: string) => EditorView;
+    let setEditorDoc: (view: EditorView, doc: string) => void;
     try {
-      const [engineMod, examplesMod, stateMod, viewMod, commandsMod, themeMod] =
-        await Promise.all([
-          import('../lib/promql-explainer/engine'),
-          import('../lib/promql-explainer/examples'),
-          import('@codemirror/state'),
-          import('@codemirror/view'),
-          import('@codemirror/commands'),
-          import('@codemirror/theme-one-dark'),
-        ]);
+      const [
+        engineMod,
+        examplesMod,
+        { EditorState },
+        { EditorView, keymap, lineNumbers, highlightActiveLine },
+        { defaultKeymap, history, historyKeymap, indentWithTab },
+        { plate },
+      ] = await Promise.all([
+        import('../lib/promql-explainer/engine'),
+        import('../lib/promql-explainer/examples'),
+        import('@codemirror/state'),
+        import('@codemirror/view'),
+        import('@codemirror/commands'),
+        import('../lib/playground-kit/cm-theme'),
+      ]);
       engine = engineMod as unknown as EngineModule;
       examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
-      ({ EditorState } = stateMod);
-      ({ EditorView: EditorViewCtor, keymap, lineNumbers, highlightActiveLine } = viewMod);
-      ({ defaultKeymap, history, historyKeymap, indentWithTab } = commandsMod);
-      ({ oneDark } = themeMod);
+
+      // Size only (the plate theme owns colour; global.css owns the focus
+      // ring): 13px like the seeded fallback, scrolling inside 160–320px.
+      const sizeTheme = EditorView.theme({
+        '&': { fontSize: '13px', maxHeight: '320px' },
+        '.cm-scroller': { overflow: 'auto' },
+        '.cm-content, .cm-gutter': { minHeight: '160px' },
+      });
+
+      makeEditor = (host: HTMLElement, doc: string): EditorView => {
+        const state = EditorState.create({
+          doc,
+          extensions: [
+            lineNumbers(),
+            history(),
+            highlightActiveLine(),
+            EditorView.lineWrapping,
+            EditorView.contentAttributes.of({ 'aria-label': 'PromQL query' }),
+            keymap.of([
+              // ⌘/Ctrl+Enter runs now — placed BEFORE defaultKeymap, whose
+              // Mod-Enter would otherwise insert a blank line.
+              {
+                key: 'Mod-Enter',
+                run: (v) => {
+                  forceRun();
+                  if (window.matchMedia?.('(pointer: coarse)').matches) v.contentDOM.blur();
+                  return true;
+                },
+              },
+              {
+                key: 'Escape',
+                run: (v) => {
+                  v.contentDOM.blur();
+                  return true;
+                },
+              },
+              ...defaultKeymap,
+              ...historyKeymap,
+              indentWithTab,
+            ]),
+            plate,
+            sizeTheme,
+            // Live eval: re-explain once the query settles.
+            EditorView.updateListener.of((u) => {
+              if (u.docChanged) scheduleLive();
+            }),
+          ],
+        });
+        return new EditorView({ state, parent: host });
+      };
+
+      setEditorDoc = (view: EditorView, doc: string): void => {
+        view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
+      };
     } catch (err) {
-      renderError(
-        resultsBox,
-        summaryEl,
-        'The PromQL Explainer engine failed to load. Reload the page to try again.'
-      );
+      renderError(resultsBox, summaryEl, 'The PromQL Explainer engine failed to load. Reload the page to try again.');
       // eslint-disable-next-line no-console
       console.error('[PromqlExplainer] engine/examples import failed:', err);
       return;
     }
 
-    /* ---- Editor factory (CM symbols now in async scope) --------------------- */
+    /* ---- Live evaluation ---------------------------------------------------
+     * ~220ms after the query settles it is re-explained quietly (no spinner,
+     * no loading flash). Calm errors: a live run that fails to parse holds
+     * the previous panel and reveals the error only after ~600ms of idle in
+     * total. `liveReady` keeps the seed and example dispatches from firing it. */
+    const LIVE_DEBOUNCE_MS = 220;
+    const ERROR_HOLD_MS = 380;
+    let liveReady = false;
+    let liveTimer: number | undefined;
+    let errorHoldTimer: number | undefined;
 
-    const baseTheme = EditorViewCtor.theme({
-      '&': { color: '#e6e6e6' },
-      '.cm-content': { caretColor: '#e6e6e6' },
-      '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
-      '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
-        backgroundColor: 'rgba(0, 112, 243, 0.32)',
-      },
-      '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
-      '.cm-activeLineGutter': { backgroundColor: 'transparent' },
-    });
-
-    function makeEditor(host: HTMLElement, doc: string): EditorView {
-      const state = EditorState.create({
-        doc,
-        extensions: [
-          lineNumbers(),
-          history(),
-          highlightActiveLine(),
-          EditorViewCtor.lineWrapping,
-          keymap.of([
-            { key: 'Escape', run: function(view) { view.contentDOM.blur(); return true; } },
-            ...defaultKeymap,
-            ...historyKeymap,
-            indentWithTab,
-          ]),
-          oneDark,
-          baseTheme,
-        ],
-      });
-      // The host already carries the aria-label/role for screen readers; CM mounts inside.
-      return new EditorViewCtor({ state, parent: host });
+    function scheduleLive(): void {
+      if (!liveReady) return;
+      window.clearTimeout(liveTimer);
+      window.clearTimeout(errorHoldTimer);
+      liveTimer = window.setTimeout(() => void explainNow({ live: true }), LIVE_DEBOUNCE_MS);
     }
 
-    function setEditorDoc(view: EditorView, doc: string): void {
-      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
+    /** Deliberate run (Run now, ⌘/Ctrl+Enter, a chip): cancel the debounce, go now. */
+    function forceRun(): void {
+      window.clearTimeout(liveTimer);
+      window.clearTimeout(errorHoldTimer);
+      void explainNow();
     }
 
     // Seed priority: #q= deep link > restored last input > first example. The
@@ -835,7 +599,7 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
     // so the deep-link and restore tiers must be resolved BEFORE the fallback
     // is dropped — they replace the seed, never the other way round.
     const hashValue = hashState.read();
-    const restored = getRestoredLastInput('promql-explainer');
+    const restored = getRestoredLastInput(SLUG);
     const seedExample = examples[0] ?? { id: 'empty', label: 'Example', query: '' };
     const view = makeEditor(editorHost, hashValue ?? restored ?? seedExample.query);
     // The build-time text stand-in has done its job (no-JS visitors and
@@ -844,109 +608,120 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
 
     // The example chips are already in the static HTML (server-rendered from
     // the same `examples` module); hydration only wires them.
-    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>('.pq-chip'));
-    if (examples.length === 0) chips.forEach((chip) => { chip.disabled = true; });
-
-    /** Mark one chip active — or none, when the editor was seeded from a
-        #q= deep link, a restored input or a snapshot. */
-    function setActiveChip(idx: number | null): void {
+    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>(CHIP_SELECTOR));
+    if (examples.length === 0)
       chips.forEach((chip) => {
-        const active = idx !== null && chip.dataset.exampleIdx === String(idx);
-        chip.classList.toggle('is-active', active);
-        chip.setAttribute('aria-pressed', active ? 'true' : 'false');
+        chip.disabled = true;
       });
-    }
 
-    // The first chip is server-rendered active; a deep link or a restored
+    // The first chip is server-rendered pressed; a deep link or a restored
     // input means no example is loaded, so nothing should read as selected.
-    if (hashValue || restored || examples.length === 0) {
-      setActiveChip(null);
-    } else {
-      setActiveChip(0);
-    }
+    syncChipsByIndex(chipsWrap, hashValue || restored || examples.length === 0 ? null : 0);
 
-    // Swap the editor doc when a different example is chosen.
+    // Swap the editor doc when a different example is chosen, then explain it.
     chips.forEach((chip) => {
       chip.addEventListener('click', () => {
         const idx = Number(chip.dataset.exampleIdx);
         if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
-        setActiveChip(idx);
+        syncChipsByIndex(chipsWrap, idx);
         setEditorDoc(view, examples[idx].query);
-        hideShare();
-        hashState.write(null);
-        renderEmpty(resultsBox, summaryEl);
+        forceRun();
       });
     });
 
-    // Explain — non-blocking; show loading, yield a frame, then render.
+    // Explain — non-blocking. A deliberate run shows the loading state and a
+    // spinner in Run now; a live (debounced) or seed run is quiet. The seed
+    // never writes the #q= hash or records a last input.
+    type RunOpts = { live?: boolean; showErrors?: boolean; seed?: boolean };
     let running = false;
+    let rerun: RunOpts | null = null;
     const explainLabel = explainBtn.querySelector<HTMLElement>('.pq-explain-label');
     let spinner: HTMLElement | null = null;
 
-    async function explainNow(userInitiated = true): Promise<void> {
-      // Guaranteed present by the early return in boot(); restated because TypeScript
+    async function explainNow(opts: RunOpts = {}): Promise<void> {
+      // Guaranteed present by the early return in init(); restated because TypeScript
       // discards that narrowing inside a hoisted function declaration.
       if (!explainBtn) return;
-      if (running) return;
-      running = true;
-      explainBtn.classList.add('is-busy');
-      // Keep focus on the control for keyboard users: mark busy, not disabled.
-      explainBtn.setAttribute('aria-disabled', 'true');
-      explainBtn.setAttribute('aria-busy', 'true');
-      if (!spinner) {
-        spinner = document.createElement('span');
-        spinner.setAttribute('aria-hidden', 'true');
-        // Inline the visual so it never depends on Astro's scoped CSS — this
-        // span is created at runtime and would not receive the component's scope hash.
-        spinner.style.cssText =
-          'display:inline-block;width:14px;height:14px;flex:0 0 auto;border-radius:9999px;' +
-          'border:2px solid currentColor;border-top-color:transparent;';
-        if (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-          spinner.animate(
-            [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }],
-            { duration: 700, iterations: Infinity }
-          );
-        }
-        explainBtn.insertBefore(spinner, explainBtn.firstChild);
+      const live = opts.live === true;
+      const seeded = opts.seed === true;
+      const quiet = live || seeded;
+      if (running) {
+        rerun = opts;
+        return;
       }
-      if (explainLabel) explainLabel.textContent = 'Explaining…';
-      renderLoading(resultsBox!, summaryEl!);
+      running = true;
+      if (!quiet) {
+        explainBtn.classList.add('is-busy');
+        // Keep focus on the control for keyboard users: mark busy, not disabled.
+        explainBtn.setAttribute('aria-disabled', 'true');
+        explainBtn.setAttribute('aria-busy', 'true');
+        if (!spinner) {
+          spinner = document.createElement('span');
+          spinner.setAttribute('aria-hidden', 'true');
+          // Inline the visual so it never depends on Astro's scoped CSS — this
+          // span is created at runtime and would not receive the component's scope hash.
+          spinner.style.cssText =
+            'display:inline-block;width:14px;height:14px;flex:0 0 auto;border-radius:50%;' +
+            'border:2px solid currentColor;border-top-color:transparent;';
+          if (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            spinner.animate([{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }], {
+              duration: 700,
+              iterations: Infinity,
+            });
+          }
+          explainBtn.insertBefore(spinner, explainBtn.firstChild);
+        }
+        if (explainLabel) explainLabel.textContent = 'Explaining…';
+        renderLoading(resultsBox!, summaryEl!);
 
-      // Yield so the loading state paints before (potentially heavy) work runs.
-      await new Promise<void>((resolve) => {
-        if ('requestAnimationFrame' in window) requestAnimationFrame(() => resolve());
-        else setTimeout(resolve, 0);
-      });
+        // Yield so the loading state paints before (potentially heavy) work runs.
+        await new Promise<void>((resolve) => {
+          if ('requestAnimationFrame' in window) requestAnimationFrame(() => resolve());
+          else setTimeout(resolve, 0);
+        });
+      }
 
       try {
         const query = view.state.doc.toString();
-        const result = await Promise.resolve(engine.explain(query));
-        renderResult(resultsBox!, summaryEl!, result);
-        const breakdown = normaliseBreakdown(result?.breakdown);
-        const explanation = typeof result?.explanation === 'string' ? result.explanation : '';
-        if (result && !result.error && (explanation || breakdown.length > 0)) {
-          shareBtn!.hidden = false;
-          shareBtn!.dataset.copy =
-            location.origin + location.pathname + location.search + hashState.build(query);
-          if (userInitiated) hashState.write(query);
-          if (userInitiated) recordToolLastInput('promql-explainer', query);
-
-          mdBtn!.hidden = false;
-          mdBtn!.dataset.copy = buildMarkdownBlock('PromQL Explainer', [
-            { label: 'Query', value: query },
-            { label: 'Explanation', value: explanation },
-            ...breakdown.map((p) => ({ label: p.token, value: p.meaning })),
-          ]);
-        } else {
+        if (query.trim().length === 0) {
+          renderEmpty(resultsBox!, summaryEl!);
           hideShare();
-          if (userInitiated) hashState.write(null);
+          if (!seeded) hashState.write(null);
+        } else {
+          const result = await Promise.resolve(engine.explain(query));
+          const breakdown = normaliseBreakdown(result?.breakdown);
+          const explanation = typeof result?.explanation === 'string' ? result.explanation : '';
+          const good = Boolean(result && !result.error && (explanation || breakdown.length > 0));
+          if (live && !good && opts.showErrors !== true) {
+            // Hold the last good panel; reveal the error only after a longer idle.
+            window.clearTimeout(errorHoldTimer);
+            errorHoldTimer = window.setTimeout(() => void explainNow({ live: true, showErrors: true }), ERROR_HOLD_MS);
+          } else {
+            renderResult(resultsBox!, summaryEl!, result);
+            if (good) {
+              shareBtn!.hidden = false;
+              shareBtn!.dataset.copy = location.origin + location.pathname + location.search + hashState.build(query);
+              mdBtn!.hidden = false;
+              mdBtn!.dataset.copy = buildMarkdownBlock('PromQL Explainer', [
+                { label: 'Query', value: query },
+                { label: 'Explanation', value: explanation },
+                ...breakdown.map((p) => ({ label: p.token, value: p.meaning })),
+              ]);
+              if (!seeded) {
+                hashState.write(query);
+                recordToolLastInput(SLUG, query);
+              }
+            } else {
+              hideShare();
+              if (!seeded) hashState.write(null);
+            }
+          }
         }
       } catch (err) {
-        const msg =
-          err instanceof Error ? err.message : 'Unexpected error while explaining the query.';
+        const msg = err instanceof Error ? err.message : 'Unexpected error while explaining the query.';
         renderError(resultsBox!, summaryEl!, msg);
         hideShare();
-        if (userInitiated) hashState.write(null);
+        if (!seeded) hashState.write(null);
       } finally {
         running = false;
         explainBtn.classList.remove('is-busy');
@@ -956,43 +731,46 @@ const seedSummary = seedOk ? summaryText(seedOk) : '';
           spinner.remove();
           spinner = null;
         }
-        if (explainLabel) explainLabel.textContent = 'Explain';
+        if (explainLabel) explainLabel.textContent = 'Run now';
+        if (rerun) {
+          const next = rerun;
+          rerun = null;
+          void explainNow(next);
+        }
       }
     }
 
-    explainBtn.addEventListener('click', () => void explainNow());
+    explainBtn.addEventListener('click', () => forceRun());
 
-    // Cmd/Ctrl+Enter from inside the editor / toolbar triggers an explain.
+    // ⌘/Ctrl+Enter anywhere else in the playground (a chip, Run now); inside
+    // the editor the Mod-Enter binding has already handled it.
     root.addEventListener('keydown', (e) => {
+      if (e.defaultPrevented) return;
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
-        void explainNow();
+        forceRun();
       }
     });
 
     wireSnapshotUI({
-      slug: 'promql-explainer',
+      slug: SLUG,
       saveBtn: snapSaveBtn,
       snapshotSelect: snapSelect,
       deleteBtn: snapDeleteBtn,
       getValue: () => view.state.doc.toString(),
       setValue: (value) => {
         setEditorDoc(view, value);
-        setActiveChip(null);
-        void explainNow();
+        syncChipsByIndex(chipsWrap, null);
+        forceRun();
       },
     });
 
     // Explain whatever the editor ended up holding — a #q= deep link, a restored
-    // last input, or the seeded example — so the panel is never empty on arrival.
-    //
-    // This previously fell through to renderEmpty() for the seeded-example case,
-    // which is the case almost every visitor gets. A tool whose entire pitch is
-    // "paste a query, get plain English" opened showing a query and no English,
-    // behind an Explain button most people never pressed. Same defect fixed in
-    // GithubActionsExpressionPlayground; renderEmpty is still used for a
-    // genuinely empty editor, which explainNow handles.
-    void explainNow(false);
+    // last input, or the seeded example — so the panel is never empty on
+    // arrival. Quiet, and not user input: no hash write, no last-input record.
+    void explainNow({ seed: true });
+    // Only now may keystrokes drive the panel (seed dispatches must not).
+    liveReady = true;
   }
 
   boot();

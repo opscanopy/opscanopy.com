@@ -3,9 +3,15 @@
  * GitlabCiValidatorPlayground — the interactive GitLab CI Validator island.
  *
  * A no-framework, server-rendered shell hydrated by a single module <script>
- * that lazily boots ONE CodeMirror 6 editor (YAML), wires an example picker,
- * a "Validate" action, plus Copy + Share. It runs entirely client-side and is
- * fully usable offline once loaded.
+ * that lazily boots ONE CodeMirror 6 editor (YAML), wires the example chips,
+ * live validation with a "Run now" control, Copy (the YAML) and Copy link.
+ *
+ * Built on the playground kit (src/components/playground/*): ExampleChips,
+ * EditorPane (the editor on the plate, its FigureCap and the seeded
+ * `<pre data-cm-fallback>`), RunHint and SnapshotBar on paper under it, and
+ * ResultPanel (figure cap, live summary, copy status) with CopyButton. The
+ * results container stays here, seeded with `set:html` + `data-results`; its
+ * slab overrides anchor on `.glci-results`.
  *
  * Runtime contract (imported lazily in the script):
  *   ../lib/gitlab-ci-validator/engine →
@@ -26,27 +32,30 @@
  *   ../lib/gitlab-ci-validator/examples →
  *     examples: Array<{ id: string; label: string; yaml: string }>
  *
- * The dark editor surface follows DESIGN.md `code-editor-mockup`; findings use
- * the semantic error / warning tokens and mute/neutral for info. Headlines stay
- * sentence-case, weight 600. All runtime-injected result markup is styled via
- * :global(...) because Astro scoped styles do not reach innerHTML-injected nodes.
+ * All runtime-injected result markup is styled via :global(...) because
+ * Astro scoped styles do not reach innerHTML-injected nodes.
  */
 // Build-time import of the same `examples` the client script loads lazily.
 // Used ONLY to server-render the example chips below, so the static HTML
 // carries real example names rather than a "Loading examples…" placeholder
 // that crawlers and no-JS visitors would otherwise be served. The chips are
-// never rebuilt at hydration — the script only wires clicks onto them and
-// reads `data-example-idx`, so this adds nothing to the client bundle and
-// cannot drift from the array the script lazily imports.
+// final markup — hydration only attaches click handlers and moves the pressed
+// state — so this adds nothing to the client bundle and cannot drift.
 import { examples as prerenderedExamples } from '../lib/gitlab-ci-validator/examples';
 import { validate } from '../lib/gitlab-ci-validator/engine';
 import { resultsHtml, resultSummary, EMPTY_HTML } from '../lib/gitlab-ci-validator/render';
+import ExampleChips from './playground/ExampleChips.astro';
+import EditorPane from './playground/EditorPane.astro';
+import RunHint from './playground/RunHint.astro';
+import SnapshotBar from './playground/SnapshotBar.astro';
+import ResultPanel from './playground/ResultPanel.astro';
+import CopyButton from './playground/CopyButton.astro';
 
 /**
  * Server-rendered seed. The client re-validates the same example on boot, so
  * this is pure progressive enhancement — but it means a visitor with no JS,
- * and every AI crawler (they do not execute JS), sees the real verdict for the
- * first pipeline instead of "load an example, then validate".
+ * and every AI crawler (they do not execute JS), sees the real findings for
+ * the first pipeline instead of "load an example, then validate".
  *
  * `validate` is pure, synchronous and clock-free, so it runs at build time
  * unchanged. The pipeline YAML itself goes into a `<pre data-cm-fallback>`
@@ -61,155 +70,80 @@ const seedResult = seedExample ? validate(seedYaml) : null;
 const seedOk = seedResult && seedResult.ok !== false && !seedResult.error ? seedResult : null;
 const seedHtml = seedOk ? resultsHtml(seedOk) : EMPTY_HTML;
 const seedSummary = seedOk ? resultSummary(seedOk).text : '';
-const seedSummaryTone =
-  seedOk && resultSummary(seedOk).tone === 'error' ? 'text-error' : 'text-mute';
+const seedError = Boolean(seedOk && resultSummary(seedOk).tone === 'error');
+const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
 ---
 
 <section class="glci" aria-label="GitLab CI Validator playground">
-  <div class="card shadow-float rounded-lg overflow-hidden">
-    {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Toolbar: example chips + Run now (paper) ─────────────────────── */}
     <div
-      class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:px-5"
+      class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-end sm:justify-between sm:px-5"
     >
       <div class="flex min-w-0 flex-col gap-2">
         <span class="eyebrow shrink-0">Example</span>
-        {/* Real <button> chips, server-rendered in DOM order so tab order and
-            no-JS legibility come for free. The first is pre-marked active to
-            match the boot seed; the script clears it when a shared or restored
-            pipeline wins instead. */}
-        <div id="glci-chips" class="glci-chips" role="group" aria-label="Examples">
-          {prerenderedExamples.map((ex, i) => (
-            <button
-              type="button"
-              class:list={['glci-chip', { 'is-active': i === 0 }]}
-              data-example-idx={i}
-              aria-pressed={i === 0 ? 'true' : 'false'}
-            >
-              {ex.label}
-            </button>
-          ))}
-        </div>
+        {/* Chip 0 is the seed; a #glci= share link or a restored input
+            releases it (see the script). */}
+        <ExampleChips prefix="glci" items={chipItems} active={seedExample ? 0 : null} ariaLabel="Examples" />
       </div>
-
-      <div class="flex shrink-0 flex-wrap items-center gap-2">
-        <span class="caption text-mute hidden items-center sm:inline-flex">⌘/Ctrl + Enter</span>
-        <button
-          id="glci-copy"
-          type="button"
-          class="btn btn-secondary btn-sm glci-tap"
-          data-default-label="Copy"
-        >
-          <svg
-            class="h-4 w-4 shrink-0"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <rect x="5.5" y="5.5" width="8" height="8" rx="1.5"></rect>
-            <path d="M3.5 10.5h-.5a1.5 1.5 0 0 1-1.5-1.5v-6A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5"></path>
-          </svg>
-          <span class="glci-copy-label">Copy</span>
-        </button>
-        <button
-          id="glci-share"
-          type="button"
-          class="btn btn-secondary btn-sm glci-tap"
-          data-default-label="Share Link"
-          title="This link encodes your full .gitlab-ci.yml — review before sharing"
-        >
-          <svg
-            class="h-4 w-4 shrink-0"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M6 8.5l4-1.5M6 8.5l4 1.5"></path>
-            <circle cx="4" cy="8" r="1.6"></circle>
-            <circle cx="11.5" cy="5" r="1.6"></circle>
-            <circle cx="11.5" cy="11" r="1.6"></circle>
-          </svg>
-          <span class="glci-share-label">Share Link</span>
-        </button>
-        <button
-          id="glci-run"
-          type="button"
-          class="btn btn-primary btn-sm glci-tap"
-          title="Validate (⌘/Ctrl + Enter)"
-          aria-keyshortcuts="Meta+Enter Control+Enter"
-        >
-          <svg
-            class="glci-run-icon h-4 w-4 shrink-0"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M2.5 8.5l3.5 3.5 7.5-8"></path>
-          </svg>
-          <span class="glci-run-label">Validate</span>
-        </button>
-      </div>
-    </div>
-
-    {/* ── Editor (single, full-width, dark mockup surface) ─────────────── */}
-    <div class="glci-pane flex min-w-0 flex-col bg-inverse">
-      <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
-        <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
-          <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-          <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-          <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-        </span>
-        <span class="code-mono text-white/45">.gitlab-ci.yml</span>
-      </div>
-      <p class="body-sm text-white/55 mb-2">Runs entirely in your browser — nothing is uploaded.</p>
-      <div
-        id="glci-editor"
-        class="glci-editor min-h-80"
-        aria-label="GitLab CI pipeline (YAML)"
+      <button
+        id="glci-run"
+        type="button"
+        class="btn-tool glci-tap self-start sm:self-auto"
+        title="Run now (⌘/Ctrl + Enter)"
+        aria-keyshortcuts="Meta+Enter Control+Enter"
       >
-        <pre class="glci-cm-fallback code-mono" data-cm-fallback>{seedYaml}</pre>
-      </div>
-      <p class="text-xs text-white/45 mt-1">Tip: press <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd> to release keyboard focus from the editor.</p>
-      <div class="glci-snap-row mt-2 flex flex-wrap items-center gap-2 px-4 pb-3">
-        <button id="glci-snap-save" type="button" class="glci-snap-btn">Save snapshot</button>
-        <select id="glci-snap-select" class="glci-snap-select" aria-label="Load a saved snapshot" disabled>
-          <option value="">No snapshots yet</option>
-        </select>
-        <button id="glci-snap-delete" type="button" class="glci-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
-      </div>
+        <svg
+          class="glci-run-icon h-4 w-4 shrink-0"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.4"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M2.5 8.5l3.5 3.5 7.5-8"></path>
+        </svg>
+        <span class="glci-run-label">Run now</span>
+      </button>
     </div>
 
-    {/* ── Results panel ────────────────────────────────────────────────── */}
-    <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex items-center justify-between gap-3">
-        <span class="eyebrow">Results</span>
-        <span
-          id="glci-summary"
-          class:list={['glci-summary code-mono', seedSummaryTone]}
-          role="status"
-          aria-live="polite"
-        >{seedSummary}</span>
-      </div>
+    {/* ── Editor on the plate ──────────────────────────────────────────── */}
+    <EditorPane prefix="glci" label=".gitlab-ci.yml">
+      <Fragment slot="actions">
+        <CopyButton kind="value" id="glci-copy" label="Copy" hidden={false} ariaLabel="Copy pipeline YAML" />
+      </Fragment>
+      <pre class="editor-pane__fallback code-mono glci-fallback" data-cm-fallback>{seedYaml}</pre>
+    </EditorPane>
 
-      {/* Seeded at build time (see `seedHtml` above) so the findings are in the
+    {/* ── Run hint + snapshots, on paper (never inside the slab) ──────── */}
+    <div class="border-b border-hairline px-4 py-3 sm:px-5">
+      <RunHint variant="cm" />
+      <SnapshotBar prefix="glci" />
+    </div>
+
+    {/* ── Results — the L2 instrument under its figure cap ─────────────── */}
+    <ResultPanel
+      slug="gitlab-ci-validator"
+      prefix="glci"
+      label="Results"
+      summary={seedSummary}
+      summaryClass={seedError ? 'whitespace-nowrap text-inverse-error' : 'whitespace-nowrap'}
+      split
+    >
+      <Fragment slot="actions">
+        <CopyButton kind="link" id="glci-share" />
+      </Fragment>
+      {/* NOT a live region: with live eval the whole findings list would be
+          re-announced on every keystroke pause. `#glci-summary` (role="status")
+          is the sole live region — the playground a11y contract.
+
+          Seeded at build time (see `seedHtml` above) so the findings are in the
           static HTML; the client rebuilds the same markup on boot. */}
-      <div id="glci-results" class="glci-results" set:html={seedHtml}></div>
-    </div>
+      <div id="glci-results" class="glci-results" set:html={seedHtml} data-results></div>
+    </ResultPanel>
   </div>
-
-  {/* Polite announcer for clipboard + transient toasts. */}
-  <span id="glci-announce" class="sr-only" role="status" aria-live="polite"></span>
 </section>
 
 <style>
@@ -220,185 +154,41 @@ const seedSummaryTone =
     touch-action: manipulation;
   }
 
-  /* ── Example chips (playground UX contract; ported from SlugifyPlayground) ── */
-  .glci-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .glci-chip {
-    display: inline-flex;
-    align-items: center;
-    padding: 5px 11px;
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--color-hairline-muted);
-    background: var(--color-canvas);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    line-height: 16px;
-    letter-spacing: 0.01em;
-    color: var(--color-brand-strong);
-    cursor: pointer;
-    touch-action: manipulation;
-    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
-  }
-  .glci-chip:hover {
-    border-color: var(--color-hairline-strong);
-    background: var(--color-canvas-hover);
-  }
-  .glci-chip.is-active {
-    background: var(--color-brand-soft);
-    border-color: var(--color-brand-strong);
-    color: var(--color-brand-strong);
-  }
-  .glci-chip:focus-visible {
-    outline: 2px solid var(--color-focus);
-    outline-offset: 2px;
-  }
-  @media (pointer: coarse) {
-    .glci-chip {
-      min-height: 44px;
-    }
-  }
-
-  .glci-snap-btn {
-    flex: 0 0 auto;
-    height: 30px;
-    padding: 0 12px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-    cursor: pointer;
-    transition: background 0.12s ease, box-shadow 0.12s ease;
-  }
-  .glci-snap-btn:hover {
-    background: var(--color-canvas-soft);
-    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
-  }
-  .glci-snap-select {
-    height: 30px;
-    max-width: 220px;
-    padding: 0 8px;
-    border-radius: var(--radius-sm);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-  }
-  .glci-snap-select:disabled {
-    color: var(--color-mute);
-    cursor: not-allowed;
-  }
-  .glci-snap-delete {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: transparent;
-    color: var(--color-mute);
-    cursor: pointer;
-    transition: background 0.12s ease, color 0.12s ease;
-  }
-  .glci-snap-delete:hover {
-    background: var(--color-error-soft);
-    color: var(--color-error-deep);
-  }
-
-  /* CodeMirror host — fills the dark pane, scrolls internally. */
-  .glci-editor {
-    overflow: hidden;
-  }
-  /* Build-time text stand-in for the editor, sized like the CM content so the
-     pane does not jump when the script swaps it out. Removed on mount. */
-  .glci-cm-fallback {
-    margin: 0;
-    padding: 14px 16px 16px;
-    max-height: 360px;
-    overflow: auto;
-    color: #e6e6e6;
-    font-size: 13px;
-    line-height: 20px;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-  .glci-editor :global(.cm-editor) {
-    height: 100%;
-    background: transparent;
-    font-family: var(--font-mono);
-    font-size: 13px;
-    line-height: 20px;
-  }
-  .glci-editor :global(.cm-editor.cm-focused) {
-    /* Replace CM's default outline with a brand-blue ring (a11y: keep a ring). */
-    outline: 2px solid var(--color-link);
-    outline-offset: -2px;
-  }
-  .glci-editor :global(.cm-scroller) {
-    overflow: auto;
+  /* The seeded document a crawler reads (global .editor-pane__fallback sets
+     the metrics); boxed to the editor's own min/max height (the script's
+     size theme) so the swap on hydration does not move the page. */
+  .glci-fallback {
+    min-height: 320px;
     max-height: 520px;
-    font-family: var(--font-mono);
-    /* Thin, theme-matched scrollbars on the dark surface. */
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
-  }
-  .glci-editor :global(.cm-scroller)::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  .glci-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.16);
-    border-radius: var(--radius-pill);
-    border: 3px solid transparent;
-    background-clip: content-box;
-  }
-  .glci-editor :global(.cm-scroller)::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.28);
-    background-clip: content-box;
-  }
-  .glci-editor :global(.cm-gutters) {
-    background: transparent;
-    border-right: 1px solid rgba(255, 255, 255, 0.08);
-  }
-  .glci-editor :global(.cm-lineNumbers .cm-gutterElement) {
-    color: rgba(255, 255, 255, 0.32);
-  }
-  .glci-editor :global(.cm-content) {
-    padding: 14px 0 16px;
-  }
-  .glci-editor :global(.cm-line) {
-    padding-inline: 4px;
+    overflow: auto;
   }
 
-  /* Summary — counts use tabular figures so they don't jitter. */
-  .glci-summary {
-    white-space: nowrap;
+  /* The summary is ResultPanel's span (no scope attribute here). A seeded
+     error tone must beat the panel's own text-inverse-mute utility. */
+  .glci :global(.result-panel__summary.text-inverse-error) {
+    color: var(--color-inverse-error);
   }
 
-  /* ── Results container + finding rows (runtime-injected → :global) ───── */
+  /* ── Results container + finding rows (runtime-injected → :global) ─────
+     Light rules first as the documented defaults; the slab re-skin follows,
+     anchored on this component's own `.glci-results` container. */
   .glci-results {
-    min-height: 44px;
+    min-height: var(--control-h-lg);
   }
   :global(.glci-group + .glci-group) {
-    margin-top: 18px;
+    margin-top: 16px;
   }
+  /* Group-heading role: sans 12/16 600, never one more mono caps label. */
   :global(.glci-group__head) {
     display: flex;
     align-items: center;
     gap: 8px;
     margin-bottom: 8px;
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 12px;
+    font-weight: 600;
     line-height: 16px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--color-mute);
+    color: var(--color-ink);
   }
 
   :global(.glci-row) {
@@ -408,10 +198,7 @@ const seedSummaryTone =
     border-radius: var(--radius-md);
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
-    animation: glci-rise 0.18s ease both;
-  }
-  :global(.glci-row:hover) {
-    box-shadow: var(--shadow-subtle);
+    animation: glci-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.glci-row + .glci-row) {
     margin-top: 8px;
@@ -420,14 +207,8 @@ const seedSummaryTone =
   :global(.glci-row--error) {
     box-shadow: inset 0 0 0 1px var(--color-error-soft);
   }
-  :global(.glci-row--error:hover) {
-    box-shadow: inset 0 0 0 1px var(--color-error-soft), var(--shadow-subtle);
-  }
   :global(.glci-row--warning) {
     box-shadow: inset 0 0 0 1px var(--color-warning-soft);
-  }
-  :global(.glci-row--warning:hover) {
-    box-shadow: inset 0 0 0 1px var(--color-warning-soft), var(--shadow-subtle);
   }
   @keyframes glci-rise {
     from {
@@ -477,7 +258,6 @@ const seedSummaryTone =
     font-size: 14px;
     font-weight: 500;
     line-height: 20px;
-    letter-spacing: -0.01em;
     color: var(--color-ink);
     word-break: break-word;
   }
@@ -490,18 +270,14 @@ const seedSummaryTone =
     text-wrap: pretty;
   }
 
-  /* Severity pill — tones drawn ONLY from contract tokens. */
+  /* Severity pill — the row-key role (label-field), tones from tokens. */
   :global(.glci-pill) {
+    @apply label-field;
     display: inline-flex;
     align-items: center;
     flex: 0 0 auto;
     padding: 1px 8px;
     border-radius: var(--radius-pill);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 16px;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
     box-shadow: var(--shadow-hairline);
   }
   :global(.glci-pill--error) {
@@ -549,12 +325,7 @@ const seedSummaryTone =
     color: var(--color-mute);
   }
   :global(.glci-fix__label) {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 16px;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    color: var(--color-mute);
+    @apply label-field;
   }
   :global(.glci-fix__text) {
     margin-top: 1px;
@@ -582,7 +353,7 @@ const seedSummaryTone =
     background: var(--color-error-soft);
     box-shadow: inset 0 0 0 1px var(--color-error);
     color: var(--color-error-deep);
-    animation: glci-rise 0.18s ease both;
+    animation: glci-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.glci-error__icon) {
     flex: 0 0 auto;
@@ -612,16 +383,15 @@ const seedSummaryTone =
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 16px 16px;
+    padding: 16px;
     border-radius: var(--radius-md);
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
-    animation: glci-rise 0.18s ease both;
+    animation: glci-rise var(--dur-base) var(--ease-brand) both;
   }
+  /* 22×22 comes from the SVG's own width/height attributes (render.ts). */
   :global(.glci-success__icon) {
     flex: 0 0 auto;
-    width: 22px;
-    height: 22px;
     color: var(--color-success);
   }
   :global(.glci-success__title) {
@@ -637,7 +407,7 @@ const seedSummaryTone =
     color: var(--color-mute);
   }
 
-  /* Empty state — generous, centered frame (ex-empty-state-card scale). */
+  /* Empty state — generous, centered frame. */
   :global(.glci-empty) {
     display: flex;
     align-items: center;
@@ -651,7 +421,7 @@ const seedSummaryTone =
     box-shadow: var(--shadow-hairline);
   }
 
-  /* Loading dots — animate opacity only; reduced-motion handled globally. */
+  /* Loading dots — animate opacity only. */
   :global(.glci-loading) {
     display: inline-flex;
     align-items: center;
@@ -664,15 +434,15 @@ const seedSummaryTone =
   :global(.glci-loading__dot) {
     width: 6px;
     height: 6px;
-    border-radius: 9999px;
+    border-radius: 50%;
     background: var(--color-mute);
-    animation: glci-pulse 1.1s ease-in-out infinite;
+    animation: glci-pulse calc(var(--dur-base) * 6) ease-in-out infinite;
   }
   :global(.glci-loading__dot:nth-child(2)) {
-    animation-delay: 0.18s;
+    animation-delay: var(--dur-base);
   }
   :global(.glci-loading__dot:nth-child(3)) {
-    animation-delay: 0.36s;
+    animation-delay: calc(var(--dur-base) * 2);
   }
   @keyframes glci-pulse {
     0%,
@@ -699,23 +469,114 @@ const seedSummaryTone =
   .is-busy .glci-run-icon {
     display: none;
   }
+
+  /* ── Instrument re-skin — the result panel is the L2 slab (dark in BOTH
+     themes). Everything below uses the slab ink tier; the light rules above
+     remain the documented defaults. ──────────────────────────────────── */
+  .glci-results :global(.glci-empty) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-mute);
+  }
+  .glci-results :global(.glci-loading) {
+    color: var(--color-inverse-mute);
+  }
+  .glci-results :global(.glci-loading__dot) {
+    background: var(--color-inverse-mute);
+  }
+  .glci-results :global(.glci-error) {
+    background: #ff9d9514;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-error);
+    color: var(--color-inverse-error);
+  }
+  .glci-results :global(.glci-success) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+  }
+  .glci-results :global(.glci-success__icon) {
+    color: var(--color-inverse-brand);
+  }
+  .glci-results :global(.glci-success__title),
+  .glci-results :global(.glci-row__title),
+  .glci-results :global(.glci-group__head) {
+    color: var(--color-inverse-fg);
+  }
+  .glci-results :global(.glci-success__sub),
+  .glci-results :global(.glci-row__detail),
+  .glci-results :global(.glci-fix__text) {
+    color: var(--color-inverse-mute);
+  }
+  .glci-results :global(.glci-group + .glci-group) {
+    padding-top: 16px;
+    border-top: 1px solid var(--color-inverse-hairline);
+  }
+  .glci-results :global(.glci-row) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+  }
+  .glci-results :global(.glci-row--error) {
+    box-shadow: inset 0 0 0 1px #ff9d9559;
+  }
+  .glci-results :global(.glci-row--warning) {
+    box-shadow: inset 0 0 0 1px #e0a45859;
+  }
+  .glci-results :global(.glci-row--error .glci-row__icon) {
+    color: var(--color-inverse-error);
+  }
+  .glci-results :global(.glci-row--warning .glci-row__icon) {
+    color: var(--color-inverse-accent);
+  }
+  .glci-results :global(.glci-row--info .glci-row__icon) {
+    color: var(--color-inverse-mute);
+  }
+  .glci-results :global(.glci-pill) {
+    box-shadow: none;
+  }
+  .glci-results :global(.glci-pill--error) {
+    background: #ff9d951f;
+    color: var(--color-inverse-error);
+  }
+  .glci-results :global(.glci-pill--warning) {
+    background: #e0a4581f;
+    color: var(--color-inverse-accent);
+  }
+  .glci-results :global(.glci-pill--info) {
+    background: #ffffff14;
+    color: var(--color-inverse-mute);
+  }
+  .glci-results :global(.glci-line) {
+    background: #ffffff14;
+    color: var(--color-inverse-mute);
+  }
+  .glci-results :global(.glci-fix) {
+    background: #ffffff08;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+  }
+  .glci-results :global(.glci-fix__icon),
+  .glci-results :global(.glci-fix__label) {
+    color: var(--color-inverse-mute);
+  }
+  .glci-results :global(.glci-fix code) {
+    background: #ffffff14;
+    color: var(--color-inverse-fg);
+  }
 </style>
 
 <script>
-  import { copyTextToClipboard as copyText } from '../lib/clipboard';
   import type { EditorView } from '@codemirror/view';
   import { base64UrlEncode, base64UrlDecode } from '../lib/codec';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  import { wireCopyButtons } from '../lib/playground-kit/copy';
+  import { syncChipsByIndex, CHIP_SELECTOR } from '../lib/playground-kit/chips';
   // The HTML builders are shared with the frontmatter's build-time seed —
   // one implementation, so the no-JS markup and the live markup never drift.
-  import {
-    resultsHtml,
-    resultSummary,
-    errorHtml,
-    EMPTY_HTML,
-    LOADING_HTML,
-  } from '../lib/gitlab-ci-validator/render';
+  import { resultsHtml, resultSummary, errorHtml, LOADING_HTML } from '../lib/gitlab-ci-validator/render';
   import type { ValidateResult } from '../lib/gitlab-ci-validator/types';
+
+  // CodeMirror (and the kit's plate theme, which imports @codemirror/view) is
+  // loaded via dynamic import inside init() so its runtime code-splits into
+  // its own chunk instead of shipping in the page's initial JS. The
+  // `EditorView` type above is erased at build time and ships no runtime code.
 
   type EngineModule = {
     validate: (yamlText: string) => ValidateResult | Promise<ValidateResult>;
@@ -724,9 +585,7 @@ const seedSummaryTone =
   type Example = { id: string; label: string; yaml: string };
 
   const ROOT_SEL = '.glci';
-  const COPIED_RESET_MS = 1800;
   const SHARE_KEY = 'glci';
-  const SLUG = 'gitlab-ci-validator';
 
   /** Boot every (so far un-hydrated) playground instance on the page. */
   function boot(): void {
@@ -766,38 +625,30 @@ const seedSummaryTone =
 
   /* ---- Result rendering (DOM writes over the shared pure builders) --------- */
 
-  function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
-    summary.textContent = '';
-    summary.classList.remove('text-error');
-    summary.classList.add('text-mute');
-    container.innerHTML = EMPTY_HTML;
+  /** Summary ink on the slab: inverse tier only (never paper text-mute). */
+  function setSummary(summary: HTMLElement, text: string, isError: boolean): void {
+    summary.textContent = text;
+    summary.classList.toggle('text-inverse-error', isError);
+    summary.classList.toggle('text-inverse-mute', !isError);
   }
 
   function renderLoading(container: HTMLElement, summary: HTMLElement): void {
-    summary.textContent = '';
+    setSummary(summary, '', false);
     container.innerHTML = LOADING_HTML;
   }
 
   function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
-    summary.textContent = 'Parse error';
-    summary.classList.add('text-error');
-    summary.classList.remove('text-mute');
+    // No role="alert": `#glci-summary` (role="status") already announces
+    // "Parse error", and an assertive alert would interrupt on every debounce.
+    setSummary(summary, 'Parse error', true);
     container.innerHTML = errorHtml(message);
   }
 
-  function renderResults(
-    container: HTMLElement,
-    summary: HTMLElement,
-    result: ValidateResult
-  ): void {
+  function renderResults(container: HTMLElement, summary: HTMLElement, result: ValidateResult): void {
     const { text, tone } = resultSummary(result);
-    summary.textContent = text;
-    summary.classList.toggle('text-error', tone === 'error');
-    summary.classList.toggle('text-mute', tone !== 'error');
+    setSummary(summary, text, tone === 'error');
     container.innerHTML = resultsHtml(result);
   }
-
-  /* ---- Clipboard ------------------------------------------------------------ */
 
   /* ---- Share-state codec (self-contained; no engine dependency) ------------- */
 
@@ -830,7 +681,7 @@ const seedSummaryTone =
     const shareBtn = el<HTMLButtonElement>(root, '#glci-share');
     const resultsBox = el<HTMLElement>(root, '#glci-results');
     const summaryEl = el<HTMLElement>(root, '#glci-summary');
-    const announce = el<HTMLElement>(root, '#glci-announce');
+    const copyStatus = el<HTMLElement>(root, '#glci-copy-status');
     const snapSaveBtn = el<HTMLButtonElement>(root, '#glci-snap-save');
     const snapSelect = el<HTMLSelectElement>(root, '#glci-snap-select');
     const snapDeleteBtn = el<HTMLButtonElement>(root, '#glci-snap-delete');
@@ -850,101 +701,157 @@ const seedSummaryTone =
       return;
     }
 
-    // Lazily load the sibling engine + examples + CodeMirror (kept out of the
-    // initial path so CM code-splits into its own chunk).
+    // Copy (the YAML) and Copy link: the kit's one delegated listener;
+    // outcomes are announced in ResultPanel's #glci-copy-status.
+    wireCopyButtons(root, { status: copyStatus });
+
+    // Lazily load CodeMirror + the plate theme + the engine + examples (kept
+    // out of the initial path so the CM runtime code-splits into its own chunk).
     let engine: EngineModule;
     let examples: Example[] = [];
-    let EditorState: typeof import('@codemirror/state').EditorState;
-    let EditorViewCtor: typeof import('@codemirror/view').EditorView;
-    let keymap: typeof import('@codemirror/view').keymap;
-    let lineNumbers: typeof import('@codemirror/view').lineNumbers;
-    let highlightActiveLine: typeof import('@codemirror/view').highlightActiveLine;
-    let defaultKeymap: typeof import('@codemirror/commands').defaultKeymap;
-    let history: typeof import('@codemirror/commands').history;
-    let historyKeymap: typeof import('@codemirror/commands').historyKeymap;
-    let indentWithTab: typeof import('@codemirror/commands').indentWithTab;
-    let yaml: typeof import('@codemirror/lang-yaml').yaml;
-    let oneDark: typeof import('@codemirror/theme-one-dark').oneDark;
+    let makeEditor: (host: HTMLElement, doc: string) => EditorView;
+    let setEditorDoc: (view: EditorView, doc: string) => void;
     try {
-      const [engineMod, examplesMod, stateMod, viewMod, commandsMod, yamlMod, themeMod] =
-        await Promise.all([
-          import('../lib/gitlab-ci-validator/engine'),
-          import('../lib/gitlab-ci-validator/examples'),
-          import('@codemirror/state'),
-          import('@codemirror/view'),
-          import('@codemirror/commands'),
-          import('@codemirror/lang-yaml'),
-          import('@codemirror/theme-one-dark'),
-        ]);
+      const [
+        { EditorState },
+        { EditorView, keymap, lineNumbers, highlightActiveLine },
+        { defaultKeymap, history, historyKeymap, indentWithTab },
+        { yaml },
+        { plate },
+        engineMod,
+        examplesMod,
+      ] = await Promise.all([
+        import('@codemirror/state'),
+        import('@codemirror/view'),
+        import('@codemirror/commands'),
+        import('@codemirror/lang-yaml'),
+        import('../lib/playground-kit/cm-theme'),
+        import('../lib/gitlab-ci-validator/engine'),
+        import('../lib/gitlab-ci-validator/examples'),
+      ]);
       engine = engineMod as unknown as EngineModule;
       examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
-      ({ EditorState } = stateMod);
-      ({ EditorView: EditorViewCtor, keymap, lineNumbers, highlightActiveLine } = viewMod);
-      ({ defaultKeymap, history, historyKeymap, indentWithTab } = commandsMod);
-      ({ yaml } = yamlMod);
-      ({ oneDark } = themeMod);
+
+      // Size only (the plate theme owns colour; global.css owns the focus
+      // ring): 13px like the seeded fallback, scrolling inside 320–520px.
+      const sizeTheme = EditorView.theme({
+        '&': { fontSize: '13px', maxHeight: '520px' },
+        '.cm-scroller': { overflow: 'auto' },
+        '.cm-content, .cm-gutter': { minHeight: '320px' },
+      });
+
+      // Editor factory + doc-setter as closures over the freshly imported CM
+      // symbols (so no runtime CM reference lives at module top level).
+      makeEditor = (host: HTMLElement, doc: string): EditorView => {
+        const state = EditorState.create({
+          doc,
+          extensions: [
+            lineNumbers(),
+            history(),
+            highlightActiveLine(),
+            yaml(),
+            plate,
+            sizeTheme,
+            EditorView.lineWrapping,
+            EditorView.contentAttributes.of({ 'aria-label': 'GitLab CI pipeline (YAML)' }),
+            keymap.of([
+              // ⌘/Ctrl+Enter runs now — placed BEFORE defaultKeymap, whose
+              // Mod-Enter would otherwise insert a blank line.
+              {
+                key: 'Mod-Enter',
+                run: (v) => {
+                  forceRun();
+                  if (window.matchMedia?.('(pointer: coarse)').matches) v.contentDOM.blur();
+                  return true;
+                },
+              },
+              // Plain Enter: let CodeMirror insert the newline (this is YAML —
+              // Enter must never be swallowed), then flush the pending debounce
+              // so the panel is current the moment you finish a line.
+              {
+                key: 'Enter',
+                run: () => {
+                  window.setTimeout(() => forceRun(), 0);
+                  return false; // fall through to the default newline binding
+                },
+              },
+              ...defaultKeymap,
+              ...historyKeymap,
+              indentWithTab,
+              {
+                key: 'Escape',
+                run: (v) => {
+                  v.contentDOM.blur();
+                  return true;
+                },
+              },
+            ]),
+            // Live eval: re-validate ~180ms after the document settles so the
+            // results panel can never silently describe stale YAML.
+            EditorView.updateListener.of((u) => {
+              if (u.docChanged) scheduleLive();
+            }),
+          ],
+        });
+        return new EditorView({ state, parent: host });
+      };
+
+      setEditorDoc = (view: EditorView, doc: string): void => {
+        view.dispatch({
+          changes: { from: 0, to: view.state.doc.length, insert: doc },
+        });
+      };
     } catch (err) {
-      renderError(
-        resultsBox,
-        summaryEl,
-        'The validator engine failed to load. Reload the page to try again.'
-      );
+      renderError(resultsBox, summaryEl, 'The validator engine failed to load. Reload the page to try again.');
       // eslint-disable-next-line no-console
       console.error('[GitlabCiValidator] engine/examples import failed:', err);
       return;
     }
 
-    // Seed priority: a shared `#glci=` deep link > the last remembered input
-    // for this tool > the first example.
+    // Seed priority: #glci=<base64 yaml> deep link (Copy link) >
+    // restored last input > the first example.
     const seedExample = examples[0] ?? { id: 'example', label: 'Example', yaml: '' };
     let seedYaml = seedExample.yaml;
     let fromShare = false;
     let fromRestored = false;
     const shared = decodeShare();
+    const restored = getRestoredLastInput('gitlab-ci-validator');
     if (shared) {
       seedYaml = shared;
       fromShare = true;
-    } else {
-      const restored = getRestoredLastInput(SLUG);
-      if (restored) {
-        seedYaml = restored;
-        fromRestored = true;
-      }
+    } else if (restored) {
+      seedYaml = restored;
+      fromRestored = true;
     }
 
-    /* ---- Editor factory (CM symbols now in async scope) --------------------- */
+    /* ---- Live evaluation ---------------------------------------------------
+     * The results panel must never describe YAML that is no longer in the
+     * editor. A ~180ms debounced re-validate keeps it honest while typing;
+     * `liveReady` gates it so the seed/example dispatches below cannot fire it
+     * before the first explicit run has set everything up. `run` / `forceRun` /
+     * `scheduleLive` are function declarations, so the CodeMirror extensions
+     * built above can close over them safely.                               */
+    const LIVE_DEBOUNCE_MS = 180;
+    // Calm errors: a half-typed line is not a mistake. A LIVE run that fails to
+    // parse holds the previous panel and only reveals the error once the doc has
+    // been idle for ~600ms total (180 + 420) — never mid-composition.
+    const ERROR_HOLD_MS = 420;
+    let liveReady = false;
+    let liveTimer: number | undefined;
+    let errorHoldTimer: number | undefined;
 
-    function makeEditor(host: HTMLElement, doc: string): EditorView {
-      const state = EditorState.create({
-        doc,
-        extensions: [
-          lineNumbers(),
-          history(),
-          highlightActiveLine(),
-          yaml(),
-          oneDark,
-          EditorViewCtor.lineWrapping,
-          keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab, { key: "Escape", run: function(view) { view.contentDOM.blur(); return true; } }]),
-          EditorViewCtor.theme({
-            '&': { color: '#e6e6e6' },
-            '.cm-content': { caretColor: '#e6e6e6' },
-            '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
-            '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection':
-              { backgroundColor: 'rgba(0, 112, 243, 0.32)' },
-            '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
-            '.cm-activeLineGutter': { backgroundColor: 'transparent' },
-          }),
-        ],
-      });
-      // The host already carries the aria-label/role for screen readers; CM mounts inside.
-      return new EditorViewCtor({ state, parent: host });
+    function scheduleLive(): void {
+      if (!liveReady) return;
+      window.clearTimeout(liveTimer);
+      window.clearTimeout(errorHoldTimer);
+      liveTimer = window.setTimeout(() => void run({ live: true }), LIVE_DEBOUNCE_MS);
     }
 
-    function setEditorDoc(view: EditorView, doc: string): void {
-      view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: doc },
-      });
-      view.requestMeasure();
+    /** Deliberate run (Run now, Enter, ⌘/Ctrl+Enter): cancel the debounce, go now. */
+    function forceRun(): void {
+      window.clearTimeout(liveTimer);
+      window.clearTimeout(errorHoldTimer);
+      void run();
     }
 
     const view = makeEditor(editorHost, seedYaml);
@@ -953,51 +860,68 @@ const seedSummaryTone =
     // share/restore tiers above already resolved, so the seed never wins over
     // a deep link or a remembered input.
     root.querySelectorAll('[data-cm-fallback]').forEach((node) => node.remove());
-    view.requestMeasure();
 
-    // The chips are already in the DOM (server-rendered from the same module),
-    // so there is nothing to build — only to wire and to mark.
-    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>('.glci-chip'));
+    // Example chips are server-rendered from the same `examples` module, in the
+    // same order, so `data-example-idx` indexes this array directly.
+    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>(CHIP_SELECTOR));
 
-    /** Mark one chip active (or none, for -1 — a shared or restored pipeline). */
-    const setActiveChip = (index: number): void => {
-      chips.forEach((chip, i) => {
-        const active = i === index;
-        chip.classList.toggle('is-active', active);
-        chip.setAttribute('aria-pressed', active ? 'true' : 'false');
-      });
-    };
+    // The editor was seeded from a share link or a restored input, not from an
+    // example: NO chip is pressed — the picker claims nothing it cannot back up.
+    if (fromShare || fromRestored) syncChipsByIndex(chipsWrap, null);
 
-    // A shared or restored pipeline is nobody's example — leave every chip off.
-    // Otherwise the first chip matches the seed the markup already renders.
-    setActiveChip(fromShare || fromRestored ? -1 : 0);
-
-    // Swap the editor when an example chip is pressed.
+    // Swap the editor when a different example is chosen, then validate it.
     chips.forEach((chip) => {
       chip.addEventListener('click', () => {
         const idx = Number(chip.dataset.exampleIdx);
         if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
-        setActiveChip(idx);
+        syncChipsByIndex(chipsWrap, idx);
         setEditorDoc(view, examples[idx].yaml);
-        renderEmpty(resultsBox, summaryEl);
+        forceRun();
       });
     });
 
+    // Copy fills its payload at click time: this target-phase listener runs
+    // before the kit's delegated one on the root.
+    copyBtn.addEventListener('click', () => {
+      copyBtn.dataset.copy = view.state.doc.toString();
+    });
+
+    /** Copy link appears once a result exists, carrying the current YAML. */
+    function setShare(doc: string | null): void {
+      if (!shareBtn) return;
+      shareBtn.hidden = doc === null;
+      shareBtn.dataset.copy = doc === null ? '' : `${window.location.href.split('#')[0]}${encodeShare(doc)}`;
+    }
+
     // Run — non-blocking; show loading, yield a frame, then render.
-    // `seeded` marks the one boot-time run over the server-rendered seed: it
-    // re-validates so client state is consistent, but the seed is NOT user
+    // `live: true` marks a debounced keystroke-driven run: no spinner, no
+    // loading flash and no history write (Safari rate-limits replaceState), so
+    // typing stays smooth while the panel still tracks the editor.
+    // `seed: true` marks the one boot-time run over the server-rendered seed:
+    // it re-validates so client state is consistent, but the seed is NOT user
     // input — no spinner over the already-painted panel, no hash write and no
     // last-input record.
+    type RunOpts = { live?: boolean; showErrors?: boolean; seed?: boolean };
     let running = false;
+    let rerun: RunOpts | null = null;
     const runLabel = runBtn.querySelector<HTMLElement>('.glci-run-label');
     let spinner: HTMLElement | null = null;
-    async function run(seeded = false): Promise<void> {
-      // Guaranteed present by the early return in boot(); restated because TypeScript
+    async function run(opts: RunOpts = {}): Promise<void> {
+      // Guaranteed present by the early return in init(); restated because TypeScript
       // discards that narrowing inside a hoisted function declaration.
       if (!runBtn) return;
-      if (running) return;
+      const live = opts.live === true;
+      const seeded = opts.seed === true;
+      // Both the debounced live run and the boot seed skip the busy chrome.
+      const quiet = live || seeded;
+      if (running) {
+        // Never drop a deliberate run behind an in-flight one: queue it.
+        rerun = opts;
+        return;
+      }
       running = true;
-      if (!seeded) {
+
+      if (!quiet) {
         runBtn.classList.add('is-busy');
         // Keep focus put for keyboard users: mark busy (not disabled) + swap glyph.
         runBtn.setAttribute('aria-disabled', 'true');
@@ -1007,13 +931,13 @@ const seedSummaryTone =
           spinner.setAttribute('aria-hidden', 'true');
           // Inline the visual so it never depends on Astro's scoped CSS (runtime node).
           spinner.style.cssText =
-            'display:inline-block;width:14px;height:14px;flex:0 0 auto;border-radius:9999px;' +
+            'display:inline-block;width:14px;height:14px;flex:0 0 auto;border-radius:50%;' +
             'border:2px solid currentColor;border-top-color:transparent;';
           if (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-            spinner.animate(
-              [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }],
-              { duration: 700, iterations: Infinity }
-            );
+            spinner.animate([{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }], {
+              duration: 700,
+              iterations: Infinity,
+            });
           }
           runBtn.insertBefore(spinner, runBtn.firstChild);
         }
@@ -1033,20 +957,30 @@ const seedSummaryTone =
       try {
         const doc = view.state.doc.toString();
         const result = await Promise.resolve(engine.validate(doc));
-        renderResults(resultsBox!, summaryEl!, result);
-        if (!seeded) {
-          recordToolLastInput(SLUG, doc);
-          // Persist current state into the URL hash without a history entry.
-          try {
-            window.history.replaceState(null, '', encodeShare(doc));
-          } catch {
-            /* non-fatal: sharing just won't update */
+        // The server-rendered seed is not something the visitor typed.
+        if (!seeded) recordToolLastInput('gitlab-ci-validator', doc);
+
+        const failed = !result || result.ok === false || Boolean(result.error);
+        if (live && failed && opts.showErrors !== true) {
+          // Hold the last good panel; reveal the error only after a longer idle.
+          window.clearTimeout(errorHoldTimer);
+          errorHoldTimer = window.setTimeout(() => void run({ live: true, showErrors: true }), ERROR_HOLD_MS);
+        } else {
+          renderResults(resultsBox!, summaryEl!, result);
+          setShare(failed ? null : doc);
+          if (!live && !seeded) {
+            // Persist current state into the URL hash without a history entry.
+            try {
+              window.history.replaceState(null, '', encodeShare(doc));
+            } catch {
+              /* non-fatal: sharing just won't update */
+            }
           }
         }
       } catch (err) {
-        const msg =
-          err instanceof Error ? err.message : 'Unexpected error while validating.';
+        const msg = err instanceof Error ? err.message : 'Unexpected error while validating.';
         renderError(resultsBox!, summaryEl!, msg);
+        setShare(null);
       } finally {
         running = false;
         runBtn.classList.remove('is-busy');
@@ -1056,81 +990,48 @@ const seedSummaryTone =
           spinner.remove();
           spinner = null;
         }
-        if (runLabel) runLabel.textContent = 'Validate';
+        if (runLabel) runLabel.textContent = 'Run now';
+        if (rerun) {
+          const next = rerun;
+          rerun = null;
+          void run(next);
+        }
       }
     }
 
-    runBtn.addEventListener('click', () => void run());
+    runBtn.addEventListener('click', () => forceRun());
 
-    // Cmd/Ctrl+Enter from inside the editor triggers a run.
+    // ⌘/Ctrl+Enter anywhere else in the playground (a chip, Run now) runs too;
+    // inside the editor the Mod-Enter binding has already handled it.
     root.addEventListener('keydown', (e) => {
+      if (e.defaultPrevented) return;
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
-        void run();
+        forceRun();
       }
     });
 
-    // Copy — copy the pipeline YAML to the clipboard.
-    const copyLabel = copyBtn.querySelector<HTMLElement>('.glci-copy-label');
-    let copyTimer: number | undefined;
-    copyBtn.addEventListener('click', async () => {
-      const ok = await copyText(view.state.doc.toString());
-      if (copyLabel) copyLabel.textContent = ok ? 'Copied' : 'Copy Failed';
-      if (announce) {
-        announce.textContent = ok
-          ? 'Pipeline YAML copied to your clipboard.'
-          : 'Could not copy. Select the text in the editor and copy it manually.';
-      }
-      window.clearTimeout(copyTimer);
-      copyTimer = window.setTimeout(() => {
-        if (copyLabel) copyLabel.textContent = copyBtn.dataset.defaultLabel ?? 'Copy';
-      }, COPIED_RESET_MS);
-    });
-
-    // Share — copy a shareable URL (current YAML encoded in the hash).
-    const shareLabel = shareBtn.querySelector<HTMLElement>('.glci-share-label');
-    let shareTimer: number | undefined;
-    shareBtn.addEventListener('click', async () => {
-      const frag = encodeShare(view.state.doc.toString());
-      const base = window.location.href.split('#')[0];
-      const shareUrl = `${base}${frag}`;
-      try {
-        window.history.replaceState(null, '', frag);
-      } catch {
-        /* fall back to the current URL */
-      }
-      const ok = await copyText(shareUrl);
-      if (shareLabel) shareLabel.textContent = ok ? 'Link Copied' : 'Copy Failed';
-      if (announce) {
-        announce.textContent = ok
-          ? 'Share link copied to your clipboard.'
-          : 'Could not copy the link. Copy the URL from your address bar instead.';
-      }
-      window.clearTimeout(shareTimer);
-      shareTimer = window.setTimeout(() => {
-        if (shareLabel) shareLabel.textContent = shareBtn.dataset.defaultLabel ?? 'Share Link';
-      }, COPIED_RESET_MS);
-    });
-
-    // Snapshot save/restore — reuses the editor's own YAML text as the
-    // stored value, same as the share-link serializer above.
     wireSnapshotUI({
-      slug: SLUG,
+      slug: 'gitlab-ci-validator',
       saveBtn: snapSaveBtn,
       snapshotSelect: snapSelect,
       deleteBtn: snapDeleteBtn,
       getValue: () => view.state.doc.toString(),
       setValue: (value) => {
+        // A snapshot is the visitor's own pipeline, not one of the examples.
+        syncChipsByIndex(chipsWrap, null);
         setEditorDoc(view, value);
-        void run();
+        forceRun();
       },
     });
 
     // The results panel is already server-rendered from `examples[0]`, so there
     // is nothing to clear — re-validate whatever the editor ended up holding (a
-    // #glci= deep link, a restored input, or that same seed) so the client
-    // state matches the markup.
-    void run(true);
+    // #glci= deep link, a restored input, or that same seed) so the client state
+    // matches the markup.
+    void run({ seed: true });
+    // Only now may keystrokes drive the panel (seed dispatches must not).
+    liveReady = true;
   }
 
   boot();
