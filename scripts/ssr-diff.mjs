@@ -259,13 +259,20 @@ export function buildSnapshot({ dist, postbuildLog } = {}) {
 // Compare
 // ---------------------------------------------------------------------------
 
-function stableJson(text) {
+const LD_DATE_KEYS = new Set(['dateModified', 'datePublished', 'dateCreated']);
+
+/**
+ * Stable JSON with keys sorted. With `maskDates`, date-valued keys become
+ * "<date>": a tool's dateModified moves whenever its component changes (that is
+ * the sitemap/IndexNow system, owned by the SEO guard), not its seeded content.
+ */
+function stableJson(text, maskDates = false) {
   try {
     const sort = (v) =>
       Array.isArray(v)
         ? v.map(sort)
         : v && typeof v === 'object'
-          ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sort(v[k])]))
+          ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, maskDates && LD_DATE_KEYS.has(k) ? '<date>' : sort(v[k])]))
           : v;
     return JSON.stringify(sort(JSON.parse(text)));
   } catch {
@@ -313,7 +320,7 @@ export function comparePage(base, cand) {
   else
     base.ld.forEach((l, i) => {
       if (l === cand.ld[i]) push(`ld[${i}]`, 'strict');
-      else if (stableJson(l) !== null && stableJson(l) === stableJson(cand.ld[i])) push(`ld[${i}]`, 'semantic');
+      else if (stableJson(l) !== null && stableJson(l, true) === stableJson(cand.ld[i], true)) push(`ld[${i}]`, 'semantic');
       else push(`ld[${i}]`, 'fail', 'ld+json body changed');
     });
 
@@ -361,7 +368,11 @@ export function comparePage(base, cand) {
   list('input', base.inputs, cand.inputs, exact);
   list('textarea', base.textareas, cand.textareas, exact);
   list('cm-fallback', base.cmFallback, cand.cmFallback, exact);
-  list('figcap', base.figcaps, cand.figcaps, compareHtml);
+  // A figure cap is pure text (dots are aria-hidden decoration): the kit's
+  // opt-in split wraps the ` · category` tail in a span and renames the
+  // summary's class, so caps compare by collapsed text, never by markup.
+  const capText = (x, y) => (x === y ? 'strict' : collapseWs(textContent(x)) === collapseWs(textContent(y)) ? 'semantic' : 'fail');
+  list('figcap', base.figcaps, cand.figcaps, capText);
   return out;
 }
 
@@ -430,7 +441,7 @@ function summarise(results) {
 // ---------------------------------------------------------------------------
 
 const FIX_PAGE = (results, extra = '') => `<!DOCTYPE html><html lang="en"><head><title>Subnet Calculator — OpsCanopy</title>
-<script type="application/ld+json">{"@type":"SoftwareApplication","name":"Subnet"}</script>
+<script type="application/ld+json">{"@type":"SoftwareApplication","name":"Subnet","dateModified":"2026-09-26"}</script>
 <script>window.x=1</script></head><body><main><h1 class="display-lg">Subnet <span>Calculator</span></h1>
 <section id="playground"><div class="snc-pg" data-astro-cid-ab12cd34>
 <input id="snc-input" type="text" value="192.168.1.0/24">
@@ -458,6 +469,9 @@ export function selfTest() {
     ['data-results hook plus a text change', FIX_PAGE(BASE_RESULTS.replace('class="snc-results"', 'class="snc-results" data-results').replace('>254<', '>255<')), false],
     ['container emptied', FIX_PAGE(`<div id="snc-results" class="snc-results" data-astro-cid-ab12cd34></div>`), false, 'container emptied in candidate'],
     ['fallback <pre> removed', base.replace(/<pre class="snc-cm-fallback[^]*?<\/pre>/, ''), false],
+    ['ld+json dateModified moved only', base.replace('"dateModified":"2026-09-26"', '"dateModified":"2026-10-02"'), true],
+    ['ld+json name changed', base.replace('"name":"Subnet"', '"name":"Subnet Calculator"'), false],
+    ['figcap split into a sub span, same text', base.replace('fig. 10 — subnet-calculator · networking</span>', 'fig. 10 — subnet-calculator<span class="figcap__sub"> · networking</span></span>'), true],
     ['figcap label text changed', base.replaceAll('subnet-calculator · networking', 'subnet-splitter · networking'), false],
   ];
   const baseRec = extractPage(base, ids);
