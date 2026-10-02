@@ -454,6 +454,8 @@ export function selfTest() {
     // A 4th element pins the specific detail the dedicated branch emits, so
     // the case cannot pass on the generic text-diff fallback alone.
     ['container missing', FIX_PAGE(''), false, 'container missing in candidate'],
+    ['data-results hook added', FIX_PAGE(BASE_RESULTS.replace('class="snc-results"', 'class="snc-results" data-results')), true],
+    ['data-results hook plus a text change', FIX_PAGE(BASE_RESULTS.replace('class="snc-results"', 'class="snc-results" data-results').replace('>254<', '>255<')), false],
     ['container emptied', FIX_PAGE(`<div id="snc-results" class="snc-results" data-astro-cid-ab12cd34></div>`), false, 'container emptied in candidate'],
     ['fallback <pre> removed', base.replace(/<pre class="snc-cm-fallback[^]*?<\/pre>/, ''), false],
     ['figcap label text changed', base.replaceAll('subnet-calculator · networking', 'subnet-splitter · networking'), false],
