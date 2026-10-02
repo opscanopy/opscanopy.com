@@ -79,6 +79,49 @@ function extractTokensFromBlock(css: string, blockPattern: RegExp): Record<strin
   return tokens;
 }
 
+/**
+ * Extract `{ [token]: '#rrggbbaa' }` — the 8-digit (alpha) hex tokens that
+ * `extractTokensFromBlock` deliberately skips: the slab edge, the slab control
+ * edge and the neutral figcap dot are translucent and only mean anything once
+ * composited onto the plate they are drawn on.
+ */
+function extractAlphaTokensFromBlock(css: string, blockPattern: RegExp): Record<string, string> {
+  const startMatch = blockPattern.exec(css);
+  if (!startMatch) return {};
+  let depth = 0;
+  let blockStart = -1;
+  let blockEnd = -1;
+  for (let i = startMatch.index; i < css.length; i++) {
+    if (css[i] === '{') {
+      if (depth === 0) blockStart = i;
+      depth++;
+    } else if (css[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        blockEnd = i;
+        break;
+      }
+    }
+  }
+  if (blockStart === -1 || blockEnd === -1) return {};
+  const block = css.slice(blockStart + 1, blockEnd);
+  const tokenRe = /(--[\w-]+)\s*:\s*(#[0-9a-fA-F]{8})\s*;/g;
+  const tokens: Record<string, string> = {};
+  let m: RegExpExecArray | null;
+  while ((m = tokenRe.exec(block)) !== null) {
+    tokens[m[1]] = m[2].toLowerCase();
+  }
+  return tokens;
+}
+
+/** Source-over composite of an `#rrggbbaa` colour onto an opaque `#rrggbb`. */
+function composite(fgWithAlpha: string, bg: string): string {
+  const a = parseInt(fgWithAlpha.slice(7, 9), 16) / 255;
+  const ch = (hex: string, i: number) => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16);
+  const out = [0, 1, 2].map((i) => Math.round(ch(fgWithAlpha, i) * a + ch(expandHex(bg), i) * (1 - a)));
+  return '#' + out.map((v) => v.toString(16).padStart(2, '0')).join('');
+}
+
 /** Expand a 3-digit hex shorthand to 6 digits. */
 function expandHex(hex: string): string {
   if (hex.length === 4) {
@@ -557,48 +600,54 @@ describe('Footer surface', () => {
     });
   }
 
-  // The hover step is defined as the neighbouring ladder value, written as a
-  // literal hex because this parser (and the token rule) reads hex only. Pin
-  // the equality so a ladder edit cannot silently orphan it.
-  it('footer-hover equals canvas-soft-3 (light) and canvas-soft-2 (dark)', () => {
+  // The hover step is the neighbouring ladder value, written as a literal hex
+  // because this parser (and the token rule) reads hex only. Pin the equality
+  // so a ladder edit cannot silently orphan it. Since 2026-10-02 the dark
+  // footer is canvas-soft-2's value, so its hover is soft-3 in both themes.
+  it('footer-hover equals canvas-soft-3 in both themes', () => {
     expect(light['--color-footer-hover']).toBe(light['--color-canvas-soft-3']);
-    expect(dark['--color-footer-hover']).toBe(dark['--color-canvas-soft-2']);
+    expect(dark['--color-footer-hover']).toBe(dark['--color-canvas-soft-3']);
   });
 
-  // Proof the gate can fail: fed the value the footer was going to use (dark
-  // canvas-soft-2, 1.07:1 against the slab) it must reject it — and for the
-  // slab reason specifically, since soft-2 vs the body is a legal 4.5 L* step.
-  it('rejects the old dark footer value (canvas-soft-2): the slab would vanish', () => {
-    const old: Record<string, string> = { ...dark, '--color-footer': dark['--color-canvas-soft-2'] };
+  // Proof the gate can fail: fed a footer that IS the plate (the colophon slab
+  // would have no boundary at all) it must reject it — for the slab reason
+  // specifically, since the dark plate vs the body is a legal 6.8 L* step.
+  it('rejects footer = inverse: the colophon plate would vanish into the band', () => {
+    const old: Record<string, string> = { ...dark, '--color-footer': dark['--color-inverse'] };
     expect(contrastRatio(old['--color-inverse'], old['--color-footer'])).toBeLessThan(1.1);
-    const failures = footerLadderFailures(old, 3, 'dark (old)');
+    const failures = footerLadderFailures(old, 3, 'dark (footer = inverse)');
     expect(failures).toHaveLength(1);
     expect(failures[0]).toContain('--color-inverse vs --color-footer');
   });
 
   // The footer language switcher's upward menu (LangSwitcher variant="footer")
-  // covers the footer band, so its fill must step off the band. It is a card,
-  // not the header menu's canvas: dark --color-footer IS canvas's value, so a
-  // canvas menu had no fill edge at all. Its option hover is soft-3, because
-  // soft-2 is ~1 L* off the dark card.
+  // covers the footer band, so its fill must step off the band. Since the dark
+  // footer moved up to canvas-soft-2's value the menu is canvas again, like the
+  // header menu (a card now sits ~1 L* off the dark footer). Its option hover
+  // is soft-3, the far side of the band.
   for (const [name, tokens] of themes) {
-    it(`${name}: footer lang menu (card) stands >= 3 L* off the footer, its hover (soft-3) >= 3 L* off the card, text AA on both`, () => {
-      const menu = Math.abs(cielabL(tokens['--color-card']) - cielabL(tokens['--color-footer']));
-      expect(menu, `${name}: card menu vs footer, got ${menu.toFixed(2)} L*`).toBeGreaterThanOrEqual(3);
-      const hover = Math.abs(cielabL(tokens['--color-canvas-soft-3']) - cielabL(tokens['--color-card']));
-      expect(hover, `${name}: soft-3 hover vs card menu, got ${hover.toFixed(2)} L*`).toBeGreaterThanOrEqual(3);
-      for (const bg of ['--color-card', '--color-canvas-soft-3']) {
+    it(`${name}: footer lang menu (canvas) stands >= 3 L* off the footer, its hover (soft-3) >= 3 L* off the canvas, text AA on both`, () => {
+      const menu = Math.abs(cielabL(tokens['--color-canvas']) - cielabL(tokens['--color-footer']));
+      expect(menu, `${name}: canvas menu vs footer, got ${menu.toFixed(2)} L*`).toBeGreaterThanOrEqual(3);
+      const hover = Math.abs(cielabL(tokens['--color-canvas-soft-3']) - cielabL(tokens['--color-canvas']));
+      expect(hover, `${name}: soft-3 hover vs canvas menu, got ${hover.toFixed(2)} L*`).toBeGreaterThanOrEqual(3);
+      for (const bg of ['--color-canvas', '--color-canvas-soft-3']) {
         assertContrast(tokens['--color-body'], tokens[bg], 4.5, `${name}: body on ${bg} (lang menu)`);
         assertContrast(tokens['--color-ink'], tokens[bg], 4.5, `${name}: ink on ${bg} (lang menu)`);
       }
     });
   }
 
-  it('rejects the header menu surface (canvas) and hover (soft-2) for the footer menu in dark', () => {
-    const canvasStep = Math.abs(cielabL(dark['--color-canvas']) - cielabL(dark['--color-footer']));
-    expect(canvasStep).toBeLessThan(3);
-    const soft2Step = Math.abs(cielabL(dark['--color-canvas-soft-2']) - cielabL(dark['--color-card']));
-    expect(soft2Step).toBeLessThan(3);
+  it('rejects a card surface for the footer menu in dark (no fill edge against the band)', () => {
+    const cardStep = Math.abs(cielabL(dark['--color-card']) - cielabL(dark['--color-footer']));
+    expect(cardStep).toBeLessThan(3);
+  });
+
+  it('LangSwitcher draws the footer menu on bg-canvas, not bg-card', () => {
+    const path = join(fileURLToPath(new URL('.', import.meta.url)), '../components/LangSwitcher.astro');
+    const src = readFileSync(path, 'utf-8');
+    expect(src).toMatch(/isFooter \? 'bottom-full left-0 mb-1 bg-canvas'/);
+    expect(src).not.toMatch(/mb-1 bg-card/);
   });
 
   it('reports a missing footer token instead of passing vacuously', () => {
@@ -628,6 +677,139 @@ describe('Footer surface', () => {
       expect(src.length, `${rel} read as empty`).toBeGreaterThan(200);
       expect(src, `${rel} uses accent-ink (amber) on the footer surface`).not.toMatch(AMBER);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Slab clearance — "one ink set, two plate values". The instrument slab
+// (`--color-inverse`) is #1b1915 on paper and, since 2026-10-02, #0a0908 at
+// night: recessed BELOW the dark page instead of lifted above it. It sits
+// directly on bg-canvas sections (PrivacyProof, the tool pages' #next bands),
+// on the soft body, on cards and in the footer, so it must clear each of them
+// by >= 3 L* in both themes. Its translucent edge, its neutral figcap dot and
+// the edge of a button drawn on it only exist composited onto the plate, so
+// they are checked that way.
+// ---------------------------------------------------------------------------
+
+describe('Slab clearance', () => {
+  const css = readCss();
+  const DARK_BLOCK = /html\[data-theme=['"]dark['"]\]\s*\{/;
+  const light = extractTokensFromBlock(css, THEME_BLOCK);
+  const dark = extractTokensFromBlock(css, DARK_BLOCK);
+  const lightA = extractAlphaTokensFromBlock(css, THEME_BLOCK);
+  const darkA = extractAlphaTokensFromBlock(css, DARK_BLOCK);
+  const themes = [
+    ['light', light, lightA],
+    ['dark', dark, darkA],
+  ] as const;
+  const SURFACES = ['--color-canvas', '--color-canvas-soft', '--color-card', '--color-footer'] as const;
+  const dL = (a: string, b: string) => Math.abs(cielabL(a) - cielabL(b));
+
+  it('composite() is source-over (sanity vectors)', () => {
+    expect(composite('#ffffff00', '#123456')).toBe('#123456');
+    expect(composite('#ffffffff', '#123456')).toBe('#ffffff');
+    expect(composite('#ffffff80', '#000000')).toBe('#808080');
+  });
+
+  it('the alpha tokens are present in both blocks', () => {
+    for (const t of ['--color-inverse-hairline', '--color-inverse-control-edge', '--color-dot-neutral']) {
+      expect(lightA[t], `missing light alpha token ${t}`).toBeDefined();
+      expect(darkA[t], `missing dark alpha token ${t}`).toBeDefined();
+    }
+  });
+
+  it('the plate values are #1b1915 (light) and #0a0908 (dark)', () => {
+    expect(light['--color-inverse']).toBe('#1b1915');
+    expect(dark['--color-inverse']).toBe('#0a0908');
+  });
+
+  for (const [name, tokens] of themes) {
+    for (const surface of SURFACES) {
+      it(`${name}: the plate clears ${surface} by >= 3 L*`, () => {
+        const d = dL(tokens['--color-inverse'], tokens[surface]);
+        expect(d, `${name}: inverse vs ${surface}, got ${d.toFixed(2)} L*`).toBeGreaterThanOrEqual(3);
+      });
+    }
+  }
+
+  it('dark: the plate is recessed — darker than every dark surface it sits on', () => {
+    for (const surface of SURFACES) {
+      expect(cielabL(dark['--color-inverse']), `dark inverse should sit below ${surface}`).toBeLessThan(cielabL(dark[surface]));
+    }
+  });
+
+  // One ink set for both plates: AAA (7:1) on the paper plate, and >= 9:1 on
+  // the recessed dark plate (the deeper plate only ever raises the ratios).
+  for (const [name, tokens, , min] of [
+    ['light', light, lightA, 7],
+    ['dark', dark, darkA, 9],
+  ] as const) {
+    it(`${name}: every slab ink >= ${min}:1 on the plate (fg/mute/brand/accent/error)`, () => {
+      for (const ink of ['--color-inverse-fg', '--color-inverse-mute', '--color-inverse-brand', '--color-inverse-accent', '--color-inverse-error']) {
+        assertContrast(tokens[ink], tokens['--color-inverse'], min, `${name}: ${ink} on inverse`);
+      }
+    });
+  }
+
+  // The 1px slab edge composites onto the plate. It must read off the plate
+  // AND off every surface the slab sits on, or a dark-on-dark slab has no
+  // boundary. At the light value (#ffffff1f) the dark edge sits 2.8 L* from a
+  // dark card; the dark block's #ffffff2e puts it 9.5 L* clear.
+  for (const [name, tokens, alpha] of themes) {
+    it(`${name}: composited slab edge >= 3 L* off the plate and off canvas / canvas-soft / card`, () => {
+      const edge = composite(alpha['--color-inverse-hairline'], tokens['--color-inverse']);
+      expect(dL(edge, tokens['--color-inverse']), `${name}: edge vs plate`).toBeGreaterThanOrEqual(3);
+      for (const surface of ['--color-canvas', '--color-canvas-soft', '--color-card']) {
+        const d = dL(edge, tokens[surface]);
+        expect(d, `${name}: edge (${edge}) vs ${surface}, got ${d.toFixed(2)} L*`).toBeGreaterThanOrEqual(3);
+      }
+    });
+  }
+
+  it('rejects the light edge (#ffffff1f) on the dark plate: it would melt into a dark card', () => {
+    const edge = composite('#ffffff1f', dark['--color-inverse']);
+    expect(dL(edge, dark['--color-card'])).toBeLessThan(3);
+  });
+
+  // Neutral figcap dots are decorative (aria-hidden), so there is no WCAG bar;
+  // the gate is that they stay as legible on the recessed dark plate as they
+  // are on paper. 15% white (#ffffff26) composites 16.3 L* off #0a0908 — the
+  // dark block lifts it to 20% (#ffffff33, 22.1 L*).
+  it('neutral figcap dot >= 15 L* off the plate in light and >= 20 L* in dark', () => {
+    const lightDot = composite(lightA['--color-dot-neutral'], light['--color-inverse']);
+    const darkDot = composite(darkA['--color-dot-neutral'], dark['--color-inverse']);
+    expect(dL(lightDot, light['--color-inverse'])).toBeGreaterThanOrEqual(15);
+    expect(dL(darkDot, dark['--color-inverse'])).toBeGreaterThanOrEqual(20);
+    expect(dL(composite('#ffffff26', dark['--color-inverse']), dark['--color-inverse'])).toBeLessThan(20);
+  });
+
+  it('global.css paints the neutral figcap dot from the token, not a literal', () => {
+    expect(css).toMatch(/\.figcap__dot\s*\{[^}]*background:\s*var\(--color-dot-neutral\)/);
+  });
+
+  // A button ON a slab (.btn-inverse, and .btn-secondary inside a slab via the
+  // context rule) draws its boundary in --color-inverse-control-edge. SC 1.4.11
+  // wants >= 3:1 against the plate, on BOTH plate values.
+  for (const [name, tokens, alpha] of themes) {
+    it(`${name}: slab button edge >= 3:1 on the plate (SC 1.4.11)`, () => {
+      const edge = composite(alpha['--color-inverse-control-edge'], tokens['--color-inverse']);
+      assertContrast(edge, tokens['--color-inverse'], 3, `${name}: slab button edge`);
+    });
+  }
+
+  it('rejects #ffffff3d as a slab button edge (under 3:1 on the dark plate) and the paper secondary edge', () => {
+    expect(contrastRatio(composite('#ffffff3d', dark['--color-inverse']), dark['--color-inverse'])).toBeLessThan(3);
+    // The dark secondary-button edge (hairline-strong) is what a slab-hosted
+    // .btn-secondary would show without the context rule.
+    expect(contrastRatio(dark['--color-btn-secondary-border'], dark['--color-inverse'])).toBeLessThan(3);
+  });
+
+  it('global.css gives every slab-hosted .btn-secondary the .btn-inverse recipe', () => {
+    const RULE =
+      /\.btn-inverse,\s*\.bg-inverse \.btn-secondary,\s*\.instrument \.btn-secondary,\s*\.instrument-flush \.btn-secondary\s*\{[^}]*border-color:\s*var\(--color-inverse-control-edge\)/;
+    expect('.btn-inverse,\n.bg-inverse .btn-secondary,\n.instrument .btn-secondary,\n.instrument-flush .btn-secondary {\n  border-color: var(--color-inverse-control-edge);\n}').toMatch(RULE);
+    expect('.btn-inverse {\n  border-color: var(--color-inverse-control-edge);\n}').not.toMatch(RULE);
+    expect(css).toMatch(RULE);
   });
 });
 

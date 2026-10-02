@@ -2,8 +2,15 @@
 /**
  * Header — sticky top nav (nav-bar): 64px tall, bg-canvas + bottom hairline,
  * sticky top-0 z-40. Logo left, centred nav link row, right cluster with a
- * theme toggle + "Browse Tools" nav CTA. Collapses to a hamburger
+ * theme toggle + "Browse tools" nav CTA. Collapses to a hamburger
  * overlay below 1024px. No framework — plain script toggle.
+ *
+ * From lg the bar is a three-column grid, `minmax(max-content,1fr) auto
+ * minmax(max-content,1fr)`: the two outer tracks share the free space equally,
+ * so the link row sits on the page's true centre whatever the right cluster
+ * holds. Under the old flex row the link row centred between the logo and the
+ * cluster, and English-only pages (no language switcher) shifted every link
+ * sideways. Below lg the bar stays a flex row (logo + hamburger).
  */
 import Logo from './Logo.astro';
 import { site } from '../data/site';
@@ -81,19 +88,25 @@ const discoveryTools = [
 
 {/* data-pagefind-ignore: nav chrome must never leak into the site-search index. */}
 <header class="sticky top-0 z-40 border-b border-hairline bg-canvas" data-pagefind-ignore>
-  <nav aria-label="Primary" class="container-page flex h-16 items-center justify-between gap-4">
+  <nav
+    aria-label="Primary"
+    class="container-page flex h-16 items-center justify-between gap-4 lg:grid lg:grid-cols-[minmax(max-content,1fr)_auto_minmax(max-content,1fr)]"
+  >
     {/* Left — brand */}
     <a
       href={href('/')}
-      class="-ml-1.5 inline-flex shrink-0 items-center rounded-md px-1.5 py-1 transition-colors hover:bg-canvas-soft-2"
+      class="-ml-1.5 inline-flex shrink-0 items-center justify-self-start rounded-md px-1.5 py-1 transition-colors hover:bg-canvas-soft-2"
       aria-label={t('a11y.homeLabel', { name: site.name })}
       translate="no"
     >
       <Logo />
     </a>
 
-    {/* Centre — primary link row (desktop only) */}
-    <ul class="hidden min-w-0 flex-1 items-center justify-center gap-1 lg:flex">
+    {/* Centre — primary link row (desktop only). The current link is marked
+        by the soft fill, ink colour and the leaf underline bar — NOT by weight:
+        a bolder label is wider, which re-centred the whole row and moved every
+        link by half the difference between pages. */}
+    <ul class="hidden min-w-0 items-center justify-center justify-self-center gap-1 lg:flex">
       {
         desktopNavLinks.map((link) => (
           <li class="min-w-0">
@@ -107,7 +120,7 @@ const discoveryTools = [
                 class:list={[
                   "body-sm relative inline-flex max-w-full items-center gap-1 truncate rounded-sm px-3 py-2 transition-colors hover:bg-canvas-soft-2 hover:text-ink",
                   isCurrent("/tools")
-                    ? "bg-canvas-soft-2 font-medium text-ink after:absolute after:inset-x-3 after:-bottom-px after:h-0.5 after:rounded-full after:bg-brand after:content-['']"
+                    ? "bg-canvas-soft-2 text-ink after:absolute after:inset-x-3 after:-bottom-px after:h-0.5 after:rounded-full after:bg-brand after:content-['']"
                     : "text-body",
                 ]}
               >
@@ -121,7 +134,7 @@ const discoveryTools = [
                 class:list={[
                   'body-sm relative inline-flex max-w-full items-center truncate rounded-sm px-3 py-2 transition-colors hover:bg-canvas-soft-2 hover:text-ink',
                   isCurrent(link.href)
-                    ? "bg-canvas-soft-2 font-medium text-ink after:absolute after:inset-x-3 after:-bottom-px after:h-0.5 after:rounded-full after:bg-brand after:content-['']"
+                    ? "bg-canvas-soft-2 text-ink after:absolute after:inset-x-3 after:-bottom-px after:h-0.5 after:rounded-full after:bg-brand after:content-['']"
                     : 'text-body',
                 ]}
               >
@@ -134,7 +147,11 @@ const discoveryTools = [
     </ul>
 
     {/* Right — language + search + theme toggle + CTA (desktop) */}
-    <div class="hidden shrink-0 items-center gap-2 lg:flex">
+    {/* gap-1, not gap-2: at xl the English cluster (switcher + search + theme +
+        CTA) is ~339px, just inside its half of the free space; at gap-2 it was
+        351px, overran the 1fr share and pulled the link row 9px off centre
+        against pages without the switcher. */}
+    <div class="hidden shrink-0 items-center justify-self-end gap-1 lg:flex">
       {showLangSwitcher && <LangSwitcher lang={lang} available={availableLocales} compact />}
       {/*
         The command palette binds Cmd/Ctrl+K but advertised it nowhere in the
@@ -556,6 +573,10 @@ const discoveryTools = [
 
   // Theme toggle — flip data-theme, persist the choice, keep aria-label +
   // <meta theme-color> in sync. The initial theme is set pre-paint in Layout.
+  // The flip runs inside a same-document view transition, so the page
+  // crossfades (global.css times ::view-transition-*(root) at --dur-base)
+  // instead of snapping; skipped under prefers-reduced-motion and where the
+  // API is missing, which leaves the instant flip.
   function wireThemeToggles(): void {
     const root = document.documentElement;
     const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
@@ -577,13 +598,21 @@ const discoveryTools = [
       btn.dataset.themeWired = 'true';
       btn.addEventListener('click', () => {
         const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-        root.setAttribute('data-theme', next);
-        try {
-          localStorage.setItem('theme', next);
-        } catch (e) {
-          /* private mode — toggle still works for the session */
+        const apply = (): void => {
+          root.setAttribute('data-theme', next);
+          try {
+            localStorage.setItem('theme', next);
+          } catch (e) {
+            /* private mode — toggle still works for the session */
+          }
+          sync();
+        };
+        const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (!reduce && typeof document.startViewTransition === 'function') {
+          document.startViewTransition(apply);
+        } else {
+          apply();
         }
-        sync();
       });
     });
 

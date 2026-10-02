@@ -175,21 +175,30 @@ for (const tool of liveTools) {
 </div>
 
 <style>
+  /* Capped at 560px (and never past the viewport less the bar + a margin):
+     on a tall screen the uncapped panel covered the whole page. */
   .mega-menu {
     transform-origin: top center;
-    max-height: calc(100vh - 64px);
+    max-height: min(560px, calc(100vh - 96px));
     overflow-y: auto;
     overscroll-behavior: contain;
+    transition:
+      opacity var(--dur-base) var(--ease-brand),
+      transform var(--dur-base) var(--ease-brand);
   }
-  .mega-menu:not([hidden]) {
-    animation: mega-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  @keyframes mega-in {
-    from { opacity: 0; transform: translateY(-6px) scale(0.98); }
-    to   { opacity: 1; transform: translateY(0) scale(1); }
+  /* Entry: fade in and rise 4px into place. `@starting-style` gives the first
+     frame after `hidden` is removed, so the transition above runs from it; no
+     keyframes, and nothing to undo on close (closing is instant). */
+  @starting-style {
+    .mega-menu:not([hidden]) {
+      opacity: 0;
+      transform: translateY(4px);
+    }
   }
   @media (prefers-reduced-motion: reduce) {
-    .mega-menu:not([hidden]) { animation: none; }
+    .mega-menu {
+      transition: none;
+    }
   }
   /* Hide an entire category block when the search has filtered out all of its
      tools. The filter toggles `hidden` on each tool's <li> (not on the .mega-tool
@@ -285,6 +294,12 @@ function initMegaMenu() {
   // ── Timers ──────────────────────────────────────────────────────────────────
   let hoverOpenTimer: ReturnType<typeof setTimeout> | null = null;
   let hoverCloseTimer: ReturnType<typeof setTimeout> | null = null;
+  /** When the panel last opened from a hover (0 = not hover-opened). A pointer
+   *  user moving onto the trigger and clicking it lands the click ~150-300ms
+   *  after the hover timer has already opened the panel; treating that click
+   *  as a toggle closed the menu they had just opened. */
+  let hoverOpenedAt = 0;
+  const HOVER_CLICK_GRACE_MS = 400;
 
   function cancelOpenTimer()  { if (hoverOpenTimer  !== null) { clearTimeout(hoverOpenTimer);  hoverOpenTimer  = null; } }
   function cancelCloseTimer() { if (hoverCloseTimer !== null) { clearTimeout(hoverCloseTimer); hoverCloseTimer = null; } }
@@ -380,16 +395,23 @@ function initMegaMenu() {
   }
 
   // ── Open / Close ────────────────────────────────────────────────────────────
-  function openMenu() {
+  /**
+   * `source` decides focus. A click or keyboard activation moves focus into
+   * the search field (the user asked for the menu). A hover-open does NOT:
+   * a pointer drifting over "Tools" must not pull focus out of whatever the
+   * user was in (a playground input, the page) into a text field.
+   */
+  function openMenu(source: "hover" | "click") {
     menu!.removeAttribute("hidden");
     trigger!.setAttribute("aria-expanded", "true");
     chevron?.classList.add("rotate-180");
     document.body.style.overflow = "";
+    hoverOpenedAt = source === "hover" ? Date.now() : 0;
     // Re-sync on every open (not just at page-load wiring) — the shelf is
     // otherwise stale for the rest of the page view right after a pin/unpin
     // on the SAME page, since initMegaShelf() only ran once at boot.
     initMegaShelf();
-    if (search) {
+    if (search && source !== "hover") {
       setTimeout(() => search.focus(), 50);
     }
   }
@@ -398,6 +420,7 @@ function initMegaMenu() {
     menu!.setAttribute("hidden", "");
     trigger!.setAttribute("aria-expanded", "false");
     chevron?.classList.remove("rotate-180");
+    hoverOpenedAt = 0;
     resetSearch();
   }
 
@@ -405,7 +428,7 @@ function initMegaMenu() {
   trigger.addEventListener("mouseenter", () => {
     cancelCloseTimer();
     if (!isOpen()) {
-      hoverOpenTimer = setTimeout(openMenu, 150);
+      hoverOpenTimer = setTimeout(() => openMenu("hover"), 150);
     }
   });
 
@@ -433,9 +456,16 @@ function initMegaMenu() {
     cancelOpenTimer();
     cancelCloseTimer();
     if (isOpen()) {
+      // The click that follows a hover-open confirms it rather than toggling
+      // it shut. It still hands focus to the search field, as any click does.
+      if (hoverOpenedAt && Date.now() - hoverOpenedAt < HOVER_CLICK_GRACE_MS) {
+        hoverOpenedAt = 0;
+        if (search) setTimeout(() => search.focus(), 50);
+        return;
+      }
       closeMenu();
     } else {
-      openMenu();
+      openMenu("click");
     }
   });
 

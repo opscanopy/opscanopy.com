@@ -28,7 +28,7 @@ const en = {
   'a11y.footerNav': 'Footer',
 
   // Header
-  'nav.browseTools': 'Browse Tools',
+  'nav.browseTools': 'Browse tools',
   'theme.dark': 'Dark theme',
   'theme.light': 'Light theme',
 
