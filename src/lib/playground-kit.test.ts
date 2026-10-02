@@ -367,7 +367,6 @@ const UNMIGRATED: Record<string, string[]> = {
   AlertmanagerRouteTesterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'one-trust-line', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
   Base64Playground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
   CaseConverterPlayground: ['local-chip', 'raw-duration', 'result-panel', 'one-trust-line', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
-  CertificateDecoderPlayground: ['local-chip', 'raw-duration', 'result-panel', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
   ChmodCalculatorPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
   CronToSystemdPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
   CveConverterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
@@ -383,7 +382,6 @@ const UNMIGRATED: Record<string, string[]> = {
   IpConverterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
   JqPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
   JsonYamlConverterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
-  JwtDecoderPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'one-trust-line', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
   K8sLabelSelectorTesterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
   K8sResourceCalculatorPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
   LogqlPromqlPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
@@ -392,13 +390,7 @@ const UNMIGRATED: Record<string, string[]> = {
   PromqlExplainerPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'slab-ink', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
   PtrHelperPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
   RegexLogTesterPlayground: ['local-chip', 'raw-duration', 'result-panel', 'slab-ink', 'no-primary', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'no-one-dark', 'control-height', 'tokens'],
-  SlugifyPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
-  SubnetSplitterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
   SystemdUnitValidatorPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'fake-figcap', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
-  TerraformPlanSummarizerPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
-  TimestampConverterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
-  UrlCodecPlayground: ['local-chip', 'raw-duration', 'result-panel', 'one-trust-line', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
-  UuidUlidGeneratorPlayground: ['local-chip', 'raw-duration', 'result-panel', 'one-trust-line', 'kit-selectors', 'control-height', 'tokens'],
 };
 
 // ---------------------------------------------------------------------------
