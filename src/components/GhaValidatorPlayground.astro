@@ -3,11 +3,17 @@
  * GhaValidatorPlayground — the interactive GitHub Actions Validator island.
  *
  * A no-framework, server-rendered shell hydrated by a single module <script>
- * that lazily boots ONE CodeMirror 6 editor (YAML), wires an example picker,
- * a "Validate" action, plus Copy + Share. It runs entirely client-side and is
- * fully usable offline once loaded.
+ * that lazily boots ONE CodeMirror 6 editor (YAML), wires the example chips,
+ * live validation with a "Run now" control, Copy (the YAML) and Copy link.
  *
- * Runtime contract (built by a sibling agent — imported lazily in the script):
+ * Built on the playground kit (src/components/playground/*): ExampleChips,
+ * EditorPane (the editor on the plate, its FigureCap and the seeded
+ * `<pre data-cm-fallback>`), RunHint and SnapshotBar on paper under it, and
+ * ResultPanel (figure cap, live summary, copy status) with CopyButton. The
+ * results container stays here, seeded with `set:html` + `data-results`; its
+ * slab overrides anchor on `.gha-results`.
+ *
+ * Runtime contract (imported lazily in the script):
  *   ../lib/gha-validator/engine →
  *     validate(yamlText: string) => ValidateResult
  *       ValidateResult = {
@@ -26,20 +32,24 @@
  *   ../lib/gha-validator/examples →
  *     examples: Array<{ id: string; label: string; yaml: string }>
  *
- * The dark editor surface follows DESIGN.md `code-editor-mockup`; findings use
- * the semantic error / warning tokens and mute/neutral for info. Headlines stay
- * sentence-case, weight 600. All runtime-injected result markup is styled via
- * :global(...) because Astro scoped styles do not reach innerHTML-injected nodes.
+ * All runtime-injected result markup is styled via :global(...) because
+ * Astro scoped styles do not reach innerHTML-injected nodes.
  */
 // Build-time import of the same `examples` the client script loads lazily.
 // Used ONLY to server-render the example chips below, so the static HTML
 // carries real example names rather than a "Loading examples…" placeholder
 // that crawlers and no-JS visitors would otherwise be served. The chips are
-// final markup — hydration only attaches click handlers and moves the active
+// final markup — hydration only attaches click handlers and moves the pressed
 // state — so this adds nothing to the client bundle and cannot drift.
 import { examples as prerenderedExamples } from '../lib/gha-validator/examples';
 import { validate } from '../lib/gha-validator/engine';
 import { resultsHtml, resultSummary, EMPTY_HTML } from '../lib/gha-validator/render';
+import ExampleChips from './playground/ExampleChips.astro';
+import EditorPane from './playground/EditorPane.astro';
+import RunHint from './playground/RunHint.astro';
+import SnapshotBar from './playground/SnapshotBar.astro';
+import ResultPanel from './playground/ResultPanel.astro';
+import CopyButton from './playground/CopyButton.astro';
 
 /**
  * Server-rendered seed. The client re-validates the same example on boot, so
@@ -60,160 +70,80 @@ const seedResult = seedExample ? validate(seedYaml) : null;
 const seedOk = seedResult && seedResult.ok !== false && !seedResult.error ? seedResult : null;
 const seedHtml = seedOk ? resultsHtml(seedOk) : EMPTY_HTML;
 const seedSummary = seedOk ? resultSummary(seedOk).text : '';
-const seedSummaryTone =
-  seedOk && resultSummary(seedOk).tone === 'error' ? 'text-error' : 'text-mute';
+const seedError = Boolean(seedOk && resultSummary(seedOk).tone === 'error');
+const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
 ---
 
 <section class="gha" aria-label="GitHub Actions Validator playground">
-  <div class="card shadow-float rounded-lg overflow-hidden">
-    {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Toolbar: example chips + Run now (paper) ─────────────────────── */}
     <div
-      class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5"
+      class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-end sm:justify-between sm:px-5"
     >
       <div class="flex min-w-0 flex-col gap-2">
         <span class="eyebrow shrink-0">Example</span>
-        {/* Server-rendered chips: real buttons in DOM order, so the tab order
-            works with no roving tabindex. The group's aria-label names them —
-            a chip group has nothing a label can point at. Chip 0 is the seed;
-            a #gha= share link or a restored input clears it (see the script). */}
-        <div id="gha-chips" class="gha-chips" role="group" aria-label="Examples">
-          {prerenderedExamples.map((ex, i) => (
-            <button
-              type="button"
-              class:list={['gha-chip', { 'is-active': i === 0 }]}
-              data-example-idx={i}
-              aria-pressed={i === 0 ? 'true' : 'false'}
-            >
-              {ex.label}
-            </button>
-          ))}
-        </div>
+        {/* Chip 0 is the seed; a #gha= share link or a restored input
+            releases it (see the script). */}
+        <ExampleChips prefix="gha" items={chipItems} active={seedExample ? 0 : null} ariaLabel="Examples" />
       </div>
-
-      <div class="flex shrink-0 flex-wrap items-center gap-2">
-        <span class="caption text-mute hidden items-center sm:inline-flex">⌘/Ctrl + Enter</span>
-        <button
-          id="gha-copy"
-          type="button"
-          class="btn btn-secondary btn-sm gha-tap"
-          data-default-label="Copy"
-        >
-          <svg
-            class="h-4 w-4 shrink-0"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <rect x="5.5" y="5.5" width="8" height="8" rx="1.5"></rect>
-            <path d="M3.5 10.5h-.5a1.5 1.5 0 0 1-1.5-1.5v-6A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5"></path>
-          </svg>
-          <span class="gha-copy-label">Copy</span>
-        </button>
-        <button
-          id="gha-share"
-          type="button"
-          class="btn btn-secondary btn-sm gha-tap"
-          data-default-label="Share Link"
-          title="This link encodes your full workflow YAML — review before sharing"
-        >
-          <svg
-            class="h-4 w-4 shrink-0"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M6 8.5l4-1.5M6 8.5l4 1.5"></path>
-            <circle cx="4" cy="8" r="1.6"></circle>
-            <circle cx="11.5" cy="5" r="1.6"></circle>
-            <circle cx="11.5" cy="11" r="1.6"></circle>
-          </svg>
-          <span class="gha-share-label">Share Link</span>
-        </button>
-        <button
-          id="gha-run"
-          type="button"
-          class="btn btn-primary btn-sm gha-tap"
-          title="Validate (⌘/Ctrl + Enter)"
-          aria-keyshortcuts="Meta+Enter Control+Enter"
-        >
-          <svg
-            class="gha-run-icon h-4 w-4 shrink-0"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M2.5 8.5l3.5 3.5 7.5-8"></path>
-          </svg>
-          <span class="gha-run-label">Validate</span>
-        </button>
-      </div>
-    </div>
-
-    {/* ── Editor (single, full-width, dark mockup surface) ─────────────── */}
-    <div class="gha-pane flex min-w-0 flex-col bg-inverse">
-      <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
-        <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
-          <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-          <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-          <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-        </span>
-        <span class="code-mono text-white/45">.github/workflows/ci.yml</span>
-      </div>
-      <p class="body-sm text-mute mb-2">Runs entirely in your browser — nothing is uploaded.</p>
-      <div
-        id="gha-editor"
-        class="gha-editor min-h-80"
-        aria-label="GitHub Actions workflow (YAML)"
+      <button
+        id="gha-run"
+        type="button"
+        class="btn-tool gha-tap self-start sm:self-auto"
+        title="Run now (⌘/Ctrl + Enter)"
+        aria-keyshortcuts="Meta+Enter Control+Enter"
       >
-        <pre class="gha-cm-fallback code-mono" data-cm-fallback>{seedYaml}</pre>
-      </div>
-      <p class="text-xs text-mute mt-1">Results update as you type — press Enter to run now.</p>
-      <p class="text-xs text-mute mt-1">Tip: press <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd> to release keyboard focus from the editor.</p>
-      <div class="gha-snap-row mt-3 flex flex-wrap items-center gap-2">
-        <button id="gha-snap-save" type="button" class="gha-snap-btn">Save snapshot</button>
-        <select id="gha-snap-select" class="gha-snap-select" aria-label="Load a saved snapshot" disabled>
-          <option value="">No snapshots yet</option>
-        </select>
-        <button id="gha-snap-delete" type="button" class="gha-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
-      </div>
+        <svg
+          class="gha-run-icon h-4 w-4 shrink-0"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.4"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M2.5 8.5l3.5 3.5 7.5-8"></path>
+        </svg>
+        <span class="gha-run-label">Run now</span>
+      </button>
     </div>
 
-    {/* ── Results panel ────────────────────────────────────────────────── */}
-    <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex items-center justify-between gap-3">
-        <span class="eyebrow">Results</span>
-        <span
-          id="gha-summary"
-          class:list={['gha-summary code-mono', seedSummaryTone]}
-          role="status"
-          aria-live="polite"
-        >{seedSummary}</span>
-      </div>
+    {/* ── Editor on the plate ──────────────────────────────────────────── */}
+    <EditorPane prefix="gha" label=".github/workflows/ci.yml">
+      <Fragment slot="actions">
+        <CopyButton kind="value" id="gha-copy" label="Copy" hidden={false} ariaLabel="Copy workflow YAML" />
+      </Fragment>
+      <pre class="editor-pane__fallback code-mono gha-fallback" data-cm-fallback>{seedYaml}</pre>
+    </EditorPane>
 
+    {/* ── Run hint + snapshots, on paper (never inside the slab) ──────── */}
+    <div class="border-b border-hairline px-4 py-3 sm:px-5">
+      <RunHint variant="cm" />
+      <SnapshotBar prefix="gha" />
+    </div>
+
+    {/* ── Results — the L2 instrument under its figure cap ─────────────── */}
+    <ResultPanel
+      slug="github-actions-validator"
+      prefix="gha"
+      label="Results"
+      summary={seedSummary}
+      summaryClass={seedError ? 'whitespace-nowrap text-inverse-error' : 'whitespace-nowrap'}
+      split
+    >
+      <Fragment slot="actions">
+        <CopyButton kind="link" id="gha-share" />
+      </Fragment>
       {/* NOT a live region: with live eval the whole findings list would be
           re-announced on every keystroke pause. `#gha-summary` (role="status")
           is the sole live region — the playground a11y contract.
 
           Seeded at build time (see `seedHtml` above) so the findings are in the
           static HTML; the client rebuilds the same markup on boot. */}
-      <div id="gha-results" class="gha-results" set:html={seedHtml}></div>
-    </div>
+      <div id="gha-results" class="gha-results" set:html={seedHtml} data-results></div>
+    </ResultPanel>
   </div>
-
-  {/* Polite announcer for clipboard + transient toasts. */}
-  <span id="gha-announce" class="sr-only" role="status" aria-live="polite"></span>
 </section>
 
 <style>
@@ -224,188 +154,41 @@ const seedSummaryTone =
     touch-action: manipulation;
   }
 
-  /* Example chips — the playground UX contract's picker (squared, mono, brand
-     ink). Ported from SlugifyPlayground.astro; tokens only, no new ones. */
-  .gha-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .gha-chip {
-    display: inline-flex;
-    align-items: center;
-    /* Long labels wrap inside the chip instead of pushing the page sideways. */
-    max-width: 100%;
-    padding: 5px 11px;
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--color-hairline-muted);
-    background: var(--color-canvas);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    line-height: 16px;
-    letter-spacing: 0.01em;
-    color: var(--color-brand-strong);
-    cursor: pointer;
-    touch-action: manipulation;
-    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
-  }
-  .gha-chip:hover {
-    border-color: var(--color-hairline-strong);
-    background: var(--color-canvas-hover);
-  }
-  .gha-chip.is-active {
-    background: var(--color-brand-soft);
-    border-color: var(--color-brand-strong);
-    color: var(--color-brand-strong);
-  }
-  .gha-chip:focus-visible {
-    outline: 2px solid var(--color-focus);
-    outline-offset: 2px;
-  }
-  @media (pointer: coarse) {
-    .gha-chip {
-      min-height: 44px;
-    }
-  }
-
-  /* CodeMirror host — fills the dark pane, scrolls internally. */
-  .gha-editor {
-    overflow: hidden;
-  }
-  /* Build-time text stand-in for the editor, sized like the CM content so the
-     pane does not jump when the script swaps it out. Removed on mount. */
-  .gha-cm-fallback {
-    margin: 0;
-    padding: 14px 16px 16px;
-    max-height: 360px;
-    overflow: auto;
-    color: #e6e6e6;
-    font-size: 13px;
-    line-height: 20px;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-  .gha-editor :global(.cm-editor) {
-    height: 100%;
-    background: transparent;
-    font-family: var(--font-mono);
-    font-size: 13px;
-    line-height: 20px;
-  }
-  .gha-editor :global(.cm-editor.cm-focused) {
-    /* Replace CM's default outline with a brand-blue ring (a11y: keep a ring). */
-    outline: 2px solid var(--color-link);
-    outline-offset: -2px;
-  }
-  .gha-editor :global(.cm-scroller) {
-    overflow: auto;
+  /* The seeded document a crawler reads (global .editor-pane__fallback sets
+     the metrics); boxed to the editor's own min/max height (the script's
+     size theme) so the swap on hydration does not move the page. */
+  .gha-fallback {
+    min-height: 320px;
     max-height: 520px;
-    font-family: var(--font-mono);
-    /* Thin, theme-matched scrollbars on the dark surface. */
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
-  }
-  .gha-editor :global(.cm-scroller)::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  .gha-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.16);
-    border-radius: var(--radius-pill);
-    border: 3px solid transparent;
-    background-clip: content-box;
-  }
-  .gha-editor :global(.cm-scroller)::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.28);
-    background-clip: content-box;
-  }
-  .gha-editor :global(.cm-gutters) {
-    background: transparent;
-    border-right: 1px solid rgba(255, 255, 255, 0.08);
-  }
-  .gha-editor :global(.cm-lineNumbers .cm-gutterElement) {
-    color: rgba(255, 255, 255, 0.32);
-  }
-  .gha-editor :global(.cm-content) {
-    padding: 14px 0 16px;
-  }
-  .gha-editor :global(.cm-line) {
-    padding-inline: 4px;
+    overflow: auto;
   }
 
-  /* Summary — counts use tabular figures so they don't jitter. */
-  .gha-summary {
-    white-space: nowrap;
+  /* The summary is ResultPanel's span (no scope attribute here). A seeded
+     error tone must beat the panel's own text-inverse-mute utility. */
+  .gha :global(.result-panel__summary.text-inverse-error) {
+    color: var(--color-inverse-error);
   }
 
-  .gha-snap-btn {
-    flex: 0 0 auto;
-    height: 30px;
-    padding: 0 12px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-    cursor: pointer;
-    transition: background 0.12s ease, box-shadow 0.12s ease;
-  }
-  .gha-snap-btn:hover {
-    background: var(--color-canvas-soft);
-    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
-  }
-  .gha-snap-select {
-    height: 30px;
-    max-width: 220px;
-    padding: 0 8px;
-    border-radius: var(--radius-sm);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-  }
-  .gha-snap-select:disabled {
-    color: var(--color-mute);
-    cursor: not-allowed;
-  }
-  .gha-snap-delete {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: transparent;
-    color: var(--color-mute);
-    cursor: pointer;
-    transition: background 0.12s ease, color 0.12s ease;
-  }
-  .gha-snap-delete:hover {
-    background: var(--color-error-soft);
-    color: var(--color-error-deep);
-  }
-
-  /* ── Results container + finding rows (runtime-injected → :global) ───── */
+  /* ── Results container + finding rows (runtime-injected → :global) ─────
+     Light rules first as the documented defaults; the slab re-skin follows,
+     anchored on this component's own `.gha-results` container. */
   .gha-results {
-    min-height: 44px;
+    min-height: var(--control-h-lg);
   }
   :global(.gha-group + .gha-group) {
-    margin-top: 18px;
+    margin-top: 16px;
   }
+  /* Group-heading role: sans 12/16 600, never one more mono caps label. */
   :global(.gha-group__head) {
     display: flex;
     align-items: center;
     gap: 8px;
     margin-bottom: 8px;
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 12px;
+    font-weight: 600;
     line-height: 16px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--color-mute);
+    color: var(--color-ink);
   }
 
   :global(.gha-row) {
@@ -415,10 +198,7 @@ const seedSummaryTone =
     border-radius: var(--radius-md);
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
-    animation: gha-rise 0.18s ease both;
-  }
-  :global(.gha-row:hover) {
-    box-shadow: var(--shadow-subtle);
+    animation: gha-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.gha-row + .gha-row) {
     margin-top: 8px;
@@ -427,14 +207,8 @@ const seedSummaryTone =
   :global(.gha-row--error) {
     box-shadow: inset 0 0 0 1px var(--color-error-soft);
   }
-  :global(.gha-row--error:hover) {
-    box-shadow: inset 0 0 0 1px var(--color-error-soft), var(--shadow-subtle);
-  }
   :global(.gha-row--warning) {
     box-shadow: inset 0 0 0 1px var(--color-warning-soft);
-  }
-  :global(.gha-row--warning:hover) {
-    box-shadow: inset 0 0 0 1px var(--color-warning-soft), var(--shadow-subtle);
   }
   @keyframes gha-rise {
     from {
@@ -484,7 +258,6 @@ const seedSummaryTone =
     font-size: 14px;
     font-weight: 500;
     line-height: 20px;
-    letter-spacing: -0.01em;
     color: var(--color-ink);
     word-break: break-word;
   }
@@ -497,18 +270,14 @@ const seedSummaryTone =
     text-wrap: pretty;
   }
 
-  /* Severity pill — tones drawn ONLY from contract tokens. */
+  /* Severity pill — the row-key role (label-field), tones from tokens. */
   :global(.gha-pill) {
+    @apply label-field;
     display: inline-flex;
     align-items: center;
     flex: 0 0 auto;
     padding: 1px 8px;
     border-radius: var(--radius-pill);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 16px;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
     box-shadow: var(--shadow-hairline);
   }
   :global(.gha-pill--error) {
@@ -556,12 +325,7 @@ const seedSummaryTone =
     color: var(--color-mute);
   }
   :global(.gha-fix__label) {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 16px;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    color: var(--color-mute);
+    @apply label-field;
   }
   :global(.gha-fix__text) {
     margin-top: 1px;
@@ -589,7 +353,7 @@ const seedSummaryTone =
     background: var(--color-error-soft);
     box-shadow: inset 0 0 0 1px var(--color-error);
     color: var(--color-error-deep);
-    animation: gha-rise 0.18s ease both;
+    animation: gha-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.gha-error__icon) {
     flex: 0 0 auto;
@@ -619,16 +383,15 @@ const seedSummaryTone =
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 16px 16px;
+    padding: 16px;
     border-radius: var(--radius-md);
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
-    animation: gha-rise 0.18s ease both;
+    animation: gha-rise var(--dur-base) var(--ease-brand) both;
   }
+  /* 22×22 comes from the SVG's own width/height attributes (render.ts). */
   :global(.gha-success__icon) {
     flex: 0 0 auto;
-    width: 22px;
-    height: 22px;
     color: var(--color-success);
   }
   :global(.gha-success__title) {
@@ -644,7 +407,7 @@ const seedSummaryTone =
     color: var(--color-mute);
   }
 
-  /* Empty state — generous, centered frame (ex-empty-state-card scale). */
+  /* Empty state — generous, centered frame. */
   :global(.gha-empty) {
     display: flex;
     align-items: center;
@@ -658,7 +421,7 @@ const seedSummaryTone =
     box-shadow: var(--shadow-hairline);
   }
 
-  /* Loading dots — animate opacity only; reduced-motion handled globally. */
+  /* Loading dots — animate opacity only. */
   :global(.gha-loading) {
     display: inline-flex;
     align-items: center;
@@ -671,15 +434,15 @@ const seedSummaryTone =
   :global(.gha-loading__dot) {
     width: 6px;
     height: 6px;
-    border-radius: 9999px;
+    border-radius: 50%;
     background: var(--color-mute);
-    animation: gha-pulse 1.1s ease-in-out infinite;
+    animation: gha-pulse calc(var(--dur-base) * 6) ease-in-out infinite;
   }
   :global(.gha-loading__dot:nth-child(2)) {
-    animation-delay: 0.18s;
+    animation-delay: var(--dur-base);
   }
   :global(.gha-loading__dot:nth-child(3)) {
-    animation-delay: 0.36s;
+    animation-delay: calc(var(--dur-base) * 2);
   }
   @keyframes gha-pulse {
     0%,
@@ -706,26 +469,114 @@ const seedSummaryTone =
   .is-busy .gha-run-icon {
     display: none;
   }
+
+  /* ── Instrument re-skin — the result panel is the L2 slab (dark in BOTH
+     themes). Everything below uses the slab ink tier; the light rules above
+     remain the documented defaults. ──────────────────────────────────── */
+  .gha-results :global(.gha-empty) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-mute);
+  }
+  .gha-results :global(.gha-loading) {
+    color: var(--color-inverse-mute);
+  }
+  .gha-results :global(.gha-loading__dot) {
+    background: var(--color-inverse-mute);
+  }
+  .gha-results :global(.gha-error) {
+    background: #ff9d9514;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-error);
+    color: var(--color-inverse-error);
+  }
+  .gha-results :global(.gha-success) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+  }
+  .gha-results :global(.gha-success__icon) {
+    color: var(--color-inverse-brand);
+  }
+  .gha-results :global(.gha-success__title),
+  .gha-results :global(.gha-row__title),
+  .gha-results :global(.gha-group__head) {
+    color: var(--color-inverse-fg);
+  }
+  .gha-results :global(.gha-success__sub),
+  .gha-results :global(.gha-row__detail),
+  .gha-results :global(.gha-fix__text) {
+    color: var(--color-inverse-mute);
+  }
+  .gha-results :global(.gha-group + .gha-group) {
+    padding-top: 16px;
+    border-top: 1px solid var(--color-inverse-hairline);
+  }
+  .gha-results :global(.gha-row) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+  }
+  .gha-results :global(.gha-row--error) {
+    box-shadow: inset 0 0 0 1px #ff9d9559;
+  }
+  .gha-results :global(.gha-row--warning) {
+    box-shadow: inset 0 0 0 1px #e0a45859;
+  }
+  .gha-results :global(.gha-row--error .gha-row__icon) {
+    color: var(--color-inverse-error);
+  }
+  .gha-results :global(.gha-row--warning .gha-row__icon) {
+    color: var(--color-inverse-accent);
+  }
+  .gha-results :global(.gha-row--info .gha-row__icon) {
+    color: var(--color-inverse-mute);
+  }
+  .gha-results :global(.gha-pill) {
+    box-shadow: none;
+  }
+  .gha-results :global(.gha-pill--error) {
+    background: #ff9d951f;
+    color: var(--color-inverse-error);
+  }
+  .gha-results :global(.gha-pill--warning) {
+    background: #e0a4581f;
+    color: var(--color-inverse-accent);
+  }
+  .gha-results :global(.gha-pill--info) {
+    background: #ffffff14;
+    color: var(--color-inverse-mute);
+  }
+  .gha-results :global(.gha-line) {
+    background: #ffffff14;
+    color: var(--color-inverse-mute);
+  }
+  .gha-results :global(.gha-fix) {
+    background: #ffffff08;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+  }
+  .gha-results :global(.gha-fix__icon),
+  .gha-results :global(.gha-fix__label) {
+    color: var(--color-inverse-mute);
+  }
+  .gha-results :global(.gha-fix code) {
+    background: #ffffff14;
+    color: var(--color-inverse-fg);
+  }
 </style>
 
 <script>
-  import { copyTextToClipboard as copyText } from '../lib/clipboard';
   import type { EditorView } from '@codemirror/view';
   import { base64UrlEncode, base64UrlDecode } from '../lib/codec';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  import { wireCopyButtons } from '../lib/playground-kit/copy';
+  import { syncChipsByIndex, CHIP_SELECTOR } from '../lib/playground-kit/chips';
   // The HTML builders are shared with the frontmatter's build-time seed —
   // one implementation, so the no-JS markup and the live markup never drift.
-  import {
-    resultsHtml,
-    resultSummary,
-    errorHtml,
-    LOADING_HTML,
-  } from '../lib/gha-validator/render';
+  import { resultsHtml, resultSummary, errorHtml, LOADING_HTML } from '../lib/gha-validator/render';
   import type { ValidateResult } from '../lib/gha-validator/types';
 
-  // CodeMirror is loaded via dynamic import inside init() so its ~200KB runtime
-  // code-splits into its own chunk instead of shipping in the page's initial JS.
-  // The `EditorView` type above is erased at build time and ships no runtime code.
+  // CodeMirror (and the kit's plate theme, which imports @codemirror/view) is
+  // loaded via dynamic import inside init() so its runtime code-splits into
+  // its own chunk instead of shipping in the page's initial JS. The
+  // `EditorView` type above is erased at build time and ships no runtime code.
 
   type EngineModule = {
     validate: (yamlText: string) => ValidateResult | Promise<ValidateResult>;
@@ -734,7 +585,6 @@ const seedSummaryTone =
   type Example = { id: string; label: string; yaml: string };
 
   const ROOT_SEL = '.gha';
-  const COPIED_RESET_MS = 1800;
   const SHARE_KEY = 'gha';
 
   /** Boot every (so far un-hydrated) playground instance on the page. */
@@ -775,33 +625,30 @@ const seedSummaryTone =
 
   /* ---- Result rendering (DOM writes over the shared pure builders) --------- */
 
+  /** Summary ink on the slab: inverse tier only (never paper text-mute). */
+  function setSummary(summary: HTMLElement, text: string, isError: boolean): void {
+    summary.textContent = text;
+    summary.classList.toggle('text-inverse-error', isError);
+    summary.classList.toggle('text-inverse-mute', !isError);
+  }
+
   function renderLoading(container: HTMLElement, summary: HTMLElement): void {
-    summary.textContent = '';
+    setSummary(summary, '', false);
     container.innerHTML = LOADING_HTML;
   }
 
   function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
-    summary.textContent = 'Parse error';
-    summary.classList.add('text-error');
-    summary.classList.remove('text-mute');
     // No role="alert": `#gha-summary` (role="status") already announces
     // "Parse error", and an assertive alert would interrupt on every debounce.
+    setSummary(summary, 'Parse error', true);
     container.innerHTML = errorHtml(message);
   }
 
-  function renderResults(
-    container: HTMLElement,
-    summary: HTMLElement,
-    result: ValidateResult
-  ): void {
+  function renderResults(container: HTMLElement, summary: HTMLElement, result: ValidateResult): void {
     const { text, tone } = resultSummary(result);
-    summary.textContent = text;
-    summary.classList.toggle('text-error', tone === 'error');
-    summary.classList.toggle('text-mute', tone !== 'error');
+    setSummary(summary, text, tone === 'error');
     container.innerHTML = resultsHtml(result);
   }
-
-  /* ---- Clipboard ------------------------------------------------------------ */
 
   /* ---- Share-state codec (self-contained; no engine dependency) ------------- */
 
@@ -834,7 +681,7 @@ const seedSummaryTone =
     const shareBtn = el<HTMLButtonElement>(root, '#gha-share');
     const resultsBox = el<HTMLElement>(root, '#gha-results');
     const summaryEl = el<HTMLElement>(root, '#gha-summary');
-    const announce = el<HTMLElement>(root, '#gha-announce');
+    const copyStatus = el<HTMLElement>(root, '#gha-copy-status');
     const snapSaveBtn = el<HTMLButtonElement>(root, '#gha-snap-save');
     const snapSelect = el<HTMLSelectElement>(root, '#gha-snap-select');
     const snapDeleteBtn = el<HTMLButtonElement>(root, '#gha-snap-delete');
@@ -854,8 +701,12 @@ const seedSummaryTone =
       return;
     }
 
-    // Lazily load CodeMirror + the sibling engine + examples (kept out of the
-    // initial path so the ~200KB CM runtime code-splits into its own chunk).
+    // Copy (the YAML) and Copy link: the kit's one delegated listener;
+    // outcomes are announced in ResultPanel's #gha-copy-status.
+    wireCopyButtons(root, { status: copyStatus });
+
+    // Lazily load CodeMirror + the plate theme + the engine + examples (kept
+    // out of the initial path so the CM runtime code-splits into its own chunk).
     let engine: EngineModule;
     let examples: Example[] = [];
     let makeEditor: (host: HTMLElement, doc: string) => EditorView;
@@ -866,7 +717,7 @@ const seedSummaryTone =
         { EditorView, keymap, lineNumbers, highlightActiveLine },
         { defaultKeymap, history, historyKeymap, indentWithTab },
         { yaml },
-        { oneDark },
+        { plate },
         engineMod,
         examplesMod,
       ] = await Promise.all([
@@ -874,12 +725,20 @@ const seedSummaryTone =
         import('@codemirror/view'),
         import('@codemirror/commands'),
         import('@codemirror/lang-yaml'),
-        import('@codemirror/theme-one-dark'),
+        import('../lib/playground-kit/cm-theme'),
         import('../lib/gha-validator/engine'),
         import('../lib/gha-validator/examples'),
       ]);
       engine = engineMod as unknown as EngineModule;
       examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
+
+      // Size only (the plate theme owns colour; global.css owns the focus
+      // ring): 13px like the seeded fallback, scrolling inside 320–520px.
+      const sizeTheme = EditorView.theme({
+        '&': { fontSize: '13px', maxHeight: '520px' },
+        '.cm-scroller': { overflow: 'auto' },
+        '.cm-content, .cm-gutter': { minHeight: '320px' },
+      });
 
       // Editor factory + doc-setter as closures over the freshly imported CM
       // symbols (so no runtime CM reference lives at module top level).
@@ -891,9 +750,21 @@ const seedSummaryTone =
             history(),
             highlightActiveLine(),
             yaml(),
-            oneDark,
+            plate,
+            sizeTheme,
             EditorView.lineWrapping,
+            EditorView.contentAttributes.of({ 'aria-label': 'GitHub Actions workflow (YAML)' }),
             keymap.of([
+              // ⌘/Ctrl+Enter runs now — placed BEFORE defaultKeymap, whose
+              // Mod-Enter would otherwise insert a blank line.
+              {
+                key: 'Mod-Enter',
+                run: (v) => {
+                  forceRun();
+                  if (window.matchMedia?.('(pointer: coarse)').matches) v.contentDOM.blur();
+                  return true;
+                },
+              },
               // Plain Enter: let CodeMirror insert the newline (this is YAML —
               // Enter must never be swallowed), then flush the pending debounce
               // so the panel is current the moment you finish a line.
@@ -907,25 +778,21 @@ const seedSummaryTone =
               ...defaultKeymap,
               ...historyKeymap,
               indentWithTab,
-              { key: 'Escape', run: function (view) { view.contentDOM.blur(); return true; } },
+              {
+                key: 'Escape',
+                run: (v) => {
+                  v.contentDOM.blur();
+                  return true;
+                },
+              },
             ]),
             // Live eval: re-validate ~180ms after the document settles so the
             // results panel can never silently describe stale YAML.
             EditorView.updateListener.of((u) => {
               if (u.docChanged) scheduleLive();
             }),
-            EditorView.theme({
-              '&': { color: '#e6e6e6' },
-              '.cm-content': { caretColor: '#e6e6e6' },
-              '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
-              '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection':
-                { backgroundColor: 'rgba(0, 112, 243, 0.32)' },
-              '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
-              '.cm-activeLineGutter': { backgroundColor: 'transparent' },
-            }),
           ],
         });
-        // The host already carries the aria-label/role for screen readers; CM mounts inside.
         return new EditorView({ state, parent: host });
       };
 
@@ -935,17 +802,13 @@ const seedSummaryTone =
         });
       };
     } catch (err) {
-      renderError(
-        resultsBox,
-        summaryEl,
-        'The validator engine failed to load. Reload the page to try again.'
-      );
+      renderError(resultsBox, summaryEl, 'The validator engine failed to load. Reload the page to try again.');
       // eslint-disable-next-line no-console
       console.error('[GhaValidator] engine/examples import failed:', err);
       return;
     }
 
-    // Seed priority: #gha=<base64 yaml> deep link (Share Link button) >
+    // Seed priority: #gha=<base64 yaml> deep link (Copy link) >
     // restored last input > the first example.
     const seedExample = examples[0] ?? { id: 'example', label: 'Example', yaml: '' };
     let seedYaml = seedExample.yaml;
@@ -984,7 +847,7 @@ const seedSummaryTone =
       liveTimer = window.setTimeout(() => void run({ live: true }), LIVE_DEBOUNCE_MS);
     }
 
-    /** Deliberate run (button, Enter, ⌘/Ctrl+Enter): cancel the debounce, go now. */
+    /** Deliberate run (Run now, Enter, ⌘/Ctrl+Enter): cancel the debounce, go now. */
     function forceRun(): void {
       window.clearTimeout(liveTimer);
       window.clearTimeout(errorHoldTimer);
@@ -1000,33 +863,35 @@ const seedSummaryTone =
 
     // Example chips are server-rendered from the same `examples` module, in the
     // same order, so `data-example-idx` indexes this array directly.
-    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>('.gha-chip'));
-
-    /** Move the pressed/active state; pass null for "none of them". */
-    function setActiveChip(active: HTMLButtonElement | null): void {
-      chips.forEach((chip) => {
-        const on = chip === active;
-        chip.classList.toggle('is-active', on);
-        chip.setAttribute('aria-pressed', on ? 'true' : 'false');
-      });
-    }
+    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>(CHIP_SELECTOR));
 
     // The editor was seeded from a share link or a restored input, not from an
-    // example. The old picker grew a synthetic "Shared workflow" / "Restored
-    // workflow" entry to say so; a chip group has no such entry, so instead NO
-    // chip is pressed — the picker claims nothing it cannot back up.
-    if (fromShare || fromRestored) setActiveChip(null);
+    // example: NO chip is pressed — the picker claims nothing it cannot back up.
+    if (fromShare || fromRestored) syncChipsByIndex(chipsWrap, null);
 
     // Swap the editor when a different example is chosen, then validate it.
     chips.forEach((chip) => {
       chip.addEventListener('click', () => {
         const idx = Number(chip.dataset.exampleIdx);
         if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
-        setActiveChip(chip);
+        syncChipsByIndex(chipsWrap, idx);
         setEditorDoc(view, examples[idx].yaml);
         forceRun();
       });
     });
+
+    // Copy fills its payload at click time: this target-phase listener runs
+    // before the kit's delegated one on the root.
+    copyBtn.addEventListener('click', () => {
+      copyBtn.dataset.copy = view.state.doc.toString();
+    });
+
+    /** Copy link appears once a result exists, carrying the current YAML. */
+    function setShare(doc: string | null): void {
+      if (!shareBtn) return;
+      shareBtn.hidden = doc === null;
+      shareBtn.dataset.copy = doc === null ? '' : `${window.location.href.split('#')[0]}${encodeShare(doc)}`;
+    }
 
     // Run — non-blocking; show loading, yield a frame, then render.
     // `live: true` marks a debounced keystroke-driven run: no spinner, no
@@ -1042,7 +907,7 @@ const seedSummaryTone =
     const runLabel = runBtn.querySelector<HTMLElement>('.gha-run-label');
     let spinner: HTMLElement | null = null;
     async function run(opts: RunOpts = {}): Promise<void> {
-      // Guaranteed present by the early return in boot(); restated because TypeScript
+      // Guaranteed present by the early return in init(); restated because TypeScript
       // discards that narrowing inside a hoisted function declaration.
       if (!runBtn) return;
       const live = opts.live === true;
@@ -1066,13 +931,13 @@ const seedSummaryTone =
           spinner.setAttribute('aria-hidden', 'true');
           // Inline the visual so it never depends on Astro's scoped CSS (runtime node).
           spinner.style.cssText =
-            'display:inline-block;width:14px;height:14px;flex:0 0 auto;border-radius:9999px;' +
+            'display:inline-block;width:14px;height:14px;flex:0 0 auto;border-radius:50%;' +
             'border:2px solid currentColor;border-top-color:transparent;';
           if (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-            spinner.animate(
-              [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }],
-              { duration: 700, iterations: Infinity }
-            );
+            spinner.animate([{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }], {
+              duration: 700,
+              iterations: Infinity,
+            });
           }
           runBtn.insertBefore(spinner, runBtn.firstChild);
         }
@@ -1099,12 +964,10 @@ const seedSummaryTone =
         if (live && failed && opts.showErrors !== true) {
           // Hold the last good panel; reveal the error only after a longer idle.
           window.clearTimeout(errorHoldTimer);
-          errorHoldTimer = window.setTimeout(
-            () => void run({ live: true, showErrors: true }),
-            ERROR_HOLD_MS
-          );
+          errorHoldTimer = window.setTimeout(() => void run({ live: true, showErrors: true }), ERROR_HOLD_MS);
         } else {
           renderResults(resultsBox!, summaryEl!, result);
+          setShare(failed ? null : doc);
           if (!live && !seeded) {
             // Persist current state into the URL hash without a history entry.
             try {
@@ -1115,9 +978,9 @@ const seedSummaryTone =
           }
         }
       } catch (err) {
-        const msg =
-          err instanceof Error ? err.message : 'Unexpected error while validating.';
+        const msg = err instanceof Error ? err.message : 'Unexpected error while validating.';
         renderError(resultsBox!, summaryEl!, msg);
+        setShare(null);
       } finally {
         running = false;
         runBtn.classList.remove('is-busy');
@@ -1127,7 +990,7 @@ const seedSummaryTone =
           spinner.remove();
           spinner = null;
         }
-        if (runLabel) runLabel.textContent = 'Validate';
+        if (runLabel) runLabel.textContent = 'Run now';
         if (rerun) {
           const next = rerun;
           rerun = null;
@@ -1138,54 +1001,14 @@ const seedSummaryTone =
 
     runBtn.addEventListener('click', () => forceRun());
 
-    // Cmd/Ctrl+Enter from inside the editor triggers a run.
+    // ⌘/Ctrl+Enter anywhere else in the playground (a chip, Run now) runs too;
+    // inside the editor the Mod-Enter binding has already handled it.
     root.addEventListener('keydown', (e) => {
+      if (e.defaultPrevented) return;
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
         forceRun();
       }
-    });
-
-    // Copy — copy the workflow YAML to the clipboard.
-    const copyLabel = copyBtn.querySelector<HTMLElement>('.gha-copy-label');
-    let copyTimer: number | undefined;
-    copyBtn.addEventListener('click', async () => {
-      const ok = await copyText(view.state.doc.toString());
-      if (copyLabel) copyLabel.textContent = ok ? 'Copied' : 'Copy Failed';
-      if (announce) {
-        announce.textContent = ok
-          ? 'Workflow YAML copied to your clipboard.'
-          : 'Could not copy. Select the text in the editor and copy it manually.';
-      }
-      window.clearTimeout(copyTimer);
-      copyTimer = window.setTimeout(() => {
-        if (copyLabel) copyLabel.textContent = copyBtn.dataset.defaultLabel ?? 'Copy';
-      }, COPIED_RESET_MS);
-    });
-
-    // Share — copy a shareable URL (current YAML encoded in the hash).
-    const shareLabel = shareBtn.querySelector<HTMLElement>('.gha-share-label');
-    let shareTimer: number | undefined;
-    shareBtn.addEventListener('click', async () => {
-      const frag = encodeShare(view.state.doc.toString());
-      const base = window.location.href.split('#')[0];
-      const shareUrl = `${base}${frag}`;
-      try {
-        window.history.replaceState(null, '', frag);
-      } catch {
-        /* fall back to the current URL */
-      }
-      const ok = await copyText(shareUrl);
-      if (shareLabel) shareLabel.textContent = ok ? 'Link Copied' : 'Copy Failed';
-      if (announce) {
-        announce.textContent = ok
-          ? 'Share link copied to your clipboard.'
-          : 'Could not copy the link. Copy the URL from your address bar instead.';
-      }
-      window.clearTimeout(shareTimer);
-      shareTimer = window.setTimeout(() => {
-        if (shareLabel) shareLabel.textContent = shareBtn.dataset.defaultLabel ?? 'Share Link';
-      }, COPIED_RESET_MS);
     });
 
     wireSnapshotUI({
@@ -1196,7 +1019,7 @@ const seedSummaryTone =
       getValue: () => view.state.doc.toString(),
       setValue: (value) => {
         // A snapshot is the visitor's own workflow, not one of the examples.
-        setActiveChip(null);
+        syncChipsByIndex(chipsWrap, null);
         setEditorDoc(view, value);
         forceRun();
       },

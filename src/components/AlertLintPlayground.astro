@@ -3,11 +3,18 @@
  * AlertLintPlayground — the interactive AlertLint island.
  *
  * A no-framework, server-rendered shell hydrated by a single module <script>
- * that lazily boots two CodeMirror 6 editors (Rules + Test), wires an example
- * picker, a "Run tests" action, and a shareable-URL encoder. It runs entirely
- * client-side and is fully usable offline once loaded.
+ * that lazily boots two CodeMirror 6 editors (Rules + Test), wires the example
+ * chips, live test runs with a "Run now" control, and Copy link (the state
+ * encoded in the URL hash). It is fully usable offline once loaded.
  *
- * Runtime contract (built by sibling agents — imported lazily in the script):
+ * Built on the playground kit (src/components/playground/*): ExampleChips,
+ * two EditorPanes (each a FigureCap over its CodeMirror host, seeded with a
+ * `<pre data-cm-fallback>`), RunHint and SnapshotBar on paper, and
+ * ResultPanel (figure cap, live summary, copy status) with CopyButton. The
+ * results container stays here, seeded with `set:html` + `data-results`; its
+ * slab overrides anchor on `.al-results`.
+ *
+ * Runtime contract (imported lazily in the script):
  *   ../lib/alertlint/engine →
  *     runTests(rulesYaml: string, testYaml: string) => RunResult
  *       RunResult = {
@@ -27,9 +34,6 @@
  *     decodeState() => { rules: string; test: string } | null
  *   ../lib/alertlint/examples →
  *     examples: Array<{ name|label|title; rules|rulesYaml; test|testYaml }>
- *
- * The dark editor surface follows DESIGN.md `code-editor-mockup`; results use the
- * semantic success / error tokens. Headlines stay sentence-case, weight 600.
  */
 // Build-time import of the same `examples` the client script loads lazily.
 // Used ONLY to server-render the example chips below, so the static HTML
@@ -40,6 +44,12 @@
 import { examples as prerenderedExamples } from '../lib/alertlint/examples';
 import { runTests } from '../lib/alertlint/engine';
 import { resultsHtml, countsText, EMPTY_HTML } from '../lib/alertlint/render';
+import ExampleChips from './playground/ExampleChips.astro';
+import EditorPane from './playground/EditorPane.astro';
+import RunHint from './playground/RunHint.astro';
+import SnapshotBar from './playground/SnapshotBar.astro';
+import ResultPanel from './playground/ResultPanel.astro';
+import CopyButton from './playground/CopyButton.astro';
 
 /**
  * Server-rendered seed. The client re-runs the same example on boot, so this
@@ -60,95 +70,48 @@ const seedOk = seedResult && seedResult.ok !== false && !seedResult.error ? seed
 const seedHtml = seedOk ? resultsHtml(seedOk) : EMPTY_HTML;
 const seedSummary = seedOk && seedOk.summary ? countsText(seedOk.summary) : '';
 const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0);
-
+const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
 ---
 
-<section class="playground" aria-label="AlertLint playground">
-  <div class="card shadow-float rounded-lg overflow-hidden">
-    {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+<section class="playground al-pg" aria-label="AlertLint playground">
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Toolbar: example chips + Run now (paper) ─────────────────────── */}
     <div
-      class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5"
+      class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-end sm:justify-between sm:px-5"
     >
       <div class="flex min-w-0 flex-col gap-2">
-        {/* A chip group is not a form control, so the visible caption is a
-            plain span and the group carries its own aria-label. */}
         <span class="eyebrow shrink-0">Example</span>
-        <div id="al-chips" class="al-chips" role="group" aria-label="Examples">
-          {/* Server-rendered so the examples are in the static HTML; the
-              hydration script only wires clicks onto these buttons. */}
-          {prerenderedExamples.map((ex, i) => (
-            <button
-              type="button"
-              class={i === 0 ? 'al-chip is-active' : 'al-chip'}
-              data-example-idx={i}
-              aria-pressed={i === 0 ? 'true' : 'false'}
-            >
-              {ex.label}
-            </button>
-          ))}
-        </div>
+        <ExampleChips prefix="al" items={chipItems} active={seedExample ? 0 : null} ariaLabel="Examples" />
       </div>
-
-      <div class="flex shrink-0 flex-wrap items-center gap-2">
-        <span class="caption text-mute hidden items-center sm:inline-flex">⌘/Ctrl + Enter</span>
-        <button
-          id="al-share"
-          type="button"
-          class="btn btn-secondary btn-sm al-tap"
-          data-default-label="Share Link"
-          title="This link encodes your alert rules — review before sharing."
+      <button
+        id="al-run"
+        type="button"
+        class="btn-tool al-tap self-start sm:self-auto"
+        title="Run now (⌘/Ctrl + Enter)"
+        aria-keyshortcuts="Meta+Enter Control+Enter"
+      >
+        <svg
+          class="al-run-icon h-4 w-4 shrink-0"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.4"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
         >
-          <svg
-            class="h-4 w-4 shrink-0"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M6 8.5l4-1.5M6 8.5l4 1.5"></path>
-            <circle cx="4" cy="8" r="1.6"></circle>
-            <circle cx="11.5" cy="5" r="1.6"></circle>
-            <circle cx="11.5" cy="11" r="1.6"></circle>
-          </svg>
-          <span class="al-share-label">Share Link</span>
-        </button>
-        <button
-          id="al-run"
-          type="button"
-          class="btn btn-primary btn-sm al-tap"
-          title="Run Tests (⌘/Ctrl + Enter)"
-          aria-keyshortcuts="Meta+Enter Control+Enter"
-        >
-          <svg
-            class="al-run-icon h-4 w-4 shrink-0"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M5 3.5l7 4.5-7 4.5z" fill="currentColor" stroke="none"></path>
-          </svg>
-          <span class="al-run-label">Run Tests</span>
-        </button>
-      </div>
+          <path d="M5 3.5l7 4.5-7 4.5z" fill="currentColor" stroke="none"></path>
+        </svg>
+        <span class="al-run-label">Run now</span>
+      </button>
     </div>
 
     {/* ── Mobile tab switch (single-pane on small screens) ─────────────── */}
-    <div
-      class="al-tabs flex gap-1 border-b border-hairline px-4 py-2 sm:hidden"
-      role="tablist"
-      aria-label="Editor panes"
-    >
+    <div class="al-tabs flex gap-1 border-b border-hairline px-4 py-2 sm:hidden" role="tablist" aria-label="Editor panes">
       <button
         id="al-tab-rules"
         type="button"
-        class="al-tab al-tap is-active"
+        class="al-tab al-tap"
         role="tab"
         aria-selected="true"
         aria-controls="al-pane-rules"
@@ -171,84 +134,44 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
       </button>
     </div>
 
-    {/* ── Editor split (side-by-side on desktop, tabbed on mobile) ─────── */}
+    {/* ── Editor split on the plate (side by side on desktop, tabbed on
+        mobile) ── */}
     <div class="al-grid grid grid-cols-1 sm:grid-cols-2">
-      <div
-        id="al-pane-rules"
-        class="al-pane al-pane--active flex min-w-0 flex-col bg-inverse sm:border-r sm:border-white/10"
-        role="tabpanel"
-        aria-labelledby="al-tab-rules"
-      >
-        <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
-          <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-          </span>
-          <span class="code-mono text-white/45">rules.yaml</span>
-        </div>
-        <p class="body-sm text-white/55 px-4 mb-2">Runs in your browser — nothing is uploaded.</p>
-        <div
-          id="al-editor-rules"
-          class="al-editor min-h-72"
-          aria-label="Loki alert rules (YAML)"
-        >
-          <pre class="al-cm-fallback code-mono" data-cm-fallback>{seedExample?.rulesYaml}</pre>
-        </div>
-        <p class="text-xs text-white/55 px-4 mt-1">Tip: press <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd> to release focus.</p>
-        <div class="al-snap-row mt-2 mb-2 flex flex-wrap items-center gap-2" style="padding: 0 16px;">
-          <button id="al-snap-save" type="button" class="al-snap-btn">Save snapshot</button>
-          <select id="al-snap-select" class="al-snap-select" aria-label="Load a saved snapshot" disabled>
-            <option value="">No snapshots yet</option>
-          </select>
-          <button id="al-snap-delete" type="button" class="al-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
-        </div>
+      <div id="al-pane-rules" class="al-pane al-pane--active" role="tabpanel" aria-labelledby="al-tab-rules">
+        <EditorPane prefix="al" id="al-editor-rules" label="rules.yaml">
+          <pre class="editor-pane__fallback code-mono al-fallback" data-cm-fallback>{seedExample?.rulesYaml}</pre>
+        </EditorPane>
       </div>
-
-      <div
-        id="al-pane-test"
-        class="al-pane flex min-w-0 flex-col bg-inverse"
-        role="tabpanel"
-        aria-labelledby="al-tab-test"
-      >
-        <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
-          <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-          </span>
-          <span class="code-mono text-white/45">test.yaml</span>
-        </div>
-        <div
-          id="al-editor-test"
-          class="al-editor min-h-72"
-          aria-label="Test cases (YAML)"
-        >
-          <pre class="al-cm-fallback code-mono" data-cm-fallback>{seedExample?.testYaml}</pre>
-        </div>
+      <div id="al-pane-test" class="al-pane" role="tabpanel" aria-labelledby="al-tab-test">
+        <EditorPane prefix="al" id="al-editor-test" label="test.yaml">
+          <pre class="editor-pane__fallback code-mono al-fallback" data-cm-fallback>{seedExample?.testYaml}</pre>
+        </EditorPane>
       </div>
     </div>
 
-    {/* ── Results panel ────────────────────────────────────────────────── */}
-    <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex items-center justify-between gap-3">
-        <span class="eyebrow">Results</span>
-        <span
-          id="al-summary"
-          class:list={['al-summary code-mono', seedFailed ? 'text-error' : 'text-mute']}
-          role="status"
-          aria-live="polite"
-        >{seedSummary}</span>
-      </div>
+    {/* ── Run hint + snapshots, on paper (never inside the slab) ──────── */}
+    <div class="border-b border-hairline px-4 py-3 sm:px-5">
+      <RunHint variant="cm" />
+      <SnapshotBar prefix="al" />
+    </div>
 
+    {/* ── Results — the L2 instrument under its figure cap ─────────────── */}
+    <ResultPanel
+      slug="loki-alert-rule-tester"
+      prefix="al"
+      label="Results"
+      summary={seedSummary}
+      summaryClass={seedFailed ? 'whitespace-nowrap text-inverse-error' : 'whitespace-nowrap'}
+      split
+    >
+      <Fragment slot="actions">
+        <CopyButton kind="link" id="al-share" />
+      </Fragment>
       {/* Seeded at build time (see `seedHtml` above) so the pass/fail rows are
           in the static HTML; the script repaints this same node on every run. */}
-      <div id="al-results" class="al-results" set:html={seedHtml}></div>
-    </div>
+      <div id="al-results" class="al-results" set:html={seedHtml} data-results></div>
+    </ResultPanel>
   </div>
-
-  {/* Polite announcer for clipboard + transient toasts. */}
-  <span id="al-announce" class="sr-only" role="status" aria-live="polite"></span>
 </section>
 
 <style>
@@ -259,135 +182,49 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
     touch-action: manipulation;
   }
 
-  /* Build-time text stand-in for each CodeMirror document: what a no-JS
-     visitor and every AI crawler read. `init` removes it once CM mounts. */
-  .al-cm-fallback {
-    margin: 0;
-    padding: 14px 16px 16px;
-    max-height: 360px;
+  /* The seeded documents a crawler reads (global .editor-pane__fallback sets
+     the metrics), boxed to the editors' own min/max height (the script's
+     size theme) so the swap on hydration does not move the page. */
+  .al-fallback {
+    min-height: 288px;
+    max-height: 300px;
     overflow: auto;
-    color: #e6e6e6;
-    font-size: 13px;
-    line-height: 20px;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
   }
 
-  /* The example picker: squared mono chips (playground UX contract). */
-  .al-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .al-chip {
-    display: inline-flex;
-    align-items: center;
-    padding: 5px 11px;
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--color-hairline-muted);
-    background: var(--color-canvas);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    line-height: 16px;
-    letter-spacing: 0.01em;
-    color: var(--color-brand-strong);
-    cursor: pointer;
-    touch-action: manipulation;
-    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
-  }
-  .al-chip:hover {
-    border-color: var(--color-hairline-strong);
-    background: var(--color-canvas-hover);
-  }
-  .al-chip.is-active {
-    background: var(--color-brand-soft);
-    border-color: var(--color-brand-strong);
-    color: var(--color-brand-strong);
-  }
-  .al-chip:focus-visible {
-    outline: 2px solid var(--color-focus);
-    outline-offset: 2px;
-  }
-  @media (pointer: coarse) {
-    .al-chip {
-      min-height: 44px;
+  /* The divider between the two plates on desktop. */
+  @media (min-width: 640px) {
+    .al-pane + .al-pane {
+      border-left: 1px solid var(--color-inverse-hairline);
     }
   }
 
-  .al-snap-btn {
-    flex: 0 0 auto;
-    height: 30px;
-    padding: 0 12px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-    cursor: pointer;
-    transition: background 0.12s ease, box-shadow 0.12s ease;
-  }
-  .al-snap-btn:hover {
-    background: var(--color-canvas-soft);
-    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
-  }
-  .al-snap-select {
-    height: 30px;
-    max-width: 220px;
-    padding: 0 8px;
-    border-radius: var(--radius-sm);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-  }
-  .al-snap-select:disabled {
-    color: var(--color-mute);
-    cursor: not-allowed;
-  }
-  .al-snap-delete {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: transparent;
-    color: var(--color-mute);
-    cursor: pointer;
-    transition: background 0.12s ease, color 0.12s ease;
-  }
-  .al-snap-delete:hover {
-    background: var(--color-error-soft);
-    color: var(--color-error-deep);
-  }
-
-  /* Mobile tab pills (square in-app scale; never the 100px marketing pill). */
+  /* Mobile tabs (square in-app scale). The selected state IS aria-selected. */
   .al-tab {
+    @apply label-field;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex: 1 1 0;
-    min-height: 44px;
+    min-height: var(--control-h-lg);
     border-radius: var(--radius-sm);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    color: var(--color-mute);
     background: transparent;
     cursor: pointer;
-    transition: background-color 0.15s ease, color 0.15s ease;
+    transition:
+      background-color var(--dur-fast) var(--ease-brand),
+      color var(--dur-fast) var(--ease-brand);
   }
-  .al-tab:hover:not(.is-active) {
+  .al-tab:hover:not([aria-selected='true']) {
     color: var(--color-body);
     background: var(--color-canvas-soft-2);
   }
-  .al-tab.is-active {
-    color: var(--color-on-primary);
-    background: var(--color-primary);
+  .al-tab[aria-selected='true'] {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+  }
+  .al-tab:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
   }
 
   /* Visibility is driven by the .al-pane--active class, NOT the [hidden]
@@ -399,76 +236,21 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
       display: none;
     }
     .al-pane.al-pane--active {
-      display: flex;
-    }
-  }
-  @media (min-width: 640px) {
-    /* Desktop: both panes always visible side by side. */
-    .al-pane {
-      display: flex;
+      display: block;
     }
   }
 
-  /* CodeMirror host — fills the dark pane, scrolls internally. */
-  .al-editor {
-    overflow: hidden;
-  }
-  .al-editor :global(.cm-editor) {
-    height: 100%;
-    background: transparent;
-    font-family: var(--font-mono);
-    font-size: 13px;
-    line-height: 20px;
-  }
-  .al-editor :global(.cm-editor.cm-focused) {
-    /* Replace CM's default outline with a brand-blue ring (a11y: keep a ring). */
-    outline: 2px solid var(--color-link);
-    outline-offset: -2px;
-  }
-  .al-editor :global(.cm-scroller) {
-    overflow: auto;
-    max-height: 300px;
-    font-family: var(--font-mono);
-    /* Thin, theme-matched scrollbars on the dark surface. */
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
-  }
-  .al-editor :global(.cm-scroller)::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  .al-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.16);
-    border-radius: var(--radius-pill);
-    border: 3px solid transparent;
-    background-clip: content-box;
-  }
-  .al-editor :global(.cm-scroller)::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.28);
-    background-clip: content-box;
-  }
-  .al-editor :global(.cm-gutters) {
-    background: transparent;
-    border-right: 1px solid rgba(255, 255, 255, 0.08);
-  }
-  .al-editor :global(.cm-lineNumbers .cm-gutterElement) {
-    color: rgba(255, 255, 255, 0.32);
-  }
-  .al-editor :global(.cm-content) {
-    padding: 14px 0 16px;
-  }
-  .al-editor :global(.cm-line) {
-    padding-inline: 4px;
+  /* The summary is ResultPanel's span (no scope attribute here). A seeded
+     failure tone must beat the panel's own text-inverse-mute utility. */
+  .al-pg :global(.result-panel__summary.text-inverse-error) {
+    color: var(--color-inverse-error);
   }
 
-  /* Summary — right-aligned counts use tabular figures so they don't jitter. */
-  .al-summary {
-    white-space: nowrap;
-  }
-
-  /* Results rows. */
+  /* ── Results rows (runtime-injected → :global). Light rules first as the
+     documented defaults; the slab re-skin follows, anchored on this
+     component's own `.al-results` container. ─────────────────────────── */
   .al-results {
-    min-height: 44px;
+    min-height: var(--control-h-lg);
   }
   :global(.al-row) {
     display: flex;
@@ -477,13 +259,7 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
     border-radius: var(--radius-md);
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
-    animation: al-rise 0.18s ease both;
-  }
-  :global(.al-row:hover) {
-    box-shadow: var(--shadow-subtle);
-  }
-  :global(.al-row--fail:hover) {
-    box-shadow: inset 0 0 0 1px var(--color-error-soft), var(--shadow-subtle);
+    animation: al-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.al-row + .al-row) {
     margin-top: 8px;
@@ -499,7 +275,8 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    :global(.al-row) {
+    :global(.al-row),
+    :global(.al-error) {
       animation: none;
     }
   }
@@ -526,7 +303,6 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
     font-size: 14px;
     font-weight: 500;
     line-height: 20px;
-    letter-spacing: -0.01em;
     color: var(--color-ink);
     word-break: break-word;
   }
@@ -564,10 +340,10 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
   :global(.al-diff__row + .al-diff__row) {
     border-top: 1px solid var(--color-hairline);
   }
+  /* Row-key role (label-field): mono 11/16 uppercase, the only label. */
   :global(.al-diff__label) {
-    color: var(--color-mute);
-    text-transform: uppercase;
-    letter-spacing: 0.02em;
+    @apply label-field;
+    line-height: 18px;
   }
   :global(.al-diff__val) {
     white-space: pre-wrap;
@@ -593,12 +369,7 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
     background: var(--color-error-soft);
     box-shadow: inset 0 0 0 1px var(--color-error);
     color: var(--color-error-deep);
-    animation: al-rise 0.18s ease both;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    :global(.al-error) {
-      animation: none;
-    }
+    animation: al-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.al-error__icon) {
     flex: 0 0 auto;
@@ -623,7 +394,7 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
     word-break: break-word;
   }
 
-  /* Empty state — generous, centered frame (ex-empty-state-card scale). */
+  /* Empty state — generous, centered frame. */
   :global(.al-empty) {
     display: flex;
     align-items: center;
@@ -637,7 +408,7 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
     box-shadow: var(--shadow-hairline);
   }
 
-  /* Loading dots — animate opacity only; reduced-motion handled globally. */
+  /* Loading dots — animate opacity only. */
   :global(.al-loading) {
     display: inline-flex;
     align-items: center;
@@ -650,15 +421,15 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
   :global(.al-loading__dot) {
     width: 6px;
     height: 6px;
-    border-radius: 9999px;
+    border-radius: 50%;
     background: var(--color-mute);
-    animation: al-pulse 1.1s ease-in-out infinite;
+    animation: al-pulse calc(var(--dur-base) * 6) ease-in-out infinite;
   }
   :global(.al-loading__dot:nth-child(2)) {
-    animation-delay: 0.18s;
+    animation-delay: var(--dur-base);
   }
   :global(.al-loading__dot:nth-child(3)) {
-    animation-delay: 0.36s;
+    animation-delay: calc(var(--dur-base) * 2);
   }
   @keyframes al-pulse {
     0%,
@@ -684,42 +455,76 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
   .is-busy .al-run-icon {
     display: none;
   }
-  /* Compact spinner shown in the Run button while tests execute. */
-  .al-spinner {
-    width: 14px;
-    height: 14px;
-    flex: 0 0 auto;
-    border-radius: 9999px;
-    border: 2px solid currentColor;
-    border-top-color: transparent;
-    animation: al-spin 0.6s linear infinite;
+
+  /* ── Instrument re-skin — the result panel is the L2 slab (dark in BOTH
+     themes). Everything below uses the slab ink tier. ─────────────────── */
+  .al-results :global(.al-empty) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-mute);
   }
-  @keyframes al-spin {
-    to {
-      transform: rotate(360deg);
-    }
+  .al-results :global(.al-loading) {
+    color: var(--color-inverse-mute);
   }
-  /* Reduced motion is handled globally (animations clamped); the “Running…”
-     label + aria-busy still convey the in-flight state without a spin. */
+  .al-results :global(.al-loading__dot) {
+    background: var(--color-inverse-mute);
+  }
+  .al-results :global(.al-error) {
+    background: #ff9d9514;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-error);
+    color: var(--color-inverse-error);
+  }
+  .al-results :global(.al-row) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+  }
+  .al-results :global(.al-row--fail) {
+    box-shadow: inset 0 0 0 1px #ff9d9559;
+  }
+  .al-results :global(.al-row--pass .al-row__icon) {
+    color: var(--color-inverse-brand);
+  }
+  .al-results :global(.al-row--fail .al-row__icon) {
+    color: var(--color-inverse-error);
+  }
+  .al-results :global(.al-row__name),
+  .al-results :global(.al-diff__val) {
+    color: var(--color-inverse-fg);
+  }
+  .al-results :global(.al-row__meta),
+  .al-results :global(.al-row__msg),
+  .al-results :global(.al-diff__label) {
+    color: var(--color-inverse-mute);
+  }
+  .al-results :global(.al-diff) {
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+  }
+  .al-results :global(.al-diff__row + .al-diff__row) {
+    border-top-color: var(--color-inverse-hairline);
+  }
+  .al-results :global(.al-diff__row--exp) {
+    background: #ffffff0a;
+  }
+  .al-results :global(.al-diff__row--act) {
+    background: #ff9d9514;
+  }
+  .al-results :global(.al-diff__row--act .al-diff__val) {
+    color: var(--color-inverse-error);
+  }
 </style>
 
 <script>
-  import { copyTextToClipboard as copyText } from '../lib/clipboard';
   import type { EditorView } from '@codemirror/view';
   import type { RunResult } from '../lib/alertlint/types';
-  import {
-    EMPTY_HTML,
-    LOADING_HTML,
-    countsText,
-    errorHtml,
-    formatDuration,
-    resultsHtml,
-  } from '../lib/alertlint/render';
+  import { LOADING_HTML, countsText, errorHtml, formatDuration, resultsHtml } from '../lib/alertlint/render';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  import { wireCopyButtons } from '../lib/playground-kit/copy';
+  import { syncChipsByIndex, CHIP_SELECTOR } from '../lib/playground-kit/chips';
 
-  // CodeMirror is loaded via dynamic import inside init() so its ~200KB runtime
-  // code-splits into its own chunk instead of shipping in the page's initial JS.
-  // The `EditorView` type above is erased at build time and ships no runtime code.
+  // CodeMirror (and the kit's plate theme, which imports @codemirror/view) is
+  // loaded via dynamic import inside init() so its runtime code-splits into
+  // its own chunk instead of shipping in the page's initial JS. The
+  // `EditorView` type above is erased at build time and ships no runtime code.
 
   /* ---- Engine contract ------------------------------------------------------
      Imported, never hand-mirrored: a copied shape drifts silently when the
@@ -734,8 +539,7 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
   type ExampleRaw = Record<string, unknown>;
   type Example = { name: string; rules: string; test: string };
 
-  const ROOT_SEL = '.playground';
-  const COPIED_RESET_MS = 1800;
+  const ROOT_SEL = '.al-pg';
   const SLUG = 'loki-alert-rule-tester';
 
   /** Boot every (so far un-hydrated) playground instance on the page. */
@@ -780,45 +584,35 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
      every client repaint are produced by one implementation. Only the DOM
      writes stay here. */
 
-  function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
-    summary.textContent = '';
-    container.innerHTML = EMPTY_HTML;
+  /** Summary ink on the slab: inverse tier only (never paper text-mute). */
+  function setSummary(summary: HTMLElement, text: string, isError: boolean): void {
+    summary.textContent = text;
+    summary.classList.toggle('text-inverse-error', isError);
+    summary.classList.toggle('text-inverse-mute', !isError);
   }
 
   function renderLoading(container: HTMLElement, summary: HTMLElement): void {
-    summary.textContent = '';
+    setSummary(summary, '', false);
     container.innerHTML = LOADING_HTML;
   }
 
   function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
-    summary.textContent = 'Error';
-    summary.classList.add('text-error');
-    summary.classList.remove('text-mute');
+    setSummary(summary, 'Error', true);
     container.innerHTML = errorHtml(message);
   }
 
-  function renderResults(
-    container: HTMLElement,
-    summary: HTMLElement,
-    result: RunResult
-  ): void {
+  function renderResults(container: HTMLElement, summary: HTMLElement, result: RunResult): void {
     if (!result || result.ok === false || result.error) {
       renderError(container, summary, result?.error ?? 'Unknown error while running tests.');
       return;
     }
-
     const s = result.summary ?? { total: 0, passed: 0, failed: 0, durationMs: 0 };
     // The counts come from the shared builder; the wall-clock duration is
     // appended only here, so the server-rendered seed carries no timing.
     const dur = formatDuration(s.durationMs);
-    summary.textContent = countsText(s) + (dur ? ` · ${dur}` : '');
-    summary.classList.toggle('text-error', s.failed > 0);
-    summary.classList.toggle('text-mute', s.failed === 0);
-
+    setSummary(summary, countsText(s) + (dur ? ` · ${dur}` : ''), s.failed > 0);
     container.innerHTML = resultsHtml(result);
   }
-
-  /* ---- Clipboard ------------------------------------------------------------ */
 
   /* ---- Instance init -------------------------------------------------------- */
 
@@ -830,7 +624,7 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
     const shareBtn = el<HTMLButtonElement>(root, '#al-share');
     const resultsBox = el<HTMLElement>(root, '#al-results');
     const summaryEl = el<HTMLElement>(root, '#al-summary');
-    const announce = el<HTMLElement>(root, '#al-announce');
+    const copyStatus = el<HTMLElement>(root, '#al-copy-status');
     const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('.al-tab'));
     const snapSaveBtn = el<HTMLButtonElement>(root, '#al-snap-save');
     const snapSelect = el<HTMLSelectElement>(root, '#al-snap-select');
@@ -851,11 +645,16 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
       return;
     }
 
-    // Lazily load CodeMirror + the sibling engine + examples (kept out of the
-    // initial path so the ~200KB CM runtime code-splits into its own chunk).
+    // Copy link: the kit's one delegated listener; outcomes are announced in
+    // ResultPanel's #al-copy-status.
+    wireCopyButtons(root, { status: copyStatus });
+    shareBtn.title = 'This link encodes your alert rules — review before sharing.';
+
+    // Lazily load CodeMirror + the plate theme + the engine + examples (kept
+    // out of the initial path so the CM runtime code-splits into its own chunk).
     let engine: EngineModule;
     let examples: Example[] = [];
-    let makeEditor: (host: HTMLElement, doc: string) => EditorView;
+    let makeEditor: (host: HTMLElement, doc: string, label: string) => EditorView;
     let setEditorDoc: (view: EditorView, doc: string) => void;
     try {
       const [
@@ -863,7 +662,7 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
         { EditorView, keymap, lineNumbers, highlightActiveLine },
         { defaultKeymap, history: cmHistory, historyKeymap, indentWithTab },
         { yaml },
-        { oneDark },
+        { plate },
         engineMod,
         examplesMod,
       ] = await Promise.all([
@@ -871,16 +670,24 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
         import('@codemirror/view'),
         import('@codemirror/commands'),
         import('@codemirror/lang-yaml'),
-        import('@codemirror/theme-one-dark'),
+        import('../lib/playground-kit/cm-theme'),
         import('../lib/alertlint/engine'),
         import('../lib/alertlint/examples'),
       ]);
       engine = engineMod as unknown as EngineModule;
       examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
 
+      // Size only (the plate theme owns colour; global.css owns the focus
+      // ring): 13px like the seeded fallback, scrolling inside 288–300px.
+      const sizeTheme = EditorView.theme({
+        '&': { fontSize: '13px', maxHeight: '300px' },
+        '.cm-scroller': { overflow: 'auto' },
+        '.cm-content, .cm-gutter': { minHeight: '288px' },
+      });
+
       // Editor factory + doc-setter as closures over the freshly imported CM
       // symbols (so no runtime CM reference lives at module top level).
-      makeEditor = (host: HTMLElement, doc: string): EditorView => {
+      makeEditor = (host: HTMLElement, doc: string, label: string): EditorView => {
         const state = EditorState.create({
           doc,
           extensions: [
@@ -888,21 +695,39 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
             cmHistory(),
             highlightActiveLine(),
             yaml(),
-            oneDark,
+            plate,
+            sizeTheme,
             EditorView.lineWrapping,
-            keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab, { key: 'Escape', run: function(view) { view.contentDOM.blur(); return true; } }]),
-            EditorView.theme({
-              '&': { color: '#e6e6e6' },
-              '.cm-content': { caretColor: '#e6e6e6' },
-              '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
-              '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection':
-                { backgroundColor: 'rgba(0, 112, 243, 0.32)' },
-              '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
-              '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+            EditorView.contentAttributes.of({ 'aria-label': label }),
+            keymap.of([
+              // ⌘/Ctrl+Enter runs now — placed BEFORE defaultKeymap, whose
+              // Mod-Enter would otherwise insert a blank line.
+              {
+                key: 'Mod-Enter',
+                run: (v) => {
+                  forceRun();
+                  if (window.matchMedia?.('(pointer: coarse)').matches) v.contentDOM.blur();
+                  return true;
+                },
+              },
+              ...defaultKeymap,
+              ...historyKeymap,
+              indentWithTab,
+              {
+                key: 'Escape',
+                run: (v) => {
+                  v.contentDOM.blur();
+                  return true;
+                },
+              },
+            ]),
+            // Live eval: re-run the tests once the documents settle, so the
+            // panel never describes rules that are no longer in the editors.
+            EditorView.updateListener.of((u) => {
+              if (u.docChanged) scheduleLive();
             }),
           ],
         });
-        // The host already carries the aria-label/role for screen readers; CM mounts inside.
         return new EditorView({ state, parent: host });
       };
 
@@ -912,20 +737,12 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
         });
       };
     } catch (err) {
-      renderError(
-        resultsBox,
-        summaryEl,
-        'The AlertLint engine failed to load. Reload the page to try again.'
-      );
+      renderError(resultsBox, summaryEl, 'The AlertLint engine failed to load. Reload the page to try again.');
       // Surface the underlying reason in dev tooling without breaking the UI.
       // eslint-disable-next-line no-console
       console.error('[AlertLint] engine/examples import failed:', err);
       return;
     }
-
-    // The build-time text stand-ins have done their job (no-JS visitors and
-    // crawlers); CodeMirror appended its editors beside them, so drop them.
-    root.querySelectorAll('[data-cm-fallback]').forEach((node) => node.remove());
 
     // Seed content: prefer a shared-state URL, else a restored last input,
     // else the first example.
@@ -963,27 +780,48 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
       }
     }
 
-    const rulesView = makeEditor(rulesHost, seedRules);
-    const testView = makeEditor(testHost, seedTest);
+    /* ---- Live evaluation ---------------------------------------------------
+     * ~220ms after either document settles the tests re-run quietly (no
+     * spinner, no loading flash, no hash write). Calm errors: a live run that
+     * fails to parse holds the previous panel and reveals the error only after
+     * ~600ms of idle in total. `liveReady` keeps the seed and example
+     * dispatches from firing it.                                            */
+    const LIVE_DEBOUNCE_MS = 220;
+    const ERROR_HOLD_MS = 380;
+    let liveReady = false;
+    let liveTimer: number | undefined;
+    let errorHoldTimer: number | undefined;
+
+    function scheduleLive(): void {
+      if (!liveReady) return;
+      window.clearTimeout(liveTimer);
+      window.clearTimeout(errorHoldTimer);
+      liveTimer = window.setTimeout(() => void run({ live: true }), LIVE_DEBOUNCE_MS);
+    }
+
+    /** Deliberate run (Run now, ⌘/Ctrl+Enter, a chip): cancel the debounce, go now. */
+    function forceRun(): void {
+      window.clearTimeout(liveTimer);
+      window.clearTimeout(errorHoldTimer);
+      void run();
+    }
+
+    const rulesView = makeEditor(rulesHost, seedRules, 'Loki alert rules (YAML)');
+    const testView = makeEditor(testHost, seedTest, 'Test cases (YAML)');
+    // The build-time text stand-ins have done their job (no-JS visitors and
+    // crawlers); CodeMirror appended its editors beside them, so drop them.
+    // The share/restore tiers above already chose the documents.
+    root.querySelectorAll('[data-cm-fallback]').forEach((node) => node.remove());
 
     // The example chips are server-rendered from the same `examples` module,
     // so a chip's data-example-idx indexes straight into the array above.
-    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>('.al-chip'));
-
-    /** Mark one chip active (or none, when the seed came from a share/restore). */
-    const setActiveChip = (idx: number | null): void => {
-      chips.forEach((chip) => {
-        const active = idx !== null && chip.dataset.exampleIdx === String(idx);
-        chip.classList.toggle('is-active', active);
-        chip.setAttribute('aria-pressed', active ? 'true' : 'false');
-      });
-    };
+    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>(CHIP_SELECTOR));
 
     // A shared snippet or a restored input matches no example — leave every
     // chip unpressed rather than implying one of them is loaded.
-    setActiveChip(fromShare || fromRestored || examples.length === 0 ? null : 0);
+    syncChipsByIndex(chipsWrap, fromShare || fromRestored || examples.length === 0 ? null : 0);
 
-    // Swap both editors when a different example is chosen.
+    // Swap both editors when a different example is chosen, then run it.
     chips.forEach((chip) => {
       chip.addEventListener('click', () => {
         const idx = Number(chip.dataset.exampleIdx);
@@ -991,10 +829,8 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
         const ex = examples[idx];
         setEditorDoc(rulesView, ex.rules);
         setEditorDoc(testView, ex.test);
-        setActiveChip(idx);
-        renderEmpty(resultsBox, summaryEl);
-        summaryEl.classList.remove('text-error');
-        summaryEl.classList.add('text-mute');
+        syncChipsByIndex(chipsWrap, idx);
+        forceRun();
       });
     });
 
@@ -1003,11 +839,10 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
     const testPane = el<HTMLElement>(root, '#al-pane-test');
 
     /** Activate a tab: update aria-selected, roving tabindex, pane visibility. */
-    function activateTab(tab: HTMLButtonElement, focusTab: boolean): void {
+    const activateTab = (tab: HTMLButtonElement, focusTab: boolean): void => {
       const showRules = tab.dataset.pane === 'rules';
       tabs.forEach((t) => {
         const active = t === tab;
-        t.classList.toggle('is-active', active);
         t.setAttribute('aria-selected', active ? 'true' : 'false');
         // Roving tabindex: only the selected tab is in the tab order.
         t.tabIndex = active ? 0 : -1;
@@ -1017,7 +852,7 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
       if (focusTab) tab.focus();
       // Refresh CM measurement once the pane is visible (next frame, post-layout).
       requestAnimationFrame(() => (showRules ? rulesView : testView).requestMeasure());
-    }
+    };
 
     tabs.forEach((tab, i) => {
       tab.addEventListener('click', () => activateTab(tab, false));
@@ -1025,8 +860,7 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
       tab.addEventListener('keydown', (e) => {
         let next = -1;
         if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (i + 1) % tabs.length;
-        else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
-          next = (i - 1 + tabs.length) % tabs.length;
+        else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = (i - 1 + tabs.length) % tabs.length;
         else if (e.key === 'Home') next = 0;
         else if (e.key === 'End') next = tabs.length - 1;
         if (next < 0) return;
@@ -1035,76 +869,107 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
       });
     });
 
-    // Run — non-blocking; show loading, yield a microtask, then render.
+    /** Copy link appears once the tests ran, carrying both documents. */
+    function setShare(rulesDoc: string | null, testDoc = ''): void {
+      if (!shareBtn) return;
+      let url = '';
+      if (rulesDoc !== null) {
+        try {
+          const hash = engine.encodeState(rulesDoc, testDoc);
+          if (typeof hash === 'string') url = `${window.location.href.split('#')[0]}${hash.startsWith('#') ? hash : `#${hash}`}`;
+        } catch {
+          url = '';
+        }
+      }
+      shareBtn.hidden = url === '';
+      shareBtn.dataset.copy = url;
+    }
+
+    // Run — non-blocking. A deliberate run shows the loading state and a
+    // spinner in Run now; a live (debounced) or seed run is quiet. Only a
+    // deliberate run rewrites the address bar; only the seed skips the
+    // last-input record (it is not something the visitor typed).
+    type RunOpts = { live?: boolean; showErrors?: boolean; seed?: boolean };
     let running = false;
+    let rerun: RunOpts | null = null;
     const runLabel = runBtn.querySelector<HTMLElement>('.al-run-label');
     let spinner: HTMLElement | null = null;
-    async function run(userInitiated = true): Promise<void> {
-      // Guaranteed present by the early return in boot(); restated because TypeScript
+    async function run(opts: RunOpts = {}): Promise<void> {
+      // Guaranteed present by the early return in init(); restated because TypeScript
       // discards that narrowing inside a hoisted function declaration.
       if (!runBtn) return;
-      if (running) return;
-      running = true;
-      runBtn.classList.add('is-busy');
-      // Keep the control enabled until work begins, then mark it busy (not disabled,
-      // so focus stays put for keyboard users) and swap the play glyph for a spinner.
-      runBtn.setAttribute('aria-disabled', 'true');
-      runBtn.setAttribute('aria-busy', 'true');
-      if (!spinner) {
-        spinner = document.createElement('span');
-        spinner.className = 'al-spinner';
-        spinner.setAttribute('aria-hidden', 'true');
-        // Inline the visual so it never depends on Astro's scoped CSS — this span
-        // is created at runtime and would not receive the component's scope hash.
-        spinner.style.cssText =
-          'display:inline-block;width:14px;height:14px;flex:0 0 auto;border-radius:9999px;' +
-          'border:2px solid currentColor;border-top-color:transparent;';
-        if (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-          spinner.animate(
-            [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }],
-            { duration: 700, iterations: Infinity }
-          );
-        }
-        runBtn.insertBefore(spinner, runBtn.firstChild);
+      const live = opts.live === true;
+      const seeded = opts.seed === true;
+      const quiet = live || seeded;
+      if (running) {
+        rerun = opts;
+        return;
       }
-      if (runLabel) runLabel.textContent = 'Running…';
-      renderLoading(resultsBox!, summaryEl!);
-
-      // Yield so the loading state paints before (potentially heavy) work runs.
-      await new Promise<void>((resolve) => {
-        if ('requestAnimationFrame' in window) {
-          requestAnimationFrame(() => resolve());
-        } else {
-          setTimeout(resolve, 0);
+      running = true;
+      if (!quiet) {
+        runBtn.classList.add('is-busy');
+        // Mark busy (not disabled, so focus stays put for keyboard users) and
+        // swap the play glyph for a spinner.
+        runBtn.setAttribute('aria-disabled', 'true');
+        runBtn.setAttribute('aria-busy', 'true');
+        if (!spinner) {
+          spinner = document.createElement('span');
+          spinner.setAttribute('aria-hidden', 'true');
+          // Inline the visual so it never depends on Astro's scoped CSS — this span
+          // is created at runtime and would not receive the component's scope hash.
+          spinner.style.cssText =
+            'display:inline-block;width:14px;height:14px;flex:0 0 auto;border-radius:50%;' +
+            'border:2px solid currentColor;border-top-color:transparent;';
+          if (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            spinner.animate([{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }], {
+              duration: 700,
+              iterations: Infinity,
+            });
+          }
+          runBtn.insertBefore(spinner, runBtn.firstChild);
         }
-      });
+        if (runLabel) runLabel.textContent = 'Running…';
+        renderLoading(resultsBox!, summaryEl!);
+
+        // Yield so the loading state paints before (potentially heavy) work runs.
+        await new Promise<void>((resolve) => {
+          if ('requestAnimationFrame' in window) {
+            requestAnimationFrame(() => resolve());
+          } else {
+            setTimeout(resolve, 0);
+          }
+        });
+      }
 
       try {
         const rulesDoc = rulesView.state.doc.toString();
         const testDoc = testView.state.doc.toString();
         const result = await Promise.resolve(engine.runTests(rulesDoc, testDoc));
-        renderResults(resultsBox!, summaryEl!, result);
-        // Persist current state into the URL hash without a history entry.
-        // Only a user-initiated run (button click / ⌘⏎) rewrites the address
-        // bar and records the last input — the initial seed-from-hash/
-        // restored/example run never does either.
-        try {
-          const hash = engine.encodeState(rulesDoc, testDoc);
-          if (typeof hash === 'string') {
-            const url = hash.startsWith('#') ? hash : `#${hash}`;
-            // window.history — the CM `history` import no longer shadows the global.
-            if (userInitiated) window.history.replaceState(null, '', url);
+        if (!seeded) recordToolLastInput(SLUG, JSON.stringify({ rules: rulesDoc, test: testDoc }));
+        const failed = !result || result.ok === false || Boolean(result.error);
+        if (live && failed && opts.showErrors !== true) {
+          // Hold the last good panel; reveal the error only after a longer idle.
+          window.clearTimeout(errorHoldTimer);
+          errorHoldTimer = window.setTimeout(() => void run({ live: true, showErrors: true }), ERROR_HOLD_MS);
+        } else {
+          renderResults(resultsBox!, summaryEl!, result);
+          if (failed) setShare(null);
+          else setShare(rulesDoc, testDoc);
+          // Persist current state into the URL hash without a history entry —
+          // a deliberate run only (Safari rate-limits replaceState).
+          if (!quiet && !failed) {
+            try {
+              const hash = engine.encodeState(rulesDoc, testDoc);
+              if (typeof hash === 'string') window.history.replaceState(null, '', hash.startsWith('#') ? hash : `#${hash}`);
+            } catch {
+              /* non-fatal: sharing just won't update */
+            }
           }
-        } catch {
-          /* non-fatal: sharing just won't update */
-        }
-        if (userInitiated) {
-          recordToolLastInput(SLUG, JSON.stringify({ rules: rulesDoc, test: testDoc }));
         }
       } catch (err) {
-        const msg =
-          err instanceof Error ? err.message : 'Unexpected error while running tests.';
+        const msg = err instanceof Error ? err.message : 'Unexpected error while running tests.';
         renderError(resultsBox!, summaryEl!, msg);
+        setShare(null);
       } finally {
         running = false;
         runBtn.classList.remove('is-busy');
@@ -1114,50 +979,25 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
           spinner.remove();
           spinner = null;
         }
-        if (runLabel) runLabel.textContent = 'Run Tests';
+        if (runLabel) runLabel.textContent = 'Run now';
+        if (rerun) {
+          const next = rerun;
+          rerun = null;
+          void run(next);
+        }
       }
     }
 
-    runBtn.addEventListener('click', () => void run());
+    runBtn.addEventListener('click', () => forceRun());
 
-    // Cmd/Ctrl+Enter from inside either editor triggers a run.
+    // ⌘/Ctrl+Enter anywhere else in the playground (a chip, a tab, Run now);
+    // inside an editor the Mod-Enter binding has already handled it.
     root.addEventListener('keydown', (e) => {
+      if (e.defaultPrevented) return;
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
-        void run();
+        forceRun();
       }
-    });
-
-    // Share — copy the encodeState URL to the clipboard.
-    const shareLabel = shareBtn.querySelector<HTMLElement>('.al-share-label');
-    let shareTimer: number | undefined;
-    shareBtn.addEventListener('click', async () => {
-      const rulesDoc = rulesView.state.doc.toString();
-      const testDoc = testView.state.doc.toString();
-      let shareUrl = window.location.href;
-      try {
-        const hash = engine.encodeState(rulesDoc, testDoc);
-        if (typeof hash === 'string') {
-          const frag = hash.startsWith('#') ? hash : `#${hash}`;
-          const base = window.location.href.split('#')[0];
-          shareUrl = `${base}${frag}`;
-          // window.history — the CM `history` import no longer shadows the global.
-          window.history.replaceState(null, '', frag);
-        }
-      } catch {
-        /* fall back to the current URL */
-      }
-      const ok = await copyText(shareUrl);
-      if (shareLabel) shareLabel.textContent = ok ? 'Link Copied' : 'Copy Failed';
-      if (announce) {
-        announce.textContent = ok
-          ? 'Share link copied to your clipboard.'
-          : 'Could not copy the link. Copy the URL from your address bar instead.';
-      }
-      window.clearTimeout(shareTimer);
-      shareTimer = window.setTimeout(() => {
-        if (shareLabel) shareLabel.textContent = shareBtn.dataset.defaultLabel ?? 'Share Link';
-      }, COPIED_RESET_MS);
     });
 
     wireSnapshotUI({
@@ -1165,8 +1005,7 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
       saveBtn: snapSaveBtn,
       snapshotSelect: snapSelect,
       deleteBtn: snapDeleteBtn,
-      getValue: () =>
-        JSON.stringify({ rules: rulesView.state.doc.toString(), test: testView.state.doc.toString() }),
+      getValue: () => JSON.stringify({ rules: rulesView.state.doc.toString(), test: testView.state.doc.toString() }),
       setValue: (value) => {
         let parsed: Partial<{ rules: string; test: string }> | null = null;
         try {
@@ -1177,17 +1016,19 @@ const seedFailed = Boolean(seedOk && seedOk.summary && seedOk.summary.failed > 0
         if (!parsed || typeof parsed.rules !== 'string' || typeof parsed.test !== 'string') {
           return;
         }
+        syncChipsByIndex(chipsWrap, null);
         setEditorDoc(rulesView, parsed.rules);
         setEditorDoc(testView, parsed.test);
-        void run();
+        forceRun();
       },
     });
 
-    // Auto-run on load so the output panel is populated immediately. Passing
-    // `false` means this first run never rewrites the URL hash or records a
-    // last-input — only subsequent user-initiated runs do (see the
-    // `userInitiated` gate in run() above).
-    void run(false);
+    // Run once on load over whatever the editors hold (the seed, a deep link
+    // or a restored input) so the client state matches the panel. The seed
+    // run never rewrites the URL hash or records a last input.
+    void run({ seed: true });
+    // Only now may keystrokes drive the panel (seed dispatches must not).
+    liveReady = true;
   }
 
   boot();

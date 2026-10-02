@@ -4,10 +4,18 @@
  *
  * A no-framework, server-rendered shell hydrated by a single module <script>
  * that lazily boots two CodeMirror 6 editors ("Your code" + ".env.example"),
- * wires an example picker, a "Check" action and live re-checking, then renders a
- * drift report. It runs entirely client-side — no upload, no network.
+ * wires the example chips, live re-checking (with its toggle) and a "Run now"
+ * control, then renders a drift report.
  *
- * Runtime contract (built by sibling agents — imported lazily in the script):
+ * Built on the playground kit (src/components/playground/*): ExampleChips,
+ * two EditorPanes (each a FigureCap over its CodeMirror host, seeded with a
+ * `<pre data-cm-fallback>`), RunHint and SnapshotBar on paper, and
+ * ResultPanel (figure cap, live summary, copy status). The report container
+ * stays here, seeded with `set:html` + `data-results`; its slab overrides
+ * anchor on `.ec-report`. There is deliberately no share link and no
+ * last-input restore: the inputs may be secrets.
+ *
+ * Runtime contract (imported lazily in the script):
  *   ../lib/env-checker/types →
  *     type EnvResult = {
  *       error?: string
@@ -20,20 +28,21 @@
  *     check(code: string, envExample: string) => EnvResult
  *   ../lib/env-checker/examples →
  *     examples: { id: string; label: string; code: string; envExample: string }[]
- *
- * The dark editor surface follows DESIGN.md `code-editor-mockup`; the "missing"
- * group uses the semantic error/warning tokens, the "unused" group is muted, and
- * the clean state uses the success token. Headlines stay sentence-case, weight 600.
  */
 // Build-time import of the same `examples` the client script loads lazily.
 // Used ONLY to server-render the example chips below, so the static HTML
 // carries real example names rather than a "Loading examples…" placeholder
 // that crawlers and no-JS visitors would otherwise be served. The chips are
-// final markup — hydration only attaches click handlers and moves the active
+// final markup — hydration only attaches click handlers and moves the pressed
 // state — so this adds nothing to the client bundle and cannot drift.
 import { examples as prerenderedExamples } from '../lib/env-checker/examples';
 import { check } from '../lib/env-checker/engine';
 import { reportHtml, reportSummary, EMPTY_HTML } from '../lib/env-checker/render';
+import ExampleChips from './playground/ExampleChips.astro';
+import EditorPane from './playground/EditorPane.astro';
+import RunHint from './playground/RunHint.astro';
+import SnapshotBar from './playground/SnapshotBar.astro';
+import ResultPanel from './playground/ResultPanel.astro';
 
 /**
  * Server-rendered seed. The client re-checks the same example on boot, so this
@@ -53,36 +62,19 @@ const seedHtml = seedOk ? reportHtml(seedOk) : EMPTY_HTML;
 const seedSummaryInfo = seedOk ? reportSummary(seedOk) : null;
 const seedSummary = seedSummaryInfo ? seedSummaryInfo.text : '';
 const seedSummaryTone =
-  seedSummaryInfo?.tone === 'success'
-    ? 'text-success'
-    : seedSummaryInfo?.tone === 'error'
-      ? 'text-error'
-      : 'text-mute';
+  seedSummaryInfo?.tone === 'success' ? 'text-inverse-brand' : seedSummaryInfo?.tone === 'error' ? 'text-inverse-error' : '';
+const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
 ---
 
 <section class="ec-pg" aria-label="Env Example Checker playground">
-  <div class="card shadow-float rounded-lg overflow-hidden">
-    {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Toolbar: example chips + live toggle, Clear, Run now (paper) ─── */}
     <div
-      class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5"
+      class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-end sm:justify-between sm:px-5"
     >
       <div class="flex min-w-0 flex-col gap-2">
         <span class="eyebrow shrink-0">Example</span>
-        {/* Server-rendered chips: real buttons in DOM order, so the tab order
-            works with no roving tabindex. The group's aria-label names them —
-            a chip group has nothing a label can point at. Chip 0 is the seed. */}
-        <div id="ec-chips" class="ec-chips" role="group" aria-label="Examples">
-          {prerenderedExamples.map((ex, i) => (
-            <button
-              type="button"
-              class:list={['ec-chip', { 'is-active': i === 0 }]}
-              data-example-idx={i}
-              aria-pressed={i === 0 ? 'true' : 'false'}
-            >
-              {ex.label}
-            </button>
-          ))}
-        </div>
+        <ExampleChips prefix="ec" items={chipItems} active={seedExample ? 0 : null} ariaLabel="Examples" />
       </div>
 
       <div class="flex shrink-0 flex-wrap items-center gap-2">
@@ -91,19 +83,14 @@ const seedSummaryTone =
           <span class="ec-live-track" aria-hidden="true"><span class="ec-live-thumb"></span></span>
           <span class="caption text-body">Live check</span>
         </label>
-        <button
-          id="ec-clear"
-          type="button"
-          class="btn btn-sm ec-tap"
-          title="Clear both editors"
-        >
+        <button id="ec-clear" type="button" class="btn-tool ec-tap" title="Clear both editors">
           <span>Clear</span>
         </button>
         <button
           id="ec-check"
           type="button"
-          class="btn btn-primary btn-sm ec-tap"
-          title="Check (⌘/Ctrl + Enter)"
+          class="btn-tool ec-tap"
+          title="Run now (⌘/Ctrl + Enter)"
           aria-keyshortcuts="Meta+Enter Control+Enter"
         >
           <svg
@@ -118,21 +105,17 @@ const seedSummaryTone =
           >
             <path d="M3 8.5l3.5 3.5L13 4.5"></path>
           </svg>
-          <span class="ec-check-label">Check</span>
+          <span class="ec-check-label">Run now</span>
         </button>
       </div>
     </div>
 
     {/* ── Mobile tab switch (single-pane on small screens) ─────────────── */}
-    <div
-      class="ec-tabs flex gap-1 border-b border-hairline px-4 py-2 sm:hidden"
-      role="tablist"
-      aria-label="Editor panes"
-    >
+    <div class="ec-tabs flex gap-1 border-b border-hairline px-4 py-2 sm:hidden" role="tablist" aria-label="Editor panes">
       <button
         id="ec-tab-code"
         type="button"
-        class="ec-tab ec-tap is-active"
+        class="ec-tab ec-tap"
         role="tab"
         aria-selected="true"
         aria-controls="ec-pane-code"
@@ -155,86 +138,42 @@ const seedSummaryTone =
       </button>
     </div>
 
-    {/* ── Editor split (side-by-side on desktop, tabbed on mobile) ─────── */}
-    <p class="body-sm text-mute mb-2 px-4 pt-3 sm:px-5">Processed entirely in your browser — contents are never uploaded.</p>
+    {/* ── Editor split on the plate (side by side on desktop, tabbed on
+        mobile) ── */}
     <div class="ec-grid grid grid-cols-1 sm:grid-cols-2">
-      <div
-        id="ec-pane-code"
-        class="ec-pane ec-pane--active flex min-w-0 flex-col bg-inverse sm:border-r sm:border-white/10"
-        role="tabpanel"
-        aria-labelledby="ec-tab-code"
-      >
-        <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
-          <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-          </span>
-          <span class="code-mono text-white/45">your-code</span>
-        </div>
-        <div
-          id="ec-editor-code"
-          class="ec-editor min-h-72"
-          aria-label="Your application code"
-        >
-          <pre class="ec-cm-fallback code-mono" data-cm-fallback>{seedExample?.code}</pre>
-        </div>
+      <div id="ec-pane-code" class="ec-pane ec-pane--active" role="tabpanel" aria-labelledby="ec-tab-code">
+        <EditorPane prefix="ec" id="ec-editor-code" label="your-code">
+          <pre class="editor-pane__fallback code-mono ec-fallback" data-cm-fallback>{seedExample?.code}</pre>
+        </EditorPane>
       </div>
-
-      <div
-        id="ec-pane-env"
-        class="ec-pane flex min-w-0 flex-col bg-inverse"
-        role="tabpanel"
-        aria-labelledby="ec-tab-env"
-      >
-        <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
-          <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-          </span>
-          <span class="code-mono text-white/45">.env.example</span>
-        </div>
-        <div
-          id="ec-editor-env"
-          class="ec-editor min-h-72"
-          aria-label="Your .env.example file"
-        >
-          <pre class="ec-cm-fallback code-mono" data-cm-fallback>{seedExample?.envExample}</pre>
-        </div>
+      <div id="ec-pane-env" class="ec-pane" role="tabpanel" aria-labelledby="ec-tab-env">
+        <EditorPane prefix="ec" id="ec-editor-env" label=".env.example">
+          <pre class="editor-pane__fallback code-mono ec-fallback" data-cm-fallback>{seedExample?.envExample}</pre>
+        </EditorPane>
       </div>
     </div>
 
-    <p class="text-xs text-mute mt-1 px-4 pb-2 sm:px-5">Tip: press <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd> to release focus.</p>
+    {/* ── Run hint, the no-share note + snapshots, on paper ─────────────── */}
+    <div class="border-b border-hairline px-4 py-3 sm:px-5">
+      <RunHint variant="cm" />
+      <p class="caption text-mute mt-1">No share links on this tool — inputs may be secrets.</p>
+      <SnapshotBar prefix="ec" />
+    </div>
 
-    {/* ── Drift report panel ───────────────────────────────────────────── */}
-    <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex items-center justify-between gap-3">
-        <span class="eyebrow">Drift Report</span>
-        <span
-          id="ec-summary"
-          class:list={['ec-summary code-mono', seedSummaryTone]}
-          role="status"
-          aria-live="polite"
-        >{seedSummary}</span>
-      </div>
-      <p class="caption text-mute mb-3">No share links on this tool — inputs may be secrets.</p>
-      <div class="ec-snap-row mb-3 flex flex-wrap items-center gap-2">
-        <button id="ec-snap-save" type="button" class="ec-snap-btn">Save snapshot</button>
-        <select id="ec-snap-select" class="ec-snap-select" aria-label="Load a saved snapshot" disabled>
-          <option value="">No snapshots yet</option>
-        </select>
-        <button id="ec-snap-delete" type="button" class="ec-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
-      </div>
-
+    {/* ── Drift report — the L2 instrument under its figure cap ────────── */}
+    <ResultPanel
+      slug="env-example-checker"
+      prefix="ec"
+      label="Drift Report"
+      summary={seedSummary}
+      summaryClass={`whitespace-nowrap ${seedSummaryTone}`.trim()}
+      split
+    >
       {/* Seeded at build time (see `seedHtml` above) so the drift report is in
           the static HTML; the client replaces it with the same markup on boot. */}
-      <div id="ec-report" class="ec-report" set:html={seedHtml}></div>
-    </div>
+      <div id="ec-report" class="ec-report" set:html={seedHtml} data-results></div>
+    </ResultPanel>
   </div>
-
-  {/* Polite announcer for clipboard + transient toasts. */}
-  <span id="ec-announce" class="sr-only" role="status" aria-live="polite"></span>
 </section>
 
 <style>
@@ -245,51 +184,23 @@ const seedSummaryTone =
     touch-action: manipulation;
   }
 
-  /* Example chips — the playground UX contract's picker (squared, mono, brand
-     ink). Ported from SlugifyPlayground.astro; tokens only, no new ones. */
-  .ec-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+  /* The seeded documents a crawler reads (global .editor-pane__fallback sets
+     the metrics), boxed to the editors' own min/max height (the script's
+     size theme) so the swap on hydration does not move the page. */
+  .ec-fallback {
+    min-height: 288px;
+    max-height: 420px;
+    overflow: auto;
   }
-  .ec-chip {
-    display: inline-flex;
-    align-items: center;
-    /* Long labels wrap inside the chip instead of pushing the page sideways. */
-    max-width: 100%;
-    padding: 5px 11px;
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--color-hairline-muted);
-    background: var(--color-canvas);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    line-height: 16px;
-    letter-spacing: 0.01em;
-    color: var(--color-brand-strong);
-    cursor: pointer;
-    touch-action: manipulation;
-    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
-  }
-  .ec-chip:hover {
-    border-color: var(--color-hairline-strong);
-    background: var(--color-canvas-hover);
-  }
-  .ec-chip.is-active {
-    background: var(--color-brand-soft);
-    border-color: var(--color-brand-strong);
-    color: var(--color-brand-strong);
-  }
-  .ec-chip:focus-visible {
-    outline: 2px solid var(--color-focus);
-    outline-offset: 2px;
-  }
-  @media (pointer: coarse) {
-    .ec-chip {
-      min-height: 44px;
+
+  /* The divider between the two plates on desktop. */
+  @media (min-width: 640px) {
+    .ec-pane + .ec-pane {
+      border-left: 1px solid var(--color-inverse-hairline);
     }
   }
 
-  /* Live-check toggle — a compact switch built from the contract tokens. */
+  /* Live-check toggle — a compact squared switch from the contract tokens. */
   .ec-live {
     touch-action: manipulation;
   }
@@ -310,25 +221,25 @@ const seedSummaryTone =
     align-items: center;
     width: 32px;
     height: 18px;
-    /* Toggle track stays fully round (it is a switch, not a chip) — pin past the
-       squared --radius-pill repoint so the round thumb still fits its track. */
-    border-radius: 9999px;
+    border-radius: var(--radius-sm);
     background: var(--color-canvas-soft-2);
     box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
-    transition: background-color 0.15s ease, box-shadow 0.15s ease;
+    transition:
+      background-color var(--dur-fast) var(--ease-brand),
+      box-shadow var(--dur-fast) var(--ease-brand);
   }
   .ec-live-thumb {
     position: absolute;
     left: 2px;
     width: 14px;
     height: 14px;
-    border-radius: 9999px;
+    border-radius: var(--radius-xs);
     background: var(--color-canvas);
     box-shadow: var(--shadow-subtle);
-    transition: transform 0.15s ease;
+    transition: transform var(--dur-fast) var(--ease-brand);
   }
   .ec-live-input:checked + .ec-live-track {
-    background: var(--color-primary);
+    background: var(--color-brand-strong);
     box-shadow: none;
   }
   .ec-live-input:checked + .ec-live-track .ec-live-thumb {
@@ -338,37 +249,34 @@ const seedSummaryTone =
     outline: 2px solid var(--color-link);
     outline-offset: 2px;
   }
-  @media (prefers-reduced-motion: reduce) {
-    .ec-live-track,
-    .ec-live-thumb {
-      transition: none;
-    }
-  }
 
-  /* Mobile tab pills (square in-app scale; never the 100px marketing pill). */
+  /* Mobile tabs (square in-app scale). The selected state IS aria-selected. */
   .ec-tab {
+    @apply label-field;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex: 1 1 0;
-    min-height: 44px;
+    min-height: var(--control-h-lg);
     border-radius: var(--radius-sm);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    color: var(--color-mute);
     background: transparent;
     cursor: pointer;
-    transition: background-color 0.15s ease, color 0.15s ease;
+    transition:
+      background-color var(--dur-fast) var(--ease-brand),
+      color var(--dur-fast) var(--ease-brand);
   }
-  .ec-tab:hover:not(.is-active) {
+  .ec-tab:hover:not([aria-selected='true']) {
     color: var(--color-body);
     background: var(--color-canvas-soft-2);
   }
-  .ec-tab.is-active {
-    color: var(--color-on-primary);
-    background: var(--color-primary);
+  .ec-tab[aria-selected='true'] {
+    color: var(--color-brand-strong);
+    background: var(--color-brand-soft);
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+  }
+  .ec-tab:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
   }
 
   /* Visibility is driven by the .ec-pane--active class, NOT the [hidden]
@@ -380,139 +288,25 @@ const seedSummaryTone =
       display: none;
     }
     .ec-pane.ec-pane--active {
-      display: flex;
-    }
-  }
-  @media (min-width: 640px) {
-    /* Desktop: both panes always visible side by side. */
-    .ec-pane {
-      display: flex;
+      display: block;
     }
   }
 
-  /* CodeMirror host — fills the dark pane, scrolls internally. */
-  .ec-editor {
-    overflow: hidden;
+  /* The summary is ResultPanel's span (no scope attribute here). A seeded
+     verdict tone must beat the panel's own text-inverse-mute utility. */
+  .ec-pg :global(.result-panel__summary.text-inverse-error) {
+    color: var(--color-inverse-error);
   }
-  /* Build-time text stand-in for each editor, sized like the CM content so
-     the pane does not jump when the script swaps it out. Removed on mount. */
-  .ec-cm-fallback {
-    margin: 0;
-    padding: 14px 16px 16px;
-    max-height: 420px;
-    overflow: auto;
-    color: #e6e6e6;
-    font-size: 13px;
-    line-height: 20px;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-  .ec-editor :global(.cm-editor) {
-    height: 100%;
-    background: transparent;
-    font-family: var(--font-mono);
-    font-size: 13px;
-    line-height: 20px;
-  }
-  .ec-editor :global(.cm-editor.cm-focused) {
-    /* Replace CM's default outline with a brand-blue ring (a11y: keep a ring). */
-    outline: 2px solid var(--color-link);
-    outline-offset: -2px;
-  }
-  .ec-editor :global(.cm-scroller) {
-    overflow: auto;
-    max-height: 420px;
-    font-family: var(--font-mono);
-    /* Thin, theme-matched scrollbars on the dark surface. */
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
-  }
-  .ec-editor :global(.cm-scroller)::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  .ec-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.16);
-    border-radius: var(--radius-pill);
-    border: 3px solid transparent;
-    background-clip: content-box;
-  }
-  .ec-editor :global(.cm-scroller)::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.28);
-    background-clip: content-box;
-  }
-  .ec-editor :global(.cm-gutters) {
-    background: transparent;
-    border-right: 1px solid rgba(255, 255, 255, 0.08);
-  }
-  .ec-editor :global(.cm-lineNumbers .cm-gutterElement) {
-    color: rgba(255, 255, 255, 0.32);
-  }
-  .ec-editor :global(.cm-content) {
-    padding: 14px 0 16px;
-  }
-  .ec-editor :global(.cm-line) {
-    padding-inline: 4px;
-  }
-
-  /* Summary — right-aligned counts use tabular figures so they don't jitter. */
-  .ec-summary {
-    white-space: nowrap;
-  }
-  .ec-snap-btn {
-    flex: 0 0 auto;
-    height: 30px;
-    padding: 0 12px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-    cursor: pointer;
-    transition: background 0.12s ease, box-shadow 0.12s ease;
-  }
-  .ec-snap-btn:hover {
-    background: var(--color-canvas-soft);
-    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
-  }
-  .ec-snap-select {
-    height: 30px;
-    max-width: 220px;
-    padding: 0 8px;
-    border-radius: var(--radius-sm);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-  }
-  .ec-snap-select:disabled {
-    color: var(--color-mute);
-    cursor: not-allowed;
-  }
-  .ec-snap-delete {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: transparent;
-    color: var(--color-mute);
-    cursor: pointer;
-    transition: background 0.12s ease, color 0.12s ease;
-  }
-  .ec-snap-delete:hover {
-    background: var(--color-error-soft);
-    color: var(--color-error-deep);
+  .ec-pg :global(.result-panel__summary.text-inverse-brand) {
+    color: var(--color-inverse-brand);
   }
 
   /* Report layout. All children below are injected at runtime via innerHTML, so
-     every selector is :global — Astro's scoped hash never reaches them. */
+     every selector is :global — Astro's scoped hash never reaches them. Light
+     rules first as the documented defaults; the slab re-skin follows,
+     anchored on this component's own `.ec-report` container. */
   .ec-report {
-    min-height: 44px;
+    min-height: var(--control-h-lg);
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -524,7 +318,7 @@ const seedSummaryTone =
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
     overflow: hidden;
-    animation: ec-rise 0.18s ease both;
+    animation: ec-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.ec-group--miss) {
     box-shadow: inset 0 0 0 1px var(--color-error-soft);
@@ -557,7 +351,6 @@ const seedSummaryTone =
     font-size: 14px;
     font-weight: 500;
     line-height: 20px;
-    letter-spacing: -0.01em;
     color: var(--color-ink);
   }
   :global(.ec-group--miss .ec-group__title) {
@@ -622,77 +415,63 @@ const seedSummaryTone =
     color: var(--color-mute);
   }
 
-  /* Per-row copy button for missing keys. */
-  :global(.ec-copy) {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    height: 26px;
-    padding: 0 9px;
-    border-radius: var(--radius-sm);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 1;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    cursor: pointer;
-    touch-action: manipulation;
-    transition: box-shadow 0.15s ease, color 0.15s ease;
-  }
-  :global(.ec-copy:hover) {
-    color: var(--color-ink);
-    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
-  }
-  :global(.ec-copy:focus-visible) {
-    outline: 2px solid var(--color-link);
-    outline-offset: 2px;
-  }
-  :global(.ec-copy__icon) {
-    width: 13px;
-    height: 13px;
-    flex: 0 0 auto;
-  }
-  :global(.ec-copy.is-copied) {
-    color: var(--color-success);
-  }
-
-  /* "Copy all" action on the missing group header. */
+  /* Per-row copy (render.ts) and the group's "Copy all": the kit's
+     wireCopyButtons drives both through their data-copy / data-copy-all
+     hooks; `data-copied` is the transient success state. */
+  :global(.ec-copy),
   :global(.ec-copyall) {
     flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    height: 26px;
-    padding: 0 10px;
+    height: var(--control-h-sm);
+    border: none;
     border-radius: var(--radius-sm);
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
     color: var(--color-body);
-    font-size: 12px;
     line-height: 1;
     cursor: pointer;
     touch-action: manipulation;
-    transition: box-shadow 0.15s ease, color 0.15s ease;
+    transition:
+      box-shadow var(--dur-fast) var(--ease-brand),
+      color var(--dur-fast) var(--ease-brand);
   }
+  :global(.ec-copy) {
+    @apply label-field;
+    padding: 0 9px;
+    color: var(--color-body);
+  }
+  :global(.ec-copyall) {
+    padding: 0 10px;
+    font-size: 12px;
+  }
+  :global(.ec-copy:hover),
   :global(.ec-copyall:hover) {
     color: var(--color-ink);
     box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
   }
+  :global(.ec-copy:focus-visible),
   :global(.ec-copyall:focus-visible) {
     outline: 2px solid var(--color-link);
     outline-offset: 2px;
   }
+  :global(.ec-copy__icon),
   :global(.ec-copyall__icon) {
     width: 13px;
     height: 13px;
     flex: 0 0 auto;
   }
-  :global(.ec-copyall.is-copied) {
+  :global(.ec-copy[data-copied]),
+  :global(.ec-copyall[data-copied]) {
     color: var(--color-success);
+  }
+  @media (pointer: coarse) {
+    :global(.ec-copy),
+    :global(.ec-copyall) {
+      height: auto;
+      min-height: var(--control-h-lg);
+    }
   }
 
   /* Clean all-good state. */
@@ -705,7 +484,7 @@ const seedSummaryTone =
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
     color: var(--color-body);
-    animation: ec-rise 0.18s ease both;
+    animation: ec-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.ec-ok__icon) {
     flex: 0 0 auto;
@@ -728,7 +507,7 @@ const seedSummaryTone =
     background: var(--color-error-soft);
     box-shadow: inset 0 0 0 1px var(--color-error);
     color: var(--color-error-deep);
-    animation: ec-rise 0.18s ease both;
+    animation: ec-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.ec-error__icon) {
     flex: 0 0 auto;
@@ -785,7 +564,7 @@ const seedSummaryTone =
     box-shadow: var(--shadow-hairline);
   }
 
-  /* Loading dots — animate opacity only; reduced-motion handled globally. */
+  /* Loading dots — animate opacity only. */
   :global(.ec-loading) {
     display: inline-flex;
     align-items: center;
@@ -798,15 +577,15 @@ const seedSummaryTone =
   :global(.ec-loading__dot) {
     width: 6px;
     height: 6px;
-    border-radius: 9999px;
+    border-radius: 50%;
     background: var(--color-mute);
-    animation: ec-pulse 1.1s ease-in-out infinite;
+    animation: ec-pulse calc(var(--dur-base) * 6) ease-in-out infinite;
   }
   :global(.ec-loading__dot:nth-child(2)) {
-    animation-delay: 0.18s;
+    animation-delay: var(--dur-base);
   }
   :global(.ec-loading__dot:nth-child(3)) {
-    animation-delay: 0.36s;
+    animation-delay: calc(var(--dur-base) * 2);
   }
   @keyframes ec-pulse {
     0%,
@@ -832,12 +611,97 @@ const seedSummaryTone =
   .is-busy .ec-check-icon {
     display: none;
   }
+
+  /* ── Instrument re-skin — the drift report is the L2 slab (dark in BOTH
+     themes). Everything below uses the slab ink tier. ─────────────────── */
+  .ec-report :global(.ec-empty) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-mute);
+  }
+  .ec-report :global(.ec-loading) {
+    color: var(--color-inverse-mute);
+  }
+  .ec-report :global(.ec-loading__dot) {
+    background: var(--color-inverse-mute);
+  }
+  .ec-report :global(.ec-error) {
+    background: #ff9d9514;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-error);
+    color: var(--color-inverse-error);
+  }
+  .ec-report :global(.ec-group),
+  .ec-report :global(.ec-ok) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+  }
+  .ec-report :global(.ec-group--miss) {
+    box-shadow: inset 0 0 0 1px #ff9d9559;
+  }
+  .ec-report :global(.ec-group__head) {
+    border-bottom-color: var(--color-inverse-hairline);
+  }
+  .ec-report :global(.ec-group--miss .ec-group__head) {
+    background: #ff9d9514;
+    border-bottom-color: transparent;
+  }
+  .ec-report :global(.ec-group__title),
+  .ec-report :global(.ec-item__key) {
+    color: var(--color-inverse-fg);
+  }
+  .ec-report :global(.ec-group--miss .ec-group__title),
+  .ec-report :global(.ec-group--miss .ec-group__icon) {
+    color: var(--color-inverse-error);
+  }
+  .ec-report :global(.ec-group--unused .ec-group__icon),
+  .ec-report :global(.ec-group__hint),
+  .ec-report :global(.ec-item__eq),
+  .ec-report :global(.ec-item--unused .ec-item__key),
+  .ec-report :global(.ec-ok) {
+    color: var(--color-inverse-mute);
+  }
+  .ec-report :global(.ec-ok__icon) {
+    color: var(--color-inverse-brand);
+  }
+  .ec-report :global(.ec-group__count) {
+    background: #ffffff14;
+    box-shadow: none;
+    color: var(--color-inverse-mute);
+  }
+  .ec-report :global(.ec-group--miss .ec-group__count) {
+    background: #ff9d951f;
+    color: var(--color-inverse-error);
+  }
+  .ec-report :global(.ec-item) {
+    background: #ffffff08;
+  }
+  .ec-report :global(.ec-item--unused) {
+    background: transparent;
+  }
+  .ec-report :global(.ec-copy),
+  .ec-report :global(.ec-copyall) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-mute);
+  }
+  .ec-report :global(.ec-copy:hover),
+  .ec-report :global(.ec-copyall:hover) {
+    background: #ffffff14;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-control-edge);
+    color: var(--color-inverse-fg);
+  }
+  .ec-report :global(.ec-copy[data-copied]),
+  .ec-report :global(.ec-copyall[data-copied]) {
+    background: #8fc97a1f;
+    color: var(--color-inverse-brand);
+  }
 </style>
 
 <script>
-  import { copyTextToClipboard as copyText } from '../lib/clipboard';
   import type { EditorView } from '@codemirror/view';
   import { wireSnapshotUI } from '../lib/tool-state/wire';
+  import { wireCopyButtons } from '../lib/playground-kit/copy';
+  import { syncChipsByIndex, CHIP_SELECTOR } from '../lib/playground-kit/chips';
   // The HTML builders are shared with the frontmatter's build-time seed —
   // one implementation, so the no-JS markup and the live markup never drift.
   import {
@@ -851,9 +715,9 @@ const seedSummaryTone =
   } from '../lib/env-checker/render';
   import type { EnvResult } from '../lib/env-checker/types';
 
-  // CodeMirror is loaded via dynamic import inside init() so its ~200KB runtime
-  // code-splits into its own chunk instead of shipping in the page's initial JS.
-  // The `EditorView` type above is erased at build time and ships no runtime code.
+  // CodeMirror (and the kit's plate theme, which imports @codemirror/view) is
+  // loaded via dynamic import inside init() so its runtime code-splits into
+  // its own chunk instead of shipping in the page's initial JS.
 
   type EngineModule = {
     check: (code: string, envExample: string) => EnvResult | Promise<EnvResult>;
@@ -861,8 +725,7 @@ const seedSummaryTone =
   type Example = { id: string; label: string; code: string; envExample: string };
 
   const ROOT_SEL = '.ec-pg';
-  const COPIED_RESET_MS = 1500;
-  const LIVE_DEBOUNCE_MS = 320;
+  const LIVE_DEBOUNCE_MS = 220;
 
   /** Boot every (so far un-hydrated) playground instance on the page. */
   function boot(): void {
@@ -903,11 +766,12 @@ const seedSummaryTone =
 
   /* ---- Report rendering (DOM writes over the shared pure builders) --------- */
 
+  /** Summary ink on the slab: inverse tier only (never paper text-*). */
   function setSummary(summary: HTMLElement, text: string, tone: SummaryTone): void {
     summary.textContent = text;
-    summary.classList.toggle('text-success', tone === 'success');
-    summary.classList.toggle('text-error', tone === 'error');
-    summary.classList.toggle('text-mute', tone === 'mute');
+    summary.classList.toggle('text-inverse-brand', tone === 'success');
+    summary.classList.toggle('text-inverse-error', tone === 'error');
+    summary.classList.toggle('text-inverse-mute', tone === 'mute');
   }
 
   function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
@@ -946,80 +810,95 @@ const seedSummaryTone =
     const liveInput = el<HTMLInputElement>(root, '#ec-live');
     const reportBox = el<HTMLElement>(root, '#ec-report');
     const summaryEl = el<HTMLElement>(root, '#ec-summary');
-    const announce = el<HTMLElement>(root, '#ec-announce');
+    const copyStatus = el<HTMLElement>(root, '#ec-copy-status');
     const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('.ec-tab'));
     const snapSaveBtn = el<HTMLButtonElement>(root, '#ec-snap-save');
     const snapSelect = el<HTMLSelectElement>(root, '#ec-snap-select');
     const snapDeleteBtn = el<HTMLButtonElement>(root, '#ec-snap-delete');
 
-    if (
-      !codeHost ||
-      !envHost ||
-      !chipsWrap ||
-      !checkBtn ||
-      !reportBox ||
-      !summaryEl ||
-      !snapSaveBtn ||
-      !snapSelect ||
-      !snapDeleteBtn
-    ) {
+    if (!codeHost || !envHost || !chipsWrap || !checkBtn || !reportBox || !summaryEl || !snapSaveBtn || !snapSelect || !snapDeleteBtn) {
       return;
     }
 
-    // Lazily load CodeMirror + the sibling engine + examples (kept out of the
-    // initial path so the ~200KB CM runtime code-splits into its own chunk).
+    // The report's per-row Copy and the group's Copy all (render.ts markup)
+    // run through the kit's one delegated listener; outcomes are announced in
+    // ResultPanel's #ec-copy-status. Copy all carries no payload in the
+    // markup, so this listener — on the report, below the root, so it runs
+    // first — fills it from the last check's missing keys.
+    let lastMissing: string[] = [];
+    reportBox.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement | null;
+      const all = target?.closest<HTMLElement>('[data-copy-all]');
+      if (all) all.dataset.copy = lastMissing.map((k) => `${k}=`).join('\n');
+    });
+    wireCopyButtons(root, { status: copyStatus });
+
+    // Lazily load CodeMirror + the plate theme + the engine + examples (kept
+    // out of the initial path so the CM runtime code-splits into its own chunk).
     let engine: EngineModule;
     let examples: Example[] = [];
-    let makeEditor: (host: HTMLElement, doc: string, onChange: () => void) => EditorView;
+    let makeEditor: (host: HTMLElement, doc: string, label: string, onChange: () => void) => EditorView;
     let setEditorDoc: (view: EditorView, doc: string) => void;
     try {
       const [
         { EditorState },
         { EditorView, keymap, lineNumbers, highlightActiveLine },
         { defaultKeymap, history, historyKeymap, indentWithTab },
-        { oneDark },
+        { plate },
         engineMod,
         examplesMod,
       ] = await Promise.all([
         import('@codemirror/state'),
         import('@codemirror/view'),
         import('@codemirror/commands'),
-        import('@codemirror/theme-one-dark'),
+        import('../lib/playground-kit/cm-theme'),
         import('../lib/env-checker/engine'),
         import('../lib/env-checker/examples'),
       ]);
       engine = engineMod as unknown as EngineModule;
       examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
 
-      // Editor factory + doc-setter as closures over the freshly imported CM
-      // symbols (so no runtime CM reference lives at module top level).
-      const baseTheme = EditorView.theme({
-        '&': { color: '#e6e6e6' },
-        '.cm-content': { caretColor: '#e6e6e6' },
-        '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
-        '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
-          backgroundColor: 'rgba(0, 112, 243, 0.32)',
-        },
-        '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
-        '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+      // Size only (the plate theme owns colour; global.css owns the focus
+      // ring): 13px like the seeded fallback, scrolling inside 288–420px.
+      const sizeTheme = EditorView.theme({
+        '&': { fontSize: '13px', maxHeight: '420px' },
+        '.cm-scroller': { overflow: 'auto' },
+        '.cm-content, .cm-gutter': { minHeight: '288px' },
       });
 
-      makeEditor = (host: HTMLElement, doc: string, onChange: () => void): EditorView => {
+      makeEditor = (host: HTMLElement, doc: string, label: string, onChange: () => void): EditorView => {
         const state = EditorState.create({
           doc,
           extensions: [
             lineNumbers(),
             history(),
             highlightActiveLine(),
-            oneDark,
+            plate,
+            sizeTheme,
             EditorView.lineWrapping,
+            EditorView.contentAttributes.of({ 'aria-label': label }),
             keymap.of([
+              // ⌘/Ctrl+Enter runs now — placed BEFORE defaultKeymap, whose
+              // Mod-Enter would otherwise insert a blank line.
+              {
+                key: 'Mod-Enter',
+                run: (v) => {
+                  forceRun();
+                  if (window.matchMedia?.('(pointer: coarse)').matches) v.contentDOM.blur();
+                  return true;
+                },
+              },
               ...defaultKeymap,
               ...historyKeymap,
               indentWithTab,
-              { key: 'Escape', run: function(view) { view.contentDOM.blur(); return true; } },
+              {
+                key: 'Escape',
+                run: (v) => {
+                  v.contentDOM.blur();
+                  return true;
+                },
+              },
             ]),
-            baseTheme,
             EditorView.updateListener.of((u) => {
               if (u.docChanged) onChange();
             }),
@@ -1032,11 +911,7 @@ const seedSummaryTone =
         view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
       };
     } catch (err) {
-      renderError(
-        reportBox,
-        summaryEl,
-        'The Env Example Checker engine failed to load. Reload the page to try again.'
-      );
+      renderError(reportBox, summaryEl, 'The Env Example Checker engine failed to load. Reload the page to try again.');
       // eslint-disable-next-line no-console
       console.error('[EnvChecker] engine/examples import failed:', err);
       return;
@@ -1045,16 +920,24 @@ const seedSummaryTone =
     // Seed from the first example (per the playground contract).
     const seed = examples[0] ?? { id: 'blank', label: 'Example', code: '', envExample: '' };
 
-    // Live-check scheduling (debounced; only runs when the toggle is on).
+    // Live-check scheduling (debounced; only runs when the toggle is on, and
+    // never for the seed/example dispatches — `liveReady` gates those).
+    let liveReady = false;
     let debounceTimer: number | undefined;
     function scheduleLive(): void {
-      if (!liveInput?.checked) return;
+      if (!liveReady || !liveInput?.checked) return;
       window.clearTimeout(debounceTimer);
-      debounceTimer = window.setTimeout(() => void run(false), LIVE_DEBOUNCE_MS);
+      debounceTimer = window.setTimeout(() => void run({ live: true }), LIVE_DEBOUNCE_MS);
     }
 
-    const codeView = makeEditor(codeHost, seed.code, scheduleLive);
-    const envView = makeEditor(envHost, seed.envExample, scheduleLive);
+    /** Deliberate run (Run now, ⌘/Ctrl+Enter, a chip): cancel the debounce, go now. */
+    function forceRun(): void {
+      window.clearTimeout(debounceTimer);
+      void run();
+    }
+
+    const codeView = makeEditor(codeHost, seed.code, 'Your application code', scheduleLive);
+    const envView = makeEditor(envHost, seed.envExample, 'Your .env.example file', scheduleLive);
     // The build-time text stand-ins have done their job (no-JS visitors and
     // crawlers); CodeMirror appended its editors beside them, so drop them.
     // This tool is hard-excluded from restore-last-input and has no share link,
@@ -1063,16 +946,7 @@ const seedSummaryTone =
 
     // Example chips are server-rendered from the same `examples` module, in the
     // same order, so `data-example-idx` indexes this array directly.
-    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>('.ec-chip'));
-
-    /** Move the pressed/active state; pass null for "none of them" (restore). */
-    function setActiveChip(active: HTMLButtonElement | null): void {
-      chips.forEach((chip) => {
-        const on = chip === active;
-        chip.classList.toggle('is-active', on);
-        chip.setAttribute('aria-pressed', on ? 'true' : 'false');
-      });
-    }
+    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>(CHIP_SELECTOR));
 
     // Swap both editors when a different example is chosen, then re-check.
     chips.forEach((chip) => {
@@ -1080,11 +954,10 @@ const seedSummaryTone =
         const idx = Number(chip.dataset.exampleIdx);
         if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
         const ex = examples[idx];
-        setActiveChip(chip);
+        syncChipsByIndex(chipsWrap, idx);
         setEditorDoc(codeView, ex.code);
         setEditorDoc(envView, ex.envExample);
-        if (liveInput?.checked) void run(false);
-        else renderEmpty(reportBox, summaryEl);
+        forceRun();
       });
     });
 
@@ -1092,11 +965,10 @@ const seedSummaryTone =
     const codePane = el<HTMLElement>(root, '#ec-pane-code');
     const envPane = el<HTMLElement>(root, '#ec-pane-env');
 
-    function activateTab(tab: HTMLButtonElement, focusTab: boolean): void {
+    const activateTab = (tab: HTMLButtonElement, focusTab: boolean): void => {
       const showCode = tab.dataset.pane === 'code';
       tabs.forEach((t) => {
         const active = t === tab;
-        t.classList.toggle('is-active', active);
         t.setAttribute('aria-selected', active ? 'true' : 'false');
         // Roving tabindex: only the selected tab is in the tab order.
         t.tabIndex = active ? 0 : -1;
@@ -1106,7 +978,7 @@ const seedSummaryTone =
       if (focusTab) tab.focus();
       // Refresh CM measurement once the pane is visible (next frame, post-layout).
       requestAnimationFrame(() => (showCode ? codeView : envView).requestMeasure());
-    }
+    };
 
     tabs.forEach((tab, i) => {
       tab.addEventListener('click', () => activateTab(tab, false));
@@ -1114,8 +986,7 @@ const seedSummaryTone =
       tab.addEventListener('keydown', (e) => {
         let next = -1;
         if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (i + 1) % tabs.length;
-        else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
-          next = (i - 1 + tabs.length) % tabs.length;
+        else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = (i - 1 + tabs.length) % tabs.length;
         else if (e.key === 'Home') next = 0;
         else if (e.key === 'End') next = tabs.length - 1;
         if (next < 0) return;
@@ -1124,77 +995,50 @@ const seedSummaryTone =
       });
     });
 
-    // Delegated copy handling for runtime-injected report buttons.
-    let copyResetTimer: number | undefined;
-    let lastMissing: string[] = [];
-    reportBox.addEventListener('click', (e) => {
-      const target = e.target as HTMLElement | null;
-      const copyBtn = target?.closest<HTMLButtonElement>('.ec-copy');
-      const copyAllBtn = target?.closest<HTMLButtonElement>('.ec-copyall');
-      const btn = copyBtn ?? copyAllBtn;
-      if (!btn) return;
-
-      const text = copyBtn
-        ? copyBtn.dataset.copy ?? ''
-        : lastMissing.map((k) => `${k}=`).join('\n');
-      if (!text) return;
-
-      void (async () => {
-        const ok = await copyText(text);
-        const lbl = btn.querySelector<HTMLElement>('.ec-copy__lbl, .ec-copyall__lbl');
-        const original = copyBtn ? 'Copy' : 'Copy all';
-        if (lbl) lbl.textContent = ok ? 'Copied' : 'Failed';
-        btn.classList.toggle('is-copied', ok);
-        if (announce) {
-          announce.textContent = ok
-            ? copyBtn
-              ? `Copied ${text} to your clipboard.`
-              : `Copied ${lastMissing.length} missing keys to your clipboard.`
-            : 'Could not copy. Select the text and copy it manually.';
-        }
-        window.clearTimeout(copyResetTimer);
-        copyResetTimer = window.setTimeout(() => {
-          if (lbl) lbl.textContent = original;
-          btn.classList.remove('is-copied');
-        }, COPIED_RESET_MS);
-      })();
-    });
-
-    // Check — non-blocking; show loading (when explicit), yield a frame, render.
+    // Check — non-blocking. A deliberate run shows the loading state and a
+    // spinner in Run now; a live (debounced) or seed run is quiet.
+    type RunOpts = { live?: boolean; seed?: boolean };
     let running = false;
+    let rerun: RunOpts | null = null;
     const checkLabel = checkBtn.querySelector<HTMLElement>('.ec-check-label');
     let spinner: HTMLElement | null = null;
 
-    async function run(showLoading: boolean): Promise<void> {
-      if (running) return;
-      running = true;
-      checkBtn!.classList.add('is-busy');
-      checkBtn!.setAttribute('aria-disabled', 'true');
-      checkBtn!.setAttribute('aria-busy', 'true');
-      if (!spinner) {
-        spinner = document.createElement('span');
-        spinner.setAttribute('aria-hidden', 'true');
-        // Inline the visual so it never depends on Astro's scoped CSS — this span
-        // is created at runtime and would not receive the component's scope hash.
-        spinner.style.cssText =
-          'display:inline-block;width:14px;height:14px;flex:0 0 auto;border-radius:9999px;' +
-          'border:2px solid currentColor;border-top-color:transparent;';
-        if (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-          spinner.animate(
-            [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }],
-            { duration: 700, iterations: Infinity }
-          );
-        }
-        checkBtn!.insertBefore(spinner, checkBtn!.firstChild);
+    async function run(opts: RunOpts = {}): Promise<void> {
+      const quiet = opts.live === true || opts.seed === true;
+      if (running) {
+        rerun = opts;
+        return;
       }
-      if (checkLabel) checkLabel.textContent = 'Checking…';
-      if (showLoading) renderLoading(reportBox!, summaryEl!);
+      running = true;
+      if (!quiet) {
+        checkBtn!.classList.add('is-busy');
+        checkBtn!.setAttribute('aria-disabled', 'true');
+        checkBtn!.setAttribute('aria-busy', 'true');
+        if (!spinner) {
+          spinner = document.createElement('span');
+          spinner.setAttribute('aria-hidden', 'true');
+          // Inline the visual so it never depends on Astro's scoped CSS — this span
+          // is created at runtime and would not receive the component's scope hash.
+          spinner.style.cssText =
+            'display:inline-block;width:14px;height:14px;flex:0 0 auto;border-radius:50%;' +
+            'border:2px solid currentColor;border-top-color:transparent;';
+          if (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            spinner.animate([{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }], {
+              duration: 700,
+              iterations: Infinity,
+            });
+          }
+          checkBtn!.insertBefore(spinner, checkBtn!.firstChild);
+        }
+        if (checkLabel) checkLabel.textContent = 'Checking…';
+        renderLoading(reportBox!, summaryEl!);
 
-      // Yield so any loading state paints before (potentially heavy) work runs.
-      await new Promise<void>((resolve) => {
-        if ('requestAnimationFrame' in window) requestAnimationFrame(() => resolve());
-        else setTimeout(resolve, 0);
-      });
+        // Yield so the loading state paints before (potentially heavy) work runs.
+        await new Promise<void>((resolve) => {
+          if ('requestAnimationFrame' in window) requestAnimationFrame(() => resolve());
+          else setTimeout(resolve, 0);
+        });
+      }
 
       try {
         const code = codeView.state.doc.toString();
@@ -1214,32 +1058,42 @@ const seedSummaryTone =
           spinner.remove();
           spinner = null;
         }
-        if (checkLabel) checkLabel.textContent = 'Check';
+        if (checkLabel) checkLabel.textContent = 'Run now';
+        if (rerun) {
+          const next = rerun;
+          rerun = null;
+          void run(next);
+        }
       }
     }
 
-    checkBtn.addEventListener('click', () => void run(true));
+    checkBtn.addEventListener('click', () => forceRun());
 
     // Clear button — resets both editors to empty and clears the report. With
     // both editors empty no example is loaded, so no chip stays pressed.
     clearBtn?.addEventListener('click', () => {
-      setActiveChip(null);
+      syncChipsByIndex(chipsWrap, null);
       setEditorDoc(codeView, '');
       setEditorDoc(envView, '');
+      // The two dispatches scheduled a live check; the cleared state wins.
+      window.clearTimeout(debounceTimer);
+      lastMissing = [];
       renderEmpty(reportBox!, summaryEl!);
     });
 
-    // Cmd/Ctrl+Enter from inside either editor triggers a check.
+    // ⌘/Ctrl+Enter anywhere else in the playground (a chip, the toggle, Run
+    // now); inside an editor the Mod-Enter binding has already handled it.
     root.addEventListener('keydown', (e) => {
+      if (e.defaultPrevented) return;
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
-        void run(true);
+        forceRun();
       }
     });
 
     // Toggling live on triggers an immediate check; off cancels pending work.
     liveInput?.addEventListener('change', () => {
-      if (liveInput.checked) void run(false);
+      if (liveInput.checked) void run({ live: true });
       else window.clearTimeout(debounceTimer);
     });
 
@@ -1266,16 +1120,17 @@ const seedSummaryTone =
         const envExample = typeof parsed.envExample === 'string' ? parsed.envExample : '';
         // Restored state is the visitor's own, not one of the examples — so no
         // chip is the active one any more.
-        setActiveChip(null);
+        syncChipsByIndex(chipsWrap, null);
         setEditorDoc(codeView, code);
         setEditorDoc(envView, envExample);
-        void run(true);
+        forceRun();
       },
     });
 
-    // Initial pass: seed is populated, so reflect drift immediately when live.
-    if (liveInput?.checked) void run(false);
-    else renderEmpty(reportBox, summaryEl);
+    // Initial pass over the seed: quiet, so the server-rendered report is
+    // repainted in place (and `lastMissing` filled for Copy all).
+    void run({ seed: true });
+    liveReady = true;
   }
 
   boot();

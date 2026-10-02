@@ -4,8 +4,16 @@
  *
  * A no-framework, server-rendered shell hydrated by a single module <script>
  * that lazily boots TWO CodeMirror 6 editors (relabel_configs YAML | sample
- * label sets), wires the example chips, a "Run" action, plus Copy + Share. It
- * runs entirely client-side and is fully usable offline once loaded.
+ * label sets), wires the example chips, live evaluation with a "Run now"
+ * control, Copy (both documents) and Copy link. It is fully usable offline
+ * once loaded.
+ *
+ * Built on the playground kit (src/components/playground/*): ExampleChips,
+ * two EditorPanes (each a FigureCap over its CodeMirror host, seeded with a
+ * `<pre data-cm-fallback>`), RunHint and SnapshotBar on paper, and
+ * ResultPanel (figure cap, live summary, copy status) with CopyButton. The
+ * results container stays here, seeded with `set:html` + `data-results`; its
+ * slab overrides anchor on `.prt-results`.
  *
  * Runtime contract (imported lazily in the script):
  *   ../lib/prometheus-relabel-tester/engine →
@@ -28,10 +36,8 @@
  *   ../lib/prometheus-relabel-tester/examples →
  *     examples: Array<{ id: string; label: string; configs: string; labels: string }>
  *
- * Dark editor surfaces follow DESIGN.md `code-editor-mockup`; results use the
- * semantic success / warning / error tokens. All runtime-injected result markup
- * is styled via :global(...) because Astro scoped styles do not reach
- * innerHTML-injected nodes.
+ * All runtime-injected result markup is styled via :global(...) because
+ * Astro scoped styles do not reach innerHTML-injected nodes.
  */
 // Build-time import of the same `examples` the client script loads lazily.
 // Used ONLY to server-render the example chips below, so the static HTML
@@ -43,6 +49,12 @@
 import { examples as prerenderedExamples } from '../lib/prometheus-relabel-tester/examples';
 import { applyRelabel } from '../lib/prometheus-relabel-tester/engine';
 import { resultsHtml, summaryText, allDropped, EMPTY_HTML } from '../lib/prometheus-relabel-tester/render';
+import ExampleChips from './playground/ExampleChips.astro';
+import EditorPane from './playground/EditorPane.astro';
+import RunHint from './playground/RunHint.astro';
+import SnapshotBar from './playground/SnapshotBar.astro';
+import ResultPanel from './playground/ResultPanel.astro';
+import CopyButton from './playground/CopyButton.astro';
 
 /**
  * Server-rendered seed. The client re-runs the same example on boot, so this
@@ -60,182 +72,80 @@ const seedResult = seedExample ? applyRelabel(seedExample.configs, seedExample.l
 const seedOk = seedResult && seedResult.ok && seedResult.results?.length ? seedResult : null;
 const seedHtml = seedOk ? resultsHtml(seedOk) : EMPTY_HTML;
 const seedSummary = seedOk ? summaryText(seedOk.results ?? []) : '';
-const seedSummaryTone = seedOk && allDropped(seedOk.results ?? []) ? 'text-error' : 'text-mute';
+const seedAllDropped = Boolean(seedOk && allDropped(seedOk.results ?? []));
+const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
 ---
 
 <section class="prt" aria-label="Prometheus Relabel Tester playground">
-  <div class="card shadow-float rounded-lg overflow-hidden">
-    {/* ── Example chips ────────────────────────────────────────────────── */}
-    <div class="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:px-5">
-      <span class="eyebrow shrink-0">Example</span>
-      {/* Server-rendered chips: the labels are in the static HTML, and the
-          hydration script only wires the clicks. */}
-      <div id="prt-chips" class="prt-chips" role="group" aria-label="Examples">
-        {prerenderedExamples.map((ex, i) => (
-          <button
-            type="button"
-            class:list={['prt-chip', { 'is-active': i === 0 }]}
-            data-example-idx={String(i)}
-            aria-pressed={i === 0 ? 'true' : 'false'}
-          >
-            {ex.label}
-          </button>
-        ))}
-      </div>
-    </div>
-
-    {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Toolbar: example chips + Run now (paper) ─────────────────────── */}
     <div
-      class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-center sm:justify-end sm:px-5"
+      class="flex flex-col gap-3 border-b border-hairline px-4 py-3 sm:flex-row sm:items-end sm:justify-between sm:px-5"
     >
-      <div class="flex shrink-0 flex-wrap items-center gap-2">
-        <span class="caption text-mute hidden items-center sm:inline-flex">⌘/Ctrl + Enter</span>
-        <button
-          id="prt-copy"
-          type="button"
-          class="btn btn-secondary btn-sm prt-tap"
-          data-default-label="Copy"
-        >
-          <svg
-            class="h-4 w-4 shrink-0"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <rect x="5.5" y="5.5" width="8" height="8" rx="1.5"></rect>
-            <path d="M3.5 10.5h-.5a1.5 1.5 0 0 1-1.5-1.5v-6A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5"></path>
-          </svg>
-          <span class="prt-copy-label">Copy</span>
-        </button>
-        <button
-          id="prt-share"
-          type="button"
-          class="btn btn-secondary btn-sm prt-tap"
-          data-default-label="Share Link"
-          title="This link encodes your rules and label sets — review before sharing"
-        >
-          <svg
-            class="h-4 w-4 shrink-0"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M6 8.5l4-1.5M6 8.5l4 1.5"></path>
-            <circle cx="4" cy="8" r="1.6"></circle>
-            <circle cx="11.5" cy="5" r="1.6"></circle>
-            <circle cx="11.5" cy="11" r="1.6"></circle>
-          </svg>
-          <span class="prt-share-label">Share Link</span>
-        </button>
-        <button
-          id="prt-run"
-          type="button"
-          class="btn btn-primary btn-sm prt-tap"
-          title="Run relabeling (⌘/Ctrl + Enter)"
-          aria-keyshortcuts="Meta+Enter Control+Enter"
-        >
-          <svg
-            class="prt-run-icon h-4 w-4 shrink-0"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M4 2.5l9 5.5-9 5.5z"></path>
-          </svg>
-          <span class="prt-run-label">Run</span>
-        </button>
+      <div class="flex min-w-0 flex-col gap-2">
+        <span class="eyebrow shrink-0">Example</span>
+        <ExampleChips prefix="prt" items={chipItems} active={seedExample ? 0 : null} ariaLabel="Examples" />
       </div>
+      <button
+        id="prt-run"
+        type="button"
+        class="btn-tool prt-tap self-start sm:self-auto"
+        title="Run now (⌘/Ctrl + Enter)"
+        aria-keyshortcuts="Meta+Enter Control+Enter"
+      >
+        <svg
+          class="prt-run-icon h-4 w-4 shrink-0"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.4"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M4 2.5l9 5.5-9 5.5z"></path>
+        </svg>
+        <span class="prt-run-label">Run now</span>
+      </button>
     </div>
 
-    {/* ── Editors (two dark mockup surfaces, side-by-side on wide screens) ── */}
-    <div class="grid gap-px bg-hairline md:grid-cols-2">
-      <div class="prt-pane flex min-w-0 flex-col bg-inverse">
-        <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
-          <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-          </span>
-          <span class="code-mono text-white/45">relabel_configs</span>
-        </div>
-        <div
-          id="prt-configs"
-          class="prt-editor min-h-72"
-          aria-label="relabel_configs (YAML)"
-        >
-          <pre class="prt-cm-fallback code-mono" data-cm-fallback>{seedExample?.configs}</pre>
-        </div>
-      </div>
-
-      <div class="prt-pane flex min-w-0 flex-col bg-inverse">
-        <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
-          <span class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-          </span>
-          <span class="code-mono text-white/45">label sets</span>
-        </div>
-        <div
-          id="prt-labels"
-          class="prt-editor min-h-72"
-          aria-label="Sample label sets"
-        >
-          <pre class="prt-cm-fallback code-mono" data-cm-fallback>{seedExample?.labels}</pre>
-        </div>
-      </div>
+    {/* ── Editors on the plate (side by side on wide screens) ──────────── */}
+    <div class="prt-grid grid md:grid-cols-2">
+      <EditorPane prefix="prt" id="prt-configs" label="relabel_configs" class="prt-pane">
+        <Fragment slot="actions">
+          <CopyButton kind="value" id="prt-copy" label="Copy" hidden={false} ariaLabel="Copy rules and label sets" />
+        </Fragment>
+        <pre class="editor-pane__fallback code-mono prt-fallback" data-cm-fallback>{seedExample?.configs}</pre>
+      </EditorPane>
+      <EditorPane prefix="prt" id="prt-labels" label="label sets" class="prt-pane">
+        <pre class="editor-pane__fallback code-mono prt-fallback" data-cm-fallback>{seedExample?.labels}</pre>
+      </EditorPane>
     </div>
 
-    <div class="border-t border-hairline bg-inverse/95 px-4 py-2">
-      <p class="text-xs text-mute">
-        Runs entirely in your browser — nothing is uploaded. One label set per
-        block; separate sets with a blank line. Press
-        <kbd style="border:1px solid currentColor;border-radius:3px;padding:0 3px;font-size:0.85em">Esc</kbd>
-        to release focus from an editor.
-      </p>
+    {/* ── Input note, run hint + snapshots, on paper (never in the slab) ── */}
+    <div class="border-b border-hairline px-4 py-3 sm:px-5">
+      <p class="caption text-mute">One label set per block; separate sets with a blank line.</p>
+      <RunHint variant="cm" />
+      <SnapshotBar prefix="prt" />
     </div>
 
-    {/* ── Snapshot row (covers both editors: rules + label sets) ───────── */}
-    <div class="prt-snap-row flex flex-wrap items-center gap-2 border-t border-hairline px-4 py-2.5 sm:px-5">
-      <button id="prt-snap-save" type="button" class="prt-snap-btn">Save snapshot</button>
-      <select id="prt-snap-select" class="prt-snap-select" aria-label="Load a saved snapshot" disabled>
-        <option value="">No snapshots yet</option>
-      </select>
-      <button id="prt-snap-delete" type="button" class="prt-snap-delete" aria-label="Delete this snapshot" hidden>&times;</button>
-    </div>
-
-    {/* ── Results panel ────────────────────────────────────────────────── */}
-    <div class="border-t border-hairline bg-canvas-soft px-4 py-4 sm:px-5">
-      <div class="mb-3 flex items-center justify-between gap-3">
-        <span class="eyebrow">Results</span>
-        <span
-          id="prt-summary"
-          class:list={['prt-summary code-mono', seedSummaryTone]}
-          role="status"
-          aria-live="polite"
-        >{seedSummary}</span>
-      </div>
-
+    {/* ── Results — the L2 instrument under its figure cap ─────────────── */}
+    <ResultPanel
+      slug="prometheus-relabel-tester"
+      prefix="prt"
+      label="Results"
+      summary={seedSummary}
+      summaryClass={seedAllDropped ? 'whitespace-nowrap text-inverse-error' : 'whitespace-nowrap'}
+      split
+    >
+      <Fragment slot="actions">
+        <CopyButton kind="link" id="prt-share" />
+      </Fragment>
       {/* Seeded at build time (see `seedHtml` above) so the result cards are in
           the static HTML; the client replaces them with the same markup on boot. */}
-      <div id="prt-results" class="prt-results" set:html={seedHtml}></div>
-    </div>
+      <div id="prt-results" class="prt-results" set:html={seedHtml} data-results></div>
+    </ResultPanel>
   </div>
-
-  {/* Polite announcer for clipboard + transient toasts. */}
-  <span id="prt-announce" class="sr-only" role="status" aria-live="polite"></span>
 </section>
 
 <style>
@@ -245,174 +155,38 @@ const seedSummaryTone = seedOk && allDropped(seedOk.results ?? []) ? 'text-error
     touch-action: manipulation;
   }
 
-  /* ── Example chips ──────────────────────────────────────────────────── */
-  .prt-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    min-width: 0;
+  /* The seeded documents a crawler reads (global .editor-pane__fallback sets
+     the metrics), boxed to the editors' own min/max height (the script's
+     size theme) so the swap on hydration does not move the page. */
+  .prt-fallback {
+    min-height: 288px;
+    max-height: 460px;
+    overflow: auto;
   }
-  .prt-chip {
-    display: inline-flex;
-    align-items: center;
-    padding: 5px 11px;
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--color-hairline-muted);
-    background: var(--color-canvas);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    line-height: 16px;
-    letter-spacing: 0.01em;
-    color: var(--color-brand-strong);
-    cursor: pointer;
-    touch-action: manipulation;
-    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+
+  /* The divider between the two plates: a rule above the label sets when
+     stacked, beside them from md. */
+  .prt-grid :global(.prt-pane + .prt-pane) {
+    border-top: 1px solid var(--color-inverse-hairline);
   }
-  .prt-chip:hover {
-    border-color: var(--color-hairline-strong);
-    background: var(--color-canvas-hover);
-  }
-  .prt-chip.is-active,
-  .prt-chip[aria-pressed='true'] {
-    background: var(--color-brand-soft);
-    border-color: var(--color-brand-strong);
-    color: var(--color-brand-strong);
-  }
-  .prt-chip:focus-visible {
-    outline: 2px solid var(--color-focus);
-    outline-offset: 2px;
-  }
-  .prt-chip:disabled {
-    cursor: not-allowed;
-    color: var(--color-mute);
-    opacity: 0.7;
-  }
-  @media (pointer: coarse) {
-    .prt-chip {
-      min-height: 44px;
+  @media (min-width: 768px) {
+    .prt-grid :global(.prt-pane + .prt-pane) {
+      border-top: none;
+      border-left: 1px solid var(--color-inverse-hairline);
     }
   }
 
-  .prt-snap-btn {
-    flex: 0 0 auto;
-    height: 30px;
-    padding: 0 12px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-    cursor: pointer;
-    transition: background 0.12s ease, box-shadow 0.12s ease;
-  }
-  .prt-snap-btn:hover {
-    background: var(--color-canvas-soft);
-    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
-  }
-  .prt-snap-select {
-    height: 30px;
-    max-width: 220px;
-    padding: 0 8px;
-    border-radius: var(--radius-sm);
-    background: var(--color-canvas);
-    box-shadow: var(--shadow-hairline);
-    color: var(--color-body);
-    font-size: 13px;
-  }
-  .prt-snap-select:disabled {
-    color: var(--color-mute);
-    cursor: not-allowed;
-  }
-  .prt-snap-delete {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    border: none;
-    background: transparent;
-    color: var(--color-mute);
-    cursor: pointer;
-    transition: background 0.12s ease, color 0.12s ease;
-  }
-  .prt-snap-delete:hover {
-    background: var(--color-error-soft);
-    color: var(--color-error-deep);
+  /* The summary is ResultPanel's span (no scope attribute here). A seeded
+     all-dropped tone must beat the panel's own text-inverse-mute utility. */
+  .prt :global(.result-panel__summary.text-inverse-error) {
+    color: var(--color-inverse-error);
   }
 
-  /* CodeMirror hosts — fill the dark panes, scroll internally. */
-  .prt-editor {
-    overflow: hidden;
-  }
-  /* Build-time text stand-in for each editor, sized like the CM content so
-     the pane does not jump when the script swaps it out. Removed on mount. */
-  .prt-cm-fallback {
-    margin: 0;
-    padding: 14px 16px 16px;
-    max-height: 460px;
-    overflow: auto;
-    color: #e6e6e6;
-    font-size: 13px;
-    line-height: 20px;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-  .prt-editor :global(.cm-editor) {
-    height: 100%;
-    background: transparent;
-    font-family: var(--font-mono);
-    font-size: 13px;
-    line-height: 20px;
-  }
-  .prt-editor :global(.cm-editor.cm-focused) {
-    outline: 2px solid var(--color-link);
-    outline-offset: -2px;
-  }
-  .prt-editor :global(.cm-scroller) {
-    overflow: auto;
-    max-height: 460px;
-    font-family: var(--font-mono);
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
-  }
-  .prt-editor :global(.cm-scroller)::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  .prt-editor :global(.cm-scroller)::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.16);
-    border-radius: var(--radius-pill);
-    border: 3px solid transparent;
-    background-clip: content-box;
-  }
-  .prt-editor :global(.cm-scroller)::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.28);
-    background-clip: content-box;
-  }
-  .prt-editor :global(.cm-gutters) {
-    background: transparent;
-    border-right: 1px solid rgba(255, 255, 255, 0.08);
-  }
-  .prt-editor :global(.cm-lineNumbers .cm-gutterElement) {
-    color: rgba(255, 255, 255, 0.32);
-  }
-  .prt-editor :global(.cm-content) {
-    padding: 14px 0 16px;
-  }
-  .prt-editor :global(.cm-line) {
-    padding-inline: 4px;
-  }
-
-  .prt-summary {
-    white-space: nowrap;
-  }
-
-  /* ── Results container (runtime-injected → :global) ─────────────────── */
+  /* ── Results container (runtime-injected → :global). Light rules first as
+     the documented defaults; the slab re-skin follows, anchored on this
+     component's own `.prt-results` container. ─────────────────────────── */
   .prt-results {
-    min-height: 44px;
+    min-height: var(--control-h-lg);
   }
   :global(.prt-card + .prt-card) {
     margin-top: 14px;
@@ -422,7 +196,7 @@ const seedSummaryTone = seedOk && allDropped(seedOk.results ?? []) ? 'text-error
     background: var(--color-canvas);
     box-shadow: var(--shadow-hairline);
     overflow: hidden;
-    animation: prt-rise 0.18s ease both;
+    animation: prt-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.prt-card--dropped) {
     box-shadow: inset 0 0 0 1px var(--color-warning-soft);
@@ -453,26 +227,23 @@ const seedSummaryTone = seedOk && allDropped(seedOk.results ?? []) ? 'text-error
     border-bottom: 1px solid var(--color-hairline);
     background: var(--color-canvas-soft);
   }
+  /* "Label set N" — the card's heading (sans 12/16 600), not a caps label. */
   :global(.prt-card__title) {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 12px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--color-mute);
+    font-weight: 600;
+    line-height: 16px;
+    color: var(--color-ink);
   }
 
-  /* Status pill. */
+  /* Status pill — the row-key role (label-field). */
   :global(.prt-pill) {
+    @apply label-field;
     display: inline-flex;
     align-items: center;
     flex: 0 0 auto;
     padding: 1px 8px;
     border-radius: var(--radius-pill);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 16px;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
     box-shadow: var(--shadow-hairline);
   }
   :global(.prt-pill--kept) {
@@ -516,15 +287,12 @@ const seedSummaryTone = seedOk && allDropped(seedOk.results ?? []) ? 'text-error
     color: var(--color-body);
   }
   :global(.prt-tag) {
+    @apply label-field;
     display: inline-flex;
     align-items: center;
     margin-left: 4px;
     padding: 0 6px;
     border-radius: var(--radius-sm);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
   }
   :global(.prt-tag--added) {
     background: color-mix(in srgb, var(--color-success) 14%, var(--color-canvas));
@@ -535,12 +303,9 @@ const seedSummaryTone = seedOk && allDropped(seedOk.results ?? []) ? 'text-error
     color: var(--color-body);
   }
 
+  /* Input / Result / Removed / Output — the row-key role (label-field). */
   :global(.prt-section-label) {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--color-mute);
+    @apply label-field;
     margin-bottom: 6px;
   }
   :global(.prt-section + .prt-section) {
@@ -602,7 +367,7 @@ const seedSummaryTone = seedOk && allDropped(seedOk.results ?? []) ? 'text-error
     background: var(--color-error-soft);
     box-shadow: inset 0 0 0 1px var(--color-error);
     color: var(--color-error-deep);
-    animation: prt-rise 0.18s ease both;
+    animation: prt-rise var(--dur-base) var(--ease-brand) both;
   }
   :global(.prt-banner__icon) {
     flex: 0 0 auto;
@@ -651,15 +416,15 @@ const seedSummaryTone = seedOk && allDropped(seedOk.results ?? []) ? 'text-error
   :global(.prt-loading__dot) {
     width: 6px;
     height: 6px;
-    border-radius: 9999px;
+    border-radius: 50%;
     background: var(--color-mute);
-    animation: prt-pulse 1.1s ease-in-out infinite;
+    animation: prt-pulse calc(var(--dur-base) * 6) ease-in-out infinite;
   }
   :global(.prt-loading__dot:nth-child(2)) {
-    animation-delay: 0.18s;
+    animation-delay: var(--dur-base);
   }
   :global(.prt-loading__dot:nth-child(3)) {
-    animation-delay: 0.36s;
+    animation-delay: calc(var(--dur-base) * 2);
   }
   @keyframes prt-pulse {
     0%,
@@ -685,36 +450,104 @@ const seedSummaryTone = seedOk && allDropped(seedOk.results ?? []) ? 'text-error
   .is-busy .prt-run-icon {
     display: none;
   }
+
+  /* ── Instrument re-skin — the result panel is the L2 slab (dark in BOTH
+     themes). Everything below uses the slab ink tier. ─────────────────── */
+  .prt-results :global(.prt-empty) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    color: var(--color-inverse-mute);
+  }
+  .prt-results :global(.prt-loading) {
+    color: var(--color-inverse-mute);
+  }
+  .prt-results :global(.prt-loading__dot) {
+    background: var(--color-inverse-mute);
+  }
+  .prt-results :global(.prt-banner) {
+    background: #ff9d9514;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-error);
+    color: var(--color-inverse-error);
+  }
+  .prt-results :global(.prt-card) {
+    background: #ffffff0a;
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+  }
+  .prt-results :global(.prt-card--dropped) {
+    box-shadow: inset 0 0 0 1px #e0a45859;
+  }
+  .prt-results :global(.prt-card__head) {
+    background: #ffffff08;
+    border-bottom-color: var(--color-inverse-hairline);
+  }
+  .prt-results :global(.prt-card__title),
+  .prt-results :global(.prt-label__name) {
+    color: var(--color-inverse-fg);
+  }
+  .prt-results :global(.prt-label__eq),
+  .prt-results :global(.prt-section-label),
+  .prt-results :global(.prt-drop-note),
+  .prt-results :global(.prt-empty-labels) {
+    color: var(--color-inverse-mute);
+  }
+  .prt-results :global(.prt-label__value) {
+    color: var(--color-inverse-fg);
+  }
+  .prt-results :global(.prt-section + .prt-section) {
+    border-top-color: var(--color-inverse-hairline);
+  }
+  .prt-results :global(.prt-pill) {
+    box-shadow: none;
+  }
+  .prt-results :global(.prt-pill--kept),
+  .prt-results :global(.prt-tag--added) {
+    background: #8fc97a1f;
+    color: var(--color-inverse-brand);
+  }
+  .prt-results :global(.prt-pill--dropped) {
+    background: #e0a4581f;
+    color: var(--color-inverse-accent);
+  }
+  .prt-results :global(.prt-tag--changed) {
+    background: #ffffff14;
+    color: var(--color-inverse-mute);
+  }
+  .prt-results :global(.prt-removed) {
+    color: var(--color-inverse-accent);
+    text-decoration-color: #e0a45880;
+  }
+  .prt-results :global(.prt-warning) {
+    background: #e0a45814;
+    box-shadow: inset 0 0 0 1px #e0a45859;
+    color: var(--color-inverse-fg);
+  }
+  .prt-results :global(.prt-warning__icon) {
+    color: var(--color-inverse-accent);
+  }
 </style>
 
 <script>
-  import { copyTextToClipboard as copyText } from '../lib/clipboard';
   import type { EditorView } from '@codemirror/view';
   import { base64UrlEncode, base64UrlDecode } from '../lib/codec';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  import { wireCopyButtons } from '../lib/playground-kit/copy';
+  import { syncChipsByIndex, CHIP_SELECTOR } from '../lib/playground-kit/chips';
   // The HTML builders are shared with the frontmatter's build-time seed —
   // one implementation, so the no-JS markup and the live markup never drift.
-  import {
-    resultsHtml,
-    summaryText,
-    allDropped,
-    errorHtml,
-    EMPTY_HTML,
-    LOADING_HTML,
-  } from '../lib/prometheus-relabel-tester/render';
+  import { resultsHtml, summaryText, allDropped, errorHtml, LOADING_HTML } from '../lib/prometheus-relabel-tester/render';
   import type { RelabelResult } from '../lib/prometheus-relabel-tester/types';
 
+  // CodeMirror (and the kit's plate theme, which imports @codemirror/view) is
+  // loaded via dynamic import inside init() so its runtime code-splits into
+  // its own chunk instead of shipping in the page's initial JS.
+
   type EngineModule = {
-    applyRelabel: (
-      configsYaml: string,
-      labelSetsInput: string
-    ) => RelabelResult | Promise<RelabelResult>;
+    applyRelabel: (configsYaml: string, labelSetsInput: string) => RelabelResult | Promise<RelabelResult>;
   };
   type ExampleRaw = Record<string, unknown>;
   type Example = { id: string; label: string; configs: string; labels: string };
 
   const ROOT_SEL = '.prt';
-  const COPIED_RESET_MS = 1800;
   const SHARE_KEY = 'prt';
   const SLUG = 'prometheus-relabel-tester';
 
@@ -756,59 +589,40 @@ const seedSummaryTone = seedOk && allDropped(seedOk.results ?? []) ? 'text-error
 
   /* ---- Result rendering (DOM writes over the shared pure builders) --------- */
 
-  function renderEmpty(container: HTMLElement, summary: HTMLElement): void {
-    summary.textContent = '';
-    summary.classList.remove('text-error');
-    summary.classList.add('text-mute');
-    container.innerHTML = EMPTY_HTML;
+  /** Summary ink on the slab: inverse tier only (never paper text-mute). */
+  function setSummary(summary: HTMLElement, text: string, isError: boolean): void {
+    summary.textContent = text;
+    summary.classList.toggle('text-inverse-error', isError);
+    summary.classList.toggle('text-inverse-mute', !isError);
   }
 
   function renderLoading(container: HTMLElement, summary: HTMLElement): void {
-    summary.textContent = '';
+    setSummary(summary, '', false);
     container.innerHTML = LOADING_HTML;
   }
 
   function renderError(container: HTMLElement, summary: HTMLElement, message: string): void {
-    summary.textContent = 'Error';
-    summary.classList.add('text-error');
-    summary.classList.remove('text-mute');
+    setSummary(summary, 'Error', true);
     container.innerHTML = errorHtml(message);
   }
 
-  function renderResults(
-    container: HTMLElement,
-    summary: HTMLElement,
-    result: RelabelResult
-  ): void {
+  /** Paint one result; returns false when it was an error state. */
+  function renderResults(container: HTMLElement, summary: HTMLElement, result: RelabelResult): boolean {
     if (!result || result.ok === false || result.error) {
-      renderError(
-        container,
-        summary,
-        result?.error ?? 'Unknown error while applying relabel rules.'
-      );
-      return;
+      renderError(container, summary, result?.error ?? 'Unknown error while applying relabel rules.');
+      return false;
     }
-
     const results = Array.isArray(result.results) ? result.results : [];
     if (results.length === 0) {
       renderError(container, summary, 'No label sets were produced from the input.');
-      return;
+      return false;
     }
-
-    const red = allDropped(results);
-    summary.textContent = summaryText(results);
-    summary.classList.toggle('text-error', red);
-    summary.classList.toggle('text-mute', !red);
+    setSummary(summary, summaryText(results), allDropped(results));
     container.innerHTML = resultsHtml(result);
+    return true;
   }
-
-  /* ---- Clipboard ------------------------------------------------------------ */
 
   /* ---- Share-state codec (encodes BOTH editors) ----------------------------- */
-
-  function b64encode(text: string): string {
-    return base64UrlEncode(text);
-  }
 
   function b64decode(b64raw: string): string | null {
     try {
@@ -820,7 +634,7 @@ const seedSummaryTone = seedOk && allDropped(seedOk.results ?? []) ? 'text-error
 
   function encodeShare(configs: string, labels: string): string {
     // Two payloads share one hash key, joined by "~" (not in base64url alphabet).
-    return `#${SHARE_KEY}=${b64encode(configs)}~${b64encode(labels)}`;
+    return `#${SHARE_KEY}=${base64UrlEncode(configs)}~${base64UrlEncode(labels)}`;
   }
 
   function decodeShare(): { configs: string; labels: string } | null {
@@ -849,58 +663,115 @@ const seedSummaryTone = seedOk && allDropped(seedOk.results ?? []) ? 'text-error
     const shareBtn = el<HTMLButtonElement>(root, '#prt-share');
     const resultsBox = el<HTMLElement>(root, '#prt-results');
     const summaryEl = el<HTMLElement>(root, '#prt-summary');
-    const announce = el<HTMLElement>(root, '#prt-announce');
+    const copyStatus = el<HTMLElement>(root, '#prt-copy-status');
     const snapSaveBtn = el<HTMLButtonElement>(root, '#prt-snap-save');
     const snapSelect = el<HTMLSelectElement>(root, '#prt-snap-select');
     const snapDeleteBtn = el<HTMLButtonElement>(root, '#prt-snap-delete');
 
     if (
-      !configsHost || !labelsHost || !chipsWrap || !runBtn ||
-      !copyBtn || !shareBtn || !resultsBox || !summaryEl ||
-      !snapSaveBtn || !snapSelect || !snapDeleteBtn
+      !configsHost ||
+      !labelsHost ||
+      !chipsWrap ||
+      !runBtn ||
+      !copyBtn ||
+      !shareBtn ||
+      !resultsBox ||
+      !summaryEl ||
+      !snapSaveBtn ||
+      !snapSelect ||
+      !snapDeleteBtn
     ) {
       return;
     }
 
-    // Lazily load the sibling engine + examples + CodeMirror (kept out of the
-    // initial path so CM code-splits into its own chunk).
+    // Copy (both documents) and Copy link: the kit's one delegated listener;
+    // outcomes are announced in ResultPanel's #prt-copy-status.
+    wireCopyButtons(root, { status: copyStatus });
+    shareBtn.title = 'This link encodes your rules and label sets — review before sharing';
+
+    // Lazily load CodeMirror + the plate theme + the engine + examples (kept
+    // out of the initial path so the CM runtime code-splits into its own chunk).
     let engine: EngineModule;
     let examples: Example[] = [];
-    let EditorState: typeof import('@codemirror/state').EditorState;
-    let EditorViewCtor: typeof import('@codemirror/view').EditorView;
-    let keymap: typeof import('@codemirror/view').keymap;
-    let lineNumbers: typeof import('@codemirror/view').lineNumbers;
-    let highlightActiveLine: typeof import('@codemirror/view').highlightActiveLine;
-    let defaultKeymap: typeof import('@codemirror/commands').defaultKeymap;
-    let history: typeof import('@codemirror/commands').history;
-    let historyKeymap: typeof import('@codemirror/commands').historyKeymap;
-    let indentWithTab: typeof import('@codemirror/commands').indentWithTab;
-    let yaml: typeof import('@codemirror/lang-yaml').yaml;
-    let oneDark: typeof import('@codemirror/theme-one-dark').oneDark;
+    let makeEditor: (host: HTMLElement, doc: string, label: string) => EditorView;
+    let setEditorDoc: (view: EditorView, doc: string) => void;
     try {
-      const [engineMod, examplesMod, stateMod, viewMod, commandsMod, yamlMod, themeMod] =
-        await Promise.all([
-          import('../lib/prometheus-relabel-tester/engine'),
-          import('../lib/prometheus-relabel-tester/examples'),
-          import('@codemirror/state'),
-          import('@codemirror/view'),
-          import('@codemirror/commands'),
-          import('@codemirror/lang-yaml'),
-          import('@codemirror/theme-one-dark'),
-        ]);
+      const [
+        engineMod,
+        examplesMod,
+        { EditorState },
+        { EditorView, keymap, lineNumbers, highlightActiveLine },
+        { defaultKeymap, history, historyKeymap, indentWithTab },
+        { yaml },
+        { plate },
+      ] = await Promise.all([
+        import('../lib/prometheus-relabel-tester/engine'),
+        import('../lib/prometheus-relabel-tester/examples'),
+        import('@codemirror/state'),
+        import('@codemirror/view'),
+        import('@codemirror/commands'),
+        import('@codemirror/lang-yaml'),
+        import('../lib/playground-kit/cm-theme'),
+      ]);
       engine = engineMod as unknown as EngineModule;
       examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
-      ({ EditorState } = stateMod);
-      ({ EditorView: EditorViewCtor, keymap, lineNumbers, highlightActiveLine } = viewMod);
-      ({ defaultKeymap, history, historyKeymap, indentWithTab } = commandsMod);
-      ({ yaml } = yamlMod);
-      ({ oneDark } = themeMod);
+
+      // Size only (the plate theme owns colour; global.css owns the focus
+      // ring): 13px like the seeded fallback, scrolling inside 288–460px.
+      const sizeTheme = EditorView.theme({
+        '&': { fontSize: '13px', maxHeight: '460px' },
+        '.cm-scroller': { overflow: 'auto' },
+        '.cm-content, .cm-gutter': { minHeight: '288px' },
+      });
+
+      makeEditor = (host: HTMLElement, doc: string, label: string): EditorView => {
+        const state = EditorState.create({
+          doc,
+          extensions: [
+            lineNumbers(),
+            history(),
+            highlightActiveLine(),
+            yaml(),
+            plate,
+            sizeTheme,
+            EditorView.lineWrapping,
+            EditorView.contentAttributes.of({ 'aria-label': label }),
+            keymap.of([
+              // ⌘/Ctrl+Enter runs now — placed BEFORE defaultKeymap, whose
+              // Mod-Enter would otherwise insert a blank line.
+              {
+                key: 'Mod-Enter',
+                run: (v) => {
+                  forceRun();
+                  if (window.matchMedia?.('(pointer: coarse)').matches) v.contentDOM.blur();
+                  return true;
+                },
+              },
+              ...defaultKeymap,
+              ...historyKeymap,
+              indentWithTab,
+              {
+                key: 'Escape',
+                run: (v) => {
+                  v.contentDOM.blur();
+                  return true;
+                },
+              },
+            ]),
+            // Live eval: re-apply the rules once the documents settle.
+            EditorView.updateListener.of((u) => {
+              if (u.docChanged) scheduleLive();
+            }),
+          ],
+        });
+        return new EditorView({ state, parent: host });
+      };
+
+      setEditorDoc = (view: EditorView, doc: string): void => {
+        view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
+      };
     } catch (err) {
-      renderError(
-        resultsBox,
-        summaryEl,
-        'The relabel engine failed to load. Reload the page to try again.'
-      );
+      renderError(resultsBox, summaryEl, 'The relabel engine failed to load. Reload the page to try again.');
       // eslint-disable-next-line no-console
       console.error('[PrometheusRelabelTester] engine/examples import failed:', err);
       return;
@@ -934,44 +805,33 @@ const seedSummaryTone = seedOk && allDropped(seedOk.results ?? []) ? 'text-error
       }
     }
 
-    /* ---- Editor factory (CM symbols now in async scope) --------------------- */
+    /* ---- Live evaluation ---------------------------------------------------
+     * ~220ms after either document settles the rules are re-applied quietly
+     * (no spinner, no loading flash, no hash write). Calm errors: a live run
+     * that fails to parse holds the previous panel and reveals the error only
+     * after ~600ms of idle in total.                                        */
+    const LIVE_DEBOUNCE_MS = 220;
+    const ERROR_HOLD_MS = 380;
+    let liveReady = false;
+    let liveTimer: number | undefined;
+    let errorHoldTimer: number | undefined;
 
-    function makeEditor(host: HTMLElement, doc: string): EditorView {
-      const state = EditorState.create({
-        doc,
-        extensions: [
-          lineNumbers(),
-          history(),
-          highlightActiveLine(),
-          yaml(),
-          oneDark,
-          EditorViewCtor.lineWrapping,
-          keymap.of([
-            ...defaultKeymap,
-            ...historyKeymap,
-            indentWithTab,
-            { key: 'Escape', run: (view) => { view.contentDOM.blur(); return true; } },
-          ]),
-          EditorViewCtor.theme({
-            '&': { color: '#e6e6e6' },
-            '.cm-content': { caretColor: '#e6e6e6' },
-            '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e6e6e6' },
-            '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection':
-              { backgroundColor: 'rgba(0, 112, 243, 0.32)' },
-            '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.035)' },
-            '.cm-activeLineGutter': { backgroundColor: 'transparent' },
-          }),
-        ],
-      });
-      return new EditorViewCtor({ state, parent: host });
+    function scheduleLive(): void {
+      if (!liveReady) return;
+      window.clearTimeout(liveTimer);
+      window.clearTimeout(errorHoldTimer);
+      liveTimer = window.setTimeout(() => void run({ live: true }), LIVE_DEBOUNCE_MS);
     }
 
-    function setEditorDoc(view: EditorView, doc: string): void {
-      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
+    /** Deliberate run (Run now, ⌘/Ctrl+Enter, a chip): cancel the debounce, go now. */
+    function forceRun(): void {
+      window.clearTimeout(liveTimer);
+      window.clearTimeout(errorHoldTimer);
+      void run();
     }
 
-    const configsView = makeEditor(configsHost, seedConfigs);
-    const labelsView = makeEditor(labelsHost, seedLabels);
+    const configsView = makeEditor(configsHost, seedConfigs, 'relabel_configs (YAML)');
+    const labelsView = makeEditor(labelsHost, seedLabels, 'Sample label sets');
     // The build-time text stand-ins have done their job (no-JS visitors and
     // crawlers); CodeMirror appended its editors beside them, so drop them.
     // The share-link and restore tiers above already won over the example
@@ -980,98 +840,118 @@ const seedSummaryTone = seedOk && allDropped(seedOk.results ?? []) ? 'text-error
 
     // The example chips are already in the static HTML (server-rendered from
     // the same `examples` module); hydration only wires them.
-    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>('.prt-chip'));
-    if (examples.length === 0) chips.forEach((chip) => { chip.disabled = true; });
-
-    /** Mark one chip active — or none, which is what a shared `#prt=` link, a
-        restored input or a loaded snapshot gets: no example is on screen, so
-        no chip should read as selected (the select carried a synthetic
-        "Shared input" / "Restored input" option for this before). */
-    function setActiveChip(idx: number | null): void {
+    const chips = Array.from(chipsWrap.querySelectorAll<HTMLButtonElement>(CHIP_SELECTOR));
+    if (examples.length === 0)
       chips.forEach((chip) => {
-        const active = idx !== null && chip.dataset.exampleIdx === String(idx);
-        chip.classList.toggle('is-active', active);
-        chip.setAttribute('aria-pressed', active ? 'true' : 'false');
+        chip.disabled = true;
       });
-    }
 
-    // The first chip is server-rendered active; clear it when the editors were
-    // seeded from a share link or a restore instead of from an example.
-    if (fromShare || fromRestored || examples.length === 0) {
-      setActiveChip(null);
-    } else {
-      setActiveChip(0);
-    }
+    // The first chip is server-rendered pressed; release it when the editors
+    // were seeded from a share link or a restore instead of from an example.
+    syncChipsByIndex(chipsWrap, fromShare || fromRestored || examples.length === 0 ? null : 0);
 
-    // Swap both editors when a different example is chosen.
+    // Swap both editors when a different example is chosen, then run it.
     chips.forEach((chip) => {
       chip.addEventListener('click', () => {
         const idx = Number(chip.dataset.exampleIdx);
         if (!Number.isInteger(idx) || idx < 0 || idx >= examples.length) return;
-        setActiveChip(idx);
+        syncChipsByIndex(chipsWrap, idx);
         setEditorDoc(configsView, examples[idx].configs);
         setEditorDoc(labelsView, examples[idx].labels);
-        void run();
+        forceRun();
       });
     });
 
-    // Run — non-blocking; show loading, yield a frame, then render.
+    // Copy fills its payload at click time — the rules + label sets as one
+    // text block. This target-phase listener runs before the kit's delegated
+    // one on the root.
+    copyBtn.addEventListener('click', () => {
+      copyBtn.dataset.copy = `# relabel_configs\n${configsView.state.doc.toString()}\n\n# label sets\n${labelsView.state.doc.toString()}`;
+    });
+
+    /** Copy link appears once a result exists, carrying both documents. */
+    function setShare(configs: string | null, labels = ''): void {
+      if (!shareBtn) return;
+      shareBtn.hidden = configs === null;
+      shareBtn.dataset.copy = configs === null ? '' : `${window.location.href.split('#')[0]}${encodeShare(configs, labels)}`;
+    }
+
+    // Run — non-blocking. A deliberate run shows the loading state and a
+    // spinner in Run now; a live (debounced) or seed run is quiet. Only a
+    // deliberate run rewrites the address bar; the seed never records a last
+    // input (it is not something the visitor typed).
+    type RunOpts = { live?: boolean; showErrors?: boolean; seed?: boolean };
     let running = false;
+    let rerun: RunOpts | null = null;
     const runLabel = runBtn.querySelector<HTMLElement>('.prt-run-label');
     let spinner: HTMLElement | null = null;
-    // `userInitiated` gates the last-input record and the `#prt=` hash write:
-    // the boot pass over a seeded example (or a shared link) must never rewrite
-    // the visitor's URL or remember an input they did not type.
-    async function run(userInitiated = true): Promise<void> {
-      // Guaranteed present by the early return in boot(); restated because TypeScript
+    async function run(opts: RunOpts = {}): Promise<void> {
+      // Guaranteed present by the early return in init(); restated because TypeScript
       // discards that narrowing inside a hoisted function declaration.
       if (!runBtn) return;
-      if (running) return;
-      running = true;
-      runBtn.classList.add('is-busy');
-      runBtn.setAttribute('aria-disabled', 'true');
-      runBtn.setAttribute('aria-busy', 'true');
-      if (!spinner) {
-        spinner = document.createElement('span');
-        spinner.setAttribute('aria-hidden', 'true');
-        spinner.style.cssText =
-          'display:inline-block;width:14px;height:14px;flex:0 0 auto;border-radius:9999px;' +
-          'border:2px solid currentColor;border-top-color:transparent;';
-        if (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-          spinner.animate(
-            [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }],
-            { duration: 700, iterations: Infinity }
-          );
-        }
-        runBtn.insertBefore(spinner, runBtn.firstChild);
+      const live = opts.live === true;
+      const seeded = opts.seed === true;
+      const quiet = live || seeded;
+      if (running) {
+        rerun = opts;
+        return;
       }
-      if (runLabel) runLabel.textContent = 'Running…';
-      renderLoading(resultsBox!, summaryEl!);
-
-      await new Promise<void>((resolve) => {
-        if ('requestAnimationFrame' in window) {
-          requestAnimationFrame(() => resolve());
-        } else {
-          setTimeout(resolve, 0);
+      running = true;
+      if (!quiet) {
+        runBtn.classList.add('is-busy');
+        runBtn.setAttribute('aria-disabled', 'true');
+        runBtn.setAttribute('aria-busy', 'true');
+        if (!spinner) {
+          spinner = document.createElement('span');
+          spinner.setAttribute('aria-hidden', 'true');
+          spinner.style.cssText =
+            'display:inline-block;width:14px;height:14px;flex:0 0 auto;border-radius:50%;' +
+            'border:2px solid currentColor;border-top-color:transparent;';
+          if (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            spinner.animate([{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }], {
+              duration: 700,
+              iterations: Infinity,
+            });
+          }
+          runBtn.insertBefore(spinner, runBtn.firstChild);
         }
-      });
+        if (runLabel) runLabel.textContent = 'Running…';
+        renderLoading(resultsBox!, summaryEl!);
+
+        await new Promise<void>((resolve) => {
+          if ('requestAnimationFrame' in window) {
+            requestAnimationFrame(() => resolve());
+          } else {
+            setTimeout(resolve, 0);
+          }
+        });
+      }
 
       try {
         const configs = configsView.state.doc.toString();
         const labels = labelsView.state.doc.toString();
         const result = await Promise.resolve(engine.applyRelabel(configs, labels));
-        renderResults(resultsBox!, summaryEl!, result);
-        if (userInitiated) {
-          recordToolLastInput(SLUG, JSON.stringify({ configs, labels }));
-          try {
-            window.history.replaceState(null, '', encodeShare(configs, labels));
-          } catch {
-            /* non-fatal */
+        const failed = !result || result.ok === false || Boolean(result.error) || !result.results?.length;
+        if (live && failed && opts.showErrors !== true) {
+          // Hold the last good panel; reveal the error only after a longer idle.
+          window.clearTimeout(errorHoldTimer);
+          errorHoldTimer = window.setTimeout(() => void run({ live: true, showErrors: true }), ERROR_HOLD_MS);
+        } else {
+          const ok = renderResults(resultsBox!, summaryEl!, result);
+          setShare(ok ? configs : null, labels);
+          if (!quiet && ok) {
+            try {
+              window.history.replaceState(null, '', encodeShare(configs, labels));
+            } catch {
+              /* non-fatal */
+            }
           }
         }
+        if (!seeded) recordToolLastInput(SLUG, JSON.stringify({ configs, labels }));
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Unexpected error while applying rules.';
         renderError(resultsBox!, summaryEl!, msg);
+        setShare(null);
       } finally {
         running = false;
         runBtn.classList.remove('is-busy');
@@ -1081,68 +961,26 @@ const seedSummaryTone = seedOk && allDropped(seedOk.results ?? []) ? 'text-error
           spinner.remove();
           spinner = null;
         }
-        if (runLabel) runLabel.textContent = 'Run';
+        if (runLabel) runLabel.textContent = 'Run now';
+        if (rerun) {
+          const next = rerun;
+          rerun = null;
+          void run(next);
+        }
       }
     }
 
-    runBtn.addEventListener('click', () => void run());
+    runBtn.addEventListener('click', () => forceRun());
 
-    // Cmd/Ctrl+Enter from inside either editor triggers a run.
+    // ⌘/Ctrl+Enter anywhere else in the playground (a chip, Run now); inside
+    // an editor the Mod-Enter binding has already handled it.
     root.addEventListener('keydown', (e) => {
+      if (e.defaultPrevented) return;
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
-        void run();
+        forceRun();
       }
     });
-
-    // Copy — copy the rules + label sets as a single shareable text block.
-    const copyLabel = copyBtn.querySelector<HTMLElement>('.prt-copy-label');
-    let copyTimer: number | undefined;
-    copyBtn.addEventListener('click', async () => {
-      const text =
-        `# relabel_configs\n${configsView.state.doc.toString()}\n\n# label sets\n${labelsView.state.doc.toString()}`;
-      const ok = await copyText(text);
-      if (copyLabel) copyLabel.textContent = ok ? 'Copied' : 'Copy Failed';
-      if (announce) {
-        announce.textContent = ok
-          ? 'Rules and label sets copied to your clipboard.'
-          : 'Could not copy. Select the text in the editors and copy it manually.';
-      }
-      window.clearTimeout(copyTimer);
-      copyTimer = window.setTimeout(() => {
-        if (copyLabel) copyLabel.textContent = copyBtn.dataset.defaultLabel ?? 'Copy';
-      }, COPIED_RESET_MS);
-    });
-
-    // Share — copy a shareable URL encoding both editors in the hash.
-    const shareLabel = shareBtn.querySelector<HTMLElement>('.prt-share-label');
-    let shareTimer: number | undefined;
-    shareBtn.addEventListener('click', async () => {
-      const frag = encodeShare(configsView.state.doc.toString(), labelsView.state.doc.toString());
-      const base = window.location.href.split('#')[0];
-      const shareUrl = `${base}${frag}`;
-      try {
-        window.history.replaceState(null, '', frag);
-      } catch {
-        /* fall back */
-      }
-      const ok = await copyText(shareUrl);
-      if (shareLabel) shareLabel.textContent = ok ? 'Link Copied' : 'Copy Failed';
-      if (announce) {
-        announce.textContent = ok
-          ? 'Share link copied to your clipboard.'
-          : 'Could not copy the link. Copy the URL from your address bar instead.';
-      }
-      window.clearTimeout(shareTimer);
-      shareTimer = window.setTimeout(() => {
-        if (shareLabel) shareLabel.textContent = shareBtn.dataset.defaultLabel ?? 'Share Link';
-      }, COPIED_RESET_MS);
-    });
-
-    // Re-measure the editors after they mount inside the dark md:grid-cols-2
-    // panes, so CodeMirror does not cache a stale (zero/clipped) viewport.
-    configsView.requestMeasure();
-    labelsView.requestMeasure();
 
     // Snapshot save/restore — stores BOTH editors as one JSON blob (this tool
     // has two input fields, not one), parsed back defensively on restore.
@@ -1166,16 +1004,18 @@ const seedSummaryTone = seedOk && allDropped(seedOk.results ?? []) ? 'text-error
           return;
         }
         // A snapshot is not an example: no chip should claim to be selected.
-        setActiveChip(null);
-        void run();
+        syncChipsByIndex(chipsWrap, null);
+        forceRun();
       },
     });
 
-    // Auto-run whatever the editors ended up holding — a shared link, a
+    // Run once over whatever the editors ended up holding — a shared link, a
     // restored input, or the seeded example (whose result is already in the
-    // static HTML; this pass replaces it with identical markup and binds the
-    // client state). Not user-initiated: no hash write, no last-input record.
-    void run(false);
+    // static HTML; this pass repaints identical markup and binds the client
+    // state). Quiet and not user-initiated: no hash write, no last-input record.
+    void run({ seed: true });
+    // Only now may keystrokes drive the panel (seed dispatches must not).
+    liveReady = true;
   }
 
   boot();
