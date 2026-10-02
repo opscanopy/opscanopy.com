@@ -25,6 +25,14 @@
 //     test can prove the outlined (unsearchable) text matches the frontmatter.
 // Every glyph is outlined to <path> (scripts/og-text.mjs): no <text>, no
 // font-family, identical in librsvg and browsers. Output is deterministic.
+//
+// THUMBNAIL (public/blog/<slug>-thumb.svg, renderThumb): the same plate, top
+// rule, caption row and footer, with the icon centred and larger — and NO
+// title. The /blog/ and /blog/tag/<tag>/ cards show the thumbnail, so the
+// card's <h2> is the only place the title is drawn (the full cover put the
+// same words on screen twice, one above the other). The cover itself stays the
+// post's hero and og:image. Stamped like the cover, minus data-title, plus
+// data-variant="thumb"; src/lib/blog-cover.test.ts re-renders both.
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import yaml from 'js-yaml';
@@ -51,9 +59,13 @@ import {
 
 /** Bump when the template changes; every stamp must carry the current value. */
 export const COVER_GENERATOR = 'gen-blog-heroes@2';
+/** The thumbnail template's own version (bumped independently of the cover's). */
+export const THUMB_GENERATOR = 'gen-blog-thumbs@1';
 
 /** Icon ring: centre and radius as drawn; `edge` adds half the 2px stroke. */
 export const ICON = { cx: 1015, cy: 250, r: 105, stroke: 2, scale: 0.5 };
+/** Thumbnail icon: centred between the caption hairline (128) and the footer. */
+export const THUMB_ICON = { cx: 600, cy: 345, r: 150, stroke: 2, scale: 0.72 };
 export const RING_EDGE = ICON.r + ICON.stroke / 2;
 /** Minimum gap between any title glyph's ink and the ring's outer edge. */
 export const ICON_CLEARANCE = 12;
@@ -120,7 +132,7 @@ function recolour(body, hue) {
   });
 }
 
-function iconSvg(icon, hue) {
+function iconSvg(icon, hue, at = ICON) {
   const { mono, monoBold } = fonts();
   const texts = icon.texts
     .map((t) =>
@@ -132,9 +144,9 @@ function iconSvg(icon, hue) {
       }),
     )
     .join('\n');
-  const ring = `<circle cx="${ICON.cx}" cy="${ICON.cy}" r="${num(ICON.r)}" fill="#ffffff" fill-opacity="0.03" stroke="${hue}" stroke-opacity="0.55" stroke-width="${ICON.stroke}"/>`;
+  const ring = `<circle cx="${at.cx}" cy="${at.cy}" r="${num(at.r)}" fill="#ffffff" fill-opacity="0.03" stroke="${hue}" stroke-opacity="0.55" stroke-width="${at.stroke}"/>`;
   return `${ring}
-<g transform="translate(${ICON.cx},${ICON.cy}) scale(${ICON.scale})" stroke="${INK.leaf}" stroke-opacity="0.95" stroke-width="${icon.strokeWidth}" fill="none" stroke-linecap="${icon.linecap}" stroke-linejoin="${icon.linejoin}">
+<g transform="translate(${at.cx},${at.cy}) scale(${at.scale})" stroke="${INK.leaf}" stroke-opacity="0.95" stroke-width="${icon.strokeWidth}" fill="none" stroke-linecap="${icon.linecap}" stroke-linejoin="${icon.linejoin}">
 ${recolour(icon.body, hue)}${texts ? `\n${texts}` : ''}
 </g>`;
 }
@@ -254,10 +266,69 @@ export function renderCover(post, numbers) {
   return { svg, cap, size: title.size, lines: title.lines, clearance: minRingClearance(title.boxes) };
 }
 
+/**
+ * One card thumbnail: the cover without its title (see the header comment).
+ * Pure: same post + numbers → same bytes.
+ * @returns {{ svg: string, cap: string }}
+ */
+export function renderThumb(post, numbers) {
+  const { mono } = fonts();
+  beginDoc();
+  const kind = blogKind(post.slug, post.kind);
+  const token = kindToken(post.slug, kind, numbers);
+  const cap = captionText(post, numbers);
+  const hue = categoryHue[post.category]?.dark ?? INK.leaf;
+  const icon = heroIcons[post.slug];
+  if (!icon) throw new Error(`blog-cover: no icon for "${post.slug}"`);
+
+  const g = captionGeometry(CAPTION);
+  const capBoxes = glyphBoxes(mono, cap, g.labelX, g.baseline, g.size);
+  assertLayout(`${post.slug} thumb caption`, capBoxes, { ring: false });
+  const footBoxes = glyphBoxes(mono, FOOTER.text, X, FOOTER.baseline, FOOTER.size);
+  assertLayout(`${post.slug} thumb footer`, footBoxes, { ring: false });
+  // The ring sits wholly between the caption hairline and the footer's ink.
+  const ringTop = THUMB_ICON.cy - THUMB_ICON.r - THUMB_ICON.stroke / 2;
+  const ringBottom = THUMB_ICON.cy + THUMB_ICON.r + THUMB_ICON.stroke / 2;
+  const footTop = Math.min(...footBoxes.map((b) => b.y1));
+  if (ringTop <= g.rule || ringBottom >= footTop) {
+    throw new Error(`blog-cover: ${post.slug} thumb icon ring [${num(ringTop)}, ${num(ringBottom)}] overlaps the caption rule or the footer`);
+  }
+
+  const caption = captionRow(
+    [
+      { text: token, fill: kind === 'incident' ? INK.amber : INK.mute },
+      { text: ' · ', fill: INK.mute },
+      { text: post.category.toLowerCase(), fill: hue },
+    ],
+    kind === 'incident' ? 'traffic' : 'mute',
+    CAPTION,
+  );
+  const stamp = `<metadata data-generator="${THUMB_GENERATOR}" data-variant="thumb" data-slug="${esc(post.slug)}" data-cap="${esc(cap)}"/>`;
+  const svg = svgDoc(
+    icon.ariaLabel,
+    [
+      plate(hue),
+      `<g data-role="caption">\n${caption}\n</g>`,
+      iconSvg(icon, hue, THUMB_ICON),
+      textPath(mono, FOOTER.text, X, FOOTER.baseline, FOOTER.size, { fill: INK.mute }),
+    ].join('\n'),
+    stamp,
+  );
+  return { svg, cap };
+}
+
 /** All covers for `root`, in slug order. */
 export function renderAll(root) {
   const posts = readPosts(root);
   assertIcons(posts);
   const numbers = incidentNumbers(posts);
   return posts.map((post) => ({ post, ...renderCover(post, numbers) }));
+}
+
+/** All card thumbnails for `root`, in slug order. */
+export function renderAllThumbs(root) {
+  const posts = readPosts(root);
+  assertIcons(posts);
+  const numbers = incidentNumbers(posts);
+  return posts.map((post) => ({ post, ...renderThumb(post, numbers) }));
 }

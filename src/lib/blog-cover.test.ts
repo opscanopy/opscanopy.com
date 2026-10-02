@@ -18,15 +18,23 @@
  *      in <defs>, clear the icon ring by >= 12px; every caption and title glyph
  *      is inside the safe area; the caption is >= 11px when the cover is shown
  *      370px wide (the /blog/ grid card).
+ *
+ * THUMBNAILS (public/blog/<slug>-thumb.svg, the /blog card image — the cover
+ * without its title, so the card's <h2> is the only title on the card) are
+ * held to the same staleness gate: stamp (generator, variant, slug, caption,
+ * and NO title), byte-identical re-render, outlined text only, no title group,
+ * and none of the title's glyph outlines in the document.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   readPosts,
   renderCover,
+  renderThumb,
   captionText,
   COVER_GENERATOR,
+  THUMB_GENERATOR,
   ICON,
   RING_EDGE,
   ICON_CLEARANCE,
@@ -45,6 +53,8 @@ const numbers = incidentNumbers(posts);
 // not staleness, so compare LF-normalised.
 const coverOf = (slug: string) =>
   readFileSync(join(PUBLIC_BLOG, `${slug}-hero.svg`), 'utf8').replace(/\r\n/g, '\n');
+const thumbOf = (slug: string) =>
+  readFileSync(join(PUBLIC_BLOG, `${slug}-thumb.svg`), 'utf8').replace(/\r\n/g, '\n');
 
 const decode = (s: string) =>
   s.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
@@ -179,5 +189,54 @@ describe('generator layout assertions', () => {
   it('steps the title size down rather than collide, and fails when nothing fits', () => {
     const long = 'Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua';
     expect(() => fitTitle(long)).toThrow(/does not fit/);
+  });
+});
+
+// ── Card thumbnails ───────────────────────────────────────────────────────────
+describe('card thumbnails', () => {
+  it('one thumbnail per English post, and no orphans', () => {
+    const thumbs = readdirSync(PUBLIC_BLOG)
+      .filter((f) => f.endsWith('-thumb.svg'))
+      .map((f) => f.replace(/-thumb\.svg$/, ''))
+      .sort();
+    expect(thumbs).toEqual(posts.map((p) => p.slug).sort());
+  });
+
+  for (const p of posts) {
+    it(`${p.slug}: stamp matches, outlined, and no title anywhere`, () => {
+      const svg = thumbOf(p.slug);
+      const s = stamp(svg);
+      expect(s, 'thumbnail stamp is missing or stale — run npm run gen:heroes').toMatchObject({
+        generator: THUMB_GENERATOR,
+        variant: 'thumb',
+        slug: p.slug,
+        cap: captionText(p, numbers),
+      });
+      expect(s.title, 'a thumbnail must not carry the title').toBeUndefined();
+      expect(svg).not.toContain('data-role="title"');
+      expect(svg).not.toMatch(/<text\b/);
+      expect(svg).not.toMatch(/font-family/);
+      expect(Buffer.byteLength(svg)).toBeLessThanOrEqual(40 * 1024);
+      expect(svg).toMatch(/^<svg [^>]*role="img" aria-label="[^"]+"/);
+      // No run at title scale on the left rail: a cover draws its title as
+      // runs at x = 80 (the rail) at >= 40px; the only other rail run is the
+      // 22px footer (the caption starts right of the dots, icon labels live in
+      // the icon group's own coordinates). A thumbnail that drew the title —
+      // stamped or not — fails here.
+      for (const [, k] of svg.matchAll(/<g transform="translate\(80 [-\d.]+\) scale\(([\d.e-]+)\)"/g)) {
+        expect(Number(k) * 1000, 'a run at title scale in a thumbnail').toBeLessThan(40);
+      }
+    });
+
+    it(`${p.slug}: byte-identical to a fresh render`, () => {
+      expect(thumbOf(p.slug) === renderThumb(p, numbers).svg, 'stale thumbnail — run npm run gen:heroes').toBe(true);
+    });
+  }
+
+  it('the vacuity guard: the same check flags a full cover (it has a title run)', () => {
+    for (const p of posts) {
+      const scales = [...coverOf(p.slug).matchAll(/<g transform="translate\(80 [-\d.]+\) scale\(([\d.e-]+)\)"/g)].map((m) => Number(m[1]) * 1000);
+      expect(Math.max(...scales), p.slug).toBeGreaterThanOrEqual(40);
+    }
   });
 });
