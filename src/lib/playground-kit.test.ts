@@ -363,17 +363,8 @@ export function failingRules(raw: string, name: string): string[] {
 // ---------------------------------------------------------------------------
 
 const UNMIGRATED: Record<string, string[]> = {
-  Base64Playground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
-  CaseConverterPlayground: ['local-chip', 'raw-duration', 'result-panel', 'one-trust-line', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
   CertificateDecoderPlayground: ['local-chip', 'raw-duration', 'result-panel', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
-  ChmodCalculatorPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
-  DataSizeConverterPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
-  HashGeneratorPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
-  IpConverterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
   JwtDecoderPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'one-trust-line', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
-  K8sResourceCalculatorPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
-  MacFormatterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
-  PtrHelperPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
   SlugifyPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
   SubnetSplitterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
   TerraformPlanSummarizerPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
