@@ -143,9 +143,11 @@ export function wireSnapshotUI(opts: SnapshotUiOptions): void {
       snapshotSelect.appendChild(opt);
     });
     snapshotSelect.disabled = snaps.length === 0;
-    // A picker with nothing to pick is noise: hidden until the first save
-    // (the kit's SnapshotBar also server-renders it `hidden`).
-    snapshotSelect.hidden = snaps.length === 0;
+    // A picker with nothing to pick is noise: hidden until the first save.
+    // Only the kit's SnapshotBar opts in (it server-renders the select
+    // `hidden`); a playground not yet migrated still renders it visible, and
+    // hiding it on hydration there would be a layout shift.
+    if (snapshotSelect.closest('[data-snapshot-bar]')) snapshotSelect.hidden = snaps.length === 0;
     deleteBtn.hidden = !snapshotSelect.value;
   }
 
