@@ -363,14 +363,6 @@ export function failingRules(raw: string, name: string): string[] {
 // ---------------------------------------------------------------------------
 
 const UNMIGRATED: Record<string, string[]> = {
-  CertificateDecoderPlayground: ['local-chip', 'raw-duration', 'result-panel', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
-  JwtDecoderPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'one-trust-line', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
-  SlugifyPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
-  SubnetSplitterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
-  TerraformPlanSummarizerPlayground: ['local-chip', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
-  TimestampConverterPlayground: ['local-chip', 'pill-radius', 'raw-duration', 'result-panel', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
-  UrlCodecPlayground: ['local-chip', 'raw-duration', 'result-panel', 'one-trust-line', 'run-hint', 'snapshot-bar', 'kit-selectors', 'control-height', 'tokens'],
-  UuidUlidGeneratorPlayground: ['local-chip', 'raw-duration', 'result-panel', 'one-trust-line', 'kit-selectors', 'control-height', 'tokens'],
 };
 
 // ---------------------------------------------------------------------------
