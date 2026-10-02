@@ -32,6 +32,11 @@ const blog = defineCollection({
         href: z.string(),
       })
       .optional(),
+    /** Optional post kind for the cover / card caption (`IR-NN · …` vs `note · …`).
+     *  Absent on every shipped post: the default is DERIVED from the slug by
+     *  `blogKind()` in src/lib/blog-kind.ts, which states the rule. Additive —
+     *  it feeds no H1, title or JSON-LD. */
+    kind: z.enum(['incident', 'note', 'guide']).optional(),
   }),
 });
 
