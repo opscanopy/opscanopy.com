@@ -1017,6 +1017,7 @@ const chipItems = examples.map((ex) => ({ label: ex.chip, ariaLabel: ex.label })
   import { syncChipsByIndex, CHIP_SELECTOR } from '../lib/playground-kit/chips';
   import { readHandoffOnce } from '../lib/tool-state/handoff';
   import { wireSnapshotUI } from '../lib/tool-state/wire';
+  import { wireRunKeys } from '../lib/run-keys';
 
   type ClaimTone = 'ok' | 'warn' | 'error';
   type ClaimRow = { label: string; value: string; mono?: boolean; tone?: ClaimTone; caption?: string };
@@ -1454,35 +1455,30 @@ const chipItems = examples.map((ex) => ({ label: ex.chip, ariaLabel: ex.label })
     }
 
     input.addEventListener('input', onUserInput);
-    // Playground UX contract: Ctrl/⌘+Enter runs immediately (and blurs on
-    // coarse pointers); bare Enter lets the newline insert, then flushes.
+    const runNow = (): void => {
+      window.clearTimeout(timer);
+      evaluate();
+    };
+    // One JWT-specific guard, registered BEFORE wireRunKeys so it can claim
+    // the key: a bare Enter while the WHOLE value is selected (the REQ-6
+    // select-all just ran) must not let the newline replace the selection —
+    // that would wipe the token the moment the user follows the hint line.
+    // Everything else is the shared contract below.
     input.addEventListener('keydown', (ev) => {
-      if (ev.key !== 'Enter') return;
-      if (ev.ctrlKey || ev.metaKey) {
-        ev.preventDefault();
-        window.clearTimeout(timer);
-        evaluate();
-        if (window.matchMedia('(pointer: coarse)').matches) input!.blur();
-        return;
-      }
-      // Bare Enter while the WHOLE value is selected (the REQ-6 select-all
-      // just ran) must not let the newline replace the selection — that
-      // would wipe the token the moment the user follows the hint line.
+      if (ev.key !== 'Enter' || ev.isComposing || ev.ctrlKey || ev.metaKey) return;
       if (
         input!.value.length > 0 &&
         input!.selectionStart === 0 &&
         input!.selectionEnd === input!.value.length
       ) {
         ev.preventDefault();
-        window.clearTimeout(timer);
-        evaluate();
-        return;
+        ev.stopImmediatePropagation();
+        runNow();
       }
-      window.setTimeout(() => {
-        window.clearTimeout(timer);
-        evaluate();
-      }, 0);
     });
+    // Playground UX contract: Ctrl/⌘+Enter runs immediately (and blurs on
+    // coarse pointers); bare Enter lets the newline insert, then flushes.
+    wireRunKeys(input, runNow, { enter: 'insert-then-run' });
     // Editing only the secret (or its encoding) re-verifies in place.
     secretInput.addEventListener('input', scheduleVerifyOnly);
     secretB64u.addEventListener('change', () => verifyOnly());
