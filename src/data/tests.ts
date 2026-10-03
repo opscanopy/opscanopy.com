@@ -67,7 +67,7 @@ export const categories: TestCategory[] = [
   {
     slug: 'aws-developer-associate',
     name: 'AWS Certified Developer – Associate (DVA-C02)',
-    shortName: 'AWS Developer Associate',
+    shortName: 'AWS Certified Developer Associate',
     description:
       'A full-length original DVA-C02 practice exam — Lambda, API Gateway, DynamoDB, messaging, IAM and KMS from code, SAM deployments, and troubleshooting on AWS.',
     accent: 'ship',
