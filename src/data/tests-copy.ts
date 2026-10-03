@@ -66,4 +66,20 @@ export const testCategoryCopy: Record<string, TestCategoryCopy> = {
       href: '/learn/guides/aws-ai-practitioner-study-guide/',
     },
   },
+  'aws-developer-associate': {
+    examCode: 'DVA-C02',
+    metaDescription:
+      'A free 65-question AWS Certified Developer – Associate (DVA-C02) practice exam. Every answer explained: Lambda, API Gateway, DynamoDB, SQS, IAM, KMS, SAM, and CloudWatch.',
+    intro: [
+      'DVA-C02 is the associate exam for people who write code that runs on AWS: 65 questions in 130 minutes, 50 of them scored, and a scaled pass mark of 720 out of 1,000. It assumes a year of hands-on development and asks about the code, not the architecture diagram — how a Lambda function handles a failed batch, why a DynamoDB query is throttling, which permission a cross-account call is missing, how a deployment rolls back on its own. The practice exam here follows exam guide v2.1 and its four domains in their published weighting.',
+      'Most items are short scenarios with a developer qualifier: "with the fewest code changes", "without storing credentials", "at the lowest cost", "with no additional infrastructure". Two or three options usually work in principle; the skill being tested is knowing the one that fits the constraint — a destination instead of a dead-letter queue, a global secondary index instead of a scan, a data key instead of a direct Encrypt call. Every explanation says why the key fits and what each distractor would actually do.',
+      'The questions here are original, written to match the style and difficulty of the real exam. They are not reproduced exam content: publishing that breaches the AWS Certification Agreement, and memorising leaked items does not survive contact with a scenario you have not seen. The real exam can also include unscored pretest items on emerging topics such as AI-assisted development; those are not scored, and this exam sticks to the scored content outline.',
+    ],
+    domains: [
+      { name: 'Development with AWS services', weight: '32%' },
+      { name: 'Security', weight: '26%' },
+      { name: 'Deployment', weight: '24%' },
+      { name: 'Troubleshooting and optimization', weight: '18%' },
+    ],
+  },
 };

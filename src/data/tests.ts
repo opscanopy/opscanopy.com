@@ -64,6 +64,17 @@ export const categories: TestCategory[] = [
     icon: '<rect x="15" y="15" width="18" height="18" rx="3"/><path d="M21 21h6v6h-6z"/><path d="M20 15V9M28 15V9M20 39v-6M28 39v-6M15 20H9M15 28H9M39 20h-6M39 28h-6"/>',
     status: 'live',
   },
+  {
+    slug: 'aws-developer-associate',
+    name: 'AWS Certified Developer – Associate (DVA-C02)',
+    shortName: 'AWS Developer Associate',
+    description:
+      'A full-length original DVA-C02 practice exam — Lambda, API Gateway, DynamoDB, messaging, IAM and KMS from code, SAM deployments, and troubleshooting on AWS.',
+    accent: 'ship',
+    // Code-brackets mark (stroke-based, viewBox "0 0 48 48"), matching track-icons convention.
+    icon: '<path d="M18 14l-9 10 9 10M30 14l9 10-9 10M27 11l-6 26"/>',
+    status: 'live',
+  },
 ];
 
 export const tests: PracticeTest[] = [
@@ -115,6 +126,16 @@ export const tests: PracticeTest[] = [
       'Sixty-five more original questions in the real exam’s domain weighting, written against exam guide v1.1 (April 2026) and sharing no scenario with the first mock. Time yourself: the real exam allows 90 minutes. The 70% pass mark is OpsCanopy’s, not AWS’s.',
     passThreshold: 70,
     minutes: 90,
+    status: 'live',
+  },
+  {
+    slug: 'dva-c02-full-mock-exam',
+    categorySlug: 'aws-developer-associate',
+    name: 'DVA-C02 Practice Exam',
+    description:
+      'Sixty-five original questions in the real exam’s domain weighting — development with AWS services, security, deployment, and troubleshooting — written for OpsCanopy against exam guide v2.1. Time yourself: the real exam allows 130 minutes. The 72% pass mark mirrors AWS’s 720/1,000 scaled cutoff but is OpsCanopy’s, not AWS’s.',
+    passThreshold: 72,
+    minutes: 130,
     status: 'live',
   },
 ];
