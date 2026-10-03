@@ -86,7 +86,7 @@ export const tools: Tool[] = [
     name: 'CVE-Ignore Converter',
     tagline: 'Translate .trivyignore / .grype.yaml / .snyk in one click.',
     description:
-      'Convert and unify a single vulnerability-suppression policy across Trivy, Grype, Snyk and osv-scanner formats. Pure client-side, no upload.',
+      'Convert and unify a single vulnerability-suppression policy across Trivy, Grype, Snyk and osv-scanner formats.',
     status: 'live',
     category: 'Security',
     keywords: [
@@ -126,7 +126,7 @@ export const tools: Tool[] = [
     name: 'Cron Expression Tester',
     tagline: 'Explain any cron expression in plain English — and see the next runs.',
     description:
-      'Paste a cron expression and get a plain-English description plus the next run times. Supports ranges, steps, lists and @macros. Pure client-side.',
+      'Paste a cron expression and get a plain-English description plus the next run times. Supports ranges, steps, lists and @macros.',
     status: 'live',
     category: 'Scheduling',
     keywords: [
@@ -146,7 +146,7 @@ export const tools: Tool[] = [
     name: 'Cron to systemd Converter',
     tagline: 'Turn a crontab line into a systemd timer + service unit.',
     description:
-      'Convert a crontab entry into an equivalent systemd .timer and .service unit, with an OnCalendar expression and migration notes. Pure client-side.',
+      'Convert a crontab entry into an equivalent systemd .timer and .service unit, with an OnCalendar expression and migration notes.',
     status: 'live',
     category: 'Scheduling',
     keywords: [
@@ -188,7 +188,7 @@ export const tools: Tool[] = [
     name: 'Env Example Checker',
     tagline: 'Find env vars your code uses but .env.example is missing.',
     description:
-      'Paste your code and your .env.example to find environment variables used in code but missing from the example (and unused keys). Pure client-side.',
+      'Paste your code and your .env.example to find environment variables used in code but missing from the example (and unused keys).',
     status: 'live',
     category: 'Config',
     keywords: [
@@ -210,7 +210,7 @@ export const tools: Tool[] = [
     name: 'LogQL ↔ PromQL Helper',
     tagline: 'Translate and explain queries between Loki LogQL and Prometheus PromQL.',
     description:
-      'Convert common metric-query shapes between Grafana Loki LogQL and Prometheus PromQL, with notes on what does and does not map. Pure client-side.',
+      'Convert common metric-query shapes between Grafana Loki LogQL and Prometheus PromQL, with notes on what does and does not map.',
     status: 'live',
     category: 'Observability',
     keywords: [
@@ -230,7 +230,7 @@ export const tools: Tool[] = [
     name: 'PromQL Explainer',
     tagline: 'Paste a PromQL query and get a plain-English explanation.',
     description:
-      'Break down a Prometheus PromQL query into a readable explanation — selectors, rates, aggregations, functions and comparisons. Pure client-side.',
+      'Break down a Prometheus PromQL query into a readable explanation — selectors, rates, aggregations, functions and comparisons.',
     status: 'live',
     category: 'Observability',
     keywords: [
@@ -250,7 +250,7 @@ export const tools: Tool[] = [
     name: 'Subnet Calculator',
     tagline: 'Network, broadcast, mask and host range from any IPv4/IPv6 CIDR.',
     description:
-      'Enter an IPv4 or IPv6 address with a prefix and get the network and broadcast addresses, netmask, wildcard, usable host range and address counts. Pure client-side.',
+      'Enter an IPv4 or IPv6 address with a prefix and get the network and broadcast addresses, netmask, wildcard, usable host range and address counts.',
     status: 'live',
     category: 'Networking',
     keywords: [
@@ -270,7 +270,7 @@ export const tools: Tool[] = [
     name: 'IP Address Converter',
     tagline: 'Convert an IP between dotted decimal, integer, hex and binary.',
     description:
-      'Paste an IPv4 or IPv6 address in any form — dotted decimal, integer, hexadecimal or binary — and see every representation at once. Pure client-side.',
+      'Paste an IPv4 or IPv6 address in any form — dotted decimal, integer, hexadecimal or binary — and see every representation at once.',
     status: 'live',
     category: 'Networking',
     keywords: [
@@ -290,7 +290,7 @@ export const tools: Tool[] = [
     name: 'CIDR / Subnet Checker',
     tagline: 'Check an IP against CIDR ranges, find overlaps, and merge lists.',
     description:
-      'Paste an IP plus CIDRs — or a whole list — to check membership, spot overlapping or contained ranges, and get the minimal covering set. Pure client-side.',
+      'Paste an IP plus CIDRs — or a whole list — to check membership, spot overlapping or contained ranges, and get the minimal covering set.',
     status: 'live',
     category: 'Networking',
     keywords: [
@@ -314,7 +314,7 @@ export const tools: Tool[] = [
     name: 'MAC Address Formatter',
     tagline: 'Reformat a MAC across colon, hyphen, Cisco and bare — and read its bits.',
     description:
-      'Paste a MAC address and get it normalised across colon, hyphen, Cisco dotted and bare forms, plus the U/L and I/G bit meaning, OUI and the EUI-64 IPv6 link-local address it derives. Pure client-side.',
+      'Paste a MAC address and get it normalised across colon, hyphen, Cisco dotted and bare forms, plus the U/L and I/G bit meaning, OUI and the EUI-64 IPv6 link-local address it derives.',
     status: 'live',
     category: 'Networking',
     keywords: [
@@ -334,7 +334,7 @@ export const tools: Tool[] = [
     name: 'Reverse DNS / PTR Helper',
     tagline: 'Build the in-addr.arpa / ip6.arpa PTR name and reverse zone for any IP.',
     description:
-      'Enter an IPv4 or IPv6 address or CIDR and get the in-addr.arpa or ip6.arpa PTR name, the matching reverse zone and the nibble breakdown behind it. Pure client-side.',
+      'Enter an IPv4 or IPv6 address or CIDR and get the in-addr.arpa or ip6.arpa PTR name, the matching reverse zone and the nibble breakdown behind it.',
     status: 'live',
     category: 'Networking',
     keywords: [
@@ -354,7 +354,7 @@ export const tools: Tool[] = [
     name: 'Subnet Splitter',
     tagline: 'Split a parent CIDR into subnets and find the free space around allocations.',
     description:
-      'Split a parent IPv4 or IPv6 CIDR into equal subnets or carve it up with VLSM, then list existing allocations to find the gaps and the next available subnet. Pure client-side.',
+      'Split a parent IPv4 or IPv6 CIDR into equal subnets or carve it up with VLSM, then list existing allocations to find the gaps and the next available subnet.',
     status: 'live',
     category: 'Networking',
     keywords: [
@@ -374,7 +374,7 @@ export const tools: Tool[] = [
     name: 'JWT Decoder & Encoder',
     tagline: 'Decode, verify, and sign JWTs — HS/RS/PS/ES/EdDSA — with a built-in key generator.',
     description:
-      'Paste a JSON Web Token to decode its header and claims, verify its signature against a secret, PEM, JWK, or JWKS, sign new tokens with any JWS algorithm, and generate test keys — all in your browser. Nothing leaves the page. Pure client-side.',
+      'Paste a JSON Web Token to decode its header and claims, verify its signature against a secret, PEM, JWK, or JWKS, sign new tokens with any JWS algorithm, and generate test keys — all in your browser. Nothing leaves the page.',
     status: 'live',
     category: 'Security',
     keywords: [
@@ -398,7 +398,7 @@ export const tools: Tool[] = [
     name: 'Timestamp Converter',
     tagline: 'Convert between Unix epoch, ISO 8601 and human-readable dates.',
     description:
-      'Paste a Unix timestamp in seconds or milliseconds, or an ISO 8601 date, and convert it across epoch, UTC and local time with relative age. Pure client-side.',
+      'Paste a Unix timestamp in seconds or milliseconds, or an ISO 8601 date, and convert it across epoch, UTC and local time with relative age.',
     status: 'live',
     category: 'Encoding',
     keywords: [
@@ -418,7 +418,7 @@ export const tools: Tool[] = [
     name: 'Base64 Encoder / Decoder',
     tagline: 'Encode and decode Base64 and URL-safe Base64, with Unicode support.',
     description:
-      'Paste text or Base64 to encode or decode in either direction, with standard and URL-safe alphabets and full UTF-8 handling. Pure client-side.',
+      'Paste text or Base64 to encode or decode in either direction, with standard and URL-safe alphabets and full UTF-8 handling.',
     status: 'live',
     category: 'Encoding',
     keywords: [
@@ -438,7 +438,7 @@ export const tools: Tool[] = [
     name: 'Hash Generator',
     tagline: 'Compute MD5, SHA-1, SHA-256 and SHA-512 digests of any text — plus HMAC.',
     description:
-      'Paste text and get its MD5, SHA-1, SHA-256 and SHA-512 hashes at once, plus an optional HMAC with a key — computed in your browser with the Web Crypto API. Pure client-side.',
+      'Paste text and get its MD5, SHA-1, SHA-256 and SHA-512 hashes at once, plus an optional HMAC with a key — computed in your browser with the Web Crypto API.',
     status: 'live',
     category: 'Security',
     keywords: [
@@ -458,7 +458,7 @@ export const tools: Tool[] = [
     name: 'Kubernetes Resource Calculator',
     tagline: 'Total CPU and memory requests and limits across pods and replicas.',
     description:
-      'Enter container CPU and memory requests and limits with replica counts to total the resources a workload reserves, and convert millicores and Mi/Gi units. Pure client-side.',
+      'Enter container CPU and memory requests and limits with replica counts to total the resources a workload reserves, and convert millicores and Mi/Gi units.',
     status: 'live',
     category: 'Kubernetes',
     keywords: [
@@ -482,7 +482,7 @@ export const tools: Tool[] = [
     h1Name: 'GitHub Actions if Condition Tester',
     tagline: 'Evaluate ${{ }} expressions and simulate workflow triggers.',
     description:
-      'Test GitHub Actions if: conditions with GitHub’s exact coercion rules, catch the “always true” literal footgun, and simulate which jobs run for a push, PR or tag. Pure client-side.',
+      'Test GitHub Actions if: conditions with GitHub’s exact coercion rules, catch the “always true” literal footgun, and simulate which jobs run for a push, PR or tag.',
     status: 'live',
     category: 'CI/CD',
     keywords: [
@@ -638,7 +638,7 @@ export const tools: Tool[] = [
     name: 'chmod Calculator',
     tagline: 'Convert chmod between octal, symbolic and the permission matrix.',
     description:
-      'Convert Unix file permissions between octal (755), symbolic (rwxr-xr-x) and a checkbox matrix — including setuid, setgid and the sticky bit — and copy the exact chmod command. Pure client-side bit math.',
+      'Convert Unix file permissions between octal (755), symbolic (rwxr-xr-x) and a checkbox matrix — including setuid, setgid and the sticky bit — and copy the exact chmod command.',
     status: 'live',
     category: 'Utilities',
     keywords: [
@@ -658,7 +658,7 @@ export const tools: Tool[] = [
     name: 'JSON ↔ YAML Converter',
     tagline: 'Convert JSON to YAML and back — with honest warnings about what changes.',
     description:
-      'Convert JSON to YAML or YAML to JSON with a real YAML 1.2 parser, and see every comment, anchor, merge key, timestamp and out-of-range integer the conversion costs you. Catches the "Norway problem" in both directions. Pure client-side, no upload.',
+      'Convert JSON to YAML or YAML to JSON with a real YAML 1.2 parser, and see every comment, anchor, merge key, timestamp and out-of-range integer the conversion costs you. Catches the "Norway problem" in both directions.',
     status: 'live',
     category: 'Encoding',
     keywords: [
@@ -678,7 +678,7 @@ export const tools: Tool[] = [
     name: 'URL Encoder / Decoder',
     tagline: 'Percent-encode, decode, and parse query strings — with per-component RFC 3986 rules.',
     description:
-      'Percent-encode a value for the position it actually lands in, decode one that came back mangled, or split a whole URL into its components and a decoded query-parameter table. Double-encoding, + vs %20, punycode hosts and repeated keys are named, not guessed. Pure client-side.',
+      'Percent-encode a value for the position it actually lands in, decode one that came back mangled, or split a whole URL into its components and a decoded query-parameter table. Double-encoding, + vs %20, punycode hosts and repeated keys are named, not guessed.',
     status: 'live',
     category: 'Encoding',
     keywords: [
@@ -700,7 +700,7 @@ export const tools: Tool[] = [
     name: 'Data Size Converter',
     tagline: 'GiB vs GB, bits vs bytes — and how long that transfer really takes.',
     description:
-      'Convert data sizes between SI (kB, MB, GB) and IEC (KiB, MiB, GiB) units with exact BigInt maths, tell bits from bytes without guessing, and get the transfer time for any link speed. Pure client-side.',
+      'Convert data sizes between SI (kB, MB, GB) and IEC (KiB, MiB, GiB) units with exact BigInt maths, tell bits from bytes without guessing, and get the transfer time for any link speed.',
     status: 'live',
     category: 'Utilities',
     keywords: [
@@ -810,7 +810,7 @@ export const tools: Tool[] = [
     name: 'Kubernetes Label Selector Tester',
     tagline: 'See which pods a label selector matches — and why each one does or doesn’t.',
     description:
-      'Paste your pods and a selector — a kubectl -l string or a matchLabels/matchExpressions block — and get a per-resource MATCH or NO MATCH with the exact clause that decided, including the case everyone answers backwards: NotIn and != match a resource that has no such label at all. Pure client-side, no cluster.',
+      'Paste your pods and a selector — a kubectl -l string or a matchLabels/matchExpressions block — and get a per-resource MATCH or NO MATCH with the exact clause that decided, including the case everyone answers backwards: NotIn and != match a resource that has no such label at all.',
     status: 'live',
     category: 'Kubernetes',
     keywords: [
