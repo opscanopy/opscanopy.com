@@ -119,16 +119,18 @@ Both branches were pushed to GitHub on 2026-10-03 as `design/batch-d` and
 time: `4c7b8ce`. When it ships, it is rebased onto the then-current `main`; the one
 known conflict is `src/lib/rail.test.ts` (keep the union of both removals).
 
-## Follow-ups left from Batch D's review
+## Follow-ups from Batch D's review (fixed 2026-10-03, `3f2ff62`)
 
-- On the five /tools/ pages the header "Browse tools" button still links to the page
-  itself; the plan wanted it to open search. Header.astro is not a date input, so it
-  can land any time without re-dating anything.
-- On a few tools (JWT decoder, hash generator, jq) the input still starts lower than
-  the target on phones, because their playground chrome sits above it. Each is
-  230–260px better than before.
-- At 390px, after filtering /tools by category, the active chip can sit outside the
-  visible part of the scrolling strip.
+- On the five /tools/ pages the header button now reads "Search tools" and opens the
+  command palette; everywhere else it is still the "Browse tools" link.
+- Phones: a playground's example chips sit on one sideways-scrolling row instead of
+  wrapping, and the JWT decoder's three modes form one segmented row. Inputs at 390px
+  moved up 100–150px (hash 403px, subnet 403px, jq 472px, JWT 526px).
+- At 390px, the chosen /tools category chip scrolls into view inside the strip, on
+  click and on a `?cat=` link.
+
+Shipped the same day Batch D re-dated those pages; sitemap dates are whole days, so
+these fixes re-dated nothing (IndexNow 0 URLs).
 
 ## Small follow-ups not in either batch
 
