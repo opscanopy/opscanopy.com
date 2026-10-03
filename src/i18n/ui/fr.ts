@@ -95,7 +95,7 @@ const fr: Partial<UiDict> = {
   'blog.metaDescription':
     'Notes pratiques pour ingénieurs DevOps : GitHub Actions et GitLab CI, Docker Compose, cron et timers systemd, relabeling Prometheus, routage Alertmanager.',
   'blog.eyebrow': 'Articles',
-  'blog.indexTitle': 'Notes de la canopée.',
+  'blog.indexTitle': 'Notes de terrain sur DevOps, CI/CD et observabilité.',
   'blog.indexLead':
     'Observations sur l’outillage DevOps, l’observabilité et les petits manques de l’écosystème qui méritent d’être comblés — écrites pour les ingénieurs qui les rencontrent.',
   'blog.countSuffixSingular': 'article et ce n’est qu’un début.',

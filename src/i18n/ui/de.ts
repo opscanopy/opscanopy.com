@@ -97,7 +97,7 @@ const de: Partial<UiDict> = {
   'blog.metaDescription':
     'Praxisnotizen für DevOps-Engineers: GitHub Actions und GitLab CI, Docker Compose, Cron und systemd-Timer, Prometheus-Relabeling und Alertmanager-Routing.',
   'blog.eyebrow': 'Beiträge',
-  'blog.indexTitle': 'Notizen aus dem Blätterdach.',
+  'blog.indexTitle': 'Praxisnotizen zu DevOps, CI/CD und Observability.',
   'blog.indexLead':
     'Beobachtungen zu DevOps-Tooling, Observability und den kleinen Lücken im Ökosystem, die sich zu schließen lohnen — geschrieben für die Engineers, die auf sie stoßen.',
   'blog.countSuffixSingular': 'Beitrag und es werden mehr.',
