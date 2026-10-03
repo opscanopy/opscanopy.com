@@ -311,8 +311,14 @@ export function comparePage(base, cand) {
   if (base.h1.length !== cand.h1.length) push('h1', 'fail', `h1 count ${base.h1.length} → ${cand.h1.length}`);
   else
     base.h1.forEach((h, i) => {
-      const s = compareHtml(h, cand.h1[i]);
-      push(`h1[${i}]`, s, s === 'fail' ? `${collapseWs(textContent(h))} → ${collapseWs(textContent(cand.h1[i]))}` : undefined);
+      // Search engines read an H1's text, not its markup. Batch D splits the
+      // tool H1 into a name span and a claim span with the text node intact,
+      // so the semantic tier compares H1s by collapsed text: identical text =
+      // semantic, any text change = fail. (The SEO guard checks the same.)
+      const ht = collapseWs(textContent(h));
+      const ct = collapseWs(textContent(cand.h1[i]));
+      const s = h === cand.h1[i] ? 'strict' : ht === ct ? 'semantic' : 'fail';
+      push(`h1[${i}]`, s, s === 'fail' ? `${ht} → ${ct}` : undefined);
     });
 
   // ld+json
@@ -496,6 +502,9 @@ export function selfTest() {
     ['fallback <pre> removed', base.replace(/<pre class="snc-cm-fallback[^]*?<\/pre>/, ''), false],
     ['ld+json dateModified moved only', base.replace('"dateModified":"2026-09-26"', '"dateModified":"2026-10-02"'), true],
     ['ld+json name changed', base.replace('"name":"Subnet"', '"name":"Subnet Calculator"'), false],
+    ['h1 split into name/claim spans, same text', base.replace('<h1 class="display-lg">Subnet <span>Calculator</span></h1>', '<h1 class="text-ink"><span class="block display-lg">Subnet</span> <span class="block body-lg">Calculator</span></h1>'), true],
+    ['h1 text changed by one word', base.replace('Subnet <span>Calculator</span>', 'Subnet <span>Calculators</span>'), false],
+    ['h1 lost its inter-span space', base.replace('<h1 class="display-lg">Subnet <span>Calculator</span></h1>', '<h1><span class="block">Subnet</span><span class="block">Calculator</span></h1>'), false],
     ['figcap split into a sub span, same text', base.replace('fig. 10 — subnet-calculator · networking</span>', 'fig. 10 — subnet-calculator<span class="figcap__sub"> · networking</span></span>'), true],
     ['figcap label text changed', base.replaceAll('subnet-calculator · networking', 'subnet-splitter · networking'), false],
   ];
