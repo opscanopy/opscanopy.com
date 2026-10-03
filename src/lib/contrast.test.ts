@@ -968,6 +968,31 @@ describe('Editor pane focus ring', () => {
     expect(good.replace('solid', 'dotted')).not.toMatch(RULE);
     expect(css).toMatch(RULE);
   });
+
+  // Round 3b: the editor metrics, scrollbar and invalid rail are global rules
+  // on the pane, so no island has to re-declare them. Pinned so a later
+  // "cleanup" cannot drop them while the islands' local copies are removed.
+  const SIZE_RULE = /\.editor-pane__host\s+\.cm-editor\s*\{[^}]*font-size:\s*13px\s*;[^}]*\}/;
+  const SCROLL_RULE = /\.editor-pane__host\s+\.cm-scroller\s*\{\s*scrollbar-width:\s*thin\s*;\s*scrollbar-color:\s*var\(--color-inverse-hairline\)\s+transparent\s*;?\s*\}/;
+  const INVALID_RULE = /\[data-editor-pane\]\[data-invalid\]\s+\.cm-editor\s*\{\s*box-shadow:\s*inset\s+2px\s+0\s+0\s+0\s+var\(--color-inverse-error\)\s*;?\s*\}/;
+
+  it('the editor is 13px to match the seeded fallback, and the coarse 16px override still exists', () => {
+    expect(css).toMatch(SIZE_RULE);
+    expect(css).toMatch(/\.editor-pane__fallback\s*\{[^}]*font-size:\s*13px\s*;[^}]*\}/);
+    expect(css).toMatch(/\.cm-editor\s*\{\s*font-size:\s*16px\s*!important\s*;?\s*\}/);
+  });
+
+  it('the scroller uses the thin slab scrollbar in the hairline token', () => {
+    expect('.editor-pane__host .cm-scroller {\n  scrollbar-width: thin;\n  scrollbar-color: var(--color-inverse-hairline) transparent;\n}').toMatch(SCROLL_RULE);
+    expect('.editor-pane__host .cm-scroller {\n  scrollbar-width: thin;\n  scrollbar-color: #999 transparent;\n}').not.toMatch(SCROLL_RULE);
+    expect(css).toMatch(SCROLL_RULE);
+  });
+
+  it('the invalid rail is the slab error ink, ≥ 3:1 on both plate values', () => {
+    expect(css).toMatch(INVALID_RULE);
+    assertContrast(light['--color-inverse-error'], light['--color-inverse'], 3, 'light: invalid rail');
+    assertContrast(dark['--color-inverse-error'], dark['--color-inverse'], 3, 'dark: invalid rail');
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -15,8 +15,35 @@
  * (CLAUDE.md, "CodeMirror inputs seed a sibling"). `.editor-pane__fallback`
  * is matched to the editor's metrics so the swap does not shift the layout.
  *
+ * Several hosts in one slab (the jq layout: program + input under one cap):
+ *
+ *   <EditorPane prefix="jq" label="filter.jq" hosts={[{ id: 'jq-program' }, { id: 'jq-input', label: 'input.json · stdin' }]}>
+ *     <Fragment slot="jq-program"><pre … data-cm-fallback>…</pre></Fragment>
+ *     <Fragment slot="jq-input"><pre … data-cm-fallback>…</pre></Fragment>
+ *   </EditorPane>
+ *
+ * Each host is `[data-editor-host]` with its own id, filled from the slot of
+ * the same name; a `.editor-pane__sep` hairline sits between hosts. A host
+ * with a `label` gets it as a visible caption in that hairline
+ * (`#<id>-label`), and the host is a `role="group"` named by it through
+ * `aria-labelledby` — the caption is plain text, never `role="separator"`,
+ * whose children are presentational and would drop the name. A host with no
+ * label gets an empty `role="separator"` hairline (the first host is named by
+ * the cap). Without `hosts`, the markup is the single-host form above,
+ * unchanged.
+ *
+ * Accessibility hooks: `ariaLabel` names the host, which then becomes a
+ * `role="group"` (a name on a generic div is not exposed; CodeMirror's content
+ * is a contenteditable region, so the host's name is what a screen reader has);
+ * `labelId` puts an id on the cap's label span so a host can point at it
+ * with `aria-labelledby` instead.
+ *
  * Theme: the island `await import`s src/lib/playground-kit/cm-theme.ts in the
- * same closure as its languages (never `@codemirror/theme-one-dark`).
+ * same closure as its languages (never `@codemirror/theme-one-dark`); its
+ * `plateSizing(maxPx)` is the max-height theme. The 13px editor size, the
+ * thin slab scrollbar and the `[data-invalid]` left rail are global.css rules
+ * on `.editor-pane__host` / `[data-editor-pane]`, so an island toggles
+ * `data-invalid` on the pane and draws nothing itself.
  *
  * Focus ring: `.editor-pane__host .cm-editor.cm-focused` in global.css draws
  * a 2px slab-leaf outline with `!important`, because CodeMirror injects an
@@ -31,30 +58,69 @@
  */
 import FigureCap from '../FigureCap.astro';
 
+export interface EditorHost {
+  /** Host id (`new EditorView({ parent: document.getElementById(id) })`); also its slot name. */
+  id: string;
+  /** Separator text above this host (`input.json · stdin`); the first host needs none. */
+  label?: string;
+  /** Accessible name of this host. */
+  ariaLabel?: string;
+}
+
 export interface Props {
   prefix: string;
   /** Caption label — the document's file name (`alert.rules.yaml`). */
   label: string;
-  /** Host id; defaults to `<prefix>-editor`. */
+  /** Host id; defaults to `<prefix>-editor`. Ignored when `hosts` is given. */
   id?: string;
+  /** Accessible name forwarded to the single host as `aria-label`. */
+  ariaLabel?: string;
+  /** Id for the cap's label span (an `aria-labelledby` target). */
+  labelId?: string;
+  /** Several hosts in one slab; each is filled from the slot named by its id. */
+  hosts?: EditorHost[];
   class?: string;
 }
 
-const { prefix, label, id, class: className } = Astro.props;
+const { prefix, label, id, ariaLabel, labelId, hosts, class: className } = Astro.props;
 const hasActions = Astro.slots.has('actions');
+const hostHtml = hosts ? await Promise.all(hosts.map((h) => (Astro.slots.has(h.id) ? Astro.slots.render(h.id) : Promise.resolve('')))) : [];
 ---
 
 <div class:list={['editor-pane instrument-flush', className]} data-editor-pane>
   {
     hasActions ? (
-      <FigureCap label={label}>
+      <FigureCap label={label} labelId={labelId}>
         <slot name="actions" />
       </FigureCap>
     ) : (
-      <FigureCap label={label} />
+      <FigureCap label={label} labelId={labelId} />
     )
   }
-  <div id={id ?? `${prefix}-editor`} class="editor-pane__host" data-editor-host>
-    <slot />
-  </div>
+  {
+    hosts ? (
+      hosts.map((h, i) => (
+        <>
+          {h.label ? (
+            <div id={`${h.id}-label`} class="editor-pane__sep code-mono">{h.label}</div>
+          ) : (
+            i > 0 && <div class="editor-pane__sep" role="separator" aria-orientation="horizontal" />
+          )}
+          <div
+            id={h.id}
+            class="editor-pane__host"
+            data-editor-host
+            role={h.ariaLabel || h.label ? 'group' : undefined}
+            aria-label={h.ariaLabel}
+            aria-labelledby={!h.ariaLabel && h.label ? `${h.id}-label` : undefined}
+            set:html={hostHtml[i]}
+          />
+        </>
+      ))
+    ) : (
+      <div id={id ?? `${prefix}-editor`} class="editor-pane__host" data-editor-host role={ariaLabel ? 'group' : undefined} aria-label={ariaLabel}>
+        <slot />
+      </div>
+    )
+  }
 </div>

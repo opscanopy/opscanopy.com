@@ -8,11 +8,19 @@ import {
   copyFromButton,
   copyButtonFor,
   wireCopyButtons,
+  payloadOf,
+  datasetKeyFor,
   COPY_BUTTON_SELECTOR,
+  COPY_ICON_SELECTOR,
+  CHECK_ICON_SELECTOR,
+  COPY_LABEL_SELECTOR,
   STATUS_COPIED,
   STATUS_FAILED,
   type CopyElLike,
 } from './copy';
+import { missingGroupHtml } from '../env-checker/render';
+import { rowHtml as hashRowHtml } from '../hash-generator/render';
+import { copyBtnHtml as subnetCopyBtnHtml } from '../subnet-calculator/render';
 
 class FakeClassList {
   set = new Set<string>();
@@ -173,5 +181,243 @@ describe('delegation', () => {
     handler!({ target: { closest: () => btn } });
     await Promise.resolve();
     expect(copy).toHaveBeenCalledWith('p');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Legacy class families. A fake whose querySelector really evaluates the
+// `[data-x]` / `[class*='x']` alternatives of the kit selectors against its
+// children's class strings, so the test proves the selector text, not a
+// substring the fake was told to recognise.
+// ---------------------------------------------------------------------------
+
+function matches(sel: string, child: { cls: string; data: string[] }): boolean {
+  return sel.split(',').some((alt) => {
+    const a = alt.trim();
+    const sub = /^\[class\*='([^']+)'\]$/.exec(a);
+    if (sub) return child.cls.includes(sub[1]);
+    const d = /^\[([a-z-]+)\]$/.exec(a);
+    if (d) return child.data.includes(d[1]);
+    throw new Error(`unexpected selector form ${a}`);
+  });
+}
+
+function classedButton(children: Array<{ cls: string; data?: string[]; text?: string }>, dataset: Record<string, string> = {}) {
+  const kids = children.map((c) => ({ ...c, data: c.data ?? [], el: fake({ text: c.text, classes: c.cls.split(' ') }) }));
+  const btn = fake({ dataset });
+  btn.querySelector = (sel) => kids.find((k) => matches(sel, k))?.el ?? null;
+  return { btn, kids: kids.map((k) => k.el) };
+}
+
+describe('legacy render.ts class families', () => {
+  it('hyphenated: <p>-copy-icon / <p>-check-icon / <p>-copy-label', () => {
+    const { btn, kids } = classedButton([{ cls: 'snc-copy-icon' }, { cls: 'snc-check-icon hidden' }, { cls: 'snc-copy-label', text: 'Copy' }], { copyLabel: 'Copy' });
+    setCopied(btn, true);
+    expect(kids[0].classList.has('hidden')).toBe(true);
+    expect(kids[1].classList.has('hidden')).toBe(false);
+    expect(kids[2].textContent).toBe('Copied');
+  });
+
+  it('a copy icon with no check icon stays visible (nothing to swap it for)', () => {
+    const { btn, kids } = classedButton([{ cls: 'x-copy__icon' }, { cls: 'x-copy__lbl', text: 'Copy' }]);
+    setCopied(btn, true);
+    expect(kids[0].classList.has('hidden')).toBe(false);
+    setCopied(btn, false);
+    expect(kids[0].classList.has('hidden')).toBe(false);
+  });
+
+  it('a label with no data-copy-label returns to the text it had, and data-prev-label is cleared', () => {
+    const { btn, kids } = classedButton([{ cls: 'x-copy-label', text: 'Copy 3 blocks' }]);
+    setCopied(btn, true);
+    expect(kids[0].textContent).toBe('Copied');
+    expect(btn.dataset.prevLabel).toBe('Copy 3 blocks');
+    setCopied(btn, true); // a double click must not save "Copied" as the resting text
+    setCopied(btn, false);
+    expect(kids[0].textContent).toBe('Copy 3 blocks');
+    expect(btn.dataset.prevLabel).toBeUndefined();
+  });
+
+  it('data-copy-label still wins over the saved text (the behaviour every kit button relies on)', () => {
+    const { btn, kids } = classedButton([{ cls: 'copy-btn__label', data: ['data-copy-text'], text: 'stale' }], { copyLabel: 'Copy link' });
+    setCopied(btn, true);
+    setCopied(btn, false);
+    expect(kids[0].textContent).toBe('Copy link');
+  });
+
+  it('the kit hooks still win and unrelated classes never match', () => {
+    const { btn, kids } = classedButton([
+      { cls: 'copy-btn__icon', data: ['data-copy-icon'] },
+      { cls: 'copy-btn__icon hidden', data: ['data-check-icon'] },
+      { cls: 'copy-btn__label', data: ['data-copy-text'], text: 'Copy link' },
+      { cls: 'snc-copyright' },
+    ]);
+    setCopied(btn, true);
+    expect(kids[0].classList.has('hidden')).toBe(true);
+    expect(kids[1].classList.has('hidden')).toBe(false);
+    expect(kids[2].textContent).toBe('Copied');
+    expect(kids[3].classList.has('hidden')).toBe(false);
+    for (const sel of [COPY_ICON_SELECTOR, CHECK_ICON_SELECTOR, COPY_LABEL_SELECTOR]) expect(matches(sel, { cls: 'snc-copyright', data: [] })).toBe(false);
+  });
+
+  it('a copy icon selector never matches a check icon and vice versa', () => {
+    const icon = { cls: 'ec-copy__icon', data: [] };
+    const check = { cls: 'ec-check-icon', data: [] };
+    expect(matches(COPY_ICON_SELECTOR, icon)).toBe(true);
+    expect(matches(CHECK_ICON_SELECTOR, icon)).toBe(false);
+    expect(matches(CHECK_ICON_SELECTOR, check)).toBe(true);
+    expect(matches(COPY_ICON_SELECTOR, check)).toBe(false);
+    expect(matches(COPY_LABEL_SELECTOR, { cls: 'ec-copy__lbl', data: [] })).toBe(true);
+    expect(matches(COPY_LABEL_SELECTOR, { cls: 'ec-copyall__lbl', data: [] })).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Payload sources
+// ---------------------------------------------------------------------------
+
+describe('payloadOf', () => {
+  it('maps a data-* attribute to its dataset key', () => {
+    expect(datasetKeyFor('data-copy')).toBe('copy');
+    expect(datasetKeyFor('data-copy-value')).toBe('copyValue');
+    expect(datasetKeyFor('data-k')).toBe('k');
+    expect(datasetKeyFor('title')).toBeNull();
+  });
+
+  it('defaults to data-copy, as before', () => {
+    expect(payloadOf(fake({ dataset: { copy: 'a' } }))).toBe('a');
+    expect(payloadOf(fake())).toBe('');
+  });
+
+  it('payloadAttr reads another data-* attribute through dataset, or any attribute through getAttribute', () => {
+    const b = fake({ dataset: { copy: 'wrong', value: 'right' }, attrs: { title: 'from-title' } });
+    expect(payloadOf(b, { payloadAttr: 'data-value' })).toBe('right');
+    expect(payloadOf(b, { payloadAttr: 'title' })).toBe('from-title');
+    expect(payloadOf(b, { payloadAttr: 'data-missing' })).toBe('');
+  });
+
+  it('payload() wins over every attribute and receives the button', () => {
+    const b = fake({ dataset: { copy: 'attr' } });
+    const payload = vi.fn((btn: CopyElLike) => `fn:${btn.dataset.copy}`);
+    expect(payloadOf(b, { payload, payloadAttr: 'data-value' })).toBe('fn:attr');
+    expect(payload).toHaveBeenCalledWith(b);
+  });
+
+  it('copyFromButton and wireCopyButtons honour both options', async () => {
+    const b = labeledButton('attr-payload');
+    b.dataset.value = 'row value';
+    const copy = vi.fn(async () => true);
+    await copyFromButton(b, { copy, payloadAttr: 'data-value', setTimer: () => 1, clearTimer: () => {} });
+    expect(copy).toHaveBeenLastCalledWith('row value');
+    let handler: ((e: { target: unknown }) => void) | null = null;
+    const root = { addEventListener: (_t: 'click', fn: (e: { target: unknown }) => void) => void (handler = fn), contains: () => true };
+    wireCopyButtons(root, { copy, payload: () => 'line 1\nline 2 "quoted"', setTimer: () => 1, clearTimer: () => {} });
+    handler!({ target: { closest: () => b } });
+    await Promise.resolve();
+    expect(copy).toHaveBeenLastCalledWith('line 1\nline 2 "quoted"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The literal markup the render.ts builders emit today. These fixtures are
+// produced by the real builders (not hand-written fakes), so a button that
+// carries no data-copy-label or no check icon is tested exactly as it ships.
+// ---------------------------------------------------------------------------
+
+interface ParsedEl {
+  cls: string;
+  data: string[];
+  attrs: Record<string, string>;
+  text: string;
+}
+
+function parseAttrs(s: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const m of s.matchAll(/([a-zA-Z_:][-a-zA-Z0-9_:.]*)(?:="([^"]*)")?/g)) out[m[1]] = m[2] ?? '';
+  return out;
+}
+
+/** The `n`th <button> in `html`, as a fake whose querySelector evaluates the kit selectors against its real children. */
+function buttonFromHtml(html: string, n = 0) {
+  const buttons = [...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)];
+  const m = buttons[n];
+  if (!m) throw new Error(`fixture has no button #${n}`);
+  const attrs = parseAttrs(m[1]);
+  const dataset: Record<string, string> = {};
+  for (const [k, v] of Object.entries(attrs)) if (k.startsWith('data-')) dataset[datasetKeyFor(k)!] = v;
+  const kids: ParsedEl[] = [...m[2].matchAll(/<(svg|span)\b([^>]*)>([\s\S]*?)<\/\1>/g)].map((c) => {
+    const a = parseAttrs(c[2]);
+    return { cls: a.class ?? '', data: Object.keys(a).filter((k) => k.startsWith('data-')), attrs: a, text: c[3].replace(/<[^>]*>/g, '') };
+  });
+  if (kids.length === 0) throw new Error('fixture button has no children');
+  const els = kids.map((k) => fake({ text: k.text, classes: k.cls.split(/\s+/).filter(Boolean) }));
+  const btn = fake({ dataset, attrs });
+  btn.querySelector = (sel) => {
+    const i = kids.findIndex((k) => matches(sel, k));
+    return i === -1 ? null : els[i];
+  };
+  return { btn, attrs, kids, els };
+}
+
+/** Run one full copy cycle with a manual timer; returns the mid-cycle and settled snapshots. */
+async function cycle(btn: Fake, els: Fake[]) {
+  let fire: (() => void) | null = null;
+  const ok = await copyFromButton(btn, { copy: async () => true, setTimer: (fn) => ((fire = fn), 1), clearTimer: () => {} });
+  const snap = () => ({
+    copied: btn.attrs.has('data-copied'),
+    hidden: els.map((e) => e.classList.has('hidden')),
+    text: els.map((e) => e.textContent),
+    aria: btn.getAttribute('aria-label'),
+    prevLabel: btn.dataset.prevLabel,
+  });
+  const mid = snap();
+  fire!();
+  return { ok, mid, after: snap() };
+}
+
+describe('real render.ts markup', () => {
+  it('env-checker Copy all (no data-copy-label, no check icon): back to "Copy all" on every cycle, icon never blanked', async () => {
+    const { btn, attrs, kids, els } = buttonFromHtml(missingGroupHtml(['API_KEY', 'DB_URL']), 0);
+    // Guard the fixture: this is the Copy all button and it really lacks both.
+    expect(attrs['data-copy-all']).toBe('missing');
+    expect(attrs['data-copy-label']).toBeUndefined();
+    expect(kids.map((k) => k.cls)).toEqual(['ec-copyall__icon', 'ec-copyall__lbl']);
+    for (let i = 0; i < 2; i++) {
+      const { ok, mid, after } = await cycle(btn, els);
+      expect(ok).toBe(true);
+      expect(mid).toMatchObject({ copied: true, hidden: [false, false], text: [els[0].textContent, 'Copied'], prevLabel: 'Copy all' });
+      expect(after).toEqual({ copied: false, hidden: [false, false], text: [els[0].textContent, 'Copy all'], aria: 'Copy all missing keys as .env lines', prevLabel: undefined });
+    }
+  });
+
+  it('env-checker row: "Copy" → "Copied" → "Copy", aria-label untouched, icon never blanked', async () => {
+    const { btn, attrs, kids, els } = buttonFromHtml(missingGroupHtml(['API_KEY']), 1);
+    expect(attrs['data-copy']).toBe('API_KEY=');
+    expect(kids.map((k) => k.cls)).toEqual(['ec-copy__icon', 'ec-copy__lbl']);
+    const { mid, after } = await cycle(btn, els);
+    expect(mid.text[1]).toBe('Copied');
+    expect(mid.hidden).toEqual([false, false]);
+    expect(after.text[1]).toBe('Copy');
+    expect(after.aria).toBe('Copy API_KEY= line');
+    expect(after.prevLabel).toBeUndefined();
+  });
+
+  it('hash-generator row: same, and the payload is the digest', async () => {
+    const { btn, kids, els } = buttonFromHtml(hashRowHtml({ label: 'MD5', value: 'd41d8cd98f00b204e9800998ecf8427e', mono: true }, false));
+    expect(kids.map((k) => k.cls)).toEqual(['hash-copy__icon', 'hash-copy__lbl']);
+    const copy = vi.fn(async () => true);
+    await copyFromButton(btn, { copy, setTimer: () => 1, clearTimer: () => {} });
+    expect(copy).toHaveBeenCalledWith('d41d8cd98f00b204e9800998ecf8427e');
+    expect(els[0].classList.has('hidden')).toBe(false);
+    expect(els[1].textContent).toBe('Copied');
+    setCopied(btn, false);
+    expect(els[1].textContent).toBe('Copy');
+  });
+
+  it('subnet-calculator icon-only row (hyphenated family, has a check icon): icons swap and the aria-label round-trips, as on main', async () => {
+    const { btn, kids, els } = buttonFromHtml(subnetCopyBtnHtml('Network', '10.0.0.0'));
+    expect(kids.map((k) => k.cls)).toEqual(['snc-copy-icon', 'snc-check-icon hidden']);
+    const { mid, after } = await cycle(btn, els);
+    expect(mid).toMatchObject({ copied: true, hidden: [true, false], aria: 'Copied' });
+    expect(after).toMatchObject({ copied: false, hidden: [false, true], aria: 'Copy Network' });
   });
 });
