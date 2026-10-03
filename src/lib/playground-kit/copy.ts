@@ -9,7 +9,8 @@
  *   - a button is any `[data-copy]`, `[data-copy-all]` or `[data-copy-link]`
  *     element (the same three hooks Layout.astro's `result_copied` analytics
  *     listener keys on); its payload is `dataset.copy` (empty string if unset);
- *   - on success it swaps the copy icon for the check icon, sets the visible
+ *   - on success it swaps the copy icon for the check icon (when the button
+ *     has one), sets the visible
  *     label to "Copied" (or, for an icon-only button, the aria-label), sets
  *     `data-copied`, and resets after `resetMs`;
  *   - the outcome is announced in the one sr-only `role="status"` span; on
@@ -18,11 +19,20 @@
  *
  * Icons and labels are found through the kit hooks (`[data-copy-icon]`,
  * `[data-check-icon]`, `[data-copy-text]`, CopyButton.astro) OR the legacy
- * `<p>-copy-icon` / `<p>-check-icon` / `<p>-copy-label` classes that the
- * render.ts builders still emit. The legacy half exists because Wave 1 must
- * leave the seeded result HTML byte-identical (ssr-diff), so render.ts keeps
- * its classes until a later wave rewrites it; the playground scripts never
- * name those classes themselves (the gate's `kit-selectors` rule).
+ * classes the render.ts builders still emit — the hyphenated
+ * `<p>-copy-icon` / `<p>-check-icon` / `<p>-copy-label` family and the BEM
+ * `<p>-copy__icon` / `<p>-copyall__icon` / `<p>-copy__lbl` / `<p>-copyall__lbl`
+ * family (env-checker, hash-generator). The legacy half exists because the
+ * waves must leave the seeded result HTML byte-identical (ssr-diff), so
+ * render.ts keeps its classes until a later pass rewrites it; the playground
+ * scripts never name those classes themselves (the gate's `kit-selectors`
+ * rule).
+ *
+ * The payload is `data-copy` by default. A tool whose rows carry the value
+ * under another attribute passes `payloadAttr` ('data-value'), and one whose
+ * payload is not an attribute at all (a multi-line block the row only points
+ * at) passes `payload: (btn) => string` — both so the island binds nothing
+ * per button.
  *
  * Everything is DOM-shaped (closest / querySelector / dataset / classList /
  * attributes) so src/lib/playground-kit/copy.test.ts drives it with fakes in
@@ -31,9 +41,10 @@
 import { copyTextToClipboard } from '../clipboard';
 
 export const COPY_BUTTON_SELECTOR = '[data-copy], [data-copy-all], [data-copy-link]';
-export const COPY_ICON_SELECTOR = "[data-copy-icon], [class*='-copy-icon']";
-export const CHECK_ICON_SELECTOR = "[data-check-icon], [class*='-check-icon']";
-export const COPY_LABEL_SELECTOR = "[data-copy-text], [class*='-copy-label']";
+export const COPY_ICON_SELECTOR = "[data-copy-icon], [class*='-copy-icon'], [class*='-copy__icon'], [class*='copyall__icon']";
+export const CHECK_ICON_SELECTOR = "[data-check-icon], [class*='-check-icon'], [class*='-check__icon']";
+export const COPY_LABEL_SELECTOR = "[data-copy-text], [class*='-copy-label'], [class*='-copy__lbl'], [class*='copyall__lbl']";
+export const DEFAULT_PAYLOAD_ATTR = 'data-copy';
 
 export const COPIED_TEXT = 'Copied';
 export const STATUS_COPIED = 'Copied to clipboard.';
@@ -70,6 +81,25 @@ export interface CopyOptions {
   /** Override for tests; defaults to the global timers. */
   setTimer?: (fn: () => void, ms: number) => number;
   clearTimer?: (id: number) => void;
+  /** Compute the payload from the button instead of reading an attribute. Wins over `payloadAttr`. */
+  payload?: (btn: CopyElLike) => string;
+  /** Attribute holding the payload (default `data-copy`). */
+  payloadAttr?: string;
+}
+
+/** `data-copy-value` → `copyValue` (the dataset key for a data-* attribute), or null for a non-data attribute. */
+export function datasetKeyFor(attr: string): string | null {
+  if (!attr.startsWith('data-')) return null;
+  return attr.slice(5).replace(/-([a-z0-9])/g, (_, c: string) => c.toUpperCase());
+}
+
+/** The text a button copies: `opts.payload(btn)`, else its `payloadAttr` (default `data-copy`), else ''. */
+export function payloadOf(btn: CopyElLike, opts: CopyOptions = {}): string {
+  if (opts.payload) return opts.payload(btn);
+  const attr = opts.payloadAttr ?? DEFAULT_PAYLOAD_ATTR;
+  const key = datasetKeyFor(attr);
+  const viaDataset = key === null ? undefined : btn.dataset[key];
+  return viaDataset ?? btn.getAttribute(attr) ?? '';
 }
 
 /** Show `message` in the status span; a failure turns it into a visible caption. */
@@ -81,15 +111,36 @@ export function setCopyStatus(status: CopyElLike | null | undefined, message: st
   else status.removeAttribute('data-failed');
 }
 
-/** Flip one button between its resting and "Copied" look. */
+/**
+ * Flip one button between its resting and "Copied" look.
+ *
+ * The copy icon is hidden only when the button also has a check icon to show
+ * in its place: the BEM render.ts buttons (env-checker, hash-generator) carry
+ * a copy icon and no check icon, and blanking it would shrink the pill for
+ * RESET_MS with nothing to replace it.
+ *
+ * The label's resting text is `data-copy-label` when the button carries one
+ * (every kit and hyphenated-family button), else the text it showed before
+ * the click, saved in `data-prev-label` for the cycle — so a render.ts
+ * "Copy all" with no `data-copy-label` comes back as "Copy all", not "Copy".
+ */
 export function setCopied(btn: CopyElLike, copied: boolean): void {
   if (copied) btn.setAttribute('data-copied', '');
   else btn.removeAttribute('data-copied');
-  btn.querySelector(COPY_ICON_SELECTOR)?.classList.toggle('hidden', copied);
-  btn.querySelector(CHECK_ICON_SELECTOR)?.classList.toggle('hidden', !copied);
+  const check = btn.querySelector(CHECK_ICON_SELECTOR);
+  if (check) {
+    btn.querySelector(COPY_ICON_SELECTOR)?.classList.toggle('hidden', copied);
+    check.classList.toggle('hidden', !copied);
+  }
   const label = btn.querySelector(COPY_LABEL_SELECTOR);
   if (label) {
-    label.textContent = copied ? COPIED_TEXT : (btn.dataset.copyLabel ?? 'Copy');
+    if (copied) {
+      if (btn.dataset.prevLabel === undefined) btn.dataset.prevLabel = label.textContent ?? '';
+      label.textContent = COPIED_TEXT;
+    } else {
+      label.textContent = btn.dataset.copyLabel ?? btn.dataset.prevLabel ?? 'Copy';
+      delete btn.dataset.prevLabel;
+    }
   } else if (copied) {
     if (btn.dataset.prevAriaLabel === undefined) btn.dataset.prevAriaLabel = btn.getAttribute('aria-label') ?? '';
     btn.setAttribute('aria-label', COPIED_TEXT);
@@ -104,7 +155,7 @@ export async function copyFromButton(btn: CopyElLike, opts: CopyOptions = {}): P
   const copy = opts.copy ?? copyTextToClipboard;
   const setTimer = opts.setTimer ?? ((fn, ms) => Number(globalThis.setTimeout(fn, ms)));
   const clearTimer = opts.clearTimer ?? ((id) => globalThis.clearTimeout(id));
-  const ok = await copy(btn.dataset.copy ?? '');
+  const ok = await copy(payloadOf(btn, opts));
   if (!ok) {
     setCopyStatus(opts.status, STATUS_FAILED, true);
     return false;

@@ -95,3 +95,26 @@ export const plateHighlight = syntaxHighlighting(HighlightStyle.define(plateHigh
 
 /** Both halves, in the order an `extensions: [...]` array wants them. */
 export const plate = [plateTheme, plateHighlight];
+
+/**
+ * The sizing theme every island used to hand-write: the editor stops growing
+ * at `maxHeightPx` and scrolls inside (CodeMirror needs the `.cm-scroller`
+ * overflow for `maxHeight` on `&` to take effect). `minHeightPx` holds a
+ * pane open before the document fills it. Font size is NOT set here — the
+ * global `.editor-pane__host .cm-editor { font-size: 13px }` owns it (and the
+ * coarse-pointer 16px override must keep beating it), as do the thin slab
+ * scrollbar and the `[data-invalid]` rail. Spec exported for the node tests.
+ */
+export function plateSizingSpec(maxHeightPx: number, minHeightPx?: number) {
+  if (!Number.isFinite(maxHeightPx) || maxHeightPx <= 0) throw new RangeError(`plateSizing: maxHeightPx must be a positive number, got ${maxHeightPx}`);
+  if (minHeightPx !== undefined && (!Number.isFinite(minHeightPx) || minHeightPx < 0 || minHeightPx > maxHeightPx)) {
+    throw new RangeError(`plateSizing: minHeightPx must be 0..maxHeightPx, got ${minHeightPx}`);
+  }
+  const scroller: Record<string, string> = { overflow: 'auto' };
+  if (minHeightPx !== undefined) scroller.minHeight = `${minHeightPx}px`;
+  return { '&': { maxHeight: `${maxHeightPx}px` }, '.cm-scroller': scroller };
+}
+
+export function plateSizing(maxHeightPx: number, minHeightPx?: number) {
+  return EditorView.theme(plateSizingSpec(maxHeightPx, minHeightPx));
+}

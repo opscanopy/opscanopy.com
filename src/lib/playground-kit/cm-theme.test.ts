@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { tags as t } from '@lezer/highlight';
 import { CODE_PALETTE } from '../code-palette';
-import { plateThemeSpec, plateHighlightSpecs, plateTheme, plateHighlight, plate } from './cm-theme';
+import { plateThemeSpec, plateHighlightSpecs, plateTheme, plateHighlight, plate, plateSizing, plateSizingSpec } from './cm-theme';
 
 const HEX = /#[0-9a-f]{3,8}\b/gi;
 const paletteHex = new Set(Object.values(CODE_PALETTE).map((h) => h.toLowerCase()));
@@ -64,5 +64,29 @@ describe('cm-theme', () => {
     const src = readFileSync(fileURLToPath(new URL('../code-palette.ts', import.meta.url)), 'utf-8');
     expect(src).toContain("bg: '#1b1915',");
     expect(Object.keys(CODE_PALETTE)).toEqual(['bg', 'fg', 'mute', 'brand', 'amber', 'violet', 'key']);
+  });
+
+  describe('plateSizing', () => {
+    it('caps the editor at maxHeight and lets the scroller scroll; min-height only when asked', () => {
+      expect(plateSizingSpec(420)).toEqual({ '&': { maxHeight: '420px' }, '.cm-scroller': { overflow: 'auto' } });
+      expect(plateSizingSpec(460, 260)).toEqual({ '&': { maxHeight: '460px' }, '.cm-scroller': { overflow: 'auto', minHeight: '260px' } });
+    });
+
+    it('never sets font-size, scrollbar or outline — global.css owns those on .editor-pane__host', () => {
+      const json = JSON.stringify(plateSizingSpec(300, 100));
+      expect(json).not.toMatch(/fontSize|scrollbarWidth|outline|boxShadow/);
+    });
+
+    it('rejects a non-positive max and a min outside 0..max', () => {
+      expect(() => plateSizingSpec(0)).toThrow(RangeError);
+      expect(() => plateSizingSpec(Number.NaN)).toThrow(RangeError);
+      expect(() => plateSizingSpec(300, 400)).toThrow(RangeError);
+      expect(() => plateSizingSpec(300, -1)).toThrow(RangeError);
+    });
+
+    it('builds a CodeMirror extension', () => {
+      expect(plateSizing(360)).toBeTruthy();
+      expect(plateSizing(360, 120)).toBeTruthy();
+    });
   });
 });

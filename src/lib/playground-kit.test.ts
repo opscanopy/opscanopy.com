@@ -353,6 +353,66 @@ export function failingRules(raw: string, name: string): string[] {
 }
 
 // ---------------------------------------------------------------------------
+// render.ts type roles (plan "Batch C", Wave 0 — "Gate rules: no render.ts
+// emits a group heading with the row-key class; every value cell carries
+// is-mono or is-prose"). Deferred from Wave 0 and landed in Round 3b as a
+// RATCHET over the markup literals in src/lib/<tool>/render.ts, so no
+// render.ts needs editing (that re-dates its tool).
+//
+// Only the FIRST rule is enforced. The second was measured on 2026-10-03
+// (main @ a351713, `grep -cE "__(v|value|val)\b"` over src/lib/*/render.ts):
+// 19 builders emit a value cell (`<p>-row__v`, `<p>-row__value`,
+// `<p>-answer__v`, …); none emits `is-prose`, and the 7 that mention
+// `is-mono` use the opposite convention, an opt-IN on the mono branch of
+// `r.mono ? '… is-mono' : '…'` with nothing on the other. The rule would
+// allowlist 19 of 19 and guard nothing. It belongs to the pass that rewrites
+// render.ts to the kit classes (one commit per tool, each a deliberate
+// re-date), not to a ratchet.
+//
+// A "group heading" is an <h1>–<h6>, or an element whose class carries a
+// heading token (`…group__h`, `…group__head`, `…group__title`,
+// `…block__head`, `…block__title`, `…section-label`, `…__heading`,
+// `result-panel__group-h`). It fails when the same element also carries a
+// row-key token (`…__k`, `…__key`, `…__label`, `…__lbl`, `result-panel__k`)
+// or a label role (`eyebrow`, `label-field`): a heading set in the key's
+// mono caps reads as one more row label, which is the flat hierarchy the
+// type roles exist to prevent.
+// ---------------------------------------------------------------------------
+
+const RENDER_HEADING_TOKEN = /(?:^|-)(?:group__h|group__head|group__title|block__head|block__title|section-label|__heading)$|^result-panel__group-h$/;
+const RENDER_KEY_TOKEN = /(?:__k|__key|__label|__lbl)$|^result-panel__k$|^(?:eyebrow|label-field)$/;
+
+/** Every `<tag … class="…">` literal in a render.ts string, with its class tokens (template `${}` parts dropped). */
+export function renderElements(src: string): Array<{ tag: string; classes: string[] }> {
+  const out: Array<{ tag: string; classes: string[] }> = [];
+  for (const m of src.matchAll(/<([a-z][a-z0-9]*)\b([^<>]*?)>/g)) {
+    const cls = /\bclass=(?:\\?["']|`)([^"'`\\]*)/.exec(m[2]);
+    const classes = cls ? cls[1].replace(/\$\{[^}]*\}/g, ' ').split(/\s+/).filter(Boolean) : [];
+    out.push({ tag: m[1], classes });
+  }
+  return out;
+}
+
+/** The first Wave 0 render rule: no group heading drawn with the row-key class or a label role. */
+export function renderGroupHeadingViolations(src: string): string[] {
+  const out: string[] = [];
+  for (const el of renderElements(preprocess(src))) {
+    const isHeading = /^h[1-6]$/.test(el.tag) || el.classes.some((c) => RENDER_HEADING_TOKEN.test(c));
+    if (!isHeading) continue;
+    const keyed = el.classes.filter((c) => RENDER_KEY_TOKEN.test(c));
+    if (keyed.length) out.push(`<${el.tag} class="${el.classes.join(' ')}"> is a group heading drawn with ${keyed.join(', ')}`);
+  }
+  return out;
+}
+
+/**
+ * Ratchet for the render rule: every render.ts that fails it today, computed
+ * from source on 2026-10-03 (main @ a351713) — none. An entry here must still
+ * fail (else the test reports it stale); any builder not listed must pass.
+ */
+const RENDER_UNMIGRATED: Record<string, true> = {};
+
+// ---------------------------------------------------------------------------
 // Ratchet — every rule each file fails today. Computed from source on
 // 2026-10-02 (main @ f7331d8), and recomputed unchanged after no-primary
 // learned to count buttons and local-chip to skip link chips. Wave 1
@@ -413,6 +473,28 @@ describe('playground-kit gate — corpus', () => {
     if (process.env.KIT_GATE_DUMP) writeFileSync(process.env.KIT_GATE_DUMP, `${computed}\n`);
     expect(regressions, `rule violations not in UNMIGRATED:\n${regressions.join('\n')}\n\ncomputed map:\n${computed}`).toEqual([]);
     expect(stale, `stale UNMIGRATED entries:\n${stale.join('\n')}`).toEqual([]);
+  });
+
+  it('render-group-heading: no render.ts emits a group heading with the row-key class (ratchet)', () => {
+    const LIB = join(SRC, 'lib');
+    const builders = readdirSync(LIB)
+      .map((d) => join(LIB, d, 'render.ts'))
+      .filter((f) => existsSync(f))
+      .sort();
+    // 38 of the 39 tools have a builder (certificate-decoder is unseeded and has none).
+    expect(builders.length).toBe(38);
+    const stale: string[] = [];
+    const regressions: string[] = [];
+    for (const f of builders) {
+      const rel = relative(SRC, f).replace(/\\/g, '/');
+      const v = renderGroupHeadingViolations(readFileSync(f, 'utf-8'));
+      const allowed = RENDER_UNMIGRATED[rel] === true;
+      if (allowed && v.length === 0) stale.push(`${rel} now passes — delete it from RENDER_UNMIGRATED`);
+      if (!allowed && v.length) regressions.push(`${rel}: ${v.join('; ')}`);
+    }
+    for (const rel of Object.keys(RENDER_UNMIGRATED)) expect(existsSync(join(SRC, rel)), `RENDER_UNMIGRATED names unknown file ${rel}`).toBe(true);
+    expect(regressions, `render.ts group headings drawn as row keys:\n${regressions.join('\n')}`).toEqual([]);
+    expect(stale, `stale RENDER_UNMIGRATED entries:\n${stale.join('\n')}`).toEqual([]);
   });
 
   it('kit-purity: every kit component is markup-only', () => {
@@ -592,6 +674,35 @@ describe('playground-kit gate — self-tests', () => {
     const noHint = GOLDEN.replace('  <RunHint variant="live" />\n', '');
     expect(failingRules(noHint, 'CertificateDecoderPlayground')).toEqual([]);
     expect(failingRules(noHint, 'GoldenPlayground')).toEqual(['run-hint']);
+  });
+});
+
+describe('playground-kit gate — render.ts type roles (self-tests)', () => {
+  const build = (markup: string) => `export function renderX(): string {\n  return (\n    '${markup}'\n  );\n}\n`;
+
+  it('a heading next to a key passes; a heading that IS the key fails', () => {
+    const good = build('<section class="gx-group"><h3 class="gx-group__h">Network</h3><dl><dt class="gx-row__k">Mask</dt><dd class="gx-row__v is-mono">/24</dd></dl></section>');
+    expect(renderGroupHeadingViolations(good)).toEqual([]);
+    expect(renderGroupHeadingViolations(build('<h3 class="gx-group__h gx-row__k">Network</h3>'))).toHaveLength(1);
+    expect(renderGroupHeadingViolations(build('<h3 class="gx-row__k">Network</h3>'))).toHaveLength(1);
+    expect(renderGroupHeadingViolations(build('<p class="gx-section-label eyebrow">Input</p>'))).toHaveLength(1);
+    expect(renderGroupHeadingViolations(build('<div class="gx-block__head label-field">Headers</div>'))).toHaveLength(1);
+    expect(renderGroupHeadingViolations(build('<span class="result-panel__group-h result-panel__k">Hops</span>'))).toHaveLength(1);
+  });
+
+  it('reads class literals in single-, double- and template-quoted strings, dropping ${} parts', () => {
+    expect(renderGroupHeadingViolations('`<h4 class="${cls} gx-group__key">`')).toHaveLength(1);
+    expect(renderGroupHeadingViolations("'<h4 class=\\'gx-group__title gx-row__k\\'>'")).toHaveLength(1);
+    expect(renderGroupHeadingViolations('`<h4 class="gx-group__title ${sev}">`')).toEqual([]);
+    expect(renderElements('<div class="a b">')[0]).toEqual({ tag: 'div', classes: ['a', 'b'] });
+  });
+
+  it('a key inside a group item, and a key-named heading in a comment, do not count', () => {
+    // amr-group__k is the key half of a key=value pair inside `.amr-group__item`, not a heading.
+    expect(renderGroupHeadingViolations(build('<span class="amr-group__item"><span class="amr-group__k">team</span> <span class="amr-group__v">sre</span></span>'))).toEqual([]);
+    expect(renderGroupHeadingViolations('/* <h3 class="gx-row__k"> */\n' + build('<p class="gx-note">x</p>'))).toEqual([]);
+    // prt-section-label (a heading token) with no key token: fine.
+    expect(renderGroupHeadingViolations(build('<p class="prt-section-label">Input</p>'))).toEqual([]);
   });
 });
 
