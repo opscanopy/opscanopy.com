@@ -18,9 +18,11 @@ Round 3 (follow-ups, kit polish, audit gate) ships separately and re-dates nothi
 
 ## Batch D: tool pages and the /tools catalog
 
-**Earliest ship date: 2026-10-10.** That is 7 days after Waves 2–4, which already
-re-dated every tool page once. Re-dating the same 195 pages again sooner is the one
-thing the SEO review warned Google may start to discount.
+**Shipped 2026-10-03, at your request** (originally planned for 2026-10-10). The
+trade-off you accepted: the 195 tool pages re-date a second time within about a day
+of Waves 2–4, so a traffic change on tool pages over the next weeks can't be
+attributed to the waves or to D separately. The SEO guard showed no ranking-input
+change either way.
 
 **What it changes**
 
@@ -51,7 +53,10 @@ codemod commit alone (the lede move), not the whole batch.
 
 ## Batch E: homepage, About and naming
 
-**Earliest ship date: 2026-10-22, and at least 7 days after Batch D.**
+**Earliest ship date: 2026-10-22** (after your homepage Search Console read; D
+shipped 2026-10-03, so the 7-days-after-D rule is already met by then). The review
+fixed one bug before you decide: the localized homepages linked to /de/verify-ai/
+and similar pages that don't exist.
 
 **Prerequisite (yours)**: read Search Console for the homepage, comparing the three
 weeks before and after 2026-09-30, when the new H1 went live. If clicks or CTR
@@ -107,12 +112,23 @@ Rollback for either batch is one `git revert` of its merge commit; CI redeploys.
 | ~2026-10-21 | Read the homepage Search Console comparison (prerequisite for Batch E) |
 | 2026-11-03 | The audit allowlist entry for GHSA-ch52-4w7c-c8xp (`http-cache-semantics`, no fix published yet) expires. The deploy gate fails from that day until the entry is renewed with a reason, or removed once Astro ships a fix. |
 
-## Risk: the branches exist only on this machine
+## Backup
 
-The D and E branches live in local worktrees under `C:/tmp/oc-wt/`. If that folder
-is cleared, the work is lost. Pushing them to GitHub as non-`main` branches keeps
-them safe and does not deploy anything (CI deploys only on pushes to `main`). Ask
-Claude to "back up the D and E branches" if you want that.
+Both branches were pushed to GitHub on 2026-10-03 as `design/batch-d` and
+`design/batch-e` (non-`main` branches deploy nothing). Batch E's latest head at that
+time: `4c7b8ce`. When it ships, it is rebased onto the then-current `main`; the one
+known conflict is `src/lib/rail.test.ts` (keep the union of both removals).
+
+## Follow-ups left from Batch D's review
+
+- On the five /tools/ pages the header "Browse tools" button still links to the page
+  itself; the plan wanted it to open search. Header.astro is not a date input, so it
+  can land any time without re-dating anything.
+- On a few tools (JWT decoder, hash generator, jq) the input still starts lower than
+  the target on phones, because their playground chrome sits above it. Each is
+  230–260px better than before.
+- At 390px, after filtering /tools by category, the active chip can sit outside the
+  visible part of the scrolling strip.
 
 ## Small follow-ups not in either batch
 
