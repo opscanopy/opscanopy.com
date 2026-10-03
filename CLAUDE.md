@@ -170,7 +170,33 @@ Every tool follows the same four-file structure:
 | `src/lib/<slug>/engine.ts` | Pure TS logic, no DOM. Exported: one sync or async function |
 | `src/lib/<slug>/engine.test.ts` | Vitest tests against RFC/NIST vectors where applicable |
 | `src/components/<Name>Playground.astro` | Interactive island — CM or textarea input, output HTML, `<script>` that lazily imports the engine |
-| `src/pages/<slug>.astro` | Tool page: `ToolHero` → playground section → why section → `ToolPipeline` → reference → dark next-step band → `FaqList` → `ToolCrossLinks` + JSON-LD |
+| `src/pages/<slug>.astro` | Tool page: `ToolHero` (`headline` slot only) → `#playground` section (playground, optional VerifyPanel, then `ToolLede` as the container's last child) → why section → `ToolPipeline` → reference (`CodeBlock fig="NN.k"`) → dark `#next` band (`Button variant="inverse"`) → `FaqList align="left"` → `ToolCrossLinks` + JSON-LD |
+
+**Tool page shape since batch D (2026-10).** `ToolHero` renders through `PageHero
+variant="tool"` on the rail: breadcrumb (+ BreadcrumbList LD), the H1, then one
+flex-wrap meta row holding the trust line and a visible `Updated <date>` `<time>`
+caption (it wraps under the trust line on narrow screens), all hanging from the
+`container-page` left edge. The tool variant has no bottom padding — `#playground`
+is the same `bg-canvas-soft` surface and its `pt-8` is the one gap — which puts the
+input at ≤ 360px on most tools at 1280. The H1 is two block spans — `<name>:` at `display-lg`,
+then the page's `headline` slot at `body-lg` — joined by the JSX `{' '}`, so its
+textContent is unchanged ("Subnet Calculator: Subnet any…"); `src/lib/tool-hero-h1.test.ts`
+pins the `: ` and the guard compares the collapsed H1 on all 195 pages. `eyebrow` and
+`badges` are still accepted but no longer rendered. The lede is **not** cut, it moved:
+`scripts/codemods/move-tool-lede.mjs` (tested in `src/lib/move-tool-lede.test.ts`) lifted
+every page's `<Fragment slot="lead">` verbatim into `<ToolLede>` below the result panel,
+put the section wrappers on the rail (no `mx-auto`/`text-center` on a direct child of
+`container-page` — `src/lib/rail.test.ts` is now empty for tool pages), flipped the
+slab-band buttons to `variant="inverse"`, numbered the reference CodeBlocks `fig="NN.k"`
+(NN = registry index, the result panel's figure; a CodeBlock inside a `.map()` stays
+unnumbered, since a literal fig would repeat per item) and passed `align="left"` to
+`FaqList`. `ToolCrossLinks` is on the rail too.
+Write a new tool page in that shape; the codemod refuses an already-migrated file. On
+`/tools/`, the "Browse by category" links **are** the filter row (`aria-current`, plain
+click filters + `?cat=` via `replaceState`, modified click/no-JS navigate); every card is
+server-rendered inside 12 category `<section>`s, and `ToolCard` carries the mono amber
+`fig. NN` instead of a LIVE badge or "Try:" chips. Tool descriptions in `tools.ts` no
+longer end in "Pure client-side." — the trust line says it once.
 
 Register the tool in **`src/data/tools.ts`** (slug, name, tagline, description, status, category, keywords, accent). This single file drives the homepage grid, `/tools` catalog, and all cross-links.
 
@@ -190,9 +216,9 @@ Brand is the **"Field Manual"** system: warm-paper light theme / warm-charcoal d
 - `--color-link`, `--color-success` ride brand-strong; `--color-accent-ink` (`#a85a06` / `#e0a458`) is the amber annotation/callout/figure-number ink (decoupled from `--color-warning*`)
 - `--color-card` — near-white card fill (`#fffdf9` light) that lifts cards off the cream canvas
 - `--color-inverse / --color-inverse-fg` — dark-stable instrument-slab surface for demos, terminals, code blocks and accent bands (dark in BOTH themes). **One ink set, two plate values** since 2026-10-02: `#1b1915` on paper, `#0a0908` at night — the dark plate is *recessed below* the page (the lowest dark tier), not raised above it, so it clears canvas, canvas-soft, card and footer by ≥ 3 L* in both themes (`contrast.test.ts` `Slab clearance`). The dark footer moved up to `#272319` (= canvas-soft-2), `footer-hover` is canvas-soft-3 in both themes, and the footer language menu is `bg-canvas`. The slab edge is the one inverse ink that differs by theme (`#ffffff1f` light / `#ffffff2e` dark), and the neutral figcap dot is `--color-dot-neutral` (`#ffffff26` / `#ffffff33`).
-- **Buttons on a slab:** `.btn-inverse` / `<Button variant="inverse">` (transparent, `inverse-fg` text, edge `--color-inverse-control-edge` = inverse-fg at 45%, 4.12:1 on both plates). A context rule gives every `.btn-secondary` inside `.bg-inverse` / `.instrument` / `.instrument-flush` the same recipe, so the tool pages' `#next` bands are legible before their codemod flip. `.btn-secondary` itself is token-driven (`--color-btn-secondary-bg/-border/-hover`, transparent + hairline-strong in dark).
+- **Buttons on a slab:** `.btn-inverse` / `<Button variant="inverse">` (transparent, `inverse-fg` text, edge `--color-inverse-control-edge` = inverse-fg at 45%, 4.12:1 on both plates). A context rule gives every `.btn-secondary` inside `.bg-inverse` / `.instrument` / `.instrument-flush` the same recipe, which kept the tool pages' `#next` bands legible until batch D's codemod flipped them to `variant="inverse"`. `.btn-secondary` itself is token-driven (`--color-btn-secondary-bg/-border/-hover`, transparent + hairline-strong in dark).
 - **Motion tokens:** `--dur-fast` 120ms, `--dur-base` 180ms, `--ease-brand` (never `--ease-out` — a Tailwind key; overriding it restyles every `ease-out` utility). `--default-transition-duration/-timing-function` re-base every bare `transition-*` utility onto them. The theme toggle crossfades through `document.startViewTransition` (skipped under reduced motion); the mega-menu enters with `@starting-style`, opens on hover without taking focus, and ignores a trigger click within 400ms of a hover-open.
-- **Label roles share one tracking**, `--tracking-label` (0.06em): L1 `eyebrow` (mono 11/16 500, brand-strong), L2 `label-field` (mono 11/16 400, mute), L3 `.badge` (+ `.badge-info` for sentences, `Badge variant="info"`; `.badge-mono` for mono numerics). They differ by colour, weight and box, never by tracking. The `.badge` restyle is scoped `:not([data-cat], .badge-info)` until batch D turns the /tools filter chips into `.chip`.
+- **Label roles share one tracking**, `--tracking-label` (0.06em): L1 `eyebrow` (mono 11/16 500, brand-strong), L2 `label-field` (mono 11/16 400, mute), L3 `.badge` (+ `.badge-info` for sentences, `Badge variant="info"`; `.badge-mono` for mono numerics). They differ by colour, weight and box, never by tracking. The `.badge` restyle is scoped `:not([data-cat], .badge-info)`; since batch D the /tools filter row is `.chip` links, so the `[data-cat]` exclusion is vestigial and can go in a global.css follow-up.
 - **Rail:** inside `container-page` a block may set a measure (`measure-prose` ≈ 44rem, `measure-wide` ≈ 64rem) but never `mx-auto` / `text-center`. `src/components/PageHero.astro` (`variant="hub" | "tool"`) is the rail masthead; created in batch A, adopted by the hubs in batch B and by ToolHero in batch D.
 - **Header bar** is a `minmax(max-content,1fr) auto minmax(max-content,1fr)` grid from lg, so the link row sits on the true centre whatever the right cluster holds; the current link is marked by fill, ink and the leaf bar, not by weight (a bolder label re-centres the row).
 - `--color-inverse-brand` (`#8fc97a`) / `--color-inverse-accent` (`#e0a458`) — the **only** leaf and amber legal as text ON a slab, identical in both themes. The light-theme `brand` (4.27:1) and `accent-ink` (3.45:1) fail AA on charcoal; `contrast.test.ts` gates these pairs since 2026-09-18. Eyebrows on a slab need the `!` form (`!text-inverse-brand`) to beat the `eyebrow` utility's own colour; the tool pages' older `!text-cyan` is the same hex.
