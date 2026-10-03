@@ -58,7 +58,7 @@ export const categories: TestCategory[] = [
     name: 'AWS Certified AI Practitioner (AIF-C01)',
     shortName: 'AWS AI Practitioner',
     description:
-      'Two full-length original mocks for the AIF-C01 exam — AI/ML fundamentals, generative AI, foundation models, agentic AI, responsible AI, and AI security on AWS.',
+      'Three full-length original mocks for the AIF-C01 exam — AI/ML fundamentals, generative AI, foundation models, agentic AI, responsible AI, and AI security on AWS.',
     accent: 'develop',
     // Processor-chip mark (stroke-based, viewBox "0 0 48 48"), matching track-icons convention.
     icon: '<rect x="15" y="15" width="18" height="18" rx="3"/><path d="M21 21h6v6h-6z"/><path d="M20 15V9M28 15V9M20 39v-6M28 39v-6M15 20H9M15 28H9M39 20h-6M39 28h-6"/>',
@@ -69,7 +69,7 @@ export const categories: TestCategory[] = [
     name: 'AWS Certified Developer – Associate (DVA-C02)',
     shortName: 'AWS Certified Developer Associate',
     description:
-      'A full-length original DVA-C02 practice exam — Lambda, API Gateway, DynamoDB, messaging, IAM and KMS from code, SAM deployments, and troubleshooting on AWS.',
+      'Two full-length original DVA-C02 practice exams — Lambda, API Gateway, DynamoDB, messaging, IAM and KMS from code, SAM deployments, and troubleshooting on AWS.',
     accent: 'ship',
     // Code-brackets mark (stroke-based, viewBox "0 0 48 48"), matching track-icons convention.
     icon: '<path d="M18 14l-9 10 9 10M30 14l9 10-9 10M27 11l-6 26"/>',
@@ -134,6 +134,26 @@ export const tests: PracticeTest[] = [
     name: 'DVA-C02 Practice Exam',
     description:
       'Sixty-five original questions in the real exam’s domain weighting — development with AWS services, security, deployment, and troubleshooting — written for OpsCanopy against exam guide v2.1. Time yourself: the real exam allows 130 minutes. The 72% pass mark mirrors AWS’s 720/1,000 scaled cutoff but is OpsCanopy’s, not AWS’s.',
+    passThreshold: 72,
+    minutes: 130,
+    status: 'live',
+  },
+  {
+    slug: 'aif-c01-mock-exam-3',
+    categorySlug: 'aws-ai-practitioner',
+    name: 'Mock Exam 3',
+    description:
+      'Sixty-five more original questions in the real exam’s domain weighting, written against exam guide v1.1 (April 2026) and sharing no scenario with the first two mocks — agents and MCP, Bedrock knowledge bases, Guardrails, evaluation, and AI security. Time yourself: the real exam allows 90 minutes. The 70% pass mark is OpsCanopy’s, not AWS’s.',
+    passThreshold: 70,
+    minutes: 90,
+    status: 'live',
+  },
+  {
+    slug: 'dva-c02-practice-exam-2',
+    categorySlug: 'aws-developer-associate',
+    name: 'DVA-C02 Practice Exam 2',
+    description:
+      'Sixty-five more original questions in the real exam’s domain weighting, sharing no scenario with the first practice exam — Step Functions, API Gateway WebSockets and custom domains, Cognito federation, KMS, SAM and CodeDeploy, and CloudWatch troubleshooting. Time yourself: the real exam allows 130 minutes. The 72% pass mark is OpsCanopy’s, not AWS’s.',
     passThreshold: 72,
     minutes: 130,
     status: 'live',
