@@ -1,14 +1,14 @@
 ---
 title: "AWS AI Practitioner (AIF-C01): 14-Day Study Plan, Exam Guide, and Free Mock"
-description: "How to pass the AWS Certified AI Practitioner exam: cost and vouchers, the five domains, how hard it is, AI vs Cloud Practitioner, a 14-day plan, a services cheat sheet, and two free 65-question mocks."
+description: "How to pass the AWS Certified AI Practitioner exam: cost and vouchers, the five domains, how hard it is, AI vs Cloud Practitioner, a 14-day plan, a services cheat sheet, and three free 65-question mocks."
 track: aws
 order: 2
 difficulty: beginner
 estMinutes: 25
-updatedDate: 2026-09-23
+updatedDate: 2026-10-03
 tags: ["aws", "certification", "aif-c01", "ai-practitioner", "generative-ai", "bedrock"]
 seoTitle: "AWS AI Practitioner (AIF-C01) 14-Day Study Plan"
-metaDescription: "AIF-C01 in 14 days: exam cost and vouchers, the five domains, difficulty, AI vs Cloud Practitioner, a daily plan, cheat sheet, and two free 65-question mocks."
+metaDescription: "AIF-C01 in 14 days: exam cost and vouchers, the five domains, difficulty, AI vs Cloud Practitioner, a daily plan, cheat sheet, and three free 65-question mocks."
 faqs:
   - q: "What is the passing score for the AWS AI Practitioner exam?"
     a: "700 on a scaled range of 100 to 1,000. AWS does not publish a raw-percentage equivalent, because scaling adjusts for differences between exam forms. Scoring consistently above 80% on practice tests is a safe margin."
@@ -128,7 +128,7 @@ Week one is concepts, week two is practice. The plan assumes Stephane Maarek's U
 | **4** | Prompt engineering and Bedrock | Zero-shot, few-shot, chain-of-thought, negative prompts, prompt injection, context engineering. Open the Bedrock console (free tier) or spend 20 minutes in PartyRock changing prompts and temperature. |
 | **5** | RAG, Knowledge Bases, agents | End-to-end RAG flow, chunking, vector stores. Bedrock Knowledge Bases, Guardrails, Agents. Agentic AI: MCP, memory, tool use, multi-agent patterns, AgentCore, Strands Agents. The customisation decision table. |
 | **6** | Customising and evaluating FMs | Fine-tuning, continued pre-training, distillation, RLHF. Evaluation: ROUGE, BLEU, BERTScore, LLM-as-a-judge, Bedrock Model Evaluation. Prompt caching, Provisioned Throughput vs on-demand. |
-| **7** | Responsible AI and security | Bias, fairness, explainability, SageMaker Clarify, Model Cards, human-in-the-loop. IAM, KMS, PrivateLink, CloudTrail, Macie, Artifact, Config, Trusted Advisor, the Generative AI Security Scoping Matrix, AgentCore Identity and Policy. |
+| **7** | Responsible AI and security | Bias, fairness, explainability, SageMaker Clarify (still examinable, though closed to new customers), Model Cards, human-in-the-loop. IAM, KMS, PrivateLink, CloudTrail, Macie, Artifact, Config, Trusted Advisor, the Generative AI Security Scoping Matrix, AgentCore Identity and Policy. |
 
 ### Week 2: practice and revision
 
@@ -163,11 +163,13 @@ Pure basics: concept-heavy, service-light. Clear definitions here are easy marks
 
 ### AWS services
 
-- **Amazon SageMaker AI**: build, train, and deploy custom models. Canvas (no-code), Ground Truth (labelling), Data Wrangler, Feature Store, Model Monitor (drift), Clarify (bias and explainability), JumpStart (model hub)
+- **Amazon SageMaker AI**: build, train, and deploy custom models. Canvas (no-code), Ground Truth (labelling)*, Data Wrangler, Feature Store, Model Monitor (drift)*, Clarify (bias and explainability)*, JumpStart (model hub). Starred features closed to new customers in July 2026; see the note below
 - **Rekognition** (image and video), **Textract** (text from documents), **Comprehend** (NLP: sentiment, entities, PII)
 - **Transcribe** (speech → text), **Polly** (text → speech), **Translate**, **Lex** (chatbots)
 - **Personalize** (recommendations)
 - For the pipeline stages, the guide now also names **Amazon Bedrock**, **Amazon Quick**, and **Kiro**
+
+> **Note:** On 30 July 2026 AWS closed SageMaker Ground Truth, Model Monitor, Clarify, Augmented AI (A2I), Amazon Bedrock Agents (now Agents Classic), and Amazon Q Business to new customers. Existing customers keep using them, and the April 2026 exam guide was written before the change, so they can still appear on the exam: learn what each one does. For a team choosing a service today, AWS points to the open-source SHAP library for explanations, open-source monitoring with Amazon CloudWatch for drift and bias drift, Amazon Bedrock AgentCore for agents, and Amazon Quick in place of Q Business. The practice mocks on this site key the current options.
 
 > **Note:** Amazon Kendra, Amazon Forecast, Amazon Fraud Detector, and AWS Audit Manager appear in older study material but are not on the 2026 in-scope services list, and Fraud Detector is closed to new customers. Do not pick them as answers; the exam will not make them correct.
 
@@ -196,12 +198,12 @@ This is where the real weight begins. Know a one-line meaning and one example fo
 ### AWS services
 
 - **Amazon Bedrock**: serverless API access to FMs from Amazon (Nova), Anthropic, Meta, Mistral, Cohere, Stability AI, and others; pay per token
-- **Amazon Nova**: Amazon's own family of models for text, image (Nova Canvas), and video generation
+- **Amazon Nova**: Amazon's own family of models; Nova Micro, Lite, and Pro and the Nova 2 models cover text and multimodal understanding. The first image and video generators, Nova Canvas and Nova Reel, reached end of life on 30 September 2026
 - **Amazon Bedrock AgentCore**: the managed platform to run agents in production
 - **Strands Agents**: AWS's open-source SDK for building agents in code
 - **Kiro**: AWS's agentic IDE for planning and writing code
 - **Amazon Quick** (formerly QuickSight): business intelligence with natural-language questions and agentic workflows
-- **Amazon Q Business** and **Amazon Q Developer**: enterprise assistant over company data; developer assistant for code and AWS
+- **Amazon Q Business** and **Amazon Q Developer**: enterprise assistant over company data; developer assistant for code and AWS. Q Business closed to new customers in July 2026, with Amazon Quick as its successor, and the Q Developer IDE plugins are being replaced by Kiro
 - **SageMaker JumpStart**: deploy open-source FMs onto your own endpoint (more control, more effort than Bedrock)
 - **AWS Transform**: agentic migration and modernisation of legacy workloads
 - **PartyRock**: a free Bedrock playground that needs no AWS account (Apple, Google, or Amazon login). Useful for learning; no longer named in the exam guide
@@ -220,7 +222,7 @@ The April 2026 guide made agents a first-class topic. Know these five things and
 | **Model Context Protocol (MCP)** | An open standard for exposing tools and data sources to agents through one reusable interface | "Connect the agent to many internal systems without custom code per tool" |
 | **Strands Agents** | Open-source, model-driven SDK: define model, tools, and prompt in a few lines of code | "Build an agent in code" |
 | **Amazon Bedrock AgentCore** | Managed platform to deploy and operate agents: Runtime, Memory, Identity, Gateway, Policy, Observability, plus Code Interpreter and Browser tools | "Run agents in production securely without managing servers" |
-| **Amazon Bedrock Agents** | The managed agent feature inside Bedrock: action groups (APIs, Lambda), knowledge bases, memory | "Managed agent with the least setup" |
+| **Amazon Bedrock Agents** | The managed agent feature inside Bedrock: action groups (APIs, Lambda), knowledge bases, memory. Now called Agents Classic and closed to new customers since July 2026; new agents go on AgentCore | "Managed agent with the least setup" (older questions) |
 
 Memory in agents is short-term (the current session's context) or long-term (facts and preferences persisted across sessions). Multi-agent systems typically use an orchestrator or supervisor that decomposes a goal and delegates to specialised agents. AgentCore Identity handles the agent's own identity and delegated access on a user's behalf; Policy in AgentCore authorises each tool call through AgentCore Gateway.
 
@@ -258,7 +260,7 @@ The largest domain. Nearly every question revolves around Bedrock. The table bel
 - **Prompt Management**: store, version, test, and reuse prompts
 - **Custom models**: supervised fine-tuning, reinforcement fine-tuning, distillation, continued pre-training
 - **Provisioned Throughput**: dedicated model units for predictable high-volume workloads; custom models can alternatively use on-demand custom-model deployment
-- **Amazon Nova and Titan**: Amazon's own models; Titan Image Generator and Nova Canvas embed an invisible watermark in every generated image, and a detection API confirms it
+- **Amazon Nova and Titan**: Amazon's own models; Amazon's image-generation models embed an invisible watermark in every generated image, and a detection API confirms it
 
 ## Domain 4: Guidelines for responsible AI (14%)
 
@@ -278,13 +280,13 @@ Mostly vocabulary: AWS's responsible-AI dimensions plus three or four services.
 
 ### AWS services
 
-- **SageMaker Clarify**: bias detection before and after training, plus explainability (SHAP)
+- **SageMaker Clarify**: bias detection before and after training, plus explainability (SHAP) (closed to new customers since July 2026)
 - **SageMaker Model Cards**: model documentation; **AWS AI Service Cards** do the same for AWS's own services
 - **Bedrock Guardrails**: toxicity, denied topics, PII; **Bedrock Model Evaluations** as a transparency tool
-- **SageMaker Model Monitor**: drift and bias drift in production
-- **Amazon Augmented AI (A2I)**: human review of low-confidence predictions; the canonical human-in-the-loop example, though it is not on the current in-scope list
+- **SageMaker Model Monitor**: drift and bias drift in production (closed to new customers since July 2026)
+- **Amazon Augmented AI (A2I)**: human review of low-confidence predictions; the canonical human-in-the-loop example, though it is not on the current in-scope list and closed to new customers in July 2026
 
-> **Remember:** Trigger words — "detect bias" → Clarify. "Route low-confidence results to a human" → human review, A2I. "Document the model" → Model Cards. "Block harmful content" → Guardrails. "Explain a decision feature by feature" → Clarify (SHAP).
+> **Remember:** Trigger words — "detect bias" → Clarify. "Route low-confidence results to a human" → human review, A2I. "Document the model" → Model Cards. "Block harmful content" → Guardrails. "Explain a decision feature by feature" → Clarify (SHAP). Expect these on the exam, but for a new project the same jobs are done with the SHAP library, scheduled bias metrics, and a human-review workflow step.
 
 ## Domain 5: Security, compliance, and governance for AI solutions (14%)
 
@@ -326,7 +328,7 @@ Around 40% of the exam is "which service?". Read the trigger phrase, recall the 
 |---|---|---|
 | Access foundation models via API, no infrastructure | **Amazon Bedrock** | Serverless FM access, pay per token |
 | Chatbot over company documents (RAG) with least effort | **Bedrock Knowledge Bases** | Managed RAG from S3 and other sources |
-| Multi-step tasks, call APIs, book or order things | **Bedrock Agents** / **AgentCore** | Orchestration plus action groups or tools |
+| Multi-step tasks, call APIs, book or order things | **AgentCore** (older material: Bedrock Agents) | Orchestration plus tools; Bedrock Agents closed to new customers in July 2026 |
 | Run agents in production: runtime, memory, identity, tool gateway | **Amazon Bedrock AgentCore** | Managed agent platform |
 | Build an agent in code with an open-source SDK | **Strands Agents** | Model-driven agent framework |
 | Connect an agent to many tools through one standard | **Model Context Protocol (MCP)** | Open tool-integration standard |
@@ -335,18 +337,18 @@ Around 40% of the exam is "which service?". Read the trigger phrase, recall the 
 | Compare or score models, including LLM-as-a-judge | **Bedrock Model Evaluation** | Automatic, human, or judge-model evaluation |
 | Smaller, cheaper model with a big model's accuracy | **Bedrock distillation** | Teacher trains student |
 | Amazon's own text, image, and video models | **Amazon Nova** | Nova family in Bedrock |
-| Enterprise assistant over employees' company data | **Amazon Q Business** | Permission-aware assistant |
+| Enterprise assistant over employees' company data | **Amazon Q Business** / **Amazon Quick** | Permission-aware assistant; Q Business closed to new customers in July 2026, Quick is its successor |
 | Agentic IDE that plans and writes code | **Kiro** | AWS's AI development environment |
 | Ask natural-language questions of dashboards | **Amazon Quick** | BI, formerly QuickSight |
 | Modernise mainframe or .NET workloads with agents | **AWS Transform** | Agentic migration |
 | Build, train, deploy a custom ML model | **Amazon SageMaker AI** | Full ML platform |
 | No-code ML for business analysts | **SageMaker Canvas** | Point-and-click models |
-| Label training data with humans | **SageMaker Ground Truth** | Labelling workforce |
+| Label training data with humans | **SageMaker Ground Truth** | Labelling workforce; closed to new customers in July 2026 |
 | Deploy an open-source FM with full control | **SageMaker JumpStart** | Pre-trained model hub |
-| Detect bias, explain predictions | **SageMaker Clarify** | Bias metrics plus SHAP |
-| Detect model or data drift in production | **SageMaker Model Monitor** | Continuous monitoring |
+| Detect bias, explain predictions | **SageMaker Clarify** | Bias metrics plus SHAP; closed to new customers in July 2026 |
+| Detect model or data drift in production | **SageMaker Model Monitor** | Continuous monitoring; closed to new customers in July 2026 |
 | Document a model for auditors | **SageMaker Model Cards** | Model documentation |
-| Human review of low-confidence predictions | **Amazon A2I** | Human-in-the-loop workflows |
+| Human review of low-confidence predictions | **Amazon A2I** | Human-in-the-loop workflows; closed to new customers in July 2026 |
 | Faces, objects, unsafe images in photos or video | **Rekognition** | Computer vision API |
 | Extract text, tables, forms from scanned documents | **Textract** | OCR and more |
 | Sentiment, entities, key phrases, PII in text | **Comprehend** | NLP API |
@@ -395,8 +397,8 @@ Around 40% of the exam is "which service?". Read the trigger phrase, recall the 
 | **Precision vs recall** | Precision: of everything flagged, how much was correct. Recall: of everything correct, how much was caught. Fraud and medical screening → recall matters more. |
 | **ROUGE / BLEU / BERTScore** | Quality metrics for summarisation / translation / semantic similarity against a reference. |
 | **LLM-as-a-judge** | Using a capable model to grade another model's outputs against a rubric, validated by human spot checks. |
-| **Model drift** | Real-world data changes over time and accuracy drops. Model Monitor detects it. |
-| **Explainability** | Why the model made a decision; required in regulated industries. SHAP via Clarify. |
+| **Model drift** | Real-world data changes over time and accuracy drops. Model Monitor detects it (closed to new customers since July 2026; open-source monitors with CloudWatch now do the same). |
+| **Explainability** | Why the model made a decision; required in regulated industries. SHAP, via Clarify or the open-source SHAP library. |
 
 ## Study material
 
