@@ -2,6 +2,7 @@
 title: "Migration von cron zu systemd-Timern"
 description: "Ein praktischer Leitfaden zur Umwandlung von crontab-Einträgen in systemd-.timer- und -.service-Units — OnCalendar-Syntax, Logging, Verzögerungen, Fallstricke."
 pubDate: 2026-05-20
+updatedDate: 2026-10-04
 tags: ["systemd", "cron", "linux"]
 lang: de
 translationOf: "cron-to-systemd-timers"
@@ -103,6 +104,34 @@ Normalized form: Mon..Fri *-*-* 09:00:00
 ```
 
 Wenn diese Ausgabe dem entspricht, was Ihre cron-Zeile gemacht hat, ist der Zeitplan korrekt. Wenn nicht, haben Sie den Fehler erwischt, bevor er ausgeliefert wurde.
+
+## cron in systemd umwandeln: die Zeitpläne, die sich nicht eins zu eins übertragen lassen
+
+Die Tabelle oben deckt einfache numerische Felder ab. Drei Arten von cron-Zeilen verlangen mehr Sorgfalt, weil eine wörtliche Umwandlung an einem anderen Tag oder überhaupt nicht läuft.
+
+**Die `@`-Kurzformen.** systemd hat eigene benannte Zeitpläne, und sie stimmen größtenteils mit denen von cron überein. Einer nicht:
+
+```text
+# cron            # systemd
+@hourly           OnCalendar=hourly     (*-*-* *:00:00)
+@daily            OnCalendar=daily      (*-*-* 00:00:00)
+@weekly           OnCalendar=weekly     (Mon *-*-* 00:00:00, cron uses Sunday)
+@monthly          OnCalendar=monthly    (*-*-01 00:00:00)
+@yearly           OnCalendar=yearly     (*-01-01 00:00:00)
+@reboot           OnBootSec=1min        (a monotonic timer, not OnCalendar)
+```
+
+`@weekly` bedeutet bei cron `0 0 * * 0`, also Sonntag um Mitternacht. `weekly` bedeutet bei systemd Montag um Mitternacht. Wenn ein Bericht vor Montagmorgen vorliegen muss, schreiben Sie `OnCalendar=Sun *-*-* 00:00:00`, statt sich auf den Namen zu verlassen. `@reboot` hat überhaupt keine Kalenderform: Verwenden Sie `OnBootSec=` im Timer, oder verzichten Sie auf den Timer und geben Sie dem Service `WantedBy=multi-user.target`.
+
+**Tag des Monats und Wochentag zusammen.** Sind beide Felder eingeschränkt, führt cron den Job aus, wenn *eines* von beiden passt. `0 9 1 * 1` läuft am 1. jeden Monats *und* an jedem Montag. `OnCalendar=Mon *-*-01 09:00:00` läuft nur, wenn der 1. auf einen Montag fällt, also wenige Male im Jahr. Um das Verhalten von cron beizubehalten, führen Sie beide Ausdrücke auf; ein Timer akzeptiert mehrere `OnCalendar=`-Zeilen und löst bei jeder davon aus:
+
+```ini
+[Timer]
+OnCalendar=*-*-01 09:00:00
+OnCalendar=Mon *-*-* 09:00:00
+```
+
+**Versetzte Schritte und Sonntag als 7.** `5-59/10 * * * *` beginnt bei Minute 5 und wird zu `*:05/10`. cron akzeptiert für Sonntag sowohl `0` als auch `7`; systemd will den Namen, `Sun`. Prüfen Sie jede umgewandelte Zeile mit `systemd-analyze calendar`, bevor Sie sie aktivieren. Das kostet Sekunden und fängt genau die Kurzformen ab, die gleichwertig aussehen, es aber nicht sind.
 
 ## Die Fallstricke, die wirklich zubeißen
 

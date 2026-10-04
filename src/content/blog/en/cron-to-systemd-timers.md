@@ -2,6 +2,7 @@
 title: "Migrating from cron to systemd timers"
 description: "Converting crontab entries into systemd .timer and .service units — OnCalendar syntax, logging, randomized delays, catch-up runs and the migration gotchas."
 pubDate: 2026-05-20
+updatedDate: 2026-10-04
 tags: ["systemd", "cron", "linux"]
 relatedTool:
   name: "Cron to systemd Converter"
@@ -9,6 +10,7 @@ relatedTool:
 ---
 
 ![Migrating from cron to systemd timers: converting crontab entries to .timer and .service units](/blog/cron-to-systemd-timers-hero.svg)
+<!-- keywords: convert cron to systemd | systemd timer generator, cron to systemd timer, OnCalendar syntax | source: marketing brief, ahrefs unchecked (2026-10-04) -->
 
 Cron has run the world’s scheduled jobs for forty years, and on most servers it still works fine. But the moment a job needs structured logging, a controlled environment, dependency ordering, or a way to catch up after the machine was off, the cron model starts to creak. That’s where systemd timers come in — and if your distribution already runs systemd (Debian, Ubuntu, RHEL, Fedora, Arch, SUSE all do), you have a more capable scheduler sitting unused.
 
@@ -104,6 +106,34 @@ Normalized form: Mon..Fri *-*-* 09:00:00
 ```
 
 If that output matches what your cron line did, the schedule is correct. If it doesn’t, you’ve caught the bug before it shipped.
+
+## Converting cron to systemd: the schedules that don’t map one-to-one
+
+The table above covers plain numeric fields. Three kinds of cron line need more care, because a literal conversion runs on a different day or never runs at all.
+
+**The `@` shorthands.** systemd has its own named schedules, and they mostly agree with cron’s. One does not:
+
+```text
+# cron            # systemd
+@hourly           OnCalendar=hourly     (*-*-* *:00:00)
+@daily            OnCalendar=daily      (*-*-* 00:00:00)
+@weekly           OnCalendar=weekly     (Mon *-*-* 00:00:00, cron uses Sunday)
+@monthly          OnCalendar=monthly    (*-*-01 00:00:00)
+@yearly           OnCalendar=yearly     (*-01-01 00:00:00)
+@reboot           OnBootSec=1min        (a monotonic timer, not OnCalendar)
+```
+
+cron’s `@weekly` is `0 0 * * 0`, Sunday midnight. systemd’s `weekly` is Monday midnight. If a report has to land before Monday morning, write `OnCalendar=Sun *-*-* 00:00:00` instead of trusting the name. `@reboot` has no calendar form at all: use `OnBootSec=` in the timer, or drop the timer and give the service `WantedBy=multi-user.target`.
+
+**Day-of-month and day-of-week together.** When both fields are restricted, cron runs the job if *either* one matches. `0 9 1 * 1` fires on the 1st of every month *and* on every Monday. `OnCalendar=Mon *-*-01 09:00:00` fires only when the 1st falls on a Monday, a few times a year. To keep cron’s behaviour, list both expressions; a timer accepts several `OnCalendar=` lines and fires on any of them:
+
+```ini
+[Timer]
+OnCalendar=*-*-01 09:00:00
+OnCalendar=Mon *-*-* 09:00:00
+```
+
+**Offset steps and Sunday as 7.** `5-59/10 * * * *` starts at minute 5, which becomes `*:05/10`. cron accepts both `0` and `7` for Sunday; systemd wants the name, `Sun`. Run every converted line through `systemd-analyze calendar` before you enable it. That check costs seconds, and it’s how you catch the shorthands that look equivalent but aren’t.
 
 ## The gotchas that actually bite
 

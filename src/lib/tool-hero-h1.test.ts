@@ -70,6 +70,7 @@ describe('ToolHero H1 split', () => {
   const built = [
     ['dist/subnet-calculator/index.html', 'Subnet Calculator: Subnet any IPv4 or IPv6 block at a glance.'],
     ['dist/de/cidr-checker/index.html', /^CIDR \/ Subnet Checker: /],
+    ['dist/chmod-calculator/777/index.html', 'chmod 777: what it means and when to use it'],
   ] as const;
   for (const [rel, want] of built) {
     const file = join(ROOT, rel);

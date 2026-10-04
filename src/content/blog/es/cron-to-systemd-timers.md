@@ -2,6 +2,7 @@
 title: "Migrar de cron a temporizadores de systemd"
 description: "Cómo convertir entradas de crontab en unidades .timer y .service de systemd: sintaxis OnCalendar, logs, retardos aleatorios y ejecuciones de recuperación."
 pubDate: 2026-05-20
+updatedDate: 2026-10-04
 tags: ["systemd", "cron", "linux"]
 lang: es
 translationOf: "cron-to-systemd-timers"
@@ -103,6 +104,34 @@ Normalized form: Mon..Fri *-*-* 09:00:00
 ```
 
 Si esa salida coincide con lo que hacía tu línea de cron, la programación es correcta. Si no coincide, has detectado el error antes de que llegara a producción.
+
+## Convertir cron a systemd: las programaciones que no se traducen una a una
+
+La tabla anterior cubre los campos numéricos simples. Tres tipos de línea de cron requieren más cuidado, porque una conversión literal se ejecuta otro día o no se ejecuta nunca.
+
+**Las abreviaturas `@`.** systemd tiene sus propias programaciones con nombre, y en general coinciden con las de cron. Una no:
+
+```text
+# cron            # systemd
+@hourly           OnCalendar=hourly     (*-*-* *:00:00)
+@daily            OnCalendar=daily      (*-*-* 00:00:00)
+@weekly           OnCalendar=weekly     (Mon *-*-* 00:00:00, cron uses Sunday)
+@monthly          OnCalendar=monthly    (*-*-01 00:00:00)
+@yearly           OnCalendar=yearly     (*-01-01 00:00:00)
+@reboot           OnBootSec=1min        (a monotonic timer, not OnCalendar)
+```
+
+El `@weekly` de cron es `0 0 * * 0`, la medianoche del domingo. El `weekly` de systemd es la medianoche del lunes. Si un informe tiene que estar listo antes del lunes por la mañana, escribe `OnCalendar=Sun *-*-* 00:00:00` en lugar de fiarte del nombre. `@reboot` no tiene forma de calendario: usa `OnBootSec=` en el temporizador, o prescinde del temporizador y dale al servicio `WantedBy=multi-user.target`.
+
+**Día del mes y día de la semana a la vez.** Cuando ambos campos están restringidos, cron ejecuta la tarea si coincide *cualquiera* de los dos. `0 9 1 * 1` se dispara el día 1 de cada mes *y* todos los lunes. `OnCalendar=Mon *-*-01 09:00:00` solo se dispara cuando el día 1 cae en lunes, unas pocas veces al año. Para conservar el comportamiento de cron, escribe las dos expresiones; un temporizador acepta varias líneas `OnCalendar=` y se dispara con cualquiera de ellas:
+
+```ini
+[Timer]
+OnCalendar=*-*-01 09:00:00
+OnCalendar=Mon *-*-* 09:00:00
+```
+
+**Pasos con desplazamiento y el domingo como 7.** `5-59/10 * * * *` empieza en el minuto 5, lo que se convierte en `*:05/10`. cron acepta tanto `0` como `7` para el domingo; systemd quiere el nombre, `Sun`. Pasa cada línea convertida por `systemd-analyze calendar` antes de habilitarla. Esa comprobación cuesta segundos, y es la forma de detectar las abreviaturas que parecen equivalentes pero no lo son.
 
 ## Las trampas que realmente te muerden
 

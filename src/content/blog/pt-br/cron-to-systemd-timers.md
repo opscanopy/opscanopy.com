@@ -2,6 +2,7 @@
 title: "Migrando do cron para os timers do systemd"
 description: "Converta entradas de crontab em units .timer e .service do systemd: sintaxe OnCalendar, logging, atrasos randomizados, execuções de recuperação e pegadinhas."
 pubDate: 2026-05-20
+updatedDate: 2026-10-04
 tags: ["systemd", "cron", "linux"]
 lang: pt-br
 translationOf: "cron-to-systemd-timers"
@@ -103,6 +104,34 @@ Normalized form: Mon..Fri *-*-* 09:00:00
 ```
 
 Se essa saída corresponder ao que a sua linha do cron fazia, o agendamento está correto. Se não corresponder, você pegou o bug antes que ele fosse para produção.
+
+## Convertendo cron para systemd: os agendamentos que não mapeiam um para um
+
+A tabela acima cobre campos numéricos simples. Três tipos de linha de cron exigem mais cuidado, porque uma conversão literal roda em outro dia ou nunca roda.
+
+**Os atalhos `@`.** O systemd tem seus próprios agendamentos nomeados, e eles concordam com os do cron na maior parte. Um não concorda:
+
+```text
+# cron            # systemd
+@hourly           OnCalendar=hourly     (*-*-* *:00:00)
+@daily            OnCalendar=daily      (*-*-* 00:00:00)
+@weekly           OnCalendar=weekly     (Mon *-*-* 00:00:00, cron uses Sunday)
+@monthly          OnCalendar=monthly    (*-*-01 00:00:00)
+@yearly           OnCalendar=yearly     (*-01-01 00:00:00)
+@reboot           OnBootSec=1min        (a monotonic timer, not OnCalendar)
+```
+
+O `@weekly` do cron é `0 0 * * 0`, meia-noite de domingo. O `weekly` do systemd é meia-noite de segunda-feira. Se um relatório precisa estar pronto antes da manhã de segunda, escreva `OnCalendar=Sun *-*-* 00:00:00` em vez de confiar no nome. O `@reboot` não tem forma de calendário: use `OnBootSec=` no timer, ou dispense o timer e dê ao serviço `WantedBy=multi-user.target`.
+
+**Dia do mês e dia da semana juntos.** Quando os dois campos estão restritos, o cron executa o job se *qualquer um* deles corresponder. `0 9 1 * 1` dispara no dia 1 de todo mês *e* em toda segunda-feira. `OnCalendar=Mon *-*-01 09:00:00` só dispara quando o dia 1 cai numa segunda, poucas vezes por ano. Para manter o comportamento do cron, liste as duas expressões; um timer aceita várias linhas `OnCalendar=` e dispara em qualquer uma delas:
+
+```ini
+[Timer]
+OnCalendar=*-*-01 09:00:00
+OnCalendar=Mon *-*-* 09:00:00
+```
+
+**Passos com deslocamento e domingo como 7.** `5-59/10 * * * *` começa no minuto 5, o que vira `*:05/10`. O cron aceita tanto `0` quanto `7` para domingo; o systemd quer o nome, `Sun`. Passe cada linha convertida pelo `systemd-analyze calendar` antes de habilitá-la. Essa verificação leva segundos, e é assim que você pega os atalhos que parecem equivalentes, mas não são.
 
 ## As pegadinhas que realmente mordem
 

@@ -2,6 +2,7 @@
 title: "LogQL vs PromQL: the same query in both languages"
 description: "LogQL borrows PromQL’s shape but starts from log lines, not metrics. How the two query languages line up, where they translate cleanly, and where they don’t."
 pubDate: 2026-06-05
+updatedDate: 2026-10-04
 tags: ["logql", "promql", "observability"]
 relatedTool:
   name: "LogQL ↔ PromQL Helper"
@@ -9,6 +10,7 @@ relatedTool:
 ---
 
 ![LogQL vs PromQL: the same query in both languages, side by side](/blog/logql-vs-promql-hero.svg)
+<!-- keywords: promql vs logql | logql to promql, logql vs promql | source: marketing brief, ahrefs unchecked (2026-10-04) -->
 
 If you’ve written Prometheus queries, Grafana Loki’s LogQL looks reassuringly familiar — `rate(...)`, `sum by (...)`, `[5m]` range vectors, the same comparison operators. That familiarity is deliberate, and it’s genuinely useful: a lot of PromQL muscle memory transfers directly. But the two languages start from different raw material, and the moment you forget that, your translation breaks in ways that are hard to spot. PromQL queries a **metrics** database. LogQL queries **log lines** and turns them into metrics on the fly. Everything that maps cleanly, and everything that doesn’t, follows from that one difference.
 
@@ -77,6 +79,26 @@ There is no PromQL counterpart to `| logfmt`, `| json`, `| pattern`, or `| unwra
 **Selector syntax overlaps but isn’t interchangeable.** Both use `{label="value"}` with `=`, `!=`, `=~`, `!~`. But a PromQL selector names a metric and matches series labels; a Loki stream selector names log streams and *must* match at least one indexed stream label. A line filter like `|= "text"` has no PromQL analogue at all — the closest PromQL gets is matching on a label value, never on free text inside a sample.
 
 **High-cardinality fields behave differently.** In PromQL, grouping by a high-cardinality label is usually a metrics-design smell. In LogQL, extracted pipeline labels (from `logfmt`/`json`) are computed at query time and aren’t indexed, so `by (user_id)` is feasible in a way it rarely is in Prometheus — at a real cost in query throughput, but without the storage explosion. The mental model for what’s “expensive” doesn’t transfer.
+
+## PromQL vs LogQL: syntax differences side by side
+
+The divergences above are easier to keep straight as a lookup. Left: the PromQL construct. Right: the closest LogQL form, or the reason there isn’t one.
+
+```text
+# PromQL                                  # LogQL
+http_requests_total{job="api"}            {job="api"}                       (a stream, not a metric)
+(no free-text match)                      {job="api"} |= "timeout"          (also != |~ !~)
+(samples are already parsed)              {job="api"} | json                (also logfmt, pattern, regexp)
+rate(http_requests_total[5m])             rate({job="api"}[5m])             (lines/sec, no counter resets)
+increase(http_requests_total[5m])         count_over_time({job="api"}[5m])  (lines in the window)
+avg_over_time(latency_seconds[5m])        avg_over_time({job="api"} | logfmt | unwrap latency_seconds [5m])
+(no byte functions)                       bytes_rate({job="api"}[5m])       (log volume)
+histogram_quantile(0.99, ...)             quantile_over_time(0.99, ... | unwrap ... [5m])
+rate(x[5m] offset 1h)                     rate({job="api"}[5m] offset 1h)
+label_replace(...)                        label_replace(...)  or  | label_format
+```
+
+Two placement rules cause most first-attempt syntax errors when converting LogQL to PromQL or back. In LogQL the range `[5m]` goes after the whole pipeline, just inside the closing parenthesis of the range function, never directly after the selector when a pipeline follows. And a `quantile_over_time` over unwrapped values computes the quantile from raw values in the window, not from pre-aggregated buckets, so it won’t match a `histogram_quantile` result exactly, even when both describe the same requests.
 
 ## A practical translation checklist
 

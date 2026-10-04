@@ -61,8 +61,20 @@ import CopyButton from './playground/CopyButton.astro';
  *
  * The zone is pinned to UTC here so the build host cannot leak into the HTML.
  */
+export interface Props {
+  /**
+   * Variant pages (/cron-expression-tester/every-5-minutes/) pin the input to
+   * this expression. When set, the input carries `data-pinned` and boot skips
+   * the restored last input (a #cron= deep link still wins). Parent pages pass
+   * nothing.
+   */
+  seed?: string;
+}
+const { seed } = Astro.props;
 const seedExample = examples[0];
-const seedResult = seedExample ? explain(seedExample.expr, { timeZone: 'UTC' }) : null;
+const seedInput = seed ?? seedExample?.expr;
+const seedIdx = seedInput === undefined ? -1 : examples.findIndex((ex) => ex.expr === seedInput);
+const seedResult = seedInput !== undefined ? explain(seedInput, { timeZone: 'UTC' }) : null;
 const seedHtml =
   seedResult && seedResult.valid
     ? descCardHtml(seedResult.description, seedResult.fields) + runsSkeletonHtml()
@@ -81,7 +93,7 @@ const chipItems = examples.map((ex) => ({ label: ex.label }));
       <div class="flex min-w-0 flex-col gap-1">
         <span class="eyebrow shrink-0" id="cron-examples-label">Example</span>
         {/* Server-rendered so they work without JS; the script adopts them. */}
-        <ExampleChips prefix="cron" items={chipItems} active={seedExample ? 0 : null} labelledby="cron-examples-label" class="mt-3" />
+        <ExampleChips prefix="cron" items={chipItems} active={seedIdx >= 0 ? seedIdx : null} labelledby="cron-examples-label" class="mt-3" />
       </div>
 
       <div class="flex shrink-0 flex-col gap-1">
@@ -164,7 +176,8 @@ const chipItems = examples.map((ex) => ({ label: ex.label }));
           autocorrect="off"
           autocomplete="off"
           placeholder="*/5 * * * *"
-          value={seedExample?.expr}
+          value={seedInput}
+          data-pinned={seed ? '' : undefined}
           aria-describedby="cron-input-hint"
         />
       </div>
@@ -1218,12 +1231,14 @@ const chipItems = examples.map((ex) => ({ label: ex.label }));
       },
     });
 
-    // Seed priority: #cron= deep link > restored last input > first example.
-    // Normalise the count control once. Neither seed path writes the hash or
-    // records a last-input — only user-initiated evaluations do.
+    // Seed priority: #cron= deep link > restored last input > server-seeded
+    // value (the input's defaultValue: examples[0], or a variant page's pinned
+    // `seed` — a pinned input skips the restored tier). Normalise the count
+    // control once. Neither seed path writes the hash or records a last-input
+    // — only user-initiated evaluations do.
     setCount(DEFAULT_COUNT);
     const hashValue = hashState.read();
-    const restored = getRestoredLastInput('cron-expression-tester');
+    const restored = exprInput.hasAttribute('data-pinned') ? null : getRestoredLastInput('cron-expression-tester');
     if (hashValue) {
       exprInput.value = hashValue;
       setActiveChip(null);
@@ -1233,10 +1248,11 @@ const chipItems = examples.map((ex) => ({ label: ex.label }));
       setActiveChip(null);
       evaluate(false);
     } else {
-      const seed = examples[0];
+      const seed = exprInput.defaultValue.trim() || examples[0]?.expr;
       if (seed) {
-        exprInput.value = seed.expr;
-        setActiveChip(0);
+        exprInput.value = seed;
+        const i = examples.findIndex((ex) => ex.expr === seed);
+        setActiveChip(i >= 0 ? i : null);
         evaluate(false);
       } else {
         renderEmpty(resultsBox, summaryEl);

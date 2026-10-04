@@ -2,6 +2,7 @@
 title: "A jwt.io alternative: decode a JWT without pasting it into someone else's site"
 description: "Looking for a jwt.io alternative? What a browser-based JWT decoder can and can't prove about your data, how to check it yourself, and an offline option."
 pubDate: 2026-09-21
+updatedDate: 2026-10-04
 tags: ["security", "jwt", "developer-experience"]
 relatedTool:
   name: "JWT Decoder & Encoder"
@@ -9,7 +10,7 @@ relatedTool:
 ---
 
 ![A JSON Web Token shown as three connected segments — header, payload and signature — representing a JWT decoded entirely in the browser](/blog/jwt-io-alternative-hero.svg)
-<!-- keywords: jwt.io alternative | is jwt.io safe, jwt decoder offline, decode jwt online | source: ahrefs free (2026-09-21) -->
+<!-- keywords: jwt.io alternative | is jwt.io safe, jwt decoder offline, decode jwt online, secure jwt decoder, online jwt decoder risks | source: ahrefs free (2026-09-21); marketing brief, ahrefs unchecked (2026-10-04) -->
 
 A teammate drops a token into a Slack thread: "why is this 401ing?" You copy it, open a new tab, and you're halfway through pasting it into jwt.io before you notice what you're holding: a live production access token.
 
@@ -78,6 +79,20 @@ That's the entire "decode" step. You don't need a key because nothing here is en
 *Verifying* is a different operation. It confirms the signature was produced by whoever holds the secret, here `your-256-bit-secret`. You supply that HMAC secret, and the tool recomputes `HMACSHA256(base64url(header) + "." + base64url(payload), secret)` and compares the result with the third segment.
 
 > **Key:** a token can decode cleanly and still fail verification. That's the whole reason it has a signature.
+
+## The signature verification trap: online JWT decoder risks
+
+Pasting a token into a decoder exposes one token. It has an `exp`, and it stops working when that passes. Pasting the HMAC secret to verify that token exposes something worse: the key that signs *every* token your service issues.
+
+With HS256, the same secret both signs and verifies. Whoever holds it can mint a token for any user, with any claims, that your backend will accept as genuine. It stays valid until you rotate it, and rotating it usually logs every user out. So a decoder page that sends input to a server is an annoyance for a token, and an incident for a secret.
+
+A secure JWT decoder workflow keeps the secret out of any server-side tool:
+
+- **HS256 with a production secret:** verify offline with `openssl` (see below), or in a browser tool only after the Network tab check shows nothing leaving the page.
+- **RS256, ES256 or EdDSA:** verification needs only the public key or JWKS, which is public by design. Pasting it anywhere is fine; the private key never leaves your issuer.
+- **Debugging a signature mismatch:** reproduce it with a throwaway secret in a test environment, not with the real one.
+
+> **Warning:** if a production HMAC secret has already gone into a page you never checked, treat it as compromised. Rotate it, and accept the forced re-login as the cost.
 
 ## JWT decoder offline: no browser required
 

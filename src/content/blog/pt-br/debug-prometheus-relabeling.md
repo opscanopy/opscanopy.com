@@ -2,6 +2,7 @@
 title: "Por que o Prometheus descartou meu target? relabel_configs"
 description: "Um target sumiu ou um label desapareceu após o relabeling. Depure relabel_configs vs metric_relabel_configs, ancoragem de regex e a lógica de keep/drop."
 pubDate: 2026-06-16
+updatedDate: 2026-10-04
 tags: ["prometheus","observability","relabeling"]
 lang: pt-br
 translationOf: "debug-prometheus-relabeling"
@@ -208,6 +209,32 @@ Enquanto você faz essa limpeza, a mesma cadeia normalmente promove labels do po
   - action: labeldrop
     regex: __meta_.+
 ```
+
+## Recarregar sem reiniciar
+
+Quando as regras estiverem certas, você não precisa reiniciar o Prometheus para aplicá-las. Um restart reprocessa o write-ahead log e deixa uma lacuna em todas as séries; um reload relê o `prometheus.yml` e troca a configuração de scrape sem parar o processo.
+
+Há duas formas de disparar um reload:
+
+```bash
+# 1. Send SIGHUP to the process
+kill -HUP "$(pidof prometheus)"
+
+# 2. POST to the lifecycle endpoint (needs --web.enable-lifecycle at startup)
+curl -X POST http://localhost:9090/-/reload
+```
+
+O endpoint HTTP vem desabilitado por padrão, porque qualquer um que alcance a porta também pode chamar `/-/quit`. Habilite `--web.enable-lifecycle` apenas onde a porta web não estiver exposta a quem não deveria poder parar o seu monitoramento. Se a unit do systemd do Prometheus define `ExecReload=`, `systemctl reload prometheus` envia o mesmo sinal. No Kubernetes, o sidecar config-reloader do Prometheus Operator chama o endpoint por você sempre que a configuração gerada muda.
+
+Um reload que falha não derruba o Prometheus: ele registra o erro e continua rodando com a configuração anterior. Isso é seguro, mas também fácil de não perceber. Confirme que a nova configuração foi de fato carregada:
+
+```bash
+curl -s http://localhost:9090/api/v1/query \
+  --data-urlencode 'query=prometheus_config_last_reload_successful'
+# value "1" means the last reload applied; "0" means you're still on the old config
+```
+
+Rode `promtool check config prometheus.yml` antes do reload. Ele pega erros de YAML e de schema, mas não uma regra `keep` que não corresponde a nada: a configuração é válida, só descarta o seu target. Teste primeiro as regras com labels descobertos reais no [Prometheus Relabel Tester](/prometheus-relabel-tester/) e depois faça o reload uma vez.
 
 ## Pegue o problema antes do deploy
 
