@@ -9,9 +9,12 @@ import type { ToolVariant } from './index';
 import { chmodVariants } from './chmod';
 import { subnetVariants } from './subnet';
 import { cronVariants } from './cron';
+import { llmVramVariants } from './llm-vram';
 import { parseOctal } from '../../lib/chmod-calculator/engine';
 import { calculate } from '../../lib/subnet-calculator/engine';
 import { explain } from '../../lib/cron-tester/engine';
+import { estimate } from '../../lib/llm-vram-calculator/engine';
+import { formatGiB } from '../../lib/llm-vram-calculator/render';
 
 const words = (s: string): number => s.split(/\s+/).filter(Boolean).length;
 const prose = (v: ToolVariant): string => [v.lede, ...v.sections.flatMap((s) => s.paragraphs)].join(' ');
@@ -21,6 +24,7 @@ const lists: [string, ToolVariant[]][] = [
   ['chmod', chmodVariants],
   ['subnet', subnetVariants],
   ['cron', cronVariants],
+  ['llm-vram', llmVramVariants],
 ];
 
 for (const [name, list] of lists) {
@@ -78,6 +82,15 @@ describe('variants agree with their engines', () => {
       const r = explain(v.input, { timeZone: 'UTC' });
       expect(r.valid, r.error).toBe(true);
       expect(prose(v)).toContain(r.description);
+    });
+  }
+  for (const v of llmVramVariants) {
+    it(`llm-vram ${v.input}: valid, input matches vram, total quoted in the prose`, () => {
+      const { params, quant, context, preset } = v.vram;
+      expect(v.input).toBe([params, quant, context, preset].join('|'));
+      const r = estimate(v.vram);
+      expect(r.valid, r.error).toBe(true);
+      expect(prose(v)).toContain(`${formatGiB(r.totalGiB)} GiB`);
     });
   }
 });

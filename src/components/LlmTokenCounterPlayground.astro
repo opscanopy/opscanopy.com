@@ -1,0 +1,559 @@
+---
+/**
+ * LlmTokenCounterPlayground — the interactive LLM Token Counter island.
+ *
+ * Two chip groups on paper (examples, encoding), a textarea, an optional
+ * price per 1M tokens, then the L2 result slab: stat rows and the token
+ * visualiser, emitted by render.ts and shared with the SSR seed below so the
+ * two can never drift.
+ *
+ * Built on the playground kit (src/components/playground/*): ExampleChips,
+ * RunHint, SnapshotBar, ResultPanel and CopyButton. Slab overrides anchor on
+ * this component's own `.ltc-results`.
+ *
+ * Runtime contract (all lazy-imported for code-splitting):
+ *   ../lib/llm-token-counter/engine → countTokens(text, encoding, enc): TokenCount
+ *   gpt-tokenizer/encoding/<id>     → the encoder, one chunk per encoding
+ *   deep link: #t=<encoding>\n<text>  (only while text ≤ 2000 chars)
+ *
+ * The tokenizer chunks are the heaviest assets on the site, so a visitor who
+ * only reads the server-rendered seed never downloads one: the first focus or
+ * pointer press inside the playground loads the encoder.
+ */
+import * as o200k from 'gpt-tokenizer/encoding/o200k_base';
+import { countTokens, ENCODINGS, MAX_CHARS } from '../lib/llm-token-counter/engine';
+import { examples } from '../lib/llm-token-counter/examples';
+import { resultHtml, summaryText } from '../lib/llm-token-counter/render';
+import ExampleChips from './playground/ExampleChips.astro';
+import RunHint from './playground/RunHint.astro';
+import SnapshotBar from './playground/SnapshotBar.astro';
+import ResultPanel from './playground/ResultPanel.astro';
+import CopyButton from './playground/CopyButton.astro';
+
+/* Server-rendered seed from examples[0] — pure, synchronous, no clock. */
+const seedResult = countTokens(examples[0].input, 'o200k_base', o200k);
+const seedHtml = resultHtml(seedResult);
+const seedSummary = summaryText(seedResult);
+
+const exampleChips = examples.map((ex) => ({ label: ex.label }));
+const encodingChips = ENCODINGS.map((e) => ({ label: e.id, input: e.id, ariaLabel: `${e.id} — ${e.models}` }));
+---
+
+<section class="ltc-pg" aria-label="LLM Token Counter playground">
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Examples ───────────────────────────────────────────────────── */}
+    <div class="flex flex-col gap-1 border-b border-hairline px-4 py-3 sm:px-5">
+      <span class="eyebrow shrink-0">Examples</span>
+      <ExampleChips prefix="ltc" items={exampleChips} active={0} ariaLabel="Examples" />
+    </div>
+
+    {/* ── Encoding ───────────────────────────────────────────────────── */}
+    <div class="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:px-5">
+      <span class="eyebrow" id="ltc-enc-label">Encoding</span>
+      <ExampleChips prefix="ltc" id="ltc-enc-chips" items={encodingChips} active={0} labelledby="ltc-enc-label" />
+      <p class="ltc-hint caption text-mute">
+        Other vendors (Claude, Gemini, Llama) use different tokenizers — counts here are approximate for
+        them; use the vendor's count endpoint for billing.
+      </p>
+    </div>
+
+    {/* ── Input ──────────────────────────────────────────────────────── */}
+    <div class="border-b border-hairline px-4 py-4 sm:px-5">
+      <label class="eyebrow mb-2 block" for="ltc-input">Text</label>
+      <textarea
+        id="ltc-input"
+        class="ltc-input code-mono"
+        spellcheck="false"
+        autocapitalize="off"
+        autocorrect="off"
+        autocomplete="off"
+        rows="7"
+        maxlength={MAX_CHARS}
+        placeholder="Paste a prompt, a document or a JSON payload"
+        aria-describedby="ltc-run-hint">{examples[0].input}</textarea>
+      <div class="ltc-price mt-4">
+        <label class="eyebrow" for="ltc-price">Price ($ per 1M tokens, optional)</label>
+        <input
+          id="ltc-price"
+          class="ltc-num code-mono"
+          type="number"
+          inputmode="decimal"
+          min="0"
+          step="any"
+          autocomplete="off"
+          placeholder="e.g. 2.50"
+        />
+      </div>
+      <RunHint id="ltc-run-hint" />
+      <SnapshotBar prefix="ltc" />
+    </div>
+
+    {/* ── Results panel — the L2 instrument ──────────────────────────── */}
+    <ResultPanel slug="llm-token-counter" prefix="ltc" summary={seedSummary} split>
+      <Fragment slot="actions">
+        <CopyButton kind="link" id="ltc-share" />
+        <CopyButton kind="all" id="ltc-copy-all" />
+      </Fragment>
+      <div id="ltc-results" class="ltc-results" set:html={seedHtml} data-results></div>
+    </ResultPanel>
+  </div>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  .ltc-hint {
+    font-size: 12px;
+    line-height: 18px;
+    text-wrap: pretty;
+  }
+  .ltc-input {
+    width: 100%;
+    min-height: 10rem;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 14px;
+    line-height: 22px;
+    resize: vertical;
+    transition: box-shadow var(--dur-fast) var(--ease-brand);
+  }
+  .ltc-input::placeholder,
+  .ltc-num::placeholder {
+    color: var(--color-mute);
+  }
+  .ltc-input:hover,
+  .ltc-num:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .ltc-input:focus,
+  .ltc-num:focus {
+    outline: none;
+  }
+  .ltc-input:focus-visible,
+  .ltc-num:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-link);
+    outline: none;
+  }
+
+  /* ── Price row: label / number ───────────────────────────────────── */
+  .ltc-price {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+  }
+  .ltc-num {
+    width: 8rem;
+    height: var(--control-h-md);
+    padding: 0 10px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 14px;
+    line-height: 20px;
+    text-align: right;
+    transition: box-shadow var(--dur-fast) var(--ease-brand);
+  }
+  @media (pointer: coarse) {
+    .ltc-num {
+      min-height: var(--control-h-lg);
+    }
+  }
+  .ltc-results {
+    min-height: var(--control-h-lg);
+    display: grid;
+    align-content: start;
+  }
+
+  /* ── Runtime-injected markup (render.ts) on the slab ─────────────── */
+  .ltc-results :global(.ltc-card) {
+    display: grid;
+    gap: 14px;
+    animation: ltc-rise var(--dur-base) var(--ease-brand) both;
+  }
+  .ltc-results :global(.ltc-empty),
+  .ltc-results :global(.ltc-error) {
+    margin: 0;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+  }
+
+  /* Stat rows; the first (Tokens) is the hero. */
+  .ltc-results :global(.ltc-stats) {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 12px;
+  }
+  .ltc-results :global(.ltc-stat) {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .ltc-results :global(.ltc-stat:first-child) {
+    grid-column: 1 / -1;
+  }
+  .ltc-results :global(.ltc-stat__k) {
+    @apply label-field;
+    color: var(--color-inverse-mute);
+  }
+  .ltc-results :global(.ltc-stat__v) {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--color-inverse-fg);
+    overflow-wrap: anywhere;
+  }
+  .ltc-results :global(.ltc-stat:first-child .ltc-stat__v) {
+    font-size: 20px;
+    line-height: 28px;
+    font-weight: 600;
+    color: var(--color-inverse-brand);
+  }
+  .ltc-results :global(.ltc-client-only) {
+    margin-left: 6px;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    color: var(--color-inverse-mute);
+  }
+
+  /* Group heading: sans 12/16 600 with a rule above — never one more label. */
+  .ltc-results :global(.ltc-group__h) {
+    margin: 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--color-inverse-hairline);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 600;
+    color: var(--color-inverse-fg);
+  }
+
+  /* Token visualiser: alternating slab tints, plus an inset hairline on every
+     token so boundaries read without relying on colour. */
+  .ltc-results :global(.ltc-tokens) {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 24px;
+    color: var(--color-inverse-fg);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .ltc-results :global(.ltc-tok) {
+    border-radius: var(--radius-sm);
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+  }
+  .ltc-results :global(.ltc-tok:nth-child(odd)) {
+    background: color-mix(in srgb, var(--color-inverse-brand) 22%, transparent);
+  }
+  .ltc-results :global(.ltc-tok:nth-child(even)) {
+    background: color-mix(in srgb, var(--color-inverse-accent) 22%, transparent);
+  }
+  .ltc-results :global(.ltc-vis-note),
+  .ltc-results :global(.ltc-encoding) {
+    margin: 0;
+    text-wrap: pretty;
+  }
+
+  @keyframes ltc-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ltc-results :global(.ltc-card) {
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  import type { Encoder, EncodingId, TokenCount } from '../lib/llm-token-counter/types';
+  import { EMPTY_HTML, errorHtml, resultHtml, summaryText, buildCopyAll } from '../lib/llm-token-counter/render';
+  import { snapshotValues, markChanged } from '../lib/mark-changed';
+  import { wireRunKeys } from '../lib/run-keys';
+  import { createHashState } from '../lib/hash-state';
+  import { wireCopyButtons } from '../lib/playground-kit/copy';
+  import { syncChipsByIndex, syncChipsByInput, clearChips, CHIP_SELECTOR } from '../lib/playground-kit/chips';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+  import { examples } from '../lib/llm-token-counter/examples';
+
+  type EngineModule = typeof import('../lib/llm-token-counter/engine');
+
+  const SLUG = 'llm-token-counter';
+  const ROOT_SEL = '.ltc-pg';
+  const DEBOUNCE_MS = 150;
+  const HASH_MAX_CHARS = 2000;
+  const MAX_CHARS = 100_000;
+
+  /* One chunk per encoding, each fetched at most once per page. */
+  const LOADERS: Record<EncodingId, () => Promise<Encoder>> = {
+    o200k_base: () => import('gpt-tokenizer/encoding/o200k_base'),
+    cl100k_base: () => import('gpt-tokenizer/encoding/cl100k_base'),
+  };
+  const encoders = new Map<EncodingId, Promise<Encoder>>();
+  function getEncoder(id: EncodingId): Promise<Encoder> {
+    let p = encoders.get(id);
+    if (!p) {
+      p = LOADERS[id]();
+      p.catch(() => encoders.delete(id)); // let a later run retry a failed fetch
+      encoders.set(id, p);
+    }
+    return p;
+  }
+  const isEncoding = (s: string): s is EncodingId => Object.hasOwn(LOADERS, s);
+
+  let enginePromise: Promise<EngineModule> | null = null;
+  // A failed import must not be cached, or one network blip breaks every later run.
+  const getEngine = () =>
+    (enginePromise ??= import('../lib/llm-token-counter/engine').catch((e) => {
+      enginePromise = null;
+      throw e;
+    }));
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.ltcWired === 'true') return;
+      root.dataset.ltcWired = 'true';
+      init(root);
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  /**
+   * `<encoding>\n<text>\n.` → state, or null when the encoding is unknown. The
+   * trailing `\n.` end marker survives the whitespace trim in hash-state's
+   * parseHashValue, so trailing newlines and whitespace-only texts round-trip.
+   */
+  const END = '\n.';
+  const serialize = (encoding: EncodingId, text: string) => `${encoding}\n${text}${END}`;
+  function parse(serial: string): { encoding: EncodingId; text: string } | null {
+    const nl = serial.indexOf('\n');
+    if (nl < 0) return null;
+    const encoding = serial.slice(0, nl);
+    let text = serial.slice(nl + 1);
+    if (text.endsWith(END)) text = text.slice(0, -END.length);
+    else if (text === '.') text = ''; // trimmed form of an empty text
+    return isEncoding(encoding) ? { encoding, text } : null;
+  }
+
+  function init(root: HTMLElement): void {
+    const input = el<HTMLTextAreaElement>(root, '#ltc-input');
+    const priceInput = el<HTMLInputElement>(root, '#ltc-price');
+    const resultsBox = el<HTMLElement>(root, '#ltc-results');
+    const summaryEl = el<HTMLElement>(root, '#ltc-summary');
+    const shareBtn = el<HTMLButtonElement>(root, '#ltc-share');
+    const copyAllBtn = el<HTMLButtonElement>(root, '#ltc-copy-all');
+    const copyStatus = el<HTMLElement>(root, '#ltc-copy-status');
+    const exampleChips = el<HTMLElement>(root, '#ltc-chips');
+    const encChips = el<HTMLElement>(root, '#ltc-enc-chips');
+    const snapSaveBtn = el<HTMLButtonElement>(root, '#ltc-snap-save');
+    const snapSelect = el<HTMLSelectElement>(root, '#ltc-snap-select');
+    const snapDeleteBtn = el<HTMLButtonElement>(root, '#ltc-snap-delete');
+    if (
+      !input || !priceInput || !resultsBox || !summaryEl || !shareBtn || !copyAllBtn || !copyStatus ||
+      !exampleChips || !encChips || !snapSaveBtn || !snapSelect || !snapDeleteBtn
+    )
+      return;
+
+    wireCopyButtons(root, { status: copyStatus });
+
+    const hash = createHashState('t');
+    let encoding: EncodingId = 'o200k_base';
+    let last: TokenCount | null = null;
+    let seq = 0;
+    let timer: number | undefined;
+
+    const currentSerial = () => serialize(encoding, input!.value);
+
+    /** A blank or negative price means "no price": the cost row keeps its placeholder. */
+    function readPrice(): number | undefined {
+      const raw = priceInput!.value.trim();
+      const n = Number(raw);
+      return raw !== '' && Number.isFinite(n) && n >= 0 ? n : undefined;
+    }
+
+    function setSummary(text: string, isError = false): void {
+      summaryEl!.textContent = text;
+      summaryEl!.classList.toggle('text-inverse-error', isError);
+      summaryEl!.classList.toggle('text-inverse-mute', !isError);
+    }
+
+    function hideActions(): void {
+      for (const b of [shareBtn!, copyAllBtn!]) {
+        b.hidden = true;
+        b.dataset.copy = '';
+      }
+    }
+
+    function render(r: TokenCount, tick: boolean): void {
+      const price = readPrice();
+      const prev = tick ? snapshotValues(resultsBox!) : new Map<string, string>();
+      resultsBox!.innerHTML = resultHtml(r, { price });
+      markChanged(resultsBox!, prev);
+      setSummary(summaryText(r));
+      copyAllBtn!.hidden = false;
+      copyAllBtn!.dataset.copy = buildCopyAll(r, price);
+    }
+
+    async function evaluate(source: 'type' | 'commit' | 'seed'): Promise<void> {
+      window.clearTimeout(timer);
+      const run = ++seq;
+      const text = input!.value;
+      const enc = encoding;
+
+      if (!text) {
+        last = null;
+        hideActions();
+        setSummary('');
+        resultsBox!.innerHTML = EMPTY_HTML;
+        if (source !== 'seed') hash.write(null);
+        return;
+      }
+      if (text.length > MAX_CHARS) {
+        last = null;
+        hideActions();
+        const msg = `The text is ${text.length.toLocaleString('en-US')} characters; the limit is ${MAX_CHARS.toLocaleString('en-US')}.`;
+        setSummary(msg, true);
+        resultsBox!.innerHTML = errorHtml(msg);
+        return;
+      }
+
+      let engine: EngineModule;
+      let encoder: Encoder;
+      try {
+        const loaded = encoders.has(enc);
+        if (!loaded) setSummary('Loading tokenizer…');
+        [engine, encoder] = await Promise.all([getEngine(), getEncoder(enc)]);
+      } catch (err) {
+        if (run !== seq) return;
+        hideActions();
+        const msg = 'The tokenizer failed to load. Check your connection and try again.';
+        setSummary(msg, true);
+        resultsBox!.innerHTML = errorHtml(msg);
+        console.error('[LlmTokenCounter] tokenizer import failed:', err);
+        return;
+      }
+      if (run !== seq) return; // a newer run superseded this one while the chunk loaded
+
+      const r = engine.countTokens(text, enc, encoder);
+      last = r;
+      render(r, source !== 'seed');
+
+      const serial = serialize(enc, text);
+      // The cap is on the ENCODED fragment: 2,000 CJK chars encode to ~18,000.
+      const fitsHash = hash.build(serial).length <= HASH_MAX_CHARS;
+      if (fitsHash) {
+        shareBtn!.hidden = false;
+        shareBtn!.dataset.copy = location.origin + location.pathname + location.search + hash.build(serial);
+      } else {
+        shareBtn!.hidden = true;
+        shareBtn!.dataset.copy = '';
+      }
+      if (source !== 'seed') {
+        hash.write(fitsHash ? serial : null);
+        recordToolLastInput(SLUG, serial);
+      }
+    }
+
+    function applyState(s: { encoding: EncodingId; text: string }): void {
+      encoding = s.encoding;
+      input!.value = s.text;
+      syncChipsByInput(encChips, encoding);
+      const idx = examples.findIndex((x) => x.input === s.text);
+      if (idx >= 0) syncChipsByIndex(exampleChips, idx);
+      else clearChips(exampleChips);
+    }
+
+    /* ── Events ──────────────────────────────────────────────────────── */
+    input.addEventListener('input', () => {
+      clearChips(exampleChips);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => void evaluate('type'), DEBOUNCE_MS);
+    });
+    // ⌘/Ctrl+Enter runs now; plain Enter inserts the newline, then flushes.
+    wireRunKeys(input, () => void evaluate('commit'), { enter: 'insert-then-run' });
+
+    exampleChips.addEventListener('click', (e) => {
+      const chip = (e.target as HTMLElement).closest<HTMLElement>(CHIP_SELECTOR);
+      if (!chip || !exampleChips.contains(chip)) return;
+      const idx = Number(chip.dataset.exampleIdx);
+      const text = examples[idx]?.input;
+      if (text === undefined) return;
+      input.value = text;
+      syncChipsByIndex(exampleChips, idx);
+      void evaluate('commit');
+    });
+
+    encChips.addEventListener('click', (e) => {
+      const chip = (e.target as HTMLElement).closest<HTMLElement>(CHIP_SELECTOR);
+      if (!chip || !encChips.contains(chip)) return;
+      const id = chip.dataset.input ?? '';
+      if (!isEncoding(id)) return;
+      encoding = id;
+      syncChipsByInput(encChips, encoding);
+      void evaluate('commit');
+    });
+
+    // Price only re-prices the last count; it is never hashed, recorded or snapshotted.
+    priceInput.addEventListener('input', () => {
+      if (last) render(last, true);
+      else void evaluate('seed');
+    });
+
+    wireSnapshotUI({
+      slug: SLUG,
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: currentSerial,
+      setValue: (value) => {
+        const s = parse(value);
+        if (!s) return;
+        applyState(s);
+        void evaluate('commit');
+      },
+    });
+
+    /* ── First load: #t= deep link → restored last input → the SSR seed.
+       Seeding never writes the hash or records — only user actions do. ── */
+    const fromHash = hash.read();
+    const restored = getRestoredLastInput(SLUG);
+    const state = (fromHash && parse(fromHash)) || (restored && parse(restored)) || null;
+    const isSsrSeed = !state || (state.encoding === 'o200k_base' && state.text === input.defaultValue);
+    if (state) applyState(state);
+
+    if (!isSsrSeed) {
+      void evaluate('seed');
+    } else {
+      // The server already rendered this exact result: fetch the tokenizer only
+      // once the visitor reaches for the playground.
+      const warm = () => {
+        root.removeEventListener('focusin', warm);
+        root.removeEventListener('pointerdown', warm);
+        if (!last && input!.value === input!.defaultValue && encoding === 'o200k_base') void evaluate('seed');
+      };
+      root.addEventListener('focusin', warm);
+      root.addEventListener('pointerdown', warm);
+    }
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>
