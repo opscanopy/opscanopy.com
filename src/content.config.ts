@@ -45,7 +45,7 @@ const guides = defineCollection({
   schema: z.object({
     title: z.string(),
     description: z.string(),
-    track: z.enum(['linux', 'docker', 'aws', 'kubernetes', 'networking', 'projects']),
+    track: z.enum(['linux', 'docker', 'aws', 'kubernetes', 'networking', 'projects', 'ai']),
     order: z.number(),
     difficulty: z.enum(['beginner', 'intermediate', 'advanced']),
     updatedDate: z.coerce.date().optional(),

@@ -16,6 +16,8 @@ export const trackIcons: Record<string, string> = {
   networking: '<circle cx="24" cy="24" r="4"/><circle cx="11" cy="13" r="3.5"/><circle cx="37" cy="13" r="3.5"/><circle cx="11" cy="35" r="3.5"/><circle cx="37" cy="35" r="3.5"/><path d="M21.2 21.2 13.5 15.5M26.8 21.2 34.5 15.5M21.2 26.8 13.5 32.5M26.8 26.8 34.5 32.5"/>',
   // Rocket
   projects: '<path d="M24 6c5 4.5 8 10.5 8 17.5 0 3-.7 5.8-1.8 8.2H17.8A19 19 0 0 1 16 23.5C16 16.5 19 10.5 24 6z"/><circle cx="24" cy="19" r="3"/><path d="M16.2 31.5 11.5 35l1-6.4M31.8 31.5 36.5 35l-1-6.4M20.5 38.5 24 43l3.5-4.5"/>',
+  // Chip with pins (AI & local LLMs)
+  ai: '<rect x="13" y="13" width="22" height="22" rx="2"/><rect x="19" y="19" width="10" height="10" rx="1"/><path d="M19 13V7M24 13V7M29 13V7M19 41v-6M24 41v-6M29 41v-6M13 19H7M13 24H7M13 29H7M41 19h-6M41 24h-6M41 29h-6"/>',
   // Layered path (master DevOps roadmap)
   devops: '<path d="M24 6 8 14l16 8 16-8-16-8z"/><path d="M8 24l16 8 16-8"/><path d="M8 34l16 8 16-8"/>',
   // Planted mission flag (guided 90-day program)

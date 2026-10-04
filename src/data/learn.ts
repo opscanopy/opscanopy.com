@@ -65,6 +65,13 @@ export const tracks: Track[] = [
     roadmapSlug: undefined,
     guideSlugs: ['devops-projects'],
   },
+  {
+    slug: 'ai',
+    name: 'AI & local LLMs',
+    tagline: 'Size, quantize, and serve open-weight models on your own hardware.',
+    accent: 'develop',
+    guideSlugs: ['best-local-llm', 'best-gpu-for-local-llm', 'llm-quantization-explained', 'ollama-docker-gpu'],
+  },
 ];
 
 export function getTrack(slug: string): Track | undefined {

@@ -12,7 +12,8 @@ const article = (gib: number): string => (gib === 8 || gib === 80 ? 'an' : 'a');
 export const EMPTY_HTML =
   '<p class="lvc-empty body-sm text-inverse-mute">Pick a model or type a parameter count to see how much GPU memory it needs.</p>';
 
-const gib = (n: number) => n.toFixed(n >= 100 ? 0 : n >= 10 ? 1 : 2);
+export const formatGiB = (n: number): string => n.toFixed(n >= 100 ? 0 : n >= 10 ? 1 : 2);
+const gib = formatGiB;
 const tokens = (n: number) => (n % 1024 === 0 ? `${n / 1024}k` : String(n));
 
 function stat(label: string, value: string, cap?: string): string {

@@ -890,8 +890,28 @@ export const tools: Tool[] = [
       'how much vram for 70b',
     ],
     accent: 'develop',
-    // Related: AI is a category of one — the other sizing tools are the nearest neighbours.
-    related: ['kubernetes-resource-calculator', 'data-size-converter'],
+    // Related: the token counter is its AI neighbour; the Kubernetes sizer is the nearest other sizing tool.
+    related: ['llm-token-counter', 'kubernetes-resource-calculator'],
+  },
+  {
+    slug: 'llm-token-counter',
+    name: 'LLM Token Counter',
+    tagline: 'Count GPT tokens offline — o200k_base and cl100k_base, with the exact token boundaries.',
+    description:
+      'Paste a prompt or a document and count its tokens with the real OpenAI BPE encodings — o200k_base (GPT-5, GPT-4.1, GPT-4o and the o-series) or cl100k_base (GPT-4, GPT-3.5 and text-embedding-3) — with every token boundary highlighted, character and word counts, and an optional cost estimate at your own price per million tokens.',
+    status: 'live',
+    category: 'AI',
+    keywords: [
+      'openai token calculator',
+      'token calculator',
+      'gpt tokenizer',
+      'count tokens',
+      'tiktoken online',
+      'cl100k_base vs o200k_base',
+    ],
+    accent: 'develop',
+    // Related: VRAM is the other half of sizing an LLM workload; data sizes for bytes vs tokens.
+    related: ['llm-vram-calculator', 'data-size-converter'],
   },
 ];
 

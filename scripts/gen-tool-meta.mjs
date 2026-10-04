@@ -102,6 +102,9 @@ const TOOL_PATHS = {
   'llm-vram-calculator': {
     lib: 'llm-vram-calculator',
     component: 'LlmVramCalculatorPlayground.astro',
+  },  'llm-token-counter': {
+    lib: 'llm-token-counter',
+    component: 'LlmTokenCounterPlayground.astro',
   },
 };
 
