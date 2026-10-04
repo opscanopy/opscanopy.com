@@ -2,6 +2,7 @@
 title: "LogQL vs PromQL : la même requête dans les deux langages"
 description: "LogQL emprunte la forme de PromQL mais part de lignes de log, et non de métriques. Voici comment les deux langages se correspondent, et où ils divergent."
 pubDate: 2026-06-05
+updatedDate: 2026-10-04
 tags: ["logql", "promql", "observability"]
 lang: fr
 translationOf: "logql-vs-promql"
@@ -76,6 +77,26 @@ Il n'existe aucune contrepartie PromQL à `| logfmt`, `| json`, `| pattern` ou `
 **La syntaxe des sélecteurs se recoupe mais n'est pas interchangeable.** Les deux utilisent `{label="value"}` avec `=`, `!=`, `=~`, `!~`. Mais un sélecteur PromQL nomme une métrique et fait correspondre des labels de série ; un sélecteur de flux Loki nomme des flux de log et *doit* correspondre à au moins un label de flux indexé. Un filtre de ligne comme `|= "text"` n'a aucun analogue en PromQL — au plus proche, PromQL peut faire correspondre une valeur de label, jamais du texte libre à l'intérieur d'un échantillon.
 
 **Les champs à forte cardinalité se comportent différemment.** En PromQL, regrouper par un label à forte cardinalité est généralement le signe d'une mauvaise conception des métriques. En LogQL, les labels de pipeline extraits (depuis `logfmt`/`json`) sont calculés au moment de la requête et ne sont pas indexés, de sorte que `by (user_id)` est faisable d'une manière qui l'est rarement en Prometheus — au prix réel d'un débit de requête, mais sans l'explosion du stockage. Le modèle mental de ce qui est « coûteux » ne se transfère pas.
+
+## PromQL vs LogQL : les différences de syntaxe côte à côte
+
+Les divergences ci-dessus sont plus faciles à retenir sous forme de table de correspondance. À gauche, la construction PromQL. À droite, la forme LogQL la plus proche, ou la raison pour laquelle il n'y en a pas.
+
+```text
+# PromQL                                  # LogQL
+http_requests_total{job="api"}            {job="api"}                       (a stream, not a metric)
+(no free-text match)                      {job="api"} |= "timeout"          (also != |~ !~)
+(samples are already parsed)              {job="api"} | json                (also logfmt, pattern, regexp)
+rate(http_requests_total[5m])             rate({job="api"}[5m])             (lines/sec, no counter resets)
+increase(http_requests_total[5m])         count_over_time({job="api"}[5m])  (lines in the window)
+avg_over_time(latency_seconds[5m])        avg_over_time({job="api"} | logfmt | unwrap latency_seconds [5m])
+(no byte functions)                       bytes_rate({job="api"}[5m])       (log volume)
+histogram_quantile(0.99, ...)             quantile_over_time(0.99, ... | unwrap ... [5m])
+rate(x[5m] offset 1h)                     rate({job="api"}[5m] offset 1h)
+label_replace(...)                        label_replace(...)  or  | label_format
+```
+
+Deux règles de placement expliquent la plupart des erreurs de syntaxe lors d'une première conversion de LogQL vers PromQL ou l'inverse. En LogQL, l'intervalle `[5m]` se place après tout le pipeline, juste avant la parenthèse fermante de la fonction de plage, jamais directement après le sélecteur lorsqu'un pipeline suit. Et un `quantile_over_time` sur des valeurs extraites par `unwrap` calcule le quantile à partir des valeurs brutes de la fenêtre, pas de buckets pré-agrégés : il ne correspondra donc pas exactement à un résultat de `histogram_quantile`, même si les deux décrivent les mêmes requêtes.
 
 ## Une liste de contrôle pratique pour la traduction
 

@@ -2,6 +2,7 @@
 title: "Warum Prometheus mein Target verwarf: relabel_configs"
 description: "Ein Target ist verschwunden oder ein Label ist nach dem Relabeling weg. relabel_configs vs. metric_relabel_configs debuggen, Regex-Anker und keep/drop."
 pubDate: 2026-06-16
+updatedDate: 2026-10-04
 tags: ["prometheus","observability","relabeling"]
 lang: de
 translationOf: "debug-prometheus-relabeling"
@@ -208,6 +209,32 @@ Während du dabei aufräumst, befördert dieselbe Kette oft Pod-Labels und entfe
   - action: labeldrop
     regex: __meta_.+
 ```
+
+## Neu laden ohne Neustart
+
+Sobald die Regeln stimmen, musst du Prometheus nicht neu starten, um sie anzuwenden. Ein Neustart spielt das Write-Ahead-Log erneut ab und hinterlässt eine Lücke in jeder Serie; ein Reload liest `prometheus.yml` neu ein und tauscht die Scrape-Konfiguration im laufenden Betrieb aus.
+
+Es gibt zwei Wege, einen Reload auszulösen:
+
+```bash
+# 1. Send SIGHUP to the process
+kill -HUP "$(pidof prometheus)"
+
+# 2. POST to the lifecycle endpoint (needs --web.enable-lifecycle at startup)
+curl -X POST http://localhost:9090/-/reload
+```
+
+Der HTTP-Endpunkt ist standardmäßig deaktiviert, weil jeder, der den Port erreicht, auch `/-/quit` aufrufen kann. Aktiviere `--web.enable-lifecycle` nur dort, wo der Web-Port nicht für Leute erreichbar ist, die dein Monitoring nicht stoppen können sollen. Wenn die systemd-Unit für Prometheus `ExecReload=` definiert, sendet `systemctl reload prometheus` dasselbe Signal. Auf Kubernetes ruft der config-reloader-Sidecar des Prometheus Operators den Endpunkt für dich auf, sobald sich die generierte Konfiguration ändert.
+
+Ein fehlgeschlagener Reload legt Prometheus nicht lahm: Es protokolliert den Fehler und läuft mit der vorherigen Konfiguration weiter. Das ist sicher, aber auch leicht zu übersehen. Prüfe, ob die neue Konfiguration tatsächlich geladen wurde:
+
+```bash
+curl -s http://localhost:9090/api/v1/query \
+  --data-urlencode 'query=prometheus_config_last_reload_successful'
+# value "1" means the last reload applied; "0" means you're still on the old config
+```
+
+Führe vor dem Reload `promtool check config prometheus.yml` aus. Es fängt YAML- und Schemafehler ab, aber keine `keep`-Regel, die auf nichts passt: Die Konfiguration ist gültig, sie verwirft nur dein Target. Teste die Regeln zuerst im [Prometheus Relabel Tester](/prometheus-relabel-tester/) gegen echte Discovery-Labels und lade dann einmal neu.
 
 ## Vor dem Deploy abfangen
 

@@ -2,6 +2,7 @@
 title: "Why Did Prometheus Drop My Target? Debugging relabel_configs"
 description: "A target vanished or a label disappeared after relabeling. Debug Prometheus relabel_configs vs metric_relabel_configs, regex anchoring and keep/drop logic."
 pubDate: 2026-06-16
+updatedDate: 2026-10-04
 tags: ["prometheus","observability","relabeling"]
 relatedTool:
   name: "Prometheus Relabel Tester"
@@ -9,6 +10,7 @@ relatedTool:
 ---
 
 ![Debugging a dropped Prometheus target: the scrape lifecycle from service discovery through relabel_configs to the TSDB, with a target highlighted as dropped.](/blog/debug-prometheus-relabeling-hero.svg)
+<!-- keywords: prometheus relabel_configs | test prometheus relabel, prometheus dropped target | source: marketing brief, ahrefs unchecked (2026-10-04) -->
 
 You added a new exporter, reloaded Prometheus, opened `/targets`, and it isn't there. No error in the logs. The scrape config parsed fine. The exporter is up and you can `curl` its `/metrics` by hand. But Prometheus dropped your target and won't tell you why. Or worse — the target shows up, but a label you depend on for routing or dashboards has silently disappeared. Both symptoms almost always trace back to one place: `relabel_configs`. This post walks through how to debug `relabel_configs`, where it differs from `metric_relabel_configs`, and the handful of mistakes that account for nearly every dropped target.
 
@@ -206,6 +208,32 @@ While you're cleaning up, the same chain often promotes pod labels and prunes di
   - action: labeldrop
     regex: __meta_.+
 ```
+
+## Reload without a restart
+
+Once the rules are right, you don't need to restart Prometheus to apply them. A restart replays the write-ahead log and leaves a gap in every series; a reload re-reads `prometheus.yml` and swaps the scrape config in place.
+
+There are two ways to trigger one:
+
+```bash
+# 1. Send SIGHUP to the process
+kill -HUP "$(pidof prometheus)"
+
+# 2. POST to the lifecycle endpoint (needs --web.enable-lifecycle at startup)
+curl -X POST http://localhost:9090/-/reload
+```
+
+The HTTP endpoint is disabled by default, because anyone who can reach the port can also call `/-/quit`. Enable `--web.enable-lifecycle` only where the web port isn't exposed to people who shouldn't be able to stop your monitoring. If the systemd unit for Prometheus defines `ExecReload=`, `systemctl reload prometheus` sends the same signal. On Kubernetes, the Prometheus Operator's config-reloader sidecar calls the endpoint for you whenever the generated config changes.
+
+A reload that fails doesn't take Prometheus down: it logs the error and keeps running with the previous config. That's safe, and also easy to miss. Check that the new config actually loaded:
+
+```bash
+curl -s http://localhost:9090/api/v1/query \
+  --data-urlencode 'query=prometheus_config_last_reload_successful'
+# value "1" means the last reload applied; "0" means you're still on the old config
+```
+
+Run `promtool check config prometheus.yml` before reloading. It catches YAML and schema errors, but not a `keep` rule that matches nothing: the config is valid, it just drops your target. Test the rules against real discovered labels in the [Prometheus Relabel Tester](/prometheus-relabel-tester/) first, then reload once.
 
 ## Catch it before deploy
 
