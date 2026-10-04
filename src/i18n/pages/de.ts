@@ -110,7 +110,7 @@ const de: Partial<PagesContent> = {
     eyebrow: 'Über uns',
     heading: 'Wer OpsCanopy baut – und warum alles lokal läuft.',
     lead: 'OpsCanopy ist eine Sammlung kostenloser, browserbasierter DevOps-Tools — dazu ein 90-Tage-Lernpfad und Übungsprüfungen für Zertifizierungen — gebaut von Engineers, die einen privaten Ort für die kleinen Aufgaben wollten. Jedes Tool löst ein reales Problem und läuft zu 100 % clientseitig, sodass das, was Sie einfügen, niemals Ihr Gerät verlässt.',
-    updated: '2026-10-22',
+    updated: '2026-10-04',
     sections: [
       {
         heading: 'Wer es baut',

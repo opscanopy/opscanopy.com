@@ -179,7 +179,7 @@ const en: PagesContent = {
     eyebrow: 'About',
     heading: 'Who builds OpsCanopy, and why it runs locally.',
     lead: 'OpsCanopy is a set of free, browser-based DevOps tools — plus a 90-day learning path and certification practice exams — built by engineers who wanted a private place to do the small jobs. Every tool solves one real problem and runs 100% client-side, so what you paste never leaves your device.',
-    updated: '2026-10-22',
+    updated: '2026-10-04',
     sections: [
       {
         heading: 'Who builds it',
