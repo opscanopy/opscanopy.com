@@ -176,6 +176,7 @@ const en = {
   // missing entry renders the literal string "category.IaC" in the catalog filter
   // chips and the MegaMenu, and `scripts/i18n-check.mjs` does not catch it.
   'category.IaC': 'IaC',
+  'category.AI': 'AI',
   'category.all': 'All',
 
   // Tool catalog (/tools) — chrome shared by ToolCard + the catalog page
