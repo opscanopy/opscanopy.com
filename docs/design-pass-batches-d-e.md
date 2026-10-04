@@ -1,7 +1,8 @@
-# Design pass: Batches D and E (held, ready to ship)
+# Design pass: Batches D and E (both live)
 
-Status as of 2026-10-03. Both batches are built, guard-checked and committed on
-local branches. **Neither is live.** Each waits for a date and for your go.
+Status as of 2026-10-04: **the whole design pass is live.** Both batches shipped
+early, at your request, after every gate passed. The sections below are kept as the
+record of what each batch changed and what to watch.
 
 The full plan behind them is `~/.claude/plans/yes-do-it-also-swirling-hamster.md`.
 The live tracker is `~/.claude/plans/yes-do-it-also-swirling-hamster/PROGRESS-TRACKER.md`.
@@ -13,8 +14,10 @@ The live tracker is `~/.claude/plans/yes-do-it-also-swirling-hamster/PROGRESS-TR
 | Round 1: SEO guard, gates, dark slab, buttons, header, blog covers | `3db8da7` | 2026-10-02 | 5 |
 | Round 2: code blocks, prose, hubs on the rail, kit Wave 1, diagrams | `e322426` | 2026-10-02 | 69 |
 | Waves 2–4: all 36 remaining tool playgrounds on the kit | `a351713` | 2026-10-03 | 190 |
-
-Round 3 (follow-ups, kit polish, audit gate) ships separately and re-dates nothing.
+| Round 3: follow-ups, kit polish, audit gate | `16b190a` | 2026-10-03 | 0 |
+| Batch D: tool pages and /tools catalog | `5b46e5f` | 2026-10-03 | 218 |
+| Batch D follow-ups | `3f2ff62` | 2026-10-03 | 0 |
+| Batch E: homepage, About, hub headings | `60bbdb1` | 2026-10-04 | 25 |
 
 ## Batch D: tool pages and the /tools catalog
 
@@ -53,10 +56,24 @@ codemod commit alone (the lede move), not the whole batch.
 
 ## Batch E: homepage, About and naming
 
-**Earliest ship date: 2026-10-22** (after your homepage Search Console read; D
-shipped 2026-10-03, so the 7-days-after-D rule is already met by then). The review
-fixed one bug before you decide: the localized homepages linked to /de/verify-ai/
-and similar pages that don't exist.
+**Shipped 2026-10-04 as `60bbdb1`, at your request** (originally planned for after
+the 2026-10-21 Search Console read). The trade-off you accepted: the 2026-09-30
+homepage H1 change can no longer be measured on its own, because the homepage body
+changed four days later. Read the homepage numbers as "H1 + Batch E together".
+
+Guard: 0 must-explain; 15 H1 changes, each pinned to its exact text (About, /tools
+and /blog in 5 languages); FAQ structured data identical; 25 URLs re-dated (the five
+info pages in five languages, because About shares their text file). CI tests
+9,995 passed. The review also fixed a bug before shipping: the localized homepages
+linked to /de/verify-ai/ and similar pages that don't exist.
+
+The privacy panel now shows live numbers ("requests (this page)", "cookies (this
+origin)") next to "your input: 0 bytes sent"; the cookie count is the truth for that
+visitor, which fixes the old hard-coded "cookies 0" that the FAQ contradicted.
+
+The /blog/ H1 changed without its sitemap date moving (the heading lives in a UI
+string file, which is not a date input). Expect Search Console to notice the new H1
+on a page with an older lastmod; that is harmless.
 
 **Prerequisite (yours)**: read Search Console for the homepage, comparing the three
 weeks before and after 2026-09-30, when the new H1 went live. If clicks or CTR
@@ -90,10 +107,10 @@ structured data identical.
 **Decision before shipping**: the About page must not say "two engineers" unless the
 second founder is named with a profile link. Check the wording.
 
-## How to ship either batch
+## How each batch was shipped (reuse this for future design changes)
 
-Ask Claude: **"ship batch D"** (from 2026-10-10) or **"ship batch E"** (from
-2026-10-22, after the Search Console read). Claude will then:
+Both batches went out through the same steps; follow them for any future change that
+touches page copy, tool pages or the homepage:
 
 1. Merge the batch onto the current `main`. If `main` moved, resolve and re-check.
 2. Run the SEO guard against a fresh cold build of `main`. Required: 0 must-explain,
@@ -115,9 +132,8 @@ Rollback for either batch is one `git revert` of its merge commit; CI redeploys.
 ## Backup
 
 Both branches were pushed to GitHub on 2026-10-03 as `design/batch-d` and
-`design/batch-e` (non-`main` branches deploy nothing). Batch E's latest head at that
-time: `4c7b8ce`. When it ships, it is rebased onto the then-current `main`; the one
-known conflict is `src/lib/rail.test.ts` (keep the union of both removals).
+`design/batch-e`. Both have since shipped; the branches are kept only as history and
+can be deleted from GitHub whenever you like.
 
 ## Follow-ups from Batch D's review (fixed 2026-10-03, `3f2ff62`)
 
