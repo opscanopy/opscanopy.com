@@ -102,9 +102,14 @@ const TOOL_PATHS = {
   'llm-vram-calculator': {
     lib: 'llm-vram-calculator',
     component: 'LlmVramCalculatorPlayground.astro',
-  },  'llm-token-counter': {
+  },
+  'llm-token-counter': {
     lib: 'llm-token-counter',
     component: 'LlmTokenCounterPlayground.astro',
+  },
+  'aws-iam-policy-generator': {
+    lib: 'aws-iam-policy-generator',
+    component: 'AwsIamPolicyGeneratorPlayground.astro',
   },
 };
 

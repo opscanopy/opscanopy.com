@@ -1,0 +1,1112 @@
+---
+/**
+ * AwsIamPolicyGeneratorPlayground — the interactive AWS IAM Policy Generator island.
+ *
+ * On paper: preset chips (src/lib/aws-iam-policy-generator/presets.ts), policy-kind
+ * chips (identity / S3 bucket / trust), the size-limit picker (identity only), then a
+ * one-statement editor with statement chips over it (up to MAX_STATEMENTS): effect,
+ * Sid, service, an action search + access-level filter over a checkbox list, the
+ * resources textarea (prefilled from the catalogue's ARN formats until the visitor
+ * edits it), the principal (bucket / trust kinds) and condition rows. Then the L2
+ * result slab: JSON / Terraform tabs over render.ts's card (stats, size meter,
+ * findings, code), shared with the SSR seed below so the two can never drift.
+ *
+ * Built on the playground kit (src/components/playground/*). Slab overrides anchor on
+ * this component's own `.iam-results`.
+ *
+ * Runtime contract (engine AND catalogue lazy-imported inside boot):
+ *   ../lib/aws-iam-policy-generator/engine → buildPolicy / toTerraform / arnTemplate / actionsFor
+ *   ../data/iam-catalog.json (~260 KB) — the frontmatter imports it for the seed only.
+ *   deep link: #p=<JSON {kind, limit, statements}>
+ */
+import catalogJson from '../data/iam-catalog.json';
+import { buildPolicy, toTerraform, actionsFor, LIMITS } from '../lib/aws-iam-policy-generator/engine';
+import { PRESETS } from '../lib/aws-iam-policy-generator/presets';
+import { resultHtml, summaryText } from '../lib/aws-iam-policy-generator/render';
+import type { Catalog } from '../lib/aws-iam-policy-generator/types';
+import ExampleChips from './playground/ExampleChips.astro';
+import RunHint from './playground/RunHint.astro';
+import SnapshotBar from './playground/SnapshotBar.astro';
+import ResultPanel from './playground/ResultPanel.astro';
+import CopyButton from './playground/CopyButton.astro';
+
+const catalog = catalogJson as unknown as Catalog;
+const TF_NAME = 'policy';
+
+/* Server-rendered seed from PRESETS[0] — pure, synchronous, no clock. */
+const preset = PRESETS[0];
+const seedStatements = preset.statements;
+const seedResult = buildPolicy(preset.kind, seedStatements, catalog);
+const seedTf = toTerraform(seedStatements, TF_NAME);
+const seedHtml = resultHtml(seedResult, seedTf, 'json');
+const seedSummary = summaryText(seedResult);
+const seedStmt = seedStatements[0];
+const seedService = seedStmt.actions[0]?.split(':')[0] ?? 's3';
+const seedChosen = new Set(seedStmt.actions);
+const seedActions = actionsFor(catalog, seedService);
+
+const presetChips = PRESETS.map((p) => ({ label: p.label, input: p.slug }));
+const KINDS = [
+  { label: 'Identity', input: 'identity', ariaLabel: 'Identity-based policy (user, group or role)' },
+  { label: 'S3 bucket', input: 's3-bucket', ariaLabel: 'S3 bucket policy' },
+  { label: 'Trust', input: 'trust', ariaLabel: 'Role trust policy' },
+];
+const LEVELS = ['List', 'Read', 'Write', 'Permissions management', 'Tagging'];
+const services = Object.values(catalog.services).sort((a, b) => a.name.localeCompare(b.name));
+const limitKeys = ['managed', 'inline-user', 'inline-role', 'inline-group'] as const;
+const stmtChips = seedStatements.map((_, i) => ({ label: `Statement ${i + 1}` }));
+---
+
+<section class="iam-pg" aria-label="AWS IAM Policy Generator playground">
+  <div class="card shadow-float overflow-hidden rounded-lg">
+    {/* ── Presets ────────────────────────────────────────────────────── */}
+    <div class="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:px-5">
+      <span class="eyebrow" id="iam-preset-label">Presets</span>
+      <ExampleChips prefix="iam" items={presetChips} active={0} labelledby="iam-preset-label" />
+      <p id="iam-preset-note" class="iam-note caption text-mute">{preset.note}</p>
+    </div>
+
+    {/* ── Policy kind + limit ───────────────────────────────────────── */}
+    <div class="flex flex-wrap items-end gap-x-6 gap-y-3 border-b border-hairline px-4 py-3 sm:px-5">
+      <div class="flex flex-col gap-2">
+        <span class="eyebrow" id="iam-kind-label">Policy type</span>
+        <ExampleChips prefix="iam" id="iam-kind-chips" items={KINDS} active={KINDS.findIndex((k) => k.input === preset.kind)} labelledby="iam-kind-label" />
+      </div>
+      <div id="iam-limit-row" class="iam-field" hidden={preset.kind !== 'identity'}>
+        <label class="eyebrow" for="iam-limit">Size limit</label>
+        <select id="iam-limit" class="iam-input">
+          {limitKeys.map((k) => <option value={k}>{`${LIMITS[k].label} — ${LIMITS[k].chars.toLocaleString('en-US')}`}</option>)}
+        </select>
+      </div>
+    </div>
+
+    {/* ── Statement editor ──────────────────────────────────────────── */}
+    <div class="border-b border-hairline px-4 py-4 sm:px-5">
+      <div class="flex flex-wrap items-center gap-2">
+        <ExampleChips prefix="iam" id="iam-stmt-chips" items={stmtChips} active={0} ariaLabel="Statements" />
+        <button id="iam-add-stmt" type="button" class="btn-tool">Add statement</button>
+        <button id="iam-remove-stmt" type="button" class="btn-tool" hidden={seedStatements.length <= 1}>Remove statement</button>
+      </div>
+
+      <div class="iam-grid mt-4">
+        <div class="iam-field">
+          <span class="eyebrow" id="iam-effect-label">Effect</span>
+          <ExampleChips
+            prefix="iam"
+            id="iam-effect-chips"
+            items={[{ label: 'Allow', input: 'Allow' }, { label: 'Deny', input: 'Deny' }]}
+            active={seedStmt.effect === 'Deny' ? 1 : 0}
+            labelledby="iam-effect-label"
+          />
+        </div>
+        <div class="iam-field">
+          <label class="eyebrow" for="iam-sid">Sid (optional)</label>
+          <input id="iam-sid" class="iam-input code-mono" type="text" spellcheck="false" autocomplete="off" value={seedStmt.sid ?? ''} aria-describedby="iam-run-hint" />
+        </div>
+        <div class="iam-field">
+          <label class="eyebrow" for="iam-service">Service</label>
+          <select id="iam-service" class="iam-input">
+            {services.map((s) => <option value={s.prefix} selected={s.prefix === seedService}>{`${s.name} (${s.prefix})`}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div class="iam-field mt-4">
+        <label class="eyebrow" for="iam-search">Actions</label>
+        <input id="iam-search" class="iam-input" type="search" placeholder="Filter actions, e.g. GetObject" spellcheck="false" autocomplete="off" />
+        <ExampleChips prefix="iam" id="iam-level-chips" items={LEVELS.map((l) => ({ label: l, input: l }))} active={null} ariaLabel="Filter by access level" />
+        <div id="iam-actions" class="iam-actions" role="group" aria-label="Actions">
+          {
+            seedActions.map((a) => (
+              <label class="iam-act">
+                <input type="checkbox" value={`${seedService}:${a.n}`} checked={seedChosen.has(`${seedService}:${a.n}`)} />
+                <span class="iam-act__n code-mono">{a.n}</span>
+                <span class="iam-act__l">{a.l}</span>
+              </label>
+            ))
+          }
+        </div>
+        <p id="iam-selected" class="iam-note caption text-mute">{`Selected: ${seedStmt.actions.join(', ')}`}</p>
+      </div>
+
+      <div id="iam-res-row" class="iam-field mt-4" hidden={preset.kind === 'trust'}>
+        <label class="eyebrow" for="iam-resources">Resources (one ARN per line)</label>
+        <textarea id="iam-resources" class="iam-input iam-textarea code-mono" rows="3" spellcheck="false" autocomplete="off" aria-describedby="iam-res-hint">{seedStmt.resources.join('\n')}</textarea>
+        <p id="iam-res-hint" class="iam-note caption text-mute">
+          Filled from the AWS ARN format of each action's resource type until you edit it. Replace every
+          <span class="code-mono">{'${…}'}</span> placeholder.
+        </p>
+      </div>
+
+      <div id="iam-principal-row" class="iam-grid mt-4" hidden={preset.kind === 'identity'}>
+        <div class="iam-field">
+          <label class="eyebrow" for="iam-ptype">Principal type</label>
+          <select id="iam-ptype" class="iam-input">
+            <option value="AWS">AWS (account, user or role ARN)</option>
+            <option value="Service">Service</option>
+            <option value="Federated">Federated</option>
+            <option value="*">* (anyone)</option>
+          </select>
+        </div>
+        <div class="iam-field iam-field--wide">
+          <label class="eyebrow" for="iam-pids">Principal identifiers (comma-separated)</label>
+          <input id="iam-pids" class="iam-input code-mono" type="text" spellcheck="false" autocomplete="off" placeholder="arn:aws:iam::123456789012:root" aria-describedby="iam-run-hint" />
+        </div>
+      </div>
+
+      <div class="iam-field mt-4">
+        <span class="eyebrow">Conditions (optional)</span>
+        <div id="iam-conds" class="iam-conds"></div>
+        <datalist id="iam-cond-keys"></datalist>
+        <div><button id="iam-add-cond" type="button" class="btn-tool">Add condition</button></div>
+      </div>
+
+      <RunHint id="iam-run-hint" />
+      <SnapshotBar prefix="iam" />
+    </div>
+
+    {/* ── Results panel — the L2 instrument ──────────────────────────── */}
+    <ResultPanel slug="aws-iam-policy-generator" prefix="iam" summary={seedSummary} summaryTone={seedResult.valid ? 'mute' : 'error'} split>
+      <Fragment slot="actions">
+        <CopyButton kind="value" id="iam-copy-json" label="Copy JSON" title="Copy the policy JSON" />
+        <CopyButton kind="value" id="iam-copy-hcl" label="Copy HCL" title="Copy the Terraform aws_iam_policy_document" />
+        <CopyButton kind="link" id="iam-share" />
+      </Fragment>
+      <div class="iam-tabs" role="tablist" aria-label="Output format">
+        <button id="iam-tab-json" type="button" class="iam-tab" role="tab" aria-selected="true" aria-controls="iam-results" tabindex="0">JSON</button>
+        <button id="iam-tab-terraform" type="button" class="iam-tab" role="tab" aria-selected="false" aria-controls="iam-results" tabindex="-1">Terraform</button>
+      </div>
+      <div id="iam-results" class="iam-results" role="tabpanel" aria-labelledby="iam-tab-json" set:html={seedHtml} data-results></div>
+    </ResultPanel>
+    <p class="iam-credit caption text-mute px-4 py-3 sm:px-5">Action data: AWS Service Reference, retrieved {catalog.generatedAt}</p>
+  </div>
+</section>
+
+<style>
+  @reference "../styles/global.css";
+
+  /* ── Paper controls ──────────────────────────────────────────────── */
+  .iam-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px 16px;
+  }
+  .iam-field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+  .iam-input {
+    width: 100%;
+    min-width: 0;
+    height: var(--control-h-md);
+    padding: 0 10px;
+    border: none;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-hairline);
+    font-size: 14px;
+    line-height: 20px;
+    transition: box-shadow var(--dur-fast) var(--ease-brand);
+  }
+  .iam-input:hover {
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .iam-input:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--color-link);
+  }
+  .iam-input:disabled {
+    color: var(--color-mute);
+    cursor: not-allowed;
+  }
+  .iam-textarea {
+    height: auto;
+    padding: 8px 10px;
+    font-size: 13px;
+    resize: vertical;
+  }
+  .iam-note {
+    margin: 0;
+    font-size: 12px;
+    line-height: 18px;
+    text-wrap: pretty;
+    overflow-wrap: anywhere;
+  }
+  @media (pointer: coarse) {
+    .iam-input {
+      min-height: var(--control-h-lg);
+    }
+  }
+
+  /* Action checkbox list: scrolls inside its own box. */
+  .iam-actions {
+    max-height: 240px;
+    overflow-y: auto;
+    padding: 4px;
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-hairline);
+  }
+  .iam-actions :global(.iam-act) {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+    min-height: var(--control-h-sm);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+  .iam-actions :global(.iam-act:hover) {
+    background: var(--color-canvas-soft-2);
+  }
+  .iam-actions :global(.iam-act input) {
+    accent-color: var(--color-brand-strong);
+  }
+  .iam-actions :global(.iam-act__n) {
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--color-ink);
+    overflow-wrap: anywhere;
+  }
+  .iam-actions :global(.iam-act__l) {
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--color-mute);
+  }
+  .iam-actions :global(.iam-act__none) {
+    margin: 0;
+    padding: 8px 6px;
+  }
+  @media (pointer: coarse) {
+    .iam-actions :global(.iam-act) {
+      min-height: var(--control-h-lg);
+    }
+  }
+
+  /* Condition rows: operator / key / values / remove. */
+  .iam-conds {
+    display: grid;
+    gap: 8px;
+  }
+  .iam-conds:empty {
+    display: none;
+  }
+  .iam-conds :global(.iam-cond) {
+    display: grid;
+    grid-template-columns: minmax(0, 12rem) minmax(0, 1fr) minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+  }
+  @media (max-width: 639px) {
+    .iam-conds :global(.iam-cond) {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+  }
+
+  .iam-credit {
+    margin: 0;
+    font-size: 12px;
+    line-height: 18px;
+  }
+
+  /* ── Output tabs, on the slab ────────────────────────────────────── */
+  .iam-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 12px;
+  }
+  .iam-tab {
+    height: var(--control-h-sm);
+    padding: 0 10px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-inverse-mute);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 16px;
+    cursor: pointer;
+    transition:
+      color var(--dur-fast) var(--ease-brand),
+      box-shadow var(--dur-fast) var(--ease-brand);
+  }
+  .iam-tab:hover {
+    color: var(--color-inverse-fg);
+  }
+  .iam-tab[aria-selected='true'] {
+    color: var(--color-inverse-fg);
+    box-shadow: inset 0 0 0 1px var(--color-inverse-control-edge);
+  }
+  .iam-tab:focus-visible {
+    outline: 2px solid var(--color-inverse-brand);
+    outline-offset: 1px;
+  }
+  @media (pointer: coarse) {
+    .iam-tab {
+      min-height: var(--control-h-lg);
+    }
+  }
+
+  .iam-results {
+    min-height: 320px;
+    display: grid;
+    align-content: start;
+  }
+
+  /* ── Runtime-injected markup (render.ts) on the slab ─────────────── */
+  .iam-results :global(.iam-card) {
+    display: grid;
+    gap: 14px;
+    min-width: 0;
+  }
+  .iam-results :global(.iam-empty),
+  .iam-results :global(.iam-error) {
+    margin: 0;
+    padding: 20px 16px;
+    text-align: center;
+    text-wrap: pretty;
+    border-radius: var(--radius-md);
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+  }
+  .iam-results :global(.iam-stats) {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px;
+  }
+  .iam-results :global(.iam-stat) {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .iam-results :global(.iam-stat:first-child) {
+    grid-column: 1 / -1;
+  }
+  .iam-results :global(.iam-stat__k) {
+    @apply label-field;
+    color: var(--color-inverse-mute);
+  }
+  .iam-results :global(.iam-stat__v) {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--color-inverse-fg);
+  }
+  .iam-results :global(.iam-stat:first-child .iam-stat__v) {
+    font-size: 20px;
+    line-height: 28px;
+    font-weight: 600;
+    color: var(--color-inverse-brand);
+  }
+  .iam-results :global(.iam-stat__cap) {
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--color-inverse-mute);
+    text-wrap: pretty;
+  }
+  .iam-results :global(.iam-meter) {
+    height: 8px;
+    overflow: hidden;
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--color-inverse-fg) 8%, transparent);
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+  }
+  .iam-results :global(.iam-meter__fill) {
+    height: 100%;
+    background: var(--color-inverse-brand);
+    transition: width var(--dur-base) var(--ease-brand);
+  }
+  .iam-results :global(.iam-meter.is-over .iam-meter__fill) {
+    background: var(--color-inverse-error);
+  }
+
+  /* Group heading: sans 12/16 600 with a rule above — never one more label. */
+  .iam-results :global(.iam-group__h) {
+    margin: 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--color-inverse-hairline);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 600;
+    color: var(--color-inverse-fg);
+  }
+  .iam-results :global(.iam-findings) {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .iam-results :global(.iam-finding) {
+    display: grid;
+    grid-template-columns: 3.5rem minmax(0, 1fr);
+    gap: 10px;
+    align-items: baseline;
+    padding: 6px 0;
+  }
+  .iam-results :global(.iam-finding + .iam-finding) {
+    border-top: 1px solid color-mix(in srgb, var(--color-inverse-fg) 7%, transparent);
+  }
+  .iam-results :global(.iam-finding__lvl) {
+    @apply label-field;
+  }
+  .iam-results :global(.iam-finding--error .iam-finding__lvl) {
+    color: var(--color-inverse-error);
+  }
+  .iam-results :global(.iam-finding--warn .iam-finding__lvl) {
+    color: var(--color-inverse-accent);
+  }
+  .iam-results :global(.iam-finding__msg) {
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--color-inverse-fg);
+    text-wrap: pretty;
+    overflow-wrap: anywhere;
+  }
+  .iam-results :global(.iam-code) {
+    margin: 0;
+    max-height: 420px;
+    overflow: auto;
+    padding: 12px;
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--color-inverse-fg) 4%, transparent);
+    box-shadow: inset 0 0 0 1px var(--color-inverse-hairline);
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--color-inverse-fg);
+    white-space: pre;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .iam-results :global(.iam-meter__fill) {
+      transition: none;
+    }
+  }
+</style>
+
+<script>
+  import type { AccessLevel, Catalog, Condition, PolicyKind, PolicyResult, Principal, Statement } from '../lib/aws-iam-policy-generator/types';
+  import { PRESETS } from '../lib/aws-iam-policy-generator/presets';
+  import { errorHtml, resultHtml, summaryText } from '../lib/aws-iam-policy-generator/render';
+  import { escapeHtml } from '../lib/escape-html';
+  import { snapshotValues, markChanged } from '../lib/mark-changed';
+  import { wireRunKeys } from '../lib/run-keys';
+  import { createHashState } from '../lib/hash-state';
+  import { wireCopyButtons } from '../lib/playground-kit/copy';
+  import { syncChipsByInput, syncChipsByIndex, clearChips, CHIP_SELECTOR } from '../lib/playground-kit/chips';
+  import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
+
+  type EngineModule = typeof import('../lib/aws-iam-policy-generator/engine');
+  type LimitKey = 'managed' | 'inline-user' | 'inline-role' | 'inline-group';
+  interface State {
+    kind: PolicyKind;
+    limit: LimitKey;
+    statements: Statement[];
+  }
+  type Tab = 'json' | 'terraform';
+
+  const SLUG = 'aws-iam-policy-generator';
+  const ROOT_SEL = '.iam-pg';
+  const DEBOUNCE_MS = 150;
+  const ERROR_HOLD_MS = 600;
+  const MAX_STATEMENTS = 5;
+  const MAX_CONDITIONS = 8;
+  const MAX_HASH = 2000;
+  const TF_NAME = 'policy';
+  const KINDS: PolicyKind[] = ['identity', 's3-bucket', 'trust'];
+  const LIMIT_KEYS: LimitKey[] = ['managed', 'inline-user', 'inline-role', 'inline-group'];
+  const PRINCIPAL_TYPES: Principal['type'][] = ['AWS', 'Service', 'Federated', '*'];
+  /** Real AWS global condition keys, offered beside the chosen actions' own keys. */
+  const GLOBAL_KEYS = [
+    'aws:SecureTransport',
+    'aws:SourceIp',
+    'aws:SourceVpce',
+    'aws:SourceArn',
+    'aws:SourceAccount',
+    'aws:PrincipalOrgID',
+    'aws:RequestedRegion',
+    'aws:MultiFactorAuthPresent',
+  ];
+
+  function boot(): void {
+    document.querySelectorAll<HTMLElement>(ROOT_SEL).forEach((root) => {
+      if (root.dataset.iamWired === 'true') return;
+      root.dataset.iamWired = 'true';
+      void init(root);
+    });
+  }
+
+  function el<T extends HTMLElement>(root: HTMLElement, sel: string): T | null {
+    return root.querySelector<T>(sel);
+  }
+
+  const strs = (x: unknown, max = 200): string[] => (Array.isArray(x) ? x.filter((s): s is string => typeof s === 'string').slice(0, max) : []);
+  const splitList = (s: string, re: RegExp) => s.split(re).map((x) => x.trim()).filter(Boolean);
+
+  /** Untrusted (hash / storage) → State, or null when the shape is off. */
+  function sanitize(raw: unknown): State | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const o = raw as Record<string, unknown>;
+    if (!KINDS.includes(o.kind as PolicyKind)) return null;
+    const limit = LIMIT_KEYS.includes(o.limit as LimitKey) ? (o.limit as LimitKey) : 'managed';
+    if (!Array.isArray(o.statements) || !o.statements.length) return null;
+    const statements: Statement[] = [];
+    for (const s of o.statements.slice(0, MAX_STATEMENTS)) {
+      if (!s || typeof s !== 'object') return null;
+      const r = s as Record<string, unknown>;
+      if (r.effect !== 'Allow' && r.effect !== 'Deny') return null;
+      const st: Statement = { effect: r.effect, actions: strs(r.actions), resources: strs(r.resources) };
+      if (typeof r.sid === 'string' && r.sid) st.sid = r.sid.slice(0, 128);
+      if (Array.isArray(r.principals)) {
+        st.principals = r.principals
+          .filter((p): p is Record<string, unknown> => !!p && typeof p === 'object' && PRINCIPAL_TYPES.includes((p as Principal).type))
+          .slice(0, 4)
+          .map((p) => ({ type: p.type as Principal['type'], ids: strs(p.ids, 50) }));
+      }
+      if (Array.isArray(r.conditions)) {
+        st.conditions = r.conditions
+          .filter((c): c is Record<string, unknown> => !!c && typeof c === 'object' && typeof (c as Condition).op === 'string' && typeof (c as Condition).key === 'string')
+          .slice(0, MAX_CONDITIONS)
+          .map((c) => ({ op: String(c.op).slice(0, 64), key: String(c.key).slice(0, 256), values: strs(c.values, 50) }));
+      }
+      statements.push(st);
+    }
+    return { kind: o.kind as PolicyKind, limit, statements };
+  }
+
+  function parse(s: string): State | null {
+    try {
+      return sanitize(JSON.parse(s));
+    } catch {
+      return null;
+    }
+  }
+
+  async function init(root: HTMLElement): Promise<void> {
+    const q = <T extends HTMLElement>(sel: string) => el<T>(root, sel);
+    const presetChips = q<HTMLElement>('#iam-chips');
+    const presetNote = q<HTMLElement>('#iam-preset-note');
+    const kindChips = q<HTMLElement>('#iam-kind-chips');
+    const limitRow = q<HTMLElement>('#iam-limit-row');
+    const limitSel = q<HTMLSelectElement>('#iam-limit');
+    const stmtChips = q<HTMLElement>('#iam-stmt-chips');
+    const addStmt = q<HTMLButtonElement>('#iam-add-stmt');
+    const removeStmt = q<HTMLButtonElement>('#iam-remove-stmt');
+    const effectChips = q<HTMLElement>('#iam-effect-chips');
+    const sidIn = q<HTMLInputElement>('#iam-sid');
+    const serviceSel = q<HTMLSelectElement>('#iam-service');
+    const searchIn = q<HTMLInputElement>('#iam-search');
+    const levelChips = q<HTMLElement>('#iam-level-chips');
+    const actionsBox = q<HTMLElement>('#iam-actions');
+    const selectedEl = q<HTMLElement>('#iam-selected');
+    const resRow = q<HTMLElement>('#iam-res-row');
+    const resIn = q<HTMLTextAreaElement>('#iam-resources');
+    const principalRow = q<HTMLElement>('#iam-principal-row');
+    const ptypeSel = q<HTMLSelectElement>('#iam-ptype');
+    const pidsIn = q<HTMLInputElement>('#iam-pids');
+    const condsBox = q<HTMLElement>('#iam-conds');
+    const condKeys = q<HTMLDataListElement>('#iam-cond-keys');
+    const addCond = q<HTMLButtonElement>('#iam-add-cond');
+    const tabJson = q<HTMLButtonElement>('#iam-tab-json');
+    const tabTf = q<HTMLButtonElement>('#iam-tab-terraform');
+    const resultsBox = q<HTMLElement>('#iam-results');
+    const summaryEl = q<HTMLElement>('#iam-summary');
+    const copyJson = q<HTMLButtonElement>('#iam-copy-json');
+    const copyHcl = q<HTMLButtonElement>('#iam-copy-hcl');
+    const shareBtn = q<HTMLButtonElement>('#iam-share');
+    const copyStatus = q<HTMLElement>('#iam-copy-status');
+    const snapSaveBtn = q<HTMLButtonElement>('#iam-snap-save');
+    const snapSelect = q<HTMLSelectElement>('#iam-snap-select');
+    const snapDeleteBtn = q<HTMLButtonElement>('#iam-snap-delete');
+    if (
+      !presetChips || !presetNote || !kindChips || !limitRow || !limitSel || !stmtChips || !addStmt || !removeStmt ||
+      !effectChips || !sidIn || !serviceSel || !searchIn || !levelChips || !actionsBox || !selectedEl || !resRow ||
+      !resIn || !principalRow || !ptypeSel || !pidsIn || !condsBox || !condKeys || !addCond || !tabJson || !tabTf ||
+      !resultsBox || !summaryEl || !copyJson || !copyHcl || !shareBtn || !copyStatus || !snapSaveBtn || !snapSelect ||
+      !snapDeleteBtn
+    )
+      return;
+    // Re-bound so the closures below keep the narrowing (CLAUDE.md: hoisted functions lose it).
+    const dom = { presetChips, presetNote, kindChips, limitRow, limitSel, stmtChips, removeStmt, addStmt, effectChips, sidIn, serviceSel, searchIn, levelChips, actionsBox, selectedEl, resRow, resIn, principalRow, ptypeSel, pidsIn, condsBox, condKeys, addCond, tabJson, tabTf, resultsBox, summaryEl, copyJson, copyHcl, shareBtn };
+
+    wireCopyButtons(root, { status: copyStatus });
+
+    let engine: EngineModule;
+    let catalog: Catalog;
+    try {
+      const [e, c] = await Promise.all([import('../lib/aws-iam-policy-generator/engine'), import('../data/iam-catalog.json')]);
+      engine = e;
+      catalog = (c as { default: unknown }).default as Catalog;
+    } catch (err) {
+      resultsBox.innerHTML = errorHtml('The policy engine failed to load. Reload the page to try again.');
+      console.error('[AwsIamPolicyGenerator] engine import failed:', err);
+      return;
+    }
+
+    const hash = createHashState('p');
+
+    /* ── State ───────────────────────────────────────────────────────── */
+    const p0 = PRESETS[0];
+    let state: State = { kind: p0.kind, limit: 'managed', statements: structuredClone(p0.statements) };
+    let cur = 0;
+    let service = dom.serviceSel.value;
+    let tab: Tab = 'json';
+    let last: { r: PolicyResult; tf: string } | null = null;
+    /** Statements whose resources the tool fills from ARN formats (cleared once the visitor edits them). */
+    const autoRes = new WeakSet<Statement>();
+    let evalTimer: number | undefined;
+    let errTimer: number | undefined;
+
+    const stmt = () => state.statements[cur];
+    const serialize = () => JSON.stringify(state);
+    const clearTimers = () => {
+      window.clearTimeout(evalTimer);
+      window.clearTimeout(errTimer);
+    };
+    const findAction = (full: string) => {
+      const i = full.indexOf(':');
+      return catalog.services[full.slice(0, i)]?.actions.find((a) => a.n === full.slice(i + 1));
+    };
+
+    /** The statements as the engine should see them for the current kind. */
+    function forKind(s: Statement): Statement {
+      const out: Statement = { effect: s.effect, actions: s.actions, resources: state.kind === 'trust' ? [] : s.resources };
+      if (s.sid) out.sid = s.sid;
+      if (state.kind !== 'identity' && s.principals?.length) out.principals = s.principals;
+      const conds = (s.conditions ?? []).filter((c) => c.key || c.values.length);
+      if (conds.length) out.conditions = conds;
+      return out;
+    }
+
+    /**
+     * One ARN pattern per selected action: its shortest resource-type name, which picks
+     * `object` over `accesspointobject` and `bucket` over `accesspoint`; "*" for actions
+     * with no resource-level permissions.
+     * ponytail: shortest-name heuristic, not a required-type flag — the catalogue does not
+     * carry one; actions like ec2:RunInstances need further ARNs added by hand.
+     */
+    function prefill(actions: string[]): string[] {
+      const arns = new Set<string>();
+      for (const full of actions) {
+        const a = findAction(full);
+        if (!a) continue;
+        if (!a.r.length) {
+          arns.add('*');
+          continue;
+        }
+        const type = [...a.r].sort((x, y) => x.length - y.length)[0];
+        for (const f of engine.arnTemplate(catalog, full.split(':')[0], type)) arns.add(f);
+      }
+      return [...arns];
+    }
+
+    /* ── Rendering the editor ────────────────────────────────────────── */
+    function pressedLevels(): AccessLevel[] {
+      return Array.from(dom.levelChips.querySelectorAll<HTMLElement>('.chip[aria-pressed="true"]')).map((c) => c.dataset.input as AccessLevel);
+    }
+
+    function renderActions(): void {
+      const needle = dom.searchIn.value.trim().toLowerCase();
+      const chosen = new Set(stmt().actions);
+      const list = engine.actionsFor(catalog, service, pressedLevels()).filter((a) => !needle || a.n.toLowerCase().includes(needle));
+      dom.actionsBox.innerHTML =
+        list
+          .map((a) => {
+            const full = `${service}:${a.n}`;
+            return (
+              `<label class="iam-act"><input type="checkbox" value="${escapeHtml(full)}"${chosen.has(full) ? ' checked' : ''}>` +
+              `<span class="iam-act__n code-mono">${escapeHtml(a.n)}</span><span class="iam-act__l">${escapeHtml(a.l)}</span></label>`
+            );
+          })
+          .join('') || `<p class="iam-act__none caption text-mute">No ${escapeHtml(service)} actions match.</p>`;
+    }
+
+    function renderSelected(): void {
+      const a = stmt().actions;
+      dom.selectedEl.textContent = a.length ? `Selected: ${a.join(', ')}` : 'No actions selected.';
+    }
+
+    function renderCondKeys(): void {
+      const keys = new Set<string>();
+      for (const full of stmt().actions) for (const k of findAction(full)?.c ?? []) keys.add(k);
+      for (const k of GLOBAL_KEYS) keys.add(k);
+      dom.condKeys.innerHTML = [...keys].map((k) => `<option value="${escapeHtml(k)}"></option>`).join('');
+    }
+
+    function condRow(c: Condition, i: number): HTMLElement {
+      const row = document.createElement('div');
+      row.className = 'iam-cond';
+      row.dataset.idx = String(i);
+      const op = document.createElement('select');
+      op.className = 'iam-input';
+      op.setAttribute('aria-label', `Condition ${i + 1} operator`);
+      op.dataset.f = 'op';
+      const ops = engine.CONDITION_OPERATORS.includes(c.op) || !c.op ? engine.CONDITION_OPERATORS : [c.op, ...engine.CONDITION_OPERATORS];
+      for (const o of ops) op.add(new Option(o, o, false, o === c.op));
+      const key = document.createElement('input');
+      key.className = 'iam-input code-mono';
+      key.type = 'text';
+      key.placeholder = 'Condition key';
+      key.spellcheck = false;
+      key.autocomplete = 'off';
+      key.setAttribute('list', 'iam-cond-keys');
+      key.setAttribute('aria-label', `Condition ${i + 1} key`);
+      key.dataset.f = 'key';
+      key.value = c.key;
+      const vals = document.createElement('input');
+      vals.className = 'iam-input code-mono';
+      vals.type = 'text';
+      vals.placeholder = 'Values, comma-separated';
+      vals.spellcheck = false;
+      vals.autocomplete = 'off';
+      vals.setAttribute('aria-label', `Condition ${i + 1} values`);
+      vals.dataset.f = 'values';
+      vals.value = c.values.join(', ');
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'btn-tool';
+      del.textContent = 'Remove';
+      del.setAttribute('aria-label', `Remove condition ${i + 1}`);
+      del.dataset.f = 'remove';
+      for (const n of [key, vals]) wireRunKeys(n, () => evaluate('commit'));
+      row.append(op, key, vals, del);
+      return row;
+    }
+
+    function renderConds(): void {
+      const cs = stmt().conditions ?? [];
+      dom.condsBox.replaceChildren(...cs.map(condRow));
+      dom.addCond.disabled = cs.length >= MAX_CONDITIONS;
+    }
+
+    function renderStmtChips(): void {
+      dom.stmtChips.innerHTML = state.statements
+        .map((_, i) => `<button type="button" class="chip" data-example-idx="${i}" aria-pressed="${i === cur}">Statement ${i + 1}</button>`)
+        .join('');
+      dom.addStmt.disabled = state.statements.length >= MAX_STATEMENTS;
+      dom.removeStmt.hidden = state.statements.length <= 1;
+    }
+
+    function renderKind(): void {
+      syncChipsByInput(dom.kindChips, state.kind);
+      dom.limitRow.hidden = state.kind !== 'identity';
+      dom.limitSel.value = state.limit;
+      dom.resRow.hidden = state.kind === 'trust';
+      dom.principalRow.hidden = state.kind === 'identity';
+    }
+
+    function renderPrincipal(): void {
+      const p = stmt().principals?.[0];
+      dom.ptypeSel.value = p?.type ?? 'AWS';
+      dom.pidsIn.value = p && p.type !== '*' ? p.ids.join(', ') : '';
+      dom.pidsIn.disabled = p?.type === '*';
+    }
+
+    /** Load the current statement into the form. */
+    function loadStatement(): void {
+      const s = stmt();
+      syncChipsByInput(dom.effectChips, s.effect);
+      dom.sidIn.value = s.sid ?? '';
+      const svc = s.actions[0]?.split(':')[0];
+      if (svc && catalog.services[svc]) service = svc;
+      dom.serviceSel.value = service;
+      dom.resIn.value = s.resources.join('\n');
+      renderActions();
+      renderSelected();
+      renderPrincipal();
+      renderConds();
+      renderCondKeys();
+    }
+
+    function applyState(s: State): void {
+      state = s;
+      cur = 0;
+      renderKind();
+      renderStmtChips();
+      loadStatement();
+    }
+
+    /* ── Evaluation ──────────────────────────────────────────────────── */
+    function setSummary(text: string, isError: boolean): void {
+      dom.summaryEl.textContent = text;
+      dom.summaryEl.classList.toggle('text-inverse-error', isError);
+      dom.summaryEl.classList.toggle('text-inverse-mute', !isError);
+    }
+
+    function paint(r: PolicyResult, tf: string, source: 'type' | 'commit' | 'seed'): void {
+      // Amber tick on the values that changed — never on the boot seed.
+      const prev = source === 'seed' ? new Map<string, string>() : snapshotValues(dom.resultsBox);
+      // `last` is what setTab repaints from, so it must be the painted result — never one still on hold.
+      last = { r, tf };
+      dom.resultsBox.innerHTML = resultHtml(r, tf, tab);
+      markChanged(dom.resultsBox, prev);
+      setSummary(summaryText(r), !r.valid);
+      dom.copyJson.dataset.copy = r.json;
+      dom.copyHcl.dataset.copy = tf;
+      dom.copyJson.hidden = false;
+      dom.copyHcl.hidden = false;
+      const serial = serialize();
+      const frag = hash.build(serial);
+      const shareable = r.valid && frag.length <= MAX_HASH;
+      dom.shareBtn.hidden = !shareable;
+      dom.shareBtn.dataset.copy = shareable ? location.origin + location.pathname + location.search + frag : '';
+      if (source !== 'seed') {
+        hash.write(shareable ? serial : null);
+        recordToolLastInput(SLUG, serial);
+      }
+    }
+
+    function evaluate(source: 'type' | 'commit' | 'seed'): void {
+      clearTimers();
+      const stmts = state.statements.map(forKind);
+      let r: PolicyResult;
+      try {
+        r = engine.buildPolicy(state.kind, stmts, catalog, state.kind === 'identity' ? state.limit : undefined);
+      } catch (err) {
+        dom.resultsBox.innerHTML = errorHtml('This policy could not be built.');
+        setSummary('This policy could not be built.', true);
+        console.error('[AwsIamPolicyGenerator] buildPolicy failed:', err);
+        return;
+      }
+      const tf = engine.toTerraform(stmts, TF_NAME);
+      // Calm errors: mid-typing, hold an error-bearing result until the visitor pauses.
+      if (source === 'type' && !r.valid) {
+        errTimer = window.setTimeout(() => paint(r, tf, source), ERROR_HOLD_MS);
+        return;
+      }
+      paint(r, tf, source);
+    }
+
+    const schedule = () => {
+      clearTimers();
+      evalTimer = window.setTimeout(() => evaluate('type'), DEBOUNCE_MS);
+    };
+    /** Any edit means the policy is no longer the preset. */
+    const edited = () => {
+      clearChips(dom.presetChips);
+      dom.presetNote.hidden = true;
+    };
+
+    function setTab(next: Tab, focus = false): void {
+      tab = next;
+      for (const [b, t] of [[dom.tabJson, 'json'], [dom.tabTf, 'terraform']] as const) {
+        b.setAttribute('aria-selected', String(t === tab));
+        b.tabIndex = t === tab ? 0 : -1;
+        if (t === tab && focus) b.focus();
+      }
+      dom.resultsBox.setAttribute('aria-labelledby', tab === 'json' ? 'iam-tab-json' : 'iam-tab-terraform');
+      if (last) dom.resultsBox.innerHTML = resultHtml(last.r, last.tf, tab);
+    }
+
+    /* ── Events ──────────────────────────────────────────────────────── */
+    dom.presetChips.addEventListener('click', (e) => {
+      const chip = (e.target as HTMLElement).closest<HTMLElement>(CHIP_SELECTOR);
+      if (!chip || !dom.presetChips.contains(chip)) return;
+      const p = PRESETS.find((x) => x.slug === chip.dataset.input);
+      if (!p) return;
+      syncChipsByInput(dom.presetChips, p.slug);
+      dom.presetNote.textContent = p.note;
+      dom.presetNote.hidden = false;
+      applyState({ kind: p.kind, limit: state.limit, statements: structuredClone(p.statements) });
+      evaluate('commit');
+    });
+
+    dom.kindChips.addEventListener('click', (e) => {
+      const chip = (e.target as HTMLElement).closest<HTMLElement>(CHIP_SELECTOR);
+      if (!chip || !dom.kindChips.contains(chip)) return;
+      state.kind = chip.dataset.input as PolicyKind;
+      edited();
+      renderKind();
+      evaluate('commit');
+    });
+
+    dom.limitSel.addEventListener('change', () => {
+      state.limit = dom.limitSel.value as LimitKey;
+      evaluate('commit');
+    });
+
+    dom.stmtChips.addEventListener('click', (e) => {
+      const chip = (e.target as HTMLElement).closest<HTMLElement>(CHIP_SELECTOR);
+      if (!chip || !dom.stmtChips.contains(chip)) return;
+      cur = Number(chip.dataset.exampleIdx) || 0;
+      syncChipsByIndex(dom.stmtChips, cur);
+      loadStatement();
+    });
+
+    dom.addStmt.addEventListener('click', () => {
+      if (state.statements.length >= MAX_STATEMENTS) return;
+      const s: Statement = { effect: 'Allow', actions: [], resources: [] };
+      if (state.kind !== 'identity') s.principals = [{ type: 'AWS', ids: [] }];
+      autoRes.add(s);
+      state.statements.push(s);
+      cur = state.statements.length - 1;
+      edited();
+      renderStmtChips();
+      loadStatement();
+      evaluate('commit');
+    });
+
+    dom.removeStmt.addEventListener('click', () => {
+      if (state.statements.length <= 1) return;
+      state.statements.splice(cur, 1);
+      cur = Math.min(cur, state.statements.length - 1);
+      edited();
+      renderStmtChips();
+      loadStatement();
+      evaluate('commit');
+    });
+
+    dom.effectChips.addEventListener('click', (e) => {
+      const chip = (e.target as HTMLElement).closest<HTMLElement>(CHIP_SELECTOR);
+      if (!chip || !dom.effectChips.contains(chip)) return;
+      stmt().effect = chip.dataset.input === 'Deny' ? 'Deny' : 'Allow';
+      syncChipsByInput(dom.effectChips, stmt().effect);
+      edited();
+      evaluate('commit');
+    });
+
+    dom.sidIn.addEventListener('input', () => {
+      const v = dom.sidIn.value.trim();
+      if (v) stmt().sid = v;
+      else delete stmt().sid;
+      edited();
+      schedule();
+    });
+
+    dom.serviceSel.addEventListener('change', () => {
+      service = dom.serviceSel.value;
+      renderActions();
+    });
+    dom.searchIn.addEventListener('input', renderActions);
+
+    dom.levelChips.addEventListener('click', (e) => {
+      const chip = (e.target as HTMLElement).closest<HTMLElement>(CHIP_SELECTOR);
+      if (!chip || !dom.levelChips.contains(chip)) return;
+      chip.setAttribute('aria-pressed', chip.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+      renderActions();
+    });
+
+    dom.actionsBox.addEventListener('change', (e) => {
+      const box = e.target as HTMLInputElement;
+      if (box.type !== 'checkbox') return;
+      const s = stmt();
+      s.actions = box.checked ? [...new Set([...s.actions, box.value])] : s.actions.filter((a) => a !== box.value);
+      if (autoRes.has(s)) {
+        s.resources = prefill(s.actions);
+        dom.resIn.value = s.resources.join('\n');
+      }
+      edited();
+      renderSelected();
+      renderCondKeys();
+      evaluate('commit');
+    });
+
+    dom.resIn.addEventListener('input', () => {
+      const s = stmt();
+      autoRes.delete(s);
+      s.resources = splitList(dom.resIn.value, /\r?\n/);
+      edited();
+      schedule();
+    });
+
+    const readPrincipal = () => {
+      const type = dom.ptypeSel.value as Principal['type'];
+      dom.pidsIn.disabled = type === '*';
+      stmt().principals = [{ type, ids: type === '*' ? [] : splitList(dom.pidsIn.value, /[\s,]+/) }];
+      edited();
+    };
+    dom.ptypeSel.addEventListener('change', () => {
+      readPrincipal();
+      evaluate('commit');
+    });
+    dom.pidsIn.addEventListener('input', () => {
+      readPrincipal();
+      schedule();
+    });
+
+    dom.addCond.addEventListener('click', () => {
+      const s = stmt();
+      (s.conditions ??= []).push({ op: 'StringEquals', key: '', values: [] });
+      edited();
+      renderConds();
+      dom.condsBox.querySelector<HTMLInputElement>('.iam-cond:last-child [data-f="key"]')?.focus();
+    });
+    const readCond = (target: HTMLElement): boolean => {
+      const row = target.closest<HTMLElement>('.iam-cond');
+      const c = row && stmt().conditions?.[Number(row.dataset.idx)];
+      if (!row || !c) return false;
+      const v = (target as HTMLInputElement).value;
+      if (target.dataset.f === 'op') c.op = v;
+      else if (target.dataset.f === 'key') c.key = v.trim();
+      else if (target.dataset.f === 'values') c.values = splitList(v, /\s*,\s*/);
+      else return false;
+      edited();
+      return true;
+    };
+    dom.condsBox.addEventListener('input', (e) => {
+      if (readCond(e.target as HTMLElement)) schedule();
+    });
+    dom.condsBox.addEventListener('change', (e) => {
+      if ((e.target as HTMLElement).dataset.f === 'op' && readCond(e.target as HTMLElement)) evaluate('commit');
+    });
+    dom.condsBox.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-f="remove"]');
+      const row = btn?.closest<HTMLElement>('.iam-cond');
+      if (!row) return;
+      stmt().conditions?.splice(Number(row.dataset.idx), 1);
+      edited();
+      renderConds();
+      evaluate('commit');
+    });
+
+    wireRunKeys(dom.sidIn, () => evaluate('commit'));
+    wireRunKeys(dom.searchIn, () => evaluate('commit'));
+    wireRunKeys(dom.pidsIn, () => evaluate('commit'));
+    wireRunKeys(dom.resIn, () => evaluate('commit'), { enter: 'insert-then-run' });
+    for (const n of [dom.sidIn, dom.pidsIn, dom.resIn]) n.addEventListener('blur', () => evaluate('commit'));
+
+    dom.tabJson.addEventListener('click', () => setTab('json'));
+    dom.tabTf.addEventListener('click', () => setTab('terraform'));
+    for (const b of [dom.tabJson, dom.tabTf]) {
+      b.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        e.preventDefault();
+        setTab(tab === 'json' ? 'terraform' : 'json', true);
+      });
+    }
+
+    wireSnapshotUI({
+      slug: SLUG,
+      saveBtn: snapSaveBtn,
+      snapshotSelect: snapSelect,
+      deleteBtn: snapDeleteBtn,
+      getValue: serialize,
+      setValue: (value) => {
+        const s = parse(value);
+        if (!s) return;
+        edited();
+        applyState(s);
+        evaluate('commit');
+      },
+    });
+
+    /* ── First load: #p= deep link → restored last input → the SSR seed.
+       Seeding never writes the hash or records — only user actions do. ── */
+    const fromHash = hash.read();
+    const restored = getRestoredLastInput(SLUG);
+    const s = (fromHash && parse(fromHash)) || (restored && parse(restored)) || null;
+    if (s) {
+      edited();
+      applyState(s);
+    } else {
+      applyState(state);
+    }
+    evaluate('seed');
+  }
+
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>
