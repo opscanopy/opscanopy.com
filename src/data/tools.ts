@@ -913,6 +913,25 @@ export const tools: Tool[] = [
     // Related: VRAM is the other half of sizing an LLM workload; data sizes for bytes vs tokens.
     related: ['llm-vram-calculator', 'data-size-converter'],
   },
+  {
+    slug: 'aws-iam-policy-generator',
+    name: 'AWS IAM Policy Generator',
+    tagline: 'Build least-privilege IAM and S3 bucket policies — JSON and Terraform, with size limits and warnings.',
+    description:
+      'Pick a service, actions and resources and get a valid IAM identity policy or S3 bucket policy as JSON and as a Terraform aws_iam_policy_document, with ARN templates from the AWS Service Reference, condition operators, the policy size checked against AWS quotas, and warnings for wildcard actions, Resource "*" and Principal "*".',
+    status: 'live',
+    category: 'Security',
+    keywords: [
+      'aws policy generator',
+      'iam policy generator',
+      'aws iam policy generator',
+      's3 bucket policy generator',
+      'terraform iam policy',
+      'iam trust policy',
+      'least privilege iam',
+    ],
+    accent: 'ship',
+  },
 ];
 
 export const liveTools = tools.filter((t) => t.status === 'live');

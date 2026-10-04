@@ -47,7 +47,7 @@ export const tracks: Track[] = [
     tagline: 'The core cloud services a DevOps engineer actually needs.',
     accent: 'ship',
     roadmapSlug: 'aws',
-    guideSlugs: ['aws-for-devops-engineers', 'aws-ai-practitioner-study-guide'],
+    guideSlugs: ['aws-for-devops-engineers', 'aws-ai-practitioner-study-guide', 'github-actions-oidc-aws', 'iam-trust-policy-explained', 'terraform-iam-policy-examples'],
   },
   {
     slug: 'networking',

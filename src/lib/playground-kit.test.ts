@@ -432,8 +432,9 @@ const UNMIGRATED: Record<string, string[]> = {
 const corpus = playgroundFiles.map((f) => ({ name: basename(f, '.astro'), rel: relative(SRC, f), raw: readFileSync(f, 'utf-8') }));
 
 describe('playground-kit gate — corpus', () => {
-  it('walks exactly the 41 playgrounds', () => {
-    expect(corpus.length).toBe(41);
+  // 42 since 2026-10-05: AwsIamPolicyGeneratorPlayground (fig. 42).
+  it('walks exactly the 42 playgrounds', () => {
+    expect(corpus.length).toBe(42);
   });
 
   it(`cm-count: the modulepreload discovery finds exactly ${EXPECTED_CM} CodeMirror playgrounds`, () => {
@@ -481,8 +482,9 @@ describe('playground-kit gate — corpus', () => {
       .map((d) => join(LIB, d, 'render.ts'))
       .filter((f) => existsSync(f))
       .sort();
-    // 40 of the 41 tools have a builder (certificate-decoder is unseeded and has none).
-    expect(builders.length).toBe(40);
+    // 41 of the 42 tools have a builder (certificate-decoder is unseeded and has none);
+    // aws-iam-policy-generator/render.ts joined on 2026-10-05.
+    expect(builders.length).toBe(41);
     const stale: string[] = [];
     const regressions: string[] = [];
     for (const f of builders) {
