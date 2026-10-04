@@ -872,6 +872,27 @@ export const tools: Tool[] = [
     // Related: sizing what a plan is about to create, and the config formats around it.
     related: ['kubernetes-resource-calculator', 'json-yaml-converter'],
   },
+  {
+    slug: 'llm-vram-calculator',
+    name: 'LLM VRAM Calculator',
+    tagline:
+      'Estimate the GPU memory a local LLM needs — weights, KV cache and runtime overhead, per quantization and context length.',
+    description:
+      'Pick a model preset or type a parameter count, choose a GGUF quantization and a context length, and get the VRAM in GiB split into weights, KV cache and runtime overhead — with a verdict against 8, 12, 16, 24, 32, 48 and 80 GiB cards. Real per-layer KV-cache math from each model\'s config.json, not a rule of thumb.',
+    status: 'live',
+    category: 'AI',
+    keywords: [
+      'llm vram calculator',
+      'local llm vram',
+      'gpu memory for llm',
+      'kv cache size',
+      'gguf quantization vram',
+      'how much vram for 70b',
+    ],
+    accent: 'develop',
+    // Related: AI is a category of one — the other sizing tools are the nearest neighbours.
+    related: ['kubernetes-resource-calculator', 'data-size-converter'],
+  },
 ];
 
 export const liveTools = tools.filter((t) => t.status === 'live');
@@ -926,6 +947,7 @@ export const categoryHue: Record<string, { light: string; dark: string }> = {
   Docker: { light: '#116d8a', dark: '#63bfe1' }, // hue 225
   Utilities: { light: '#73621c', dark: '#c5b164' }, // hue 95
   IaC: { light: '#576c2f', dark: '#a2bc75' }, // hue 125
+  AI: { light: '#7d507f', dark: '#d29bd4' }, // hue 325
 };
 
 /**
@@ -1010,4 +1032,5 @@ export const categoryBlurb: Record<string, string> = {
   Utilities:
     'Generate, convert and reshape identifiers, text and file modes — pure client-side.',
   IaC: 'Read, validate and reason about infrastructure-as-code changes before you apply — entirely in your browser.',
+  AI: 'Size local LLM deployments — weights, KV cache and GPU memory — from real model architectures, in your browser.',
 };

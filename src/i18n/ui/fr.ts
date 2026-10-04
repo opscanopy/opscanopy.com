@@ -160,6 +160,7 @@ const fr: Partial<UiDict> = {
   'category.Utilities': 'Utilitaires',
   // « IaC » (Infrastructure as Code) est le terme technique aussi en français.
   'category.IaC': 'IaC',
+  'category.AI': 'AI',
   'category.all': 'Tous',
 
   // Tool catalog (/tools)

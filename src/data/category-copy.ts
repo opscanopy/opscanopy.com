@@ -76,4 +76,9 @@ export const categoryIntro: Record<string, string[]> = {
     'The failure is human and predictable. Plans are skimmed because they are long, and the destructive change is not visually distinguished from an added tag.',
     'This summarises a plan into what is actually being created, updated, replaced and destroyed, so the count of destructive operations is a number you read rather than something you might have scrolled past.',
   ],
+  AI: [
+    'Running a model locally starts with one question — will it fit — and the usual answer is a rule of thumb that is wrong by a factor of three. Parameters times bytes per weight gets you the weights; it says nothing about the KV cache, which at a 128k context on an 8B model is twice the size of the Q4 weights it sits beside.',
+    'The cache is the part people underestimate because it depends on things the model card does not advertise: layer count, key-value heads, head dimension. A model with grouped-query attention needs a quarter of the cache of one without, at the same parameter count. Quantization labels add their own confusion — Q4_K_M is not four bits per weight, it is closer to five.',
+    'This computes the estimate from the model\'s real architecture, read from its published configuration, and shows the three parts separately — weights, KV cache, runtime overhead — against the memory tiers GPUs are actually sold in. It runs in your browser, so the numbers come from arithmetic you can check, not from a server you have to trust.',
+  ],
 };

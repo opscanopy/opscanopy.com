@@ -159,6 +159,7 @@ const ptBr: Partial<UiDict> = {
   'category.Utilities': 'Utilitários',
   // "IaC" (Infrastructure as Code) é o termo técnico também em português.
   'category.IaC': 'IaC',
+  'category.AI': 'AI',
   'category.all': 'Todas',
 
   // Tool catalog (/tools)

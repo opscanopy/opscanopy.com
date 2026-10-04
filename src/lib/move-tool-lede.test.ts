@@ -258,8 +258,11 @@ describe('move-tool-lede codemod — registry', () => {
     expect(String(slugs.indexOf('subnet-calculator') + 1).padStart(2, '0')).toBe('10');
   });
 
-  it('expects 39 tools × 5 locales', () => {
+  it('expects the 39 batch-D tools × 5 locales', () => {
+    // The codemod migrated the 39 tools that existed in batch D. Tools added
+    // later are written in the new shape from the start, so the live count may
+    // only grow past the migration set, never fall below it.
     expect(EXPECTED_FILES).toBe(195);
-    expect(tools.filter((t) => t.status === 'live').length * 5).toBe(EXPECTED_FILES);
+    expect(tools.filter((t) => t.status === 'live').length * 5).toBeGreaterThanOrEqual(EXPECTED_FILES);
   });
 });

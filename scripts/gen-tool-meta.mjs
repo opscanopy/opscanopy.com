@@ -99,6 +99,10 @@ const TOOL_PATHS = {
     lib: 'terraform-plan-summarizer',
     component: 'TerraformPlanSummarizerPlayground.astro',
   },
+  'llm-vram-calculator': {
+    lib: 'llm-vram-calculator',
+    component: 'LlmVramCalculatorPlayground.astro',
+  },
 };
 
 const missing = liveTools.map((t) => t.slug).filter((slug) => !TOOL_PATHS[slug]);
