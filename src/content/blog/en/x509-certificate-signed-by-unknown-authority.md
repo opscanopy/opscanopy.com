@@ -1,7 +1,7 @@
 ---
 title: "x509: certificate signed by unknown authority — the fix"
 description: "What the error actually means, the four causes ranked by how often they bite, and the one-line openssl check that shows whether an intermediate is missing."
-pubDate: 2026-08-29
+pubDate: 2026-08-15
 tags: ["tls","certificates","docker","go","security"]
 relatedTool:
   name: "Certificate Decoder & Chain Checker"

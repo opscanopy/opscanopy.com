@@ -1,7 +1,7 @@
 ---
 title: "Por qué tu workflow de GitHub Actions no se disparó"
 description: "Por qué tu workflow no se disparó: rama que no coincide, la semántica AND de branches + paths, el glob ** obligatorio y paths-ignore en pull_request."
-pubDate: 2026-06-14
+pubDate: 2026-06-07
 tags: ["github-actions", "ci-cd", "debugging"]
 relatedTool:
   name: "Probador de Expresiones y Disparadores de GitHub Actions"

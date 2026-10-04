@@ -1,7 +1,7 @@
 ---
 title: "Why your GitHub Actions workflow didn't trigger"
 description: "Branch name mismatches, the AND-semantics of branches + paths, the ** glob requirement and paths-ignore on pull_request — with the fix for each."
-pubDate: 2026-06-14
+pubDate: 2026-06-07
 tags: ["github-actions", "ci-cd", "debugging"]
 relatedTool:
   name: "GitHub Actions Expression & Trigger Tester"

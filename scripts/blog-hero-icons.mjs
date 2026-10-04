@@ -355,5 +355,21 @@ export const heroIcons = {
     "linejoin": "round",
     "body": "<rect x=\"-140\" y=\"-120\" width=\"120\" height=\"120\" rx=\"8\"/>\n<rect x=\"-140\" y=\"20\" width=\"84\" height=\"56\" rx=\"8\"/>\n<rect x=\"-140\" y=\"92\" width=\"48\" height=\"30\" rx=\"6\"/>\n<line x1=\"-20\" y1=\"-60\" x2=\"16\" y2=\"0\" stroke-opacity=\"0.55\"/>\n<line x1=\"-56\" y1=\"48\" x2=\"16\" y2=\"0\" stroke-opacity=\"0.55\"/>\n<line x1=\"-92\" y1=\"107\" x2=\"16\" y2=\"0\" stroke-opacity=\"0.55\"/>\n<circle cx=\"40\" cy=\"0\" r=\"24\" fill=\"#ffffff\" fill-opacity=\"0.9\" stroke=\"none\"/>\n<circle cx=\"40\" cy=\"0\" r=\"24\"/>\n<line x1=\"64\" y1=\"0\" x2=\"140\" y2=\"0\"/>\n<polyline points=\"118,-22 140,0 118,22\"/>",
     "texts": []
+  },
+  "chmod-command-linux": {
+    "ariaLabel": "chmod command in Linux — a grid of read, write and execute bits for owner, group and others",
+    "strokeWidth": 7,
+    "linecap": "round",
+    "linejoin": "round",
+    "body": "<rect x=\"-120\" y=\"-120\" width=\"72\" height=\"72\" rx=\"8\" fill=\"#ffffff\" fill-opacity=\"0.9\" stroke=\"none\"/>\n<rect x=\"-120\" y=\"-120\" width=\"72\" height=\"72\" rx=\"8\"/>\n<rect x=\"-36\" y=\"-120\" width=\"72\" height=\"72\" rx=\"8\" fill=\"#ffffff\" fill-opacity=\"0.9\" stroke=\"none\"/>\n<rect x=\"-36\" y=\"-120\" width=\"72\" height=\"72\" rx=\"8\"/>\n<rect x=\"48\" y=\"-120\" width=\"72\" height=\"72\" rx=\"8\" fill=\"#ffffff\" fill-opacity=\"0.9\" stroke=\"none\"/>\n<rect x=\"48\" y=\"-120\" width=\"72\" height=\"72\" rx=\"8\"/>\n<rect x=\"-120\" y=\"-36\" width=\"72\" height=\"72\" rx=\"8\" fill=\"#ffffff\" fill-opacity=\"0.9\" stroke=\"none\"/>\n<rect x=\"-120\" y=\"-36\" width=\"72\" height=\"72\" rx=\"8\"/>\n<rect x=\"-36\" y=\"-36\" width=\"72\" height=\"72\" rx=\"8\" stroke-opacity=\"0.55\"/>\n<rect x=\"48\" y=\"-36\" width=\"72\" height=\"72\" rx=\"8\" fill=\"#ffffff\" fill-opacity=\"0.9\" stroke=\"none\"/>\n<rect x=\"48\" y=\"-36\" width=\"72\" height=\"72\" rx=\"8\"/>\n<rect x=\"-120\" y=\"48\" width=\"72\" height=\"72\" rx=\"8\" stroke-opacity=\"0.55\"/>\n<rect x=\"-36\" y=\"48\" width=\"72\" height=\"72\" rx=\"8\" stroke-opacity=\"0.55\"/>\n<rect x=\"48\" y=\"48\" width=\"72\" height=\"72\" rx=\"8\" stroke-opacity=\"0.55\"/>",
+    "texts": []
+  },
+  "chown-command-linux": {
+    "ariaLabel": "chown command in Linux — a key handing a folder to a new owner",
+    "strokeWidth": 7,
+    "linecap": "round",
+    "linejoin": "round",
+    "body": "<path d=\"M-20,-60 L-20,100 L140,100 L140,-40 L50,-40 L30,-60 Z\"/>\n<line x1=\"-20\" y1=\"-20\" x2=\"140\" y2=\"-20\" stroke-opacity=\"0.55\"/>\n<circle cx=\"-100\" cy=\"-80\" r=\"34\" fill=\"#ffffff\" fill-opacity=\"0.9\" stroke=\"none\"/>\n<circle cx=\"-100\" cy=\"-80\" r=\"34\"/>\n<circle cx=\"-100\" cy=\"-80\" r=\"12\" fill=\"#a8721f\" fill-opacity=\"0.9\" stroke=\"none\"/>\n<line x1=\"-76\" y1=\"-56\" x2=\"10\" y2=\"30\" stroke-width=\"9\"/>\n<line x1=\"-14\" y1=\"6\" x2=\"-30\" y2=\"22\"/>\n<line x1=\"-2\" y1=\"18\" x2=\"-18\" y2=\"34\"/>",
+    "texts": []
   }
 };

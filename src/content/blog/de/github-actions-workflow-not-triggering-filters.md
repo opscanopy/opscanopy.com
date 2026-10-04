@@ -1,7 +1,7 @@
 ---
 title: "Warum Ihr GitHub-Actions-Workflow nicht ausgelöst wurde"
 description: "Nicht übereinstimmender Branch-Name, die UND-Semantik von branches- und paths-Filtern, die **-Glob-Anforderung, paths-ignore bei pull_request — mit Lösung."
-pubDate: 2026-06-14
+pubDate: 2026-06-07
 tags: ["github-actions", "ci-cd", "debugging"]
 relatedTool:
   name: "GitHub Actions Ausdrucks- & Trigger-Tester"

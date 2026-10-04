@@ -10,6 +10,7 @@ import { chmodVariants } from './chmod';
 import { subnetVariants } from './subnet';
 import { cronVariants } from './cron';
 import { llmVramVariants } from './llm-vram';
+import { variantsFor, type VariantLocale } from './chmod.i18n';
 import { parseOctal } from '../../lib/chmod-calculator/engine';
 import { calculate } from '../../lib/subnet-calculator/engine';
 import { explain } from '../../lib/cron-tester/engine';
@@ -26,6 +27,9 @@ const lists: [string, ToolVariant[]][] = [
   ['cron', cronVariants],
   ['llm-vram', llmVramVariants],
 ];
+const chmodLocales: VariantLocale[] = ['de', 'es', 'fr', 'pt-br'];
+for (const l of chmodLocales) lists.push([`chmod-${l}`, variantsFor(l)]);
+const chmodAll = [...chmodVariants, ...chmodLocales.flatMap(variantsFor)];
 
 for (const [name, list] of lists) {
   describe(`${name} variants`, () => {
@@ -63,9 +67,27 @@ for (const [name, list] of lists) {
   });
 }
 
+describe('chmod locale variants mirror English', () => {
+  it('13 pages: 777/755/600/700 in de, fr, pt-br; 777 only in es', () => {
+    expect(variantsFor('es').map((v) => v.slug)).toEqual(['777']);
+    for (const l of ['de', 'fr', 'pt-br'] as const)
+      expect(variantsFor(l).map((v) => v.slug).sort()).toEqual(['600', '700', '755', '777']);
+  });
+  for (const l of chmodLocales)
+    for (const v of variantsFor(l)) {
+      it(`${l} ${v.slug}: same slug/input as English, keyword first in title`, () => {
+        const en = chmodVariants.find((e) => e.slug === v.slug);
+        expect(en, v.slug).toBeDefined();
+        expect(v.input).toBe(en!.input);
+        expect(v.h1Name).toBe(en!.h1Name);
+        expect(v.title.startsWith(`chmod ${v.slug}`), v.title).toBe(true);
+      });
+    }
+});
+
 describe('variants agree with their engines', () => {
-  for (const v of chmodVariants) {
-    it(`chmod ${v.input}: valid, symbolic form quoted in the prose`, () => {
+  for (const v of chmodAll) {
+    it(`chmod ${v.input} (${v.title}): valid, symbolic form quoted in the prose`, () => {
       const r = parseOctal(v.input);
       expect(r.valid, r.error).toBe(true);
       expect(prose(v)).toContain(r.symbolic!);

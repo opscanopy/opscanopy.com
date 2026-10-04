@@ -1,7 +1,7 @@
 ---
 title: "Pourquoi votre workflow GitHub Actions ne se déclenche pas"
 description: "Un nom de branche qui ne correspond pas, la sémantique ET de branches + paths, l'exigence du glob **, paths-ignore sur pull_request — et les correctifs."
-pubDate: 2026-06-14
+pubDate: 2026-06-07
 tags: ["github-actions", "ci-cd", "debugging"]
 relatedTool:
   name: "Testeur d'expressions et de déclencheurs GitHub Actions"

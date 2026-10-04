@@ -1,7 +1,7 @@
 ---
 title: "OOMKilled and exit code 137: why Kubernetes killed your pod"
 description: "Exit code 137 means the kernel killed your container for exceeding its memory limit. How to confirm it, and why raising the limit is usually the wrong fix."
-pubDate: 2026-08-29
+pubDate: 2026-08-22
 tags: ["kubernetes","memory","limits","debugging"]
 relatedTool:
   name: "Kubernetes Resource Calculator"

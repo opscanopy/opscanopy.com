@@ -1,7 +1,7 @@
 ---
 title: "IPv6 subnet calculator: what ipcalc can't do, and how sipcalc handles /64s"
 description: "An IPv6 subnet calculator explained: why classic ipcalc is IPv4-only, how sipcalc adds IPv6 support, and the exact math behind splitting a /48 into /64s."
-pubDate: 2026-09-21
+pubDate: 2026-09-19
 tags: ["networking", "ipv6", "linux"]
 relatedTool:
   name: "Subnet Calculator"

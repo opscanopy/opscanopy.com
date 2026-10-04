@@ -1,7 +1,7 @@
 ---
 title: "Uma alternativa ao jwt.io: decodifique um JWT sem colá-lo no site de outra pessoa"
 description: "Procurando uma alternativa ao jwt.io? O que um decodificador de JWT no navegador prova ou não sobre os seus dados, como conferir você mesmo e uma opção offline."
-pubDate: 2026-09-21
+pubDate: 2026-09-10
 updatedDate: 2026-10-04
 tags: ["security", "jwt", "developer-experience"]
 lang: pt-br
