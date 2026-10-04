@@ -177,10 +177,18 @@ const en: PagesContent = {
     description:
       'OpsCanopy is a growing canopy of free, private, browser-based tools for platform and DevOps engineers — validators, converters, testers and linters.',
     eyebrow: 'About',
-    heading: 'Free DevOps tools that run entirely in your browser.',
-    lead: 'OpsCanopy is a growing collection of focused utilities for platform and DevOps engineers. Each one solves a small, real problem — and each one runs 100% client-side, so the things you paste never leave your device.',
-    updated: UPDATED,
+    heading: 'Who builds OpsCanopy, and why it runs locally.',
+    lead: 'OpsCanopy is a set of free, browser-based DevOps tools — plus a 90-day learning path and certification practice exams — built by engineers who wanted a private place to do the small jobs. Every tool solves one real problem and runs 100% client-side, so what you paste never leaves your device.',
+    updated: '2026-10-22',
     sections: [
+      {
+        heading: 'Who builds it',
+        body: [
+          'OpsCanopy is built and maintained by Pushkar Kumar and Asif Khan — engineers who got tired of pasting sensitive config into random web tools and decided to build fast, private, client-side alternatives instead.',
+          "Pushkar Kumar — a software developer and DevOps engineer interested in DevOps. He set out to create a free resource for new developers and DevOps engineers learning this path, so DevOps can be easily guided and learned — since when he started, there wasn't a free resource like this to start with.",
+          'Development happens in the open on GitHub, so you can audit exactly how each tool behaves, report a bug, or suggest the next utility to add.',
+        ],
+      },
       {
         heading: 'Why it exists',
         body: [
@@ -215,14 +223,6 @@ const en: PagesContent = {
         heading: 'Who it is for',
         body: [
           'It is built for platform engineers, SREs, DevOps practitioners, and anyone who lives close to infrastructure — but the tools are useful to any developer who wants a quick, private answer without installing anything.',
-        ],
-      },
-      {
-        heading: 'Who builds it',
-        body: [
-          'OpsCanopy is built and maintained by Pushkar Kumar and Asif Khan — engineers who got tired of pasting sensitive config into random web tools and decided to build fast, private, client-side alternatives instead.',
-          "Pushkar Kumar — a software developer and DevOps engineer interested in DevOps. He set out to create a free resource for new developers and DevOps engineers learning this path, so DevOps can be easily guided and learned — since when he started, there wasn't a free resource like this to start with.",
-          'Development happens in the open on GitHub, so you can audit exactly how each tool behaves, report a bug, or suggest the next utility to add.',
         ],
       },
     ],

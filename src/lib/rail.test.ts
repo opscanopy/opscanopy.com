@@ -101,15 +101,10 @@ const RAIL_ALLOWLIST: Record<string, number> = {
   'components/page/BlogPost.astro': 1,
   'components/page/GuidePost.astro': 1,
   'pages/changelog.astro': 3,
-  'pages/de/index.astro': 1,
-  'pages/es/index.astro': 1,
-  'pages/fr/index.astro': 1,
-  'pages/index.astro': 1,
   'pages/learn/roadmaps/[slug].astro': 3,
   'pages/mission-90/complete.astro': 2,
   'pages/mission-90/job-ready.astro': 5,
   'pages/mission-90/setup.astro': 1,
-  'pages/pt-br/index.astro': 1,
   'pages/verify-ai.astro': 8,
 };
 

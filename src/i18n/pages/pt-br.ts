@@ -108,10 +108,18 @@ const ptBr: Partial<PagesContent> = {
     description:
       'O OpsCanopy é uma copa crescente de ferramentas gratuitas, privadas e baseadas no navegador para engenheiros de plataforma e DevOps — validadores e linters.',
     eyebrow: 'Sobre',
-    heading: 'Ferramentas de DevOps gratuitas que rodam inteiramente no seu navegador.',
-    lead: 'O OpsCanopy é uma coleção crescente de utilitários focados para engenheiros de plataforma e DevOps. Cada um resolve um problema pequeno e real — e cada um roda 100% do lado do cliente, então as coisas que você cola nunca saem do seu dispositivo.',
-    updated: UPDATED,
+    heading: 'Quem constrói o OpsCanopy e por que tudo roda localmente.',
+    lead: 'O OpsCanopy é um conjunto de ferramentas DevOps gratuitas e baseadas no navegador — junto com uma trilha de aprendizado de 90 dias e simulados de certificação — construído por engenheiros que queriam um lugar privado para as tarefas pequenas. Cada ferramenta resolve um problema real e roda 100% do lado do cliente, então o que você cola nunca sai do seu dispositivo.',
+    updated: '2026-10-22',
     sections: [
+      {
+        heading: 'Quem constrói o OpsCanopy',
+        body: [
+          'O OpsCanopy é construído e mantido por Pushkar Kumar e Asif Khan — engenheiros que se cansaram de colar configurações sensíveis em ferramentas web aleatórias e decidiram construir alternativas rápidas, privadas e do lado do cliente.',
+          'Pushkar Kumar — desenvolvedor de software e engenheiro DevOps interessado em DevOps. Ele decidiu criar um recurso gratuito para novos desenvolvedores e engenheiros DevOps que estão aprendendo esse caminho, para que o DevOps possa ser facilmente orientado e aprendido — já que, quando ele começou, não havia um recurso gratuito assim.',
+          'O desenvolvimento acontece de forma aberta no GitHub, então você pode auditar exatamente como cada ferramenta se comporta, relatar um bug ou sugerir o próximo utilitário a ser adicionado.',
+        ],
+      },
       {
         heading: 'Por que ele existe',
         body: [
@@ -146,14 +154,6 @@ const ptBr: Partial<PagesContent> = {
         heading: 'Para quem é',
         body: [
           'É feito para engenheiros de plataforma, SREs, profissionais de DevOps e qualquer pessoa que vive perto da infraestrutura — mas as ferramentas são úteis para qualquer desenvolvedor que queira uma resposta rápida e privada sem instalar nada.',
-        ],
-      },
-      {
-        heading: 'Quem constrói o OpsCanopy',
-        body: [
-          'O OpsCanopy é construído e mantido por Pushkar Kumar e Asif Khan — engenheiros que se cansaram de colar configurações sensíveis em ferramentas web aleatórias e decidiram construir alternativas rápidas, privadas e do lado do cliente.',
-          'Pushkar Kumar — desenvolvedor de software e engenheiro DevOps interessado em DevOps. Ele decidiu criar um recurso gratuito para novos desenvolvedores e engenheiros DevOps que estão aprendendo esse caminho, para que o DevOps possa ser facilmente orientado e aprendido — já que, quando ele começou, não havia um recurso gratuito assim.',
-          'O desenvolvimento acontece de forma aberta no GitHub, então você pode auditar exatamente como cada ferramenta se comporta, relatar um bug ou sugerir o próximo utilitário a ser adicionado.',
         ],
       },
     ],

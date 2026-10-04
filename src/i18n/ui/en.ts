@@ -106,7 +106,7 @@ const en = {
   'blog.metaDescription':
     'Field notes for DevOps engineers: GitHub Actions and GitLab CI, Docker Compose, cron and systemd timers, Prometheus relabeling and Alertmanager routing.',
   'blog.eyebrow': 'Writing',
-  'blog.indexTitle': 'Notes from the canopy.',
+  'blog.indexTitle': 'Field notes on DevOps, CI/CD and observability.',
   'blog.indexLead':
     'Observations on DevOps tooling, observability, and the small gaps in the ecosystem worth filling — written for the engineers who hit them.',
   'blog.countSuffixSingular': 'post and counting.',

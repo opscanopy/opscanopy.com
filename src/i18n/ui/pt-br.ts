@@ -95,7 +95,7 @@ const ptBr: Partial<UiDict> = {
   'blog.metaDescription':
     'Notas práticas para engenheiros DevOps: GitHub Actions e GitLab CI, Docker Compose, cron e timers do systemd, relabeling do Prometheus e Alertmanager.',
   'blog.eyebrow': 'Textos',
-  'blog.indexTitle': 'Notas da copa das árvores.',
+  'blog.indexTitle': 'Notas de campo sobre DevOps, CI/CD e observabilidade.',
   'blog.indexLead':
     'Observações sobre ferramentas de DevOps, observabilidade e as pequenas lacunas do ecossistema que vale a pena preencher — escritas para as pessoas que desenvolvem e esbarram nelas.',
   'blog.countSuffixSingular': 'post e contando.',
