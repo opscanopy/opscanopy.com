@@ -126,8 +126,11 @@ Rollback for either batch is one `git revert` of its merge commit; CI redeploys.
 
 | Date | What |
 |---|---|
-| ~2026-10-21 | Read the homepage Search Console comparison (prerequisite for Batch E) |
-| 2026-11-03 | The audit allowlist entry for GHSA-ch52-4w7c-c8xp (`http-cache-semantics`, no fix published yet) expires. The deploy gate fails from that day until the entry is renewed with a reason, or removed once Astro ships a fix. |
+| ~2026-10-21 | Read the homepage Search Console numbers (now the 2026-09-30 H1 and Batch E together) |
+
+The audit exception for GHSA-ch52-4w7c-c8xp is gone: `http-cache-semantics` 4.3.0
+fixed it on 2026-10-04, the site moved to it the same day, and `package.json` pins
+the floor at `^4.3.0`. The audit gate has no exceptions and no expiry date pending.
 
 ## Backup
 

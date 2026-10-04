@@ -76,10 +76,11 @@ still fails on every high/critical production advisory, except one listed in
 **`scripts/audit-allowlist.json`** with an id, package, reason and an `expires` date at
 most 45 days out — reserved for advisories with **no fixed version published**, where a
 floor bump is impossible. It also fails when an entry expires or matches nothing (the
-advisory was fixed: remove the entry and bump the floor). First entry:
-GHSA-ch52-4w7c-c8xp in `http-cache-semantics` (all versions, via astro; build/dev-server
-only, nothing reaches the static site). `npm audit --omit=dev --audit-level=high` will
-keep printing it until upstream ships a fix; that is expected.
+advisory was fixed: remove the entry and bump the floor). The allowlist is empty today.
+Its first entry, GHSA-ch52-4w7c-c8xp in `http-cache-semantics` (via astro, published
+2026-10-03 against every version), lasted one day: 4.3.0 shipped the fix on 2026-10-04,
+astro's `^4.2.0` range already accepts it, and `package.json` `overrides` pins the floor
+at `^4.3.0` so a lockfile refresh can never fall back to a vulnerable release.
 
 Back to types: two patterns account for most of what `astro check` used to flag, worth
 knowing before you reintroduce them:
