@@ -17,10 +17,10 @@ Tailwind `dark:` variants. `src/lib/contrast.test.ts` is the palette gate — ru
 
 A printed field manual for ops: **warm paper** by day, **warm charcoal** at
 night, with **dark instrument slabs** (the live demos, terminals, and code
-blocks) that stay dark in BOTH themes — like plates bound into a manual. The
-recurring texture is **CanopyField**, an arc lattice generated from the logo's
-three nested canopy arcs (`src/components/MeshGradient.astro` — filename kept for
-its consumers; it no longer renders a mesh).
+blocks) that stay dark in BOTH themes — like plates bound into a manual. There is
+no background texture: the CanopyField arc lattice was removed in the 2026-10
+editorial pass (a tiled pattern behind headlines read as template decoration);
+the paper colour and the type carry the identity.
 
 ## Color
 
@@ -29,9 +29,9 @@ accents, never as a fill under white text. Amber (`--color-accent-ink`) is the
 annotation ink: figure numbers, callouts, leader lines. Decoupled from
 `--color-warning*`, which stays a live diagnostic semantic.
 
-**Light (`@theme static`):** canvas `#fdfcfa` · soft `#f4f1ea` · soft-2 `#ebe7de` ·
-soft-3 `#e0dbcf` · card `#fffdf9` · ink `#211e19` · body `#524f48` · mute
-`#5d5950` · hairline `#e6e1d6`/`#cfc9bb`/`#9c968a` · inverse `#1b1915` · brand
+**Light (`@theme static`):** canvas `#fffbf4` · soft `#f9f2e6` · soft-2 `#efe6d8` ·
+soft-3 `#e4dac9` · card `#fffdf6` (warmed toward cream in 2026-10 at the same L* per step) · ink `#211e19` · body `#524f48` · mute
+`#5d5950` · hairline `#eae0d0`/`#cfc9bb`/`#9c968a` · inverse `#1b1915` · brand
 `#4a8c3f` (fill/graphic only) · brand-strong/link `#33652c` (the only green for
 white-on-green) · accent-ink `#a85a06` · focus `#1d5fd6`.
 
