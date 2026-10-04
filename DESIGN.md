@@ -61,24 +61,31 @@ the hex directly).
 
 ## Typography
 
-IBM Plex superfamily — Plex Sans Variable (UI/body/display) + Plex Mono static
-400/500/600 (eyebrows, data, code, badges). A mono wordmark is the strongest
-"ops" signal in the system.
+Three families since the 2026-10 editorial pass: **Fraunces Variable** (optical-size
+axis, `--font-display`) for headlines only — `display-hero/xl/lg/md` and prose
+`h2/h3` — **Plex Sans Variable** for body and UI, and **Plex Mono** for data, code,
+figure numbers and `label-field`. The serif is what makes the site read as an
+edited manual rather than a generated dashboard; mono is kept for what is
+actually machine text.
 
-- **Display recipe:** `display-hero` `clamp(38px,5.5vw,78px)` at weight 660,
-  tracking −0.03em; `display-xl/lg` weight 640. Load-bearing data inside display
-  headlines is set in Plex Mono + accent (mono-mixed headlines).
-- **eyebrow:** mono 500, `letter-spacing 0.08em`, uppercase, `--color-brand-strong`.
+- **Display recipe:** Fraunces, `font-optical-sizing: auto`. `display-hero`
+  `clamp(38px,5.5vw,78px)` weight 560, tracking −0.02em; `display-xl` 560;
+  `display-lg/md` 580. `display-sm` stays Plex Sans (card titles, FAQ questions).
+- **eyebrow:** Plex Sans 12/16 600, uppercase, `--tracking-label`,
+  `--color-brand-strong`. (It was mono until 2026-10; a mono caps line over every
+  section was the loudest "generated" tell.)
 - Body scale (`body-lg/md/sm`, `caption`, `code-mono`) unchanged in size.
 
 ## Shape & depth — instrument panel
 
-Squared radii: `xs 2 · sm 4 · md 6 · lg 8 · xl 10` (`--radius-pill` re-pointed to
-6px). Depth has three tiers, each with one job — **L0 rest** (`shadow-hairline`,
-inset ring only: rows, chips, `.card-soft`, `.badge`), **L1 card**
-(`shadow-subtle`, ring + 2px drop: `.card`, grouping), **L2 instrument**
-(`shadow-float`, ring + 8px drop: `.instrument`, menus, hover lift) — plus modal.
-One L2 object per viewport. Buttons are squared with a 1px border; badges are
+Crisp radii: `xs 2 · sm 3 · md 4 · lg 6 · xl 8` (`--radius-pill` 4px). Depth is
+**print depth** — tiers told apart by rules, not blur: **L0 rest**
+(`shadow-hairline`, inset ring: rows, chips, `.card-soft`, `.badge`), **L1 card**
+(`shadow-subtle`, ring + a 1px hard under-rule: `.card`), **L2 instrument**
+(`shadow-float`, ring + under-rule + a short tight shadow: `.instrument`, menus)
+— plus modal. One L2 object per viewport. Buttons are printed, not floating: a
+1px border, no lift or glow on hover (primary gets a fill step and an inset
+rule; secondary darkens its edge to ink); badges are
 mono tags (`radius-xs`), except `.badge-info` (dates/status) which stays 12px
 sentence-case for legibility; `Badge variant="new"` is the one amber badge.
 
@@ -86,8 +93,9 @@ sentence-case for legibility; `Badge variant="new"` is the one amber badge.
 `CodeBlock`, the Mission 90 terminals, the privacy panel and the tool result
 panels render through the shared `.instrument` class (`.instrument-flush` when
 nested in a card) on `--color-inverse` in BOTH themes, with the
-`--color-inverse-hairline` ring and a `FigureCap` caption bar (three dots + a
-mono `fig. NN — slug · category` label; the figure number is the tool's position
+`--color-inverse-hairline` ring and a `FigureCap` caption bar (one 6px square
+marker + a sans `fig. NN — slug · category` label — the three macOS-style dots
+were retired in 2026-10; the markup keeps its three `<i>`s and CSS shows one; the figure number is the tool's position
 in the registry). Ten uses of one detail is a brand; the cap is that detail. Because the surface is dark in both
 themes, so are its inks: the only legal text colours on a slab are
 `--color-inverse-fg`, `--color-inverse-brand` (leaf) and `--color-inverse-accent`

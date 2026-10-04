@@ -250,12 +250,16 @@ export function captionGeometry({ size = 22, baseline = 96, rule = 128 } = {}) {
     cy,
     dotR: 6 * s,
     dotXs: [0, 1, 2].map((i) => X + 6 * s + i * 20 * s),
-    labelX: X + 66 * s,
+    // One square plate marker since the 2026-10 editorial pass (was three
+    // window dots), so the label sits closer to it.
+    markX: X,
+    markSide: 9 * s,
+    labelX: X + 26 * s,
   };
 }
 
 /**
- * The figure-cap caption row: three dots + a mono label made of coloured runs,
+ * The figure-cap caption row: one square marker + a mono label made of coloured runs,
  * with the hairline under it (FigureCap.astro, drawn at card scale).
  * @param {Array<{ text: string, fill: string }>} runs
  * @param {'traffic'|'mute'} tone
@@ -264,13 +268,13 @@ export function captionGeometry({ size = 22, baseline = 96, rule = 128 } = {}) {
 export function captionRow(runs, tone = 'traffic', opts) {
   const { mono } = fonts();
   const g = captionGeometry(opts);
-  const dots = g.dotXs
-    .map((cx, i) =>
-      tone === 'traffic'
-        ? `<circle cx="${num(cx)}" cy="${num(g.cy)}" r="${num(g.dotR)}" fill="${INK.dots[i]}"/>`
-        : `<circle cx="${num(cx)}" cy="${num(g.cy)}" r="${num(g.dotR)}" fill="#ffffff" fill-opacity="0.15"/>`,
-    )
-    .join('');
+  // One square marker (leaf for `traffic`, neutral otherwise) — the same plate
+  // mark as FigureCap in global.css; the three macOS-style dots are retired.
+  const y0 = g.cy - g.markSide / 2;
+  const dots =
+    tone === 'traffic'
+      ? `<rect x="${num(g.markX)}" y="${num(y0)}" width="${num(g.markSide)}" height="${num(g.markSide)}" fill="${INK.leaf}"/>`
+      : `<rect x="${num(g.markX)}" y="${num(y0)}" width="${num(g.markSide)}" height="${num(g.markSide)}" fill="#ffffff" fill-opacity="0.15"/>`;
   const label = textRuns(mono, runs, g.labelX, g.baseline, g.size).svg;
   const rule = `<rect x="${X}" y="${g.rule}" width="${RIGHT - X}" height="1" fill="#ffffff" fill-opacity="0.12"/>`;
   return `${dots}
