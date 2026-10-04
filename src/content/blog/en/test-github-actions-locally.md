@@ -1,7 +1,7 @@
 ---
 title: "How to test GitHub Actions locally: act for whole workflows, an expression tester for if: conditions"
 description: "How to test GitHub Actions locally: run whole workflows with act in Docker, and check a single if: expression instantly with a browser-based expression tester."
-pubDate: 2026-09-21
+pubDate: 2026-09-03
 tags: ["github-actions", "ci-cd", "testing", "developer-experience"]
 relatedTool:
   name: "GitHub Actions Expression Tester"

@@ -42,6 +42,11 @@ function facts(octal: string): Facts {
 
 /** The one shared sentence: the digit breakdown, entirely engine-derived. */
 function breakdown(octal: string, f: Facts): string {
+  if (octal.length === 4) {
+    const d = Number(octal[0]);
+    const set = [d & 4 && 'setuid', d & 2 && 'setgid', d & 1 && 'sticky'].filter(Boolean).join(' and ');
+    return `In \`${octal}\` the first digit is the special-bits digit (4 = setuid, 2 = setgid, 1 = sticky; the values add up to combine them), so ${octal[0]} sets ${set}. The next three digits are owner, group and others: the owner gets ${f.owner}, the group gets ${f.group}, and others get ${f.others}.`;
+  }
   return `In \`${octal}\` the first digit is the owner, the second the group and the third everyone else: the owner gets ${f.owner}, the group gets ${f.group}, and others get ${f.others}.`;
 }
 
@@ -57,6 +62,12 @@ const f640 = facts('640');
 const f600 = facts('600');
 const f555 = facts('555');
 const f444 = facts('444');
+const f775 = facts('775');
+const f400 = facts('400');
+const f711 = facts('711');
+const f1777 = facts('1777');
+const f2775 = facts('2775');
+const f4755 = facts('4755');
 
 export const chmodVariants: ToolVariant[] = [
   {
@@ -644,6 +655,295 @@ export const chmodVariants: ToolVariant[] = [
       {
         q: 'What is the difference between 444 and 400?',
         a: '444 lets everyone read the file; 400 lets only the owner read it. Both deny write and execute to every class.',
+      },
+    ],
+  },
+  {
+    slug: '775',
+    input: '775',
+    h1Name: 'chmod 775',
+    headline: 'a directory the owner and its group can both write',
+    title: 'chmod 775 Meaning — rwxrwxr-x Explained',
+    description:
+      'chmod 775 (rwxrwxr-x): owner and group get full access, others read and execute. The mode for shared team directories, and how it differs from 755.',
+    lede: `\`${f775.cmd}\` sets \`${f775.symbolic}\`: the owner and every member of the file's group can read, write and enter it, while other accounts can only read and traverse. It is the usual mode for a directory a team shares.`,
+    sections: [
+      {
+        heading: 'What chmod 775 means',
+        paragraphs: [
+          breakdown('775', f775),
+          `\`ls -l\` shows \`${f775.ls}\`. The two 7s are 4 + 2 + 1 and the 5 is 4 + 1. On a directory, group write is the whole point: any group member can create, rename and delete entries inside it, not only the owner. It is also what \`mkdir\` produces under a 002 umask.`,
+        ],
+      },
+      {
+        heading: '775 versus 755',
+        paragraphs: [
+          `The only difference is the middle digit. 755 lets the group read and enter; 775 also lets the group change the contents. Use 755 when one account maintains the files and everybody else consumes them, and 775 when several people or services need to add and edit files in the same place, such as a shared upload area, a build cache or a project checkout on a team server.`,
+          `For files, the same split is 644 versus 664. A script the whole group may edit and run can be 775; plain data files in a 775 directory are usually 664.`,
+        ],
+      },
+      {
+        heading: 'Make the group stick with 2775',
+        paragraphs: [
+          `On its own, 775 only helps while files belong to the shared group. A new file normally takes the creating user's primary group, so after a week half the tree belongs to personal groups and the sharing quietly breaks. Setting the directory to 2775 adds the setgid bit, which makes new entries inherit the directory's group instead. The usual recipe is \`chgrp -R team dir\`, \`find dir -type d -exec chmod 2775 {} +\`, and umask 002 for the people and services that write there.`,
+        ],
+      },
+      {
+        heading: 'Pitfalls',
+        paragraphs: [
+          `775 is only as narrow as the group. Check membership with \`getent group <name>\` before relying on it, and avoid broad groups such as \`users\`. The last digit still lets every local account list and read the contents, so drop to 770 if outsiders should see nothing. As with every directory mode, do not apply it with \`chmod -R\` to a mixed tree, or every file becomes executable; split directories and files with \`find\`.`,
+        ],
+      },
+    ],
+    faqs: [
+      {
+        q: 'Should I use 775 or 777 for a shared folder?',
+        a: '775 with a dedicated group. 777 lets every account on the machine write, while 775 limits writing to the owner and the group. Add the setgid bit (2775) so new files keep the shared group.',
+      },
+      {
+        q: 'Why can a group member still not write to a 775 directory?',
+        a: 'Either the directory belongs to a different group, or the user was added to the group after logging in. Check with ls -ld and id, then start a new login session or restart the service.',
+      },
+    ],
+  },
+  {
+    slug: '400',
+    input: '400',
+    h1Name: 'chmod 400',
+    headline: 'read-only for the owner, nothing for anyone else',
+    title: 'chmod 400 Meaning — r-------- and .pem Keys',
+    description:
+      'chmod 400 (r--------): only the owner can read, and nobody can write or execute. Why AWS tells you to chmod 400 a .pem key, and when to use 600 instead.',
+    lede: `\`${f400.cmd}\` sets \`${f400.symbolic}\`: the owner can read the file and no other non-root account can do anything with it. Not even the owner can write to it without changing the mode first, which is what makes it the classic mode for downloaded private keys.`,
+    sections: [
+      {
+        heading: 'What chmod 400 means',
+        paragraphs: [
+          breakdown('400', f400),
+          `\`ls -l\` shows \`${f400.ls}\`. The 4 is read alone and the two zeros remove every bit from the group and others. Compared with 600, the only change is that the owner loses write, so an accidental redirect or an editor save fails instead of silently replacing the contents.`,
+        ],
+      },
+      {
+        heading: 'SSH keys and AWS .pem files',
+        paragraphs: [
+          `The OpenSSH client refuses a private key you own if group or others have any permission bit on it, and prints "UNPROTECTED PRIVATE KEY FILE". Both 400 and 600 satisfy that check, because the rule is about the group and other digits, not the owner's write bit. AWS's EC2 instructions use \`chmod 400 key.pem\` for the key pair you download, which is why so many guides repeat that number.`,
+          `Choose 400 for a key that should never change once written, and 600 when a tool needs to rewrite the file in place, for example a credentials file a CLI refreshes. Either is a correct answer for an SSH key.`,
+        ],
+      },
+      {
+        heading: 'Other secrets that suit 400',
+        paragraphs: [
+          `TLS private keys, API tokens written once by a provisioning script, and recovery codes are all good candidates. Configuration-management tools often deploy them at 400 owned by the service account, so the service can read the secret but a bug in it cannot overwrite it.`,
+        ],
+      },
+      {
+        heading: 'Limits and pitfalls',
+        paragraphs: [
+          `400 is not a lock. The owner can run \`chmod u+w\` at any time, root ignores the bits, and \`rm\` only needs write on the directory, so the file can still be deleted. A key copied with \`scp\` or extracted from an archive may arrive at 644, so check the mode after moving it. If a service in another account must read the secret, 400 is too strict; use 440 or 640 with a shared group rather than making it world-readable.`,
+        ],
+      },
+    ],
+    faqs: [
+      {
+        q: 'Is chmod 400 or 600 better for an SSH private key?',
+        a: 'Both work: ssh only rejects keys that group or others can access. 400 adds protection against accidental overwrites; 600 is more convenient if you ever need to edit or replace the file in place.',
+      },
+      {
+        q: 'Why do I get Permission denied when editing a 400 file I own?',
+        a: 'There is no write bit, even for the owner. Run chmod u+w on it, make the change, then chmod 400 again, or edit it as a 600 file if it changes often.',
+      },
+    ],
+  },
+  {
+    slug: '711',
+    input: '711',
+    h1Name: 'chmod 711',
+    headline: 'others can pass through, but not look around',
+    title: 'chmod 711 Meaning — rwx--x--x Explained',
+    description:
+      'chmod 711 (rwx--x--x): owner full access, everyone else may traverse but not list. Why some systems use it for home directories, and its limits.',
+    lede: `\`${f711.cmd}\` sets \`${f711.symbolic}\`: the owner has full control, and every other account gets execute only. On a directory that means others can pass through it to a path they already know, but cannot list what is inside.`,
+    sections: [
+      {
+        heading: 'What chmod 711 means',
+        paragraphs: [
+          breakdown('711', f711),
+          `\`ls -l\` shows \`${f711.ls}\`. Each 1 is the execute bit alone. On a directory, read and execute are separate rights: read lets you list the names, execute lets you traverse the directory and open an entry by name. 711 hands out the second without the first.`,
+        ],
+      },
+      {
+        heading: 'Home directories',
+        paragraphs: [
+          `711 is a common compromise for home directories on shared hosts. Other users cannot run \`ls\` on your home and see what is there, yet a web server can still reach \`~/public_html\` when that subdirectory is itself readable, and a shared file can be opened if someone gives out its full path and the file's own mode allows it. Some hosting control panels and distributions use exactly this mode for that reason.`,
+          `Compared with 755, it hides file names. Compared with 700 and 750, it still allows traversal, which is what makes per-user web directories and similar setups work.`,
+        ],
+      },
+      {
+        heading: 'Hiding is not protecting',
+        paragraphs: [
+          `711 relies on names being hard to guess. Well-known paths such as \`.bashrc\`, \`.ssh\` or \`.config\` are trivial to guess, so every file and subdirectory below needs its own sensible mode: 700 on \`~/.ssh\`, 600 on secrets, and so on. If nothing inside needs to be reachable by other accounts, 700 is simpler and stricter. Root, as always, is not limited by any of these bits.`,
+        ],
+      },
+      {
+        heading: 'On a file',
+        paragraphs: [
+          `On a compiled binary, 711 lets everyone run it while only the owner can read its bytes. On a script it does much less: an interpreter has to read the file to run it, so a user without read permission gets "Permission denied" from the shell. Use 755 for scripts others should run.`,
+        ],
+      },
+    ],
+    faqs: [
+      {
+        q: 'Can other users read files inside a 711 directory?',
+        a: 'Only if they know the exact name and the file itself grants them read. They cannot list the directory to find names, which is why 711 hides contents without blocking access to known paths.',
+      },
+      {
+        q: 'Is 711 or 700 better for a home directory?',
+        a: '700 if nothing in it needs to be reachable by other accounts. 711 if a service such as a web server must traverse it to reach a subdirectory like public_html.',
+      },
+    ],
+  },
+  {
+    slug: '1777',
+    input: '1777',
+    h1Name: 'chmod 1777',
+    headline: 'world-writable with the sticky bit, the /tmp mode',
+    title: 'chmod 1777 Meaning — rwxrwxrwt and the Sticky Bit',
+    description:
+      'chmod 1777 (rwxrwxrwt): anyone can create files, but only a file\'s owner can delete it. How the sticky bit protects /tmp and shared scratch directories.',
+    lede: `\`${f1777.cmd}\` sets \`${f1777.symbolic}\`: every account can create files in the directory, but the sticky bit means only the owner of an entry, the directory's owner or root can delete or rename it. It is the mode of \`/tmp\` and \`/var/tmp\`.`,
+    sections: [
+      {
+        heading: 'What chmod 1777 means',
+        paragraphs: [
+          breakdown('1777', f1777),
+          `On a directory such as \`/tmp\`, \`ls -ld\` prints \`d${f1777.symbolic}\`. The \`t\` in the last position is the sticky bit sitting on top of the others' execute bit; a capital \`T\` would mean sticky without execute, which is almost always a mistake.`,
+        ],
+      },
+      {
+        heading: 'Why /tmp needs the sticky bit',
+        paragraphs: [
+          `Normally, deleting or renaming a file is decided by write permission on the directory, not on the file. In a plain 777 directory any user could therefore remove or replace another user's temporary files, which breaks programs and opens the door to swapping a file another process is about to use. The sticky bit narrows that: in a sticky directory, unlinking or renaming an entry also requires owning the entry or the directory.`,
+          `Linux adds further protections for these directories, such as the \`fs.protected_symlinks\` setting (enabled by default on most systemd distributions), which stops a process from following a symlink in a sticky world-writable directory unless it owns the link or the link's owner also owns the directory. They complement the sticky bit rather than replace it.`,
+        ],
+      },
+      {
+        heading: 'Creating your own shared scratch space',
+        paragraphs: [
+          `For a drop folder every user must write to, use \`chmod 1777 dir\` or \`chmod +t dir\` on an existing 777 directory, never a bare 777. If only one team should write there, a group-owned 1770 or 3770 directory is tighter still. On a regular file the sticky bit has no effect on Linux, so 1777 only makes sense on directories.`,
+        ],
+      },
+      {
+        heading: 'Pitfalls',
+        paragraphs: [
+          `The sticky bit stops deletion, not reading. Files created in \`/tmp\` get whatever mode the creating process chooses, so a program writing secrets there must create them as 600, ideally with \`mktemp\` to avoid guessable names. And a numeric \`chmod 777\` on \`/tmp\` itself clears the sticky bit; if a system starts misbehaving after a careless recursive chmod, check that \`/tmp\` still shows a trailing \`t\`.`,
+        ],
+      },
+    ],
+    faqs: [
+      {
+        q: 'What is the difference between 777 and 1777?',
+        a: 'The leading 1 is the sticky bit. Both let everyone create files, but in a 1777 directory only a file\'s owner, the directory owner or root can delete or rename it. In a plain 777 directory anyone can.',
+      },
+      {
+        q: 'How do I restore the correct permissions on /tmp?',
+        a: 'Run chmod 1777 /tmp as root and make sure it is owned by root. ls -ld /tmp should then end in a lowercase t.',
+      },
+    ],
+  },
+  {
+    slug: '2775',
+    input: '2775',
+    h1Name: 'chmod 2775',
+    headline: 'a shared project directory where new files keep the group',
+    title: 'chmod 2775 Meaning — rwxrwsr-x and setgid',
+    description:
+      'chmod 2775 (rwxrwsr-x): a 775 directory with setgid, so new files inherit the directory\'s group. The standard setup for shared project folders.',
+    lede: `\`${f2775.cmd}\` sets \`${f2775.symbolic}\`: owner and group can write, others can read and traverse, and the setgid bit makes every new file and subdirectory belong to the directory's group rather than the creator's.`,
+    sections: [
+      {
+        heading: 'What chmod 2775 means',
+        paragraphs: [
+          breakdown('2775', f2775),
+          `\`ls -l\` shows \`${f2775.ls}\`. The \`s\` in the group's execute position is setgid combined with group execute; a capital \`S\` would mean setgid without execute, which on a directory leaves group members unable to enter it.`,
+        ],
+      },
+      {
+        heading: 'Why shared directories need setgid',
+        paragraphs: [
+          `Without setgid, a new file takes the primary group of whoever creates it. In a team directory that means files keep landing in personal groups, and colleagues lose write access even though the directory itself is 775. With setgid on the directory, Linux assigns new entries the directory's group, and new subdirectories inherit the setgid bit too, so the arrangement propagates down the tree on its own.`,
+          `A typical setup is \`groupadd web\`, \`chgrp -R web /srv/site\`, \`find /srv/site -type d -exec chmod 2775 {} +\` and \`find /srv/site -type f -exec chmod 664 {} +\`.`,
+        ],
+      },
+      {
+        heading: 'The umask still matters',
+        paragraphs: [
+          `setgid fixes the group, not the mode. A user with the common 022 umask still creates files as 644, so the group can read but not edit them. Set umask 002 for the people and services that write into the tree, for example in the service unit with \`UMask=0002\`, or use default ACLs if you cannot control every writer.`,
+        ],
+      },
+      {
+        heading: 'Pitfalls',
+        paragraphs: [
+          `GNU chmod deliberately preserves setgid on directories when you pass a three-digit mode, so \`chmod 755 dir\` leaves the \`s\` in place. To clear it you need \`chmod g-s dir\` or an explicit leading zero such as \`chmod 00755 dir\`. Files moved into the directory with \`mv\` keep their original group, because only newly created entries inherit it, so run \`chgrp\` after moving content in. On a regular file, setgid means something different: the program runs with the file's group, which is rarely what you want on data.`,
+        ],
+      },
+    ],
+    faqs: [
+      {
+        q: 'What is the difference between 775 and 2775?',
+        a: 'The leading 2 sets setgid. Both give owner and group write, but in a 2775 directory new files and subdirectories automatically belong to the directory\'s group, so shared access does not erode over time.',
+      },
+      {
+        q: 'Why do files in my 2775 directory have the wrong group?',
+        a: 'They were probably moved in with mv, which keeps the original group, or created before setgid was set. Fix them once with chgrp -R; files created from then on inherit the group.',
+      },
+    ],
+  },
+  {
+    slug: '4755',
+    input: '4755',
+    h1Name: 'chmod 4755',
+    headline: 'setuid: a program that runs as its owner',
+    title: 'chmod 4755 Meaning — rwsr-xr-x and setuid',
+    description:
+      'chmod 4755 (rwsr-xr-x) sets setuid, so the program runs with its owner\'s privileges. How passwd uses it, why it is risky, and how to audit setuid files.',
+    lede: `\`${f4755.cmd}\` sets \`${f4755.symbolic}\`: a normal 755 executable plus the setuid bit, so whoever runs it gets the privileges of the file's owner for the life of the process. On a root-owned binary, that means running as root.`,
+    sections: [
+      {
+        heading: 'What chmod 4755 means',
+        paragraphs: [
+          breakdown('4755', f4755),
+          `\`ls -l\` shows \`${f4755.ls}\`. The \`s\` in the owner's execute position is setuid plus execute; a capital \`S\` means setuid is set but execute is not, which does nothing useful.`,
+        ],
+      },
+      {
+        heading: 'Where setuid is used',
+        paragraphs: [
+          `\`passwd\` is the textbook case. Changing your password means writing \`/etc/shadow\`, which only root may modify, so \`/usr/bin/passwd\` is owned by root with mode 4755 and runs with root's effective user ID while it checks who you are and only lets you change your own entry. \`su\`, \`mount\` and \`sudo\` are setuid root for the same reason, though the exact mode differs between distributions.`,
+          `These programs are written with their elevated position in mind: they drop privileges early, sanitise their environment and validate every input. An ordinary program is not.`,
+        ],
+      },
+      {
+        heading: 'Security warning',
+        paragraphs: [
+          `A setuid root binary with a bug is a local privilege escalation. Never set 4755 on your own programs to get around a permission problem; use \`sudo\` rules, Linux capabilities with \`setcap\`, or a service running as the right user instead. Never put it on scripts at all. Linux ignores setuid on interpreted scripts that start with a shebang, precisely because the gap between the kernel starting the interpreter and the interpreter opening the script was a classic attack, so the bit gives a false sense of having done something.`,
+          `Audit regularly with \`find / -perm -4000 -type f -ls 2>/dev/null\`, which lists every setuid file, and compare it with what your distribution ships. An unexpected entry, especially in a home or \`/tmp\` directory, is a sign of compromise. Filesystems that should never hold such programs can be mounted with the \`nosuid\` option, which makes the kernel ignore the bit.`,
+        ],
+      },
+      {
+        heading: 'Removing it',
+        paragraphs: [
+          `\`chmod u-s file\` clears setuid and keeps everything else; \`chmod 755 file\` does the same for a regular file. Note that writing to a setuid file as a non-root user makes the kernel clear the bit automatically, and \`chown\` clears it too, so re-check the mode after replacing such a binary.`,
+        ],
+      },
+    ],
+    faqs: [
+      {
+        q: 'Does setuid work on shell scripts?',
+        a: 'No. Linux ignores the setuid bit on interpreted scripts, so a 4755 script runs with the caller\'s privileges. Use sudo with a narrow rule, or a small compiled wrapper reviewed for security, if a script genuinely needs elevated rights.',
+      },
+      {
+        q: 'How do I find all setuid files on a system?',
+        a: 'Run find / -perm -4000 -type f as root. It lists every file with the setuid bit; compare the result with your distribution\'s defaults and investigate anything unexpected.',
       },
     ],
   },

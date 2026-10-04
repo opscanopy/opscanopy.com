@@ -1,7 +1,7 @@
 ---
 title: "Eine jwt.io-Alternative: JWTs dekodieren, ohne sie in fremde Seiten einzufügen"
 description: "Eine jwt.io-Alternative gesucht? Was ein JWT-Decoder im Browser über deine Daten beweisen kann und was nicht, wie du es selbst prüfst, plus eine Offline-Option."
-pubDate: 2026-09-21
+pubDate: 2026-09-10
 updatedDate: 2026-10-04
 tags: ["security", "jwt", "developer-experience"]
 lang: de
