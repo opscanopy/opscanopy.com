@@ -46,6 +46,7 @@
  */
 
 import yaml from 'js-yaml';
+import { re2UnsupportedSyntax } from '../regex-safety';
 import type {
   ChangeKind,
   LabelChange,
@@ -500,6 +501,10 @@ function scanRe2(pattern: string): Re2Scan {
  * JavaScript engine backtrack catastrophically, returns a specific `error`.
  */
 function compileRegex(pattern: string): CompileResult {
+  // RE2 rejects these, so Prometheus would refuse the config outright.
+  const re2Bad = re2UnsupportedSyntax(pattern);
+  if (re2Bad) return { error: `uses ${re2Bad}, so Prometheus fails to load this config.` };
+
   let body = pattern;
   let flags = '';
 
