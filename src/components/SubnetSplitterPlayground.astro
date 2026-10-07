@@ -428,8 +428,7 @@ const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
 <script>
   import { EMPTY_HTML, errorHtml, resultHtml, summaryText } from '../lib/subnet-splitter/render';
   import { wireRunKeys } from '../lib/run-keys';
-  import { buildIpHash, readIpHash } from '../lib/ip-hash';
-  import { wireCopyButtons } from '../lib/playground-kit/copy';
+    import { wireCopyButtons } from '../lib/playground-kit/copy';
   import { syncChipsByIndex, CHIP_SELECTOR } from '../lib/playground-kit/chips';
   import { getRestoredLastInput, recordToolLastInput, wireSnapshotUI } from '../lib/tool-state/wire';
 
@@ -491,6 +490,24 @@ const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
   function renderResult(container: HTMLElement, summary: HTMLElement, result: Result): void {
     setSummary(summary, summaryText(result), false);
     container.innerHTML = resultHtml(result);
+  }
+
+  /* Share fragment: `#ip=<parent>[&prefix=N][&alloc=<lines>]`. A bare `#ip=` (the
+     subnet calculator's chip) is the same grammar with no extras. */
+  function buildHash(parent: string, prefix: string, alloc: string): string {
+    const q = new URLSearchParams({ ip: parent });
+    if (prefix) q.set('prefix', prefix);
+    // ponytail: past ~2000 chars the allocations are dropped rather than the link.
+    if (alloc.trim() && alloc.length < 1500) q.set('alloc', alloc.trim());
+    return '#' + q.toString();
+  }
+  function readHash(): { parent: string; prefix: string; alloc: string } | null {
+    const h = new URL(window.location.href).hash;
+    if (!h.startsWith('#ip=')) return null;
+    const q = new URLSearchParams(h.slice(1));
+    const parent = (q.get('ip') ?? '').trim();
+    if (!parent) return null;
+    return { parent, prefix: (q.get('prefix') ?? '').trim(), alloc: q.get('alloc') ?? '' };
   }
 
   async function init(root: HTMLElement): Promise<void> {
@@ -563,14 +580,14 @@ const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
     /* ---- Share link / #ip= deep link ---------------------------------- */
     /* The splitter already READ #ip= (the subnet calculator's "Split this
        subnet" chip writes one) but never wrote one back, so a split you typed
-       here could not be linked to. Only the PARENT block goes in the hash —
-       the same scope the boot sequence restores. Only user-initiated
+       here could not be linked to. The hash carries the parent, split prefix and allocations.
+       Only user-initiated
        evaluations write: a boot seed must not rewrite the URL. */
     const shareBtn = root.querySelector<HTMLButtonElement>('#spl-share');
     let lastWrittenHash: string | null = null;
 
     function writeHash(value: string | null): void {
-      const target = value ? buildIpHash(value) : '';
+      const target = value ? buildHash(value, prefixInput!.value.trim(), allocatedInput!.value) : '';
       if (target === lastWrittenHash) return;
       // Safari throttles replaceState (~100/30s) and throws — never let that
       // break typing.
@@ -596,7 +613,10 @@ const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
       if (!shareBtn) return;
       shareBtn.hidden = false;
       shareBtn.dataset.copy =
-        location.origin + location.pathname + location.search + buildIpHash(value);
+        location.origin +
+        location.pathname +
+        location.search +
+        buildHash(value, prefixInput!.value.trim(), allocatedInput!.value);
     }
 
     function evaluate(userInitiated = false): void {
@@ -720,13 +740,13 @@ const chipItems = prerenderedExamples.map((ex) => ({ label: ex.label }));
     // the parent block is restored/recorded, matching the existing #ip= deep
     // link's scope — prefix and allocated lines are cleared just like the
     // deep-link path already does.
-    const shared = readIpHash();
+    const shared = readHash();
     const restored = getRestoredLastInput('subnet-splitter');
     const seed = examples[0];
     if (shared) {
-      parentInput.value = shared;
-      prefixInput.value = '';
-      allocatedInput.value = '';
+      parentInput.value = shared.parent;
+      prefixInput.value = shared.prefix;
+      allocatedInput.value = shared.alloc;
       // Shared/restored state is not one of the bundled examples — no chip is active.
       setActiveChip(null);
       evaluate();

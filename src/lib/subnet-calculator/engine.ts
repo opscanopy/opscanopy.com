@@ -65,6 +65,11 @@ function diagnoseIPv4(s: string): string {
       return `"${part}" is not a decimal octet (0–255).`;
     }
   }
+  // Same refusal as the CIDR checker: "010" is octal 8 to inet_aton-style parsers.
+  const padded = parts.find((part) => /^0\d+$/.test(part));
+  if (padded) {
+    return `Octet "${padded}" has a leading zero, which is ambiguous — inet_aton-style parsers read it as octal. Write ${Number(padded)} instead.`;
+  }
   return ERR_FALLBACK;
 }
 

@@ -280,6 +280,14 @@ function checkWeekdays(raw: string): string | null {
   return null;
 }
 
+/** A plain month + day that no calendar has (02-30, 04-31): the timer never elapses. */
+function neverElapses(month: string, day: string): string | null {
+  if (!/^\d+$/.test(month) || !/^\d+$/.test(day)) return null;
+  const max = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][Number(month) - 1];
+  if (max === undefined || Number(day) <= max) return null;
+  return `Month ${Number(month)} has no day ${Number(day)}, so this schedule never elapses.`;
+}
+
 /** The date part: `YYYY-MM-DD`, `MM-DD`, with an optional `~` day-from-end. */
 function checkDate(raw: string): string | null {
   // `*-02~03` means "third-from-last day of February": the `~` stands in for the
@@ -290,11 +298,18 @@ function checkDate(raw: string): string | null {
   const parts = normalised.split('-');
   if (parts.length === 3) {
     return (
-      checkComponent(parts[0], YEAR) ?? checkComponent(parts[1], MONTH) ?? checkComponent(parts[2], DAY)
+      checkComponent(parts[0], YEAR) ??
+      checkComponent(parts[1], MONTH) ??
+      checkComponent(parts[2], DAY) ??
+      (tilde === -1 ? neverElapses(parts[1], parts[2]) : null)
     );
   }
   if (parts.length === 2) {
-    return checkComponent(parts[0], MONTH) ?? checkComponent(parts[1], DAY);
+    return (
+      checkComponent(parts[0], MONTH) ??
+      checkComponent(parts[1], DAY) ??
+      (tilde === -1 ? neverElapses(parts[0], parts[1]) : null)
+    );
   }
   return `A date has two or three parts (MM-DD or YYYY-MM-DD); “${raw}” has ${parts.length}.`;
 }

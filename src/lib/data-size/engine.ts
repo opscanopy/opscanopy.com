@@ -246,7 +246,7 @@ export function convert(input: string): ConvertResult {
     bytes: bytesCell,
     ladder: buildLadder(bytes),
     notes,
-    summary: `${detection.normalized} = ${bytesCell.display} bytes`,
+    summary: `${detection.normalized} ${bytesCell.approx ? '≈' : '='} ${bytesCell.display} bytes`,
   };
 }
 
