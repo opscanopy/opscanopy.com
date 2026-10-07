@@ -36,6 +36,12 @@ export interface RegexSafetyResult {
  * followed by an unbounded quantifier and (b) its body itself contained an
  * unbounded quantifier or a top-level alternation. Either combination is flagged.
  */
+function isDisjointLiterals(body: string): boolean {
+  const branches = body.replace(/^\?:/, '').split('|');
+  if (!branches.every((b) => /^[A-Za-z0-9_ -]+$/.test(b))) return false;
+  return new Set(branches.map((b) => b[0])).size === branches.length;
+}
+
 export function checkRegexSafety(pattern: string): RegexSafetyResult {
   // Frame per open group: does its body contain an unbounded quantifier, and
   // does it contain a top-level alternation?
@@ -50,6 +56,8 @@ export function checkRegexSafety(pattern: string): RegexSafetyResult {
      * the nested-quantifier shape.
      */
     endsWithMandatoryAtom: boolean;
+    /** Index just after the opening `(`, to read the body back at close. */
+    start: number;
   }
 
   const stack: Frame[] = [];
@@ -81,7 +89,7 @@ export function checkRegexSafety(pattern: string): RegexSafetyResult {
     }
 
     if (ch === '(') {
-      stack.push({ hasUnbounded: false, hasAlternation: false, endsWithMandatoryAtom: false });
+      stack.push({ hasUnbounded: false, hasAlternation: false, endsWithMandatoryAtom: false, start: i + 1 });
       continue;
     }
 
@@ -141,9 +149,11 @@ export function checkRegexSafety(pattern: string): RegexSafetyResult {
         // The trailing-separator exemption applies only to the nested-quantifier
         // risk. An alternation of overlapping branches — `(a|a)*` — backtracks
         // regardless of what the body ends with, so that half is unconditional.
+        // Alternatives that are plain literals with distinct first characters
+        // (`(foo|bar)+`, `(?:GET|POST)+`) match deterministically: safe.
         const risky = frame.hasUnbounded
           ? !frame.endsWithMandatoryAtom
-          : frame.hasAlternation;
+          : frame.hasAlternation && !isDisjointLiterals(pattern.slice(frame.start, i));
 
         if (groupUnbounded && risky) {
           return {
@@ -172,6 +182,12 @@ export function checkRegexSafety(pattern: string): RegexSafetyResult {
 
     if (isUnbounded && stack.length > 0) {
       stack[stack.length - 1].hasUnbounded = true;
+    }
+    // An unescaped `.` overlaps every letter/digit before it, so it cannot
+    // anchor a repetition the way a real separator does: `(([a-z])+.)+`.
+    if (ch === '.') {
+      markAtom(false);
+      continue;
     }
     // A quantifier makes the atom it follows optional/repeatable, so the body
     // no longer ends in something mandatory. Anything else is a plain literal.
