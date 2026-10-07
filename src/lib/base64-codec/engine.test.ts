@@ -138,3 +138,27 @@ describe('convert() — decode rejects non-base64 that merely looks url-safe', (
     expect(r.output).toBe('hello');
   });
 });
+
+describe('convert() — decode diagnostics', () => {
+  it('notes that decoded bytes are not valid UTF-8', () => {
+    const r = convert('/9j/4AAQSkZJRg==', 'decode', false);
+    expect(r.valid).toBe(true);
+    expect(r.note ?? '').toMatch(/not valid UTF-8/);
+  });
+
+  it('does not add the binary note for valid text', () => {
+    expect(convert('aGVsbG8=', 'decode', false).note).toBeUndefined();
+  });
+
+  it('tells the user to strip a data: URI prefix', () => {
+    const r = convert('data:text/plain;base64,aGVsbG8=', 'decode', false);
+    expect(r.valid).toBe(false);
+    expect(r.error ?? '').toMatch(/data: URI/);
+  });
+
+  it('explains mid-input padding for two padded lines', () => {
+    const r = convert('aGVsbG8gd29ybGQ=\naGVsbG8=', 'decode', false);
+    expect(r.valid).toBe(false);
+    expect(r.error ?? '').toMatch(/very end/);
+  });
+});

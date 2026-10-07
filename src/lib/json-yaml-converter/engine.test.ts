@@ -674,3 +674,31 @@ describe('milestone 3 — share state round-trip', () => {
     expect(() => decodeState()).not.toThrow();
   });
 });
+
+describe('review fixes', () => {
+  it('names the real problem for an unquoted ": " in a plain scalar', () => {
+    const r = y2j('msg: hello: world');
+    expect(r.ok).toBe(false);
+    expect(said(r)).toMatch(/plain value cannot contain ": "/);
+    expect(said(r)).not.toMatch(/indentation/i);
+  });
+
+  it('warns when a sequence key is flattened to a string', () => {
+    const r = y2j('? [x,y]\n: c');
+    expect(r.ok).toBe(true);
+    expect(byId(r, 'complex-key-flattened')?.severity).toBe('warning');
+  });
+
+  it('does not suggest YAML for a JSON comment', () => {
+    const r = j2y('// hi\n{"a":1}');
+    expect(r.ok).toBe(false);
+    expect(said(r)).toMatch(/does not allow comments/);
+    expect(said(r)).not.toMatch(/YAML/);
+  });
+
+  it('reports no conversion notes when the conversion failed', () => {
+    const r = y2j('a: &a [*a]');
+    expect(r.ok).toBe(false);
+    expect(r.diagnostics.every((d) => d.severity === 'error')).toBe(true);
+  });
+});

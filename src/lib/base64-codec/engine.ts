@@ -19,6 +19,10 @@ const ERR_EMPTY_DECODE = 'Enter base64 to decode, e.g. aGVsbG8gd29ybGQ=.';
 const ERR_NOT_BASE64 =
   'That is not valid base64 — it contains characters outside the base64 alphabet.';
 const ERR_BAD_LENGTH = 'That base64 is malformed — its length is not a valid encoding.';
+const ERR_DATA_URI =
+  'That is a data: URI — strip the "data:…;base64," prefix and paste only the base64 after the comma.';
+const ERR_MID_PAD =
+  'Padding "=" is only valid at the very end of the input. If this is several base64 strings, decode them one at a time.';
 const ERR_PEM =
   'That looks like a PEM block, not raw base64. Remove the “-----BEGIN …-----” and ' +
   '“-----END …-----” armor lines and paste only the body.';
@@ -127,6 +131,9 @@ export function convert(input: string, mode: Base64Mode, urlSafe: boolean): Base
     return bad(ERR_PEM);
   }
 
+  if (/^data:[^,]*;base64,/i.test(stripped)) return bad(ERR_DATA_URI);
+  if (/=[^=]/.test(stripped)) return bad(ERR_MID_PAD);
+
   // Both alphabets present at once is ambiguous, not something to guess at.
   if (/[-_]/.test(stripped) && /[+/]/.test(stripped)) {
     return bad(ERR_MIXED_ALPHABET);
@@ -157,6 +164,11 @@ export function convert(input: string, mode: Base64Mode, urlSafe: boolean): Base
   const output = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
 
   const notes: string[] = [];
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    notes.push('decoded bytes are not valid UTF-8, so this looks like binary data and invalid sequences show as \ufffd');
+  }
   if (sawUrlSafe) notes.push('url-safe input detected');
   if (repadded) notes.push('padding restored');
   const note = notes.length ? notes.join('; ') + '.' : undefined;
