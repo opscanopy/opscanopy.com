@@ -124,3 +124,69 @@ describe('explain() — bundled examples stay explainable', () => {
     }
   });
 });
+
+describe('explain() — rejects what Prometheus rejects', () => {
+  it('rejects rate() on an instant vector', () => {
+    expect(explain('rate(http_requests_total)').error).toBe(
+      'expected type range vector in call to function "rate", got instant vector',
+    );
+  });
+
+  it('still accepts range-vector arguments, subqueries and parens', () => {
+    for (const q of [
+      'rate(x_total[5m])',
+      'rate((x_total[5m]))',
+      'max_over_time(rate(x[5m])[1h:1m])',
+      'quantile_over_time(0.9, x[5m])',
+      'absent_over_time(up[10m])',
+      'sin(x)',
+    ]) {
+      expect(explain(q).error, q).toBeUndefined();
+    }
+  });
+
+  it('rejects an unknown function and suggests the closest one', () => {
+    const err = explain('rates(x_total[5m])').error ?? '';
+    expect(err).toMatch(/unknown function with name "rates"/);
+    expect(err).toMatch(/rate\(\)/);
+  });
+
+  it('reports an invalid duration as a duration error', () => {
+    expect(explain('rate(x_total[5x])').error).toMatch(/“5x” is not a valid duration/);
+  });
+});
+
+describe('explain() — offsets read in the right direction', () => {
+  it('reads a negative offset as forward in time', () => {
+    const p = prose('x_total offset -5m');
+    expect(p).toMatch(/shifted forward in time by 5 minutes/);
+    expect(p).not.toMatch(/back in time|in the future/);
+    expect(row('x_total offset -5m', 'offset -5m')).toMatch(/forward in time by 5 minutes/);
+  });
+
+  it('still reads a positive offset as back in time', () => {
+    expect(prose('x_total offset 5m')).toMatch(/shifted back in time by 5 minutes/);
+  });
+});
+
+describe('explain() — nested clauses read as noun phrases', () => {
+  // A verb phrase spliced after "where", "over", "applied to" or "taken from"
+  // made the default example read "where adds … over computes …".
+  const broken =
+    /(where|over|applied to|taken from|by|of) (adds|computes|takes|keeps|counts|averages|estimates)\b/;
+
+  it.each([
+    'histogram_quantile(0.95, sum by(le) (rate(http_request_duration_seconds_bucket[5m])))',
+    'max_over_time(rate(x[5m])[1h:1m])',
+    'topk by (job) (3, rate(x_total[5m]))',
+    'rate(a[5m]) / rate(b[5m])',
+  ])('%s', (q) => {
+    expect(prose(q)).not.toMatch(broken);
+  });
+
+  it('reads the default example as a sum of rates', () => {
+    expect(
+      prose('histogram_quantile(0.95, sum by(le) (rate(http_request_duration_seconds_bucket[5m])))'),
+    ).toMatch(/the sum, grouped by `le`.*, of the per-second average rate of increase of/);
+  });
+});
