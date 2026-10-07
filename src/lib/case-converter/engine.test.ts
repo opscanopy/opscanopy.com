@@ -168,3 +168,9 @@ describe('tokenize() — combining marks are part of words, not separators', () 
     expect(tokenize('\u05e9\u05b8\u05c1\u05dc\u05d5\u05b9\u05dd')).toHaveLength(1);
   });
 });
+
+describe('apostrophes', () => {
+  it("keeps it's / dog's as single words", () => {
+    expect(tokenize("it's a dog's life")).toEqual(['its', 'a', 'dogs', 'life']);
+  });
+});

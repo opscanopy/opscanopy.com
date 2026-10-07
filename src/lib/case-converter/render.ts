@@ -61,7 +61,7 @@ export function resultHtml(result: CaseResult): string {
 /** The one-line status readout: "11 cases · 3 words" (words counted off the snake_case row). */
 export function summaryText(result: CaseResult): string {
   const wordCount = result.rows.length ? result.rows[2].value.split('_').length : 0;
-  return `${result.rows.length} cases · ${wordCount} words`;
+  return `${result.rows.length} cases · ${wordCount} ${wordCount === 1 ? 'word' : 'words'}`;
 }
 
 /** "Label: value" lines for the Copy all button. */

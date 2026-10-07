@@ -40,6 +40,8 @@ export function tokenize(input: string): string[] {
   // identically to its precomposed form instead of losing its accents.
   const bounded = input
     .normalize('NFC')
+    // Apostrophes are dropped, not separators: dog's → dogs (as lodash, slugify).
+    .replace(/['‘’]/g, '')
     // acronym-run → word: HTTPResponse → HTTP·Response (before lower→Upper).
     .replace(/(\p{Lu})(\p{Lu}\p{Ll})/gu, `$1${SEP}$2`)
     // lower → Upper: userProfile → user·Profile.
