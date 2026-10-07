@@ -290,6 +290,20 @@ describe('security lint (via decode)', () => {
   });
 });
 
+describe('review regressions: exp type and Bearer prefix', () => {
+  it('warns when exp is a JSON string, not a number', () => {
+    const token = `${b64u({ alg: 'HS256' })}.${b64u({ sub: 'u', exp: '1791392404' })}.x`;
+    const r = decode(token, 1791392435 * 1000);
+    expect(r.warnings.some((w) => w.includes('exp') && w.includes('JSON number'))).toBe(true);
+  });
+
+  it('strips a leading Bearer (and Authorization:) prefix', () => {
+    const tok = `${b64u({ alg: 'HS256' })}.${b64u({ sub: 'b' })}.x`;
+    expect(decode(`Bearer ${tok}`).ok).toBe(true);
+    expect(decode(`Authorization: bearer ${tok}`).ok).toBe(true);
+  });
+});
+
 describe('classifyKeyInput()', () => {
   it.each([
     ['secret', 'your-256-bit-secret', 'secret'],
