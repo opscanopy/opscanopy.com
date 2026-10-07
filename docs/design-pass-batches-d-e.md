@@ -151,9 +151,13 @@ can be deleted from GitHub whenever you like.
 Shipped the same day Batch D re-dated those pages; sitemap dates are whole days, so
 these fixes re-dated nothing (IndexNow 0 URLs).
 
-## Small follow-ups not in either batch
+## Small follow-ups not in either batch (fixed 2026-10-06)
 
-- Two highlight boxes in the GitHub Actions security diagram sit tight against
-  their text, and a bracket in the GitLab CI diagram touches its box.
-- The Mission 90 FAQ heading is still centred; the new `FaqList` alignment option
-  can fix it when that page is next edited.
+- The GitHub Actions security diagram's `pull_request_target`, `write-all` and
+  `@main` highlights were narrower than their mono text (the replater condensed
+  them to fit); the boxes now clear the text and the leader tips clear the boxes.
+  The GitLab CI diagram's `"nope"` and `release` boxes were widened the same way,
+  and the `]` after `"nope"` no longer touches its box.
+- The Mission 90 FAQ uses `FaqList align="left"`.
+- The vestigial `[data-cat]` exclusion on `.badge` in global.css is gone (no
+  `.badge` carries `data-cat` since batch D); specificity is unchanged.
