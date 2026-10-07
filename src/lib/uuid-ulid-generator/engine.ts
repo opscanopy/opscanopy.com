@@ -346,6 +346,16 @@ function variantName(nibble: number): string {
   return 'Reserved (future definition)';
 }
 
+/** Embedded Unix ms for v1 / v6 (100ns Gregorian clock) and v7 (48-bit ms); else null. */
+function uuidTimeMs(hex: string, version: number): number | null {
+  if (version === 7) return parseInt(hex.slice(0, 12), 16);
+  let ticks: bigint;
+  if (version === 1) ticks = BigInt('0x' + hex.slice(13, 16) + hex.slice(8, 12) + hex.slice(0, 8));
+  else if (version === 6) ticks = BigInt('0x' + hex.slice(0, 12) + hex.slice(13, 16));
+  else return null;
+  return Number(ticks / 10000n) - 12219292800000;
+}
+
 /**
  * Inspect a pasted identifier. Detects an 8-4-4-4-12 hex UUID (reporting its
  * version and variant) or a 26-char Crockford ULID (decoding its embedded
@@ -355,7 +365,14 @@ export function inspectUuid(input: string): InspectResult {
   if (typeof input !== 'string') {
     return { valid: false, error: INSPECT_ERROR };
   }
-  const s = input.trim();
+  let s = input.trim();
+  // Accept urn:uuid:…, {…} (.NET) and 32 bare hex digits (database dumps).
+  const unwrapped = s.replace(/^urn:uuid:/i, '').replace(/^\{(.*)\}$/, '$1');
+  if (/^[0-9a-f]{32}$/i.test(unwrapped)) {
+    s = unwrapped.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
+  } else if (UUID_RE.test(unwrapped.toLowerCase())) {
+    s = unwrapped;
+  }
 
   // ── UUID (8-4-4-4-12 hex) ──────────────────────────────────────────────
   if (UUID_RE.test(s.toLowerCase())) {
@@ -370,11 +387,13 @@ export function inspectUuid(input: string): InspectResult {
         ? 'Nil UUID — all bits zero (RFC 4122 §4.1.7).'
         : `Version ${version} UUID.`,
     ];
+    const ms = uuidTimeMs(hex, version);
     return {
       valid: true,
       kind: 'uuid',
       version,
       variant: isNil ? 'NCS / nil' : variant,
+      timestamp: ms === null || variantNibble >> 2 !== 0b10 ? undefined : new Date(ms).toISOString(),
       notes,
     };
   }
@@ -397,6 +416,16 @@ export function inspectUuid(input: string): InspectResult {
         `Randomness: ${upper.slice(10)}`,
       ],
     };
+  }
+
+  if (/^[0-9A-Z]{26}$/.test(upper)) {
+    const bad = [...new Set(upper.match(/[ILOU]/g) ?? [])];
+    if (bad.length) {
+      return {
+        valid: false,
+        error: `${bad.join(', ')} ${bad.length === 1 ? 'is' : 'are'} not in the Crockford base32 alphabet (no I, L, O or U), so this is not a valid ULID.`,
+      };
+    }
   }
 
   return { valid: false, error: INSPECT_ERROR };
