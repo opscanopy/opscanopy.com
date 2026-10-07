@@ -222,3 +222,56 @@ describe('round trip — the generated units lint with zero errors', () => {
     expect(service.findings.filter((f) => f.id === 'unknown-specifier')).toEqual([]);
   });
 });
+
+describe('convert — persona review 2026-10-07', () => {
+  // /etc/crontab and /etc/cron.d lines carry a user column between the
+  // schedule and the command; it must not land in ExecStart.
+  it('moves the system-crontab user column into User=', () => {
+    const r = convert('0 3 * * * root /usr/bin/backup.sh');
+    expect(r.serviceUnit).toContain('ExecStart=/usr/bin/backup.sh');
+    expect(r.serviceUnit).toContain('User=root');
+    expect(r.notes.join(' ')).toMatch(/user column/i);
+    expect(r.notes.join(' ')).not.toMatch(/absolute path/);
+    const service = lint(r.serviceUnit);
+    expect(service.findings.filter((f) => f.severity === 'error')).toEqual([]);
+  });
+
+  it('warns specifically when another word looks like a user column', () => {
+    const r = convert('0 3 * * * www-data /usr/bin/php /srv/cron.php');
+    expect(r.notes.join(' ')).toMatch(/www-data.*user column/i);
+  });
+
+  it('leaves an ordinary user-crontab command alone', () => {
+    const r = convert('0 3 * * * /usr/bin/backup.sh --full');
+    expect(r.serviceUnit).not.toContain('User=');
+    expect(r.notes.join(' ')).not.toMatch(/user column/i);
+  });
+
+  it('warns when the date can never occur (February 31)', () => {
+    const r = convert('0 0 31 2 * /bin/x');
+    expect(r.valid).toBe(true);
+    expect(r.notes.join(' ')).toMatch(/never/i);
+  });
+
+  it('does not warn for a date that occurs (February 29, the 31st of any month)', () => {
+    expect(convert('0 0 29 2 * /bin/x').notes.join(' ')).not.toMatch(/never/i);
+    expect(convert('0 0 31 * * /bin/x').notes.join(' ')).not.toMatch(/never/i);
+  });
+
+  it('omits Persistent= on an @reboot (OnBootSec) timer', () => {
+    const r = convert('@reboot /usr/local/bin/warm.sh');
+    expect(r.timerUnit).not.toContain('Persistent=');
+    expect(lint(r.timerUnit).findings.filter((f) => f.severity !== 'info')).toEqual([]);
+  });
+
+  // cron itself ANDs the day fields when one starts with "*" (DOM_STAR), so
+  // systemd's AND matches it and the OR warning would be wrong.
+  it('gives the day-field OR warning only when cron really ORs', () => {
+    expect(convert('0 0 13 * 5 /x').notes.join(' ')).toMatch(/OR/);
+    expect(convert('0 0 */2 * 1 /x').notes.join(' ')).not.toMatch(/OR/);
+  });
+
+  it('keeps Persistent=true on an OnCalendar timer', () => {
+    expect(convert('0 3 * * * /x').timerUnit).toContain('Persistent=true');
+  });
+});
