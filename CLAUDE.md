@@ -45,7 +45,12 @@ merged that bump on 2026-08-03 and Deploy plus SEO report stayed red until 19 Au
 working**. TS majors are now in `.github/dependabot.yml`'s ignore list. When a
 dependency change looks harmless, verify it with `npm ci`, not with a build.
 (`npm ci --dry-run` is not a safe probe — npm deletes `node_modules` before
-resolving, so a "dry" run still wipes the tree.)
+resolving, so a "dry" run still wipes the tree.) **Prove it with CI's npm, not
+yours:** CI runs Node 22 / npm 10, and npm 10's `ci` is stricter than npm 11's
+about wasm32 optional deps. On 2026-10-07 a lockfile written by npm 11 passed
+local `npm ci` and failed every deploy with `Missing: @emnapi/core@1.11.3 from
+lock file`. After any lockfile change, run `npx -y npm@10 ci`; if it fails,
+regenerate with `npx -y npm@10 install --package-lock-only`.
 
 **`npm run check` must stay at zero errors — it is a CI gate** (`deploy.yml`), added
 once the 128 pre-existing errors were cleared on 2026-08-27. Run it before shipping:
