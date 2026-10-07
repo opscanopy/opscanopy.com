@@ -299,8 +299,8 @@ describe('review regressions: exp type and Bearer prefix', () => {
 
   it('strips a leading Bearer (and Authorization:) prefix', () => {
     const tok = `${b64u({ alg: 'HS256' })}.${b64u({ sub: 'b' })}.x`;
-    expect(decode(`Bearer ${tok}`).ok).toBe(true);
-    expect(decode(`Authorization: bearer ${tok}`).ok).toBe(true);
+    expect(decode(`Bearer ${tok}`).valid).toBe(true);
+    expect(decode(`Authorization: bearer ${tok}`).valid).toBe(true);
   });
 });
 
