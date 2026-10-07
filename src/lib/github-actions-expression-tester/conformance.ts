@@ -9,7 +9,7 @@
  */
 import type { Decision, EvalContext, ExprWarning, GhaValue, SimEvent } from './types';
 
-export const GHA_SEMANTICS_VERSION = 'gha-2024.12';
+export const GHA_SEMANTICS_VERSION = 'gha-2026.10';
 
 /* ── expression vectors (bare ${{ }} bodies) ───────────────────────────────── */
 
@@ -39,6 +39,12 @@ export const exprCorpus: ExprVector[] = [
   { id: 'eq-zero-false', input: '0 == false', truthy: true },
   { id: 'eq-abc-ABC', input: "'abc' == 'ABC'", truthy: true },
   { id: 'cmp-nan', input: "'abc' < 1", truthy: false },
+  // Two strings compare ordinally, ignoring case — not numerically.
+  { id: 'cmp-str-lt', input: "'a' < 'b'", truthy: true },
+  { id: 'cmp-str-gt', input: "'b' > 'a'", truthy: true },
+  { id: 'cmp-str-prefix', input: "'abc' < 'abd'", truthy: true },
+  { id: 'cmp-str-ci', input: "'a' < 'B'", truthy: true },
+  { id: 'cmp-str-ci-eq', input: "'A' >= 'a'", truthy: true },
   { id: 'eq-nan', input: 'NaN == NaN', truthy: false },
 
   // Logical operators return operands
@@ -133,6 +139,15 @@ export const ifCorpus: IfVector[] = [
     truthy: true,
     rendered: 'octocat is me',
   },
+  // A }} inside a single-quoted literal does not close the ${{ }} span.
+  {
+    id: 'ok-format-brace-escape',
+    input: "${{ format('{{Hello {0} {1} {2}!}}', 'Mona', 'the', 'Octocat') }}",
+    footgun: false,
+    rendered: '{Hello Mona the Octocat!}',
+  },
+  { id: 'ok-format-escape-tail', input: "${{ format('{0}-{{1}}', 'x') }}", footgun: false, rendered: 'x-{1}' },
+  { id: 'ok-literal-close-braces', input: "${{ '}}' }}", footgun: false, rendered: '}}' },
 ];
 
 /* ── glob vectors ──────────────────────────────────────────────────────────── */

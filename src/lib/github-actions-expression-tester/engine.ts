@@ -9,7 +9,7 @@
 import type { EvalContext, EvaluateResult } from './types';
 import { parse } from './expr-parser';
 import { evaluateAst } from './expr-eval';
-import { analyzeIfCondition, extractExpressionBody } from './if-footgun';
+import { analyzeIfCondition, extractExpressionBody, SPAN_RE } from './if-footgun';
 import { defaultContext } from './context';
 import { matchList } from './glob';
 import { render, truthy } from './values';
@@ -102,7 +102,7 @@ export function evaluateIfCondition(raw: string, ctx: EvalContext = defaultConte
  * unresolvable context lookup as the empty string.
  */
 function substituteSpans(raw: string, ctx: EvalContext): string {
-  return raw.trim().replace(/\$\{\{([\s\S]*?)\}\}/g, (_match, inner: string) => {
+  return raw.trim().replace(SPAN_RE, (_match, inner: string) => {
     const res = evaluateExpression(String(inner).trim(), ctx);
     return res.error ? '' : res.rendered;
   });
