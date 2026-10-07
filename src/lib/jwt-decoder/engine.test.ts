@@ -9,7 +9,7 @@
  * capability-gated so the suite passes on runtimes without it.
  */
 import { describe, it, expect } from 'vitest';
-import { decode, verify, sign, generateKeys } from './engine';
+import { decode, verify, sign, generateKeys, stripBearer } from './engine';
 import { classifyKeyInput, jwksCandidates, b64uToBytes, bytesToB64u } from './keys';
 import { examples } from './examples';
 
@@ -301,6 +301,12 @@ describe('review regressions: exp type and Bearer prefix', () => {
     const tok = `${b64u({ alg: 'HS256' })}.${b64u({ sub: 'b' })}.x`;
     expect(decode(`Bearer ${tok}`).valid).toBe(true);
     expect(decode(`Authorization: bearer ${tok}`).valid).toBe(true);
+  });
+
+  it('stripBearer returns the bare token the playground copies and compares', () => {
+    expect(stripBearer('  Authorization: Bearer abc.d.e ')).toBe('abc.d.e');
+    expect(stripBearer('Bearer abc.d.e')).toBe('abc.d.e');
+    expect(stripBearer('abc.d.e')).toBe('abc.d.e');
   });
 });
 

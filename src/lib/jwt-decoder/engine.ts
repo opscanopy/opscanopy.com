@@ -293,7 +293,7 @@ function buildClaims(payload: Record<string, unknown>, nowMs: number): ClaimRow[
 }
 
 /** Trim, and drop a pasted `Authorization: Bearer ` / `Bearer ` prefix. */
-function stripBearer(token: string | undefined): string {
+export function stripBearer(token: string | undefined): string {
   return (token ?? '').trim().replace(/^(?:authorization\s*:\s*)?bearer\s+/i, '');
 }
 
