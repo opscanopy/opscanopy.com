@@ -63,3 +63,12 @@ describe('EMPTY_HTML', () => {
     expect(EMPTY_HTML).toContain('class="slug-empty');
   });
 });
+
+describe('resultHtml empty slug from non-Latin input', () => {
+  it('shows the transliteration note, not "no letters"', () => {
+    const o = { separator: '-' as const, lowercase: true, maxLength: 60 };
+    const html = resultHtml(slugify('Привет мир', o), o);
+    expect(html).toContain('Only Latin letters');
+    expect(html).not.toContain('no letters or digits');
+  });
+});
