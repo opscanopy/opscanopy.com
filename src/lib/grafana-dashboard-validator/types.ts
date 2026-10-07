@@ -43,8 +43,8 @@ export type Severity = 'error' | 'warning' | 'info';
  * panel-no-type + panel-zero-size)", but the list it actually names contains
  * twenty-two rules — its "19 original" is a miscount of a twenty-item list.
  * Every named rule is implemented here rather than one being dropped to satisfy
- * the arithmetic, so the catalog is 22 and every count rendered on the page is
- * derived from `RULE_IDS.length` rather than typed by hand.
+ * the arithmetic, so the catalog was 22 (23 since `duplicate-refid`) and every
+ * count rendered on the page is derived from `RULE_IDS.length` rather than typed by hand.
  */
 export type RuleId =
   | 'no-uid'
@@ -68,7 +68,8 @@ export type RuleId =
   | 'override-suspect'
   | 'empty-row'
   | 'panel-no-type'
-  | 'panel-zero-size';
+  | 'panel-zero-size'
+  | 'duplicate-refid';
 
 /** Every rule id in catalog order — drives the page's anchors and the test sweep. */
 export const RULE_IDS: readonly RuleId[] = [
@@ -94,6 +95,7 @@ export const RULE_IDS: readonly RuleId[] = [
   'empty-row',
   'panel-no-type',
   'panel-zero-size',
+  'duplicate-refid',
 ];
 
 /** One finding. `message` and `hint` are plain text and never contain markup. */
