@@ -1097,3 +1097,85 @@ describe('untrusted contexts — expanded list', () => {
     expect(r.findings.some((f) => /inject/i.test(f.id)), ctx).toBe(true);
   });
 });
+
+describe('context availability', () => {
+  it('flags secrets.* in a step if:', () => {
+    const r = validate(
+      wf([
+        'on: push',
+        'permissions: {}',
+        'jobs:',
+        '  sh:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        "      - if: ${{ secrets.TOKEN != '' }}",
+        '        run: echo has token',
+      ]),
+    );
+    const f = byId(r, 'secrets-in-if');
+    expect(f).toHaveLength(1);
+    expect(f[0].severity).toBe('error');
+    expect(f[0].line).toBe(7);
+  });
+
+  it('does not flag env.* in a step if:, or secrets in env:', () => {
+    const r = validate(
+      wf([
+        'on: push',
+        'permissions: {}',
+        'jobs:',
+        '  sh:',
+        '    runs-on: ubuntu-latest',
+        '    env:',
+        '      TOKEN: ${{ secrets.TOKEN }}',
+        '    steps:',
+        "      - if: env.TOKEN != ''",
+        '        run: echo has token',
+      ]),
+    );
+    expect(ids(r)).not.toContain('secrets-in-if');
+  });
+
+  it('warns on needs.<job> when <job> is not listed in needs:', () => {
+    const r = validate(
+      wf([
+        'on: push',
+        'permissions: {}',
+        'jobs:',
+        '  a:',
+        '    runs-on: ubuntu-latest',
+        '    outputs:',
+        '      v: x',
+        '    steps: [{ run: echo a }]',
+        '  b:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - run: echo ${{ needs.a.outputs.v }}',
+      ]),
+    );
+    const f = byId(r, 'needs-ref-not-listed');
+    expect(f).toHaveLength(1);
+    expect(f[0].severity).toBe('warning');
+    expect(f[0].title).toContain('needs.a');
+  });
+
+  it('does not warn when the job is listed in needs:', () => {
+    const r = validate(
+      wf([
+        'on: push',
+        'permissions: {}',
+        'jobs:',
+        '  a:',
+        '    runs-on: ubuntu-latest',
+        '    steps: [{ run: echo a }]',
+        '  b:',
+        '    needs: a',
+        "    if: needs.a.result == 'success'",
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - run: echo ${{ needs.a.outputs.v }} needs.txt',
+      ]),
+    );
+    expect(ids(r)).not.toContain('needs-ref-not-listed');
+  });
+});
