@@ -163,7 +163,29 @@ describe('trigger simulator regressions', () => {
   });
 });
 
+describe('conflicting filter pairs', () => {
+  const cases = [
+    ['branches', 'branches-ignore', { event: 'push', branch: 'main' }],
+    ['tags', 'tags-ignore', { event: 'tag', tag: 'v1' }],
+    ['paths', 'paths-ignore', { event: 'push', branch: 'main', changedFiles: ['src/a.ts'] }],
+  ] as const;
+  for (const [inc, exc, ev] of cases) {
+    it(`${inc} + ${exc} on one event is rejected, so nothing runs`, () => {
+      const yaml = `on:\n  push:\n    ${inc}: [main, v1, 'src/**']\n    ${exc}: [dev]\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps: [{ run: x }]\n`;
+      const res = simulateTriggers(yaml, ev as never);
+      expect(res.workflowTriggered).toBe(false);
+      expect(res.workflowReason).toContain(exc);
+      expect(res.jobs[0]?.decision).toBe('not-evaluated');
+    });
+  }
+});
+
 describe('targeted units', () => {
+  it('an unterminated quote inside ${{ }} is still one span, not a literal if:', () => {
+    const r = evaluateIfCondition("${{ github.actor == 'x }}");
+    expect(r.warnings.map((w) => w.id)).not.toContain('literal-if-always-true');
+  });
+
   it('&& returns the right operand (not a boolean)', () => {
     expect(evaluateExpression("'a' && 'b'").value).toBe('b');
   });

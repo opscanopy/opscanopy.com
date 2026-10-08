@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkRegexSafety } from './regex-safety';
+import { checkRegexSafety, re2UnsupportedSyntax } from './regex-safety';
 
 /**
  * This heuristic gates three tools (regex-log-tester, alertmanager-route-tester,
@@ -58,4 +58,34 @@ describe('checkRegexSafety — plain patterns are unaffected', () => {
       expect(checkRegexSafety(p).safe).toBe(true);
     });
   }
+});
+
+describe('re2UnsupportedSyntax — flags what Go regexp refuses', () => {
+  for (const p of ['(?!info).*', '(?=a)b', 'a(?<=b)', 'a(?<!b)', '(?>a)', '(a)\\1', '\\9', '(?<n>a)\\k<n>']) {
+    it(`flags ${p}`, () => {
+      expect(re2UnsupportedSyntax(p)).not.toBeNull();
+    });
+  }
+  for (const p of ['(?i)diskfull', '(?P<host>[a-z]+)', '(?<host>a)', 'a\\101', '[(?!]', '\\(?!', '(?:a|b)', 'a\\.b']) {
+    it(`allows ${p}`, () => {
+      expect(re2UnsupportedSyntax(p)).toBeNull();
+    });
+  }
+});
+
+describe('checkRegexSafety — review fixes', () => {
+  it('flags an unescaped dot used as a "separator" after a repeated class', () => {
+    expect(checkRegexSafety('^(([a-z])+.)+[A-Z]([a-z])+$').safe).toBe(false);
+  });
+  it('still allows an escaped-dot separator', () => {
+    expect(checkRegexSafety('(\\d+\\.)+').safe).toBe(true);
+  });
+  for (const p of ['(foo|bar)+', '(?:GET|POST)+']) {
+    it(`allows disjoint literal alternation ${p}`, () => {
+      expect(checkRegexSafety(p).safe).toBe(true);
+    });
+  }
+  it('still flags overlapping alternation', () => {
+    expect(checkRegexSafety('(a|ab)*').safe).toBe(false);
+  });
 });

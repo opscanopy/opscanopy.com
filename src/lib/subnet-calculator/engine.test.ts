@@ -490,3 +490,11 @@ describe('subnet-calculator calculate()', () => {
     });
   });
 });
+
+describe('leading-zero octets', () => {
+  it('names the ambiguity instead of the generic error', () => {
+    const r = calculate('192.168.001.010/24');
+    expect(r.valid).toBe(false);
+    expect(r.error).toMatch(/Octet "001" has a leading zero/);
+  });
+});

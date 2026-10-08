@@ -31,7 +31,7 @@
  * Every rule is a `{ id, severity, run }` record. `run` may add zero or more
  * diagnostics through the collector it is handed; the engine wraps each `run` in
  * its own try/catch, so a rule that trips on unforeseen input costs one info
- * diagnostic and never the other twenty-one.
+ * diagnostic and never the other twenty-two.
  *
  * Version-sensitive rules are phrased as RANGES ("Grafana 9–12", "removed in
  * Grafana 11–12") rather than as a single version, because the linter is pinned
@@ -1057,6 +1057,37 @@ const panelZeroSize: Rule = {
   },
 };
 
+/* ── 23. duplicate-refid ─────────────────────────────────────────────────── */
+
+const duplicateRefId: Rule = {
+  id: 'duplicate-refid',
+  severity: 'error',
+  run: (ctx, emit) => {
+    for (const node of ctx.panels) {
+      const targets = node.raw.targets;
+      if (!Array.isArray(targets)) continue;
+      const seen = new Set<string>();
+      targets.forEach((target, i) => {
+        if (!isPlainObject(target) || typeof target.refId !== 'string' || target.refId === '') return;
+        if (!seen.has(target.refId)) {
+          seen.add(target.refId);
+          return;
+        }
+        emit({
+          id: 'duplicate-refid',
+          severity: 'error',
+          path: `${node.path}.targets[${i}].refId`,
+          panelTitle: panelTitleOf(node),
+          message: `The panel ${panelRef(node)} has two queries with refId "${target.refId}".`,
+          hint:
+            'Give each query in the panel its own refId. Grafana keys query results, transformations ' +
+            'and overrides by refId, so one query\'s data is lost or overwritten.',
+        });
+      });
+    }
+  },
+};
+
 /* ── the catalog ─────────────────────────────────────────────────────────── */
 
 /** Every rule, in catalog order — the same order as `RULE_IDS`. */
@@ -1083,6 +1114,7 @@ export const RULES: readonly Rule[] = [
   emptyRow,
   panelNoType,
   panelZeroSize,
+  duplicateRefId,
 ];
 
 /** Advertised severity per rule id — the page's catalog table reads this. */

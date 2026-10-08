@@ -197,3 +197,44 @@ describe('convert() — negative (pre-1970) epochs', () => {
     expect(convert('-1700000000000').detected).toBe('epoch milliseconds');
   });
 });
+
+describe('review fixes', () => {
+  it('accepts fractional epoch seconds', () => {
+    const r = convert('1700000000.5', 1700000000000);
+    expect(r.valid).toBe(true);
+    expect(r.detected).toBe('epoch seconds');
+    expect(r.rows[1].value).toBe('1700000000500');
+  });
+
+  it('accepts exponent epoch', () => {
+    const r = convert('1.7e9');
+    expect(r.valid).toBe(true);
+    expect(r.rows[0].value).toBe('1700000000');
+  });
+
+  it('error lists accepted formats for a suffixed epoch', () => {
+    const r = convert('1700000000s');
+    expect(r.valid).toBe(false);
+    expect(r.error).toMatch(/Accepted:.*ISO 8601/);
+  });
+
+  it('rejects an impossible calendar date', () => {
+    const r = convert('2024-02-30T00:00:00Z');
+    expect(r.valid).toBe(false);
+    expect(r.error).toMatch(/February 2024 has 29 days/);
+  });
+
+  it('still accepts a leap day', () => {
+    expect(convert('2024-02-29T00:00:00Z').valid).toBe(true);
+  });
+
+  it('notes a missing timezone, but not when Z is present', () => {
+    expect(convert('2024-03-10T12:00:00').notes?.[0]).toMatch(/No timezone given/);
+    expect(convert('2024-03-10T12:00:00Z').notes).toBeUndefined();
+    expect(convert('2024-03-10').notes).toBeUndefined();
+  });
+
+  it('flags an ambiguous slashed date', () => {
+    expect(convert('10/03/2024').notes?.join(' ')).toMatch(/month\/day\/year/);
+  });
+});

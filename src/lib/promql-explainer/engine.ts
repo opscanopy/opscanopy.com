@@ -21,10 +21,10 @@
  * │  It explains INSIDE OUT: the innermost selector first, then each wrapping  │
  * │  function/aggregation/operator, mirroring how a human reads the query.     │
  * │                                                                            │
- * │  PRAGMATIC, never brittle: an unknown function is named generically        │
- * │  ("applies the foo() function to …") rather than rejected, and the engine  │
- * │  NEVER throws — a parse it cannot finish degrades to a best-effort          │
- * │  explanation with an `error` set. Output is DETERMINISTIC for a given input.│
+ * │  HONEST, never brittle: an unknown function name or a non-range argument   │
+ * │  to rate() & co. is reported as an `error`, the way Prometheus rejects it, │
+ * │  and the engine NEVER throws — a parse it cannot finish degrades to a      │
+ * │  best-effort result with an `error` set. Output is DETERMINISTIC.          │
  * └──────────────────────────────────────────────────────────────────────────┘
  */
 
@@ -210,7 +210,56 @@ const RANGE_FUNCS: Record<string, string> = {
   stdvar_over_time: 'computes the population standard variance of samples within the range',
   quantile_over_time: 'computes a φ-quantile of the sample values within the range',
   mad_over_time: 'computes the median absolute deviation of samples within the range',
+  first_over_time: 'takes the oldest sample value within the range, per series',
+  double_exponential_smoothing: 'produces a smoothed value from the samples in the range (double exponential smoothing)',
+  holt_winters: 'produces a smoothed value from the samples in the range (the pre-3.0 name of double_exponential_smoothing)',
 };
+
+/**
+ * Noun forms of the range functions, read as "<noun> <argument>". Nested
+ * clauses must be noun phrases: splicing the verb gloss after "of" / "over"
+ * produced "…, over computes the per-second …".
+ */
+const RANGE_FUNC_NOUNS: Record<string, string> = {
+  rate: 'the per-second average rate of increase of',
+  irate: 'the per-second instant rate (from the last two samples) of',
+  increase: 'the total increase of',
+  delta: 'the difference between the first and last value of',
+  idelta: 'the difference between the last two samples of',
+  deriv: 'the per-second derivative (by linear regression) of',
+  predict_linear: 'the linear-regression prediction of',
+  resets: 'the number of counter resets in',
+  changes: 'the number of value changes in',
+  sum_over_time: 'the sum of',
+  avg_over_time: 'the average of',
+  min_over_time: 'the minimum of',
+  max_over_time: 'the maximum of',
+  count_over_time: 'the number of samples in',
+  last_over_time: 'the most recent sample of',
+  first_over_time: 'the oldest sample of',
+  present_over_time: '1 for each series with any sample in',
+  stddev_over_time: 'the standard deviation of',
+  stdvar_over_time: 'the standard variance of',
+  quantile_over_time: 'the φ-quantile of',
+  mad_over_time: 'the median absolute deviation of',
+};
+
+/**
+ * Which argument must be a range vector, per function. Prometheus rejects
+ * anything else ("expected type range vector in call to function …").
+ */
+const RANGE_ARG_INDEX: Record<string, number> = {
+  ...Object.fromEntries(Object.keys(RANGE_FUNCS).map((f) => [f, 0])),
+  quantile_over_time: 1,
+  absent_over_time: 0,
+  ts_of_min_over_time: 0,
+  ts_of_max_over_time: 0,
+  ts_of_last_over_time: 0,
+  ts_of_first_over_time: 0,
+};
+
+/** Functions that return a scalar rather than an instant vector. */
+const SCALAR_FUNCS = new Set(['scalar', 'time', 'pi']);
 
 /** Instant-vector functions: operate on an instant vector (no `[range]`). */
 const INSTANT_FUNCS: Record<string, string> = {
@@ -249,6 +298,31 @@ const INSTANT_FUNCS: Record<string, string> = {
   year: 'returns the year for each sample’s timestamp',
   sort: 'sorts the elements of the vector in ascending order',
   sort_desc: 'sorts the elements of the vector in descending order',
+  sort_by_label: 'sorts the elements of the vector by the given label values, ascending',
+  sort_by_label_desc: 'sorts the elements of the vector by the given label values, descending',
+  histogram_avg: 'returns the arithmetic average of observed values of a native histogram',
+  histogram_stddev: 'returns the estimated standard deviation of a native histogram',
+  histogram_stdvar: 'returns the estimated standard variance of a native histogram',
+  info: 'adds the labels of matching info metrics to each series',
+  ts_of_min_over_time: 'returns the timestamp of the minimum sample within the range',
+  ts_of_max_over_time: 'returns the timestamp of the maximum sample within the range',
+  ts_of_last_over_time: 'returns the timestamp of the most recent sample within the range',
+  ts_of_first_over_time: 'returns the timestamp of the oldest sample within the range',
+  pi: 'returns the constant π',
+  deg: 'converts each sample from radians to degrees',
+  rad: 'converts each sample from degrees to radians',
+  sin: 'computes the sine of each sample',
+  cos: 'computes the cosine of each sample',
+  tan: 'computes the tangent of each sample',
+  asin: 'computes the arcsine of each sample',
+  acos: 'computes the arccosine of each sample',
+  atan: 'computes the arctangent of each sample',
+  sinh: 'computes the hyperbolic sine of each sample',
+  cosh: 'computes the hyperbolic cosine of each sample',
+  tanh: 'computes the hyperbolic tangent of each sample',
+  asinh: 'computes the inverse hyperbolic sine of each sample',
+  acosh: 'computes the inverse hyperbolic cosine of each sample',
+  atanh: 'computes the inverse hyperbolic tangent of each sample',
 };
 
 /** Aggregation operators and how they combine series. */
@@ -267,6 +341,24 @@ const AGG_OPS: Record<string, string> = {
   quantile: 'computes a φ-quantile across the series',
   limitk: 'samples up to k arbitrary series per group',
   limit_ratio: 'samples a deterministic ratio of the series per group',
+};
+
+/** Noun forms of the aggregations, for nested clauses ("the sum, grouped by …, of …"). */
+const AGG_NOUNS: Record<string, string> = {
+  sum: 'the sum',
+  avg: 'the average',
+  min: 'the minimum',
+  max: 'the maximum',
+  count: 'the number',
+  count_values: 'the count of series per distinct value',
+  stddev: 'the standard deviation',
+  stdvar: 'the standard variance',
+  group: 'the group membership (1 per group)',
+  topk: 'the k largest series',
+  bottomk: 'the k smallest series',
+  quantile: 'the φ-quantile',
+  limitk: 'up to k arbitrary series',
+  limit_ratio: 'a deterministic sample',
 };
 
 /** Set of all aggregation names for quick membership tests. */
@@ -594,11 +686,11 @@ class Parser {
     // Range / subquery bracket.
     if (this.at('lbracket')) {
       this.next();
-      const range = this.at('duration') || this.at('number') ? this.next().text : '';
+      const range = this.readRangeDuration();
       let step: string | null = null;
       if (this.at('colon')) {
         this.next();
-        step = this.at('duration') || this.at('number') ? this.next().text : '';
+        step = this.readRangeDuration();
       }
       this.expect('rbracket', 'a closing “]” for the range');
       node = this.attachRange(node, range, step);
@@ -619,6 +711,23 @@ class Parser {
       }
     }
     return node;
+  }
+
+  /**
+   * Read a duration inside `[…]`. A unit the tokenizer does not know (`5x`)
+   * splits into a number glued to an identifier; name that, instead of the
+   * misleading "expected a closing ]" the bracket check would report.
+   */
+  private readRangeDuration(): string {
+    if (!this.at('duration') && !this.at('number')) return '';
+    const t = this.next();
+    const glued = this.peek();
+    if (glued.kind === 'ident' && glued.pos === t.pos + t.text.length) {
+      throw new ParseError(
+        `“${t.text}${glued.text}” is not a valid duration (use ms, s, m, h, d, w, y).`,
+      );
+    }
+    return t.text;
   }
 
   /** Read the value following `@` or `offset` (a duration, number, or `fn()`). */
@@ -884,19 +993,22 @@ const DUR_UNITS: Record<string, [string, string]> = {
 };
 
 function humanDuration(dur: string): string {
-  const neg = dur.startsWith('-');
-  const body = neg ? dur.slice(1) : dur;
   const re = /(\d+)(ms|s|m|h|d|w|y)/g;
   const parts: string[] = [];
   let m: RegExpExecArray | null;
-  while ((m = re.exec(body)) !== null) {
+  while ((m = re.exec(dur)) !== null) {
     const n = Number(m[1]);
     const [one, many] = DUR_UNITS[m[2]] ?? ['unit', 'units'];
     parts.push(`${n} ${n === 1 ? one : many}`);
   }
-  if (parts.length === 0) return dur;
-  const text = joinList(parts);
-  return neg ? `${text} in the future` : text;
+  return parts.length === 0 ? dur : joinList(parts);
+}
+
+/** "back in time by 5 minutes", or "forward …" for a negative offset. */
+function offsetReading(off: string): string {
+  return off.startsWith('-')
+    ? `forward in time by ${humanDuration(off.slice(1))}`
+    : `back in time by ${humanDuration(off)}`;
 }
 
 /** Describe a single label matcher in prose. */
@@ -930,7 +1042,7 @@ function describeSelector(s: SelectorNode): string {
   } else {
     core = `the current value of ${metric}${where}`;
   }
-  if (s.offset) core += `, shifted back in time by ${humanDuration(s.offset)}`;
+  if (s.offset) core += `, shifted ${offsetReading(s.offset)}`;
   if (s.at) core += `, evaluated at the fixed time ${atReading(s.at)}`;
   return core;
 }
@@ -992,13 +1104,68 @@ function renderNode(node: Node): string {
         : `${inner}, evaluated as a subquery over the last ${win}`;
     }
     case 'unary':
-      return node.op === '-' ? `the negation of ${renderNode(node.expr)}` : renderNode(node.expr);
+      return node.op === '-' ? `the negation of ${renderNested(node.expr)}` : renderNode(node.expr);
     case 'call':
       return renderCall(node);
     case 'agg':
       return renderAgg(node);
     case 'binary':
       return renderBinary(node);
+  }
+}
+
+/**
+ * Render a node that sits INSIDE another clause ("of …", "over …", "taken
+ * from …") as a noun phrase. `renderNode` leads calls and aggregations with a
+ * verb, which only reads at the start of the sentence.
+ */
+function renderNested(node: Node): string {
+  switch (node.type) {
+    case 'paren': {
+      const inner = renderNested(node.expr);
+      if (!node.range) return inner;
+      const win = humanDuration(node.range);
+      return node.step
+        ? `${inner}, evaluated as a subquery over the last ${win} at a ${humanDuration(node.step)} step`
+        : `${inner}, evaluated as a subquery over the last ${win}`;
+    }
+    case 'unary':
+      return node.op === '-' ? `the negation of ${renderNested(node.expr)}` : renderNested(node.expr);
+    case 'call': {
+      const lower = node.name.toLowerCase();
+      const args = node.args;
+      if (lower === 'histogram_quantile' && args.length >= 2) {
+        return `the ${percentLabel(args[0])} estimated from the histogram buckets in ${renderNested(args[1])}`;
+      }
+      const noun = RANGE_FUNC_NOUNS[lower];
+      const idx = RANGE_ARG_INDEX[lower];
+      if (noun && args[idx]) {
+        const rest = args.filter((_, i) => i !== idx);
+        const extra = rest.length ? ` (with ${joinList(rest.map(renderNested))})` : '';
+        return `${noun} ${renderNested(args[idx])}${extra}`;
+      }
+      const argText = args.length ? joinList(args.map(renderNested)) : 'no arguments';
+      return `the output of \`${node.name}()\` applied to ${argText}`;
+    }
+    case 'agg': {
+      const lower = node.name.toLowerCase();
+      let noun = AGG_NOUNS[lower] ?? `the \`${node.name}\` aggregation`;
+      if (AGG_WITH_PARAM.has(lower) && node.param) {
+        if (lower === 'topk' || lower === 'bottomk' || lower === 'limitk') {
+          const k = node.param.type === 'number' ? node.param.text : renderNested(node.param);
+          noun = noun.replace(/\bk\b/, k);
+        } else if (lower === 'quantile') {
+          noun = `the ${percentLabel(node.param)}`;
+        } else {
+          noun += ` (using ${renderNested(node.param)})`;
+        }
+      }
+      return `${noun}${groupingClause(node.grouping, node.labels, lower)}, of ${renderNested(node.arg)}`;
+    }
+    case 'binary':
+      return `the result of (${renderBinary(node)})`;
+    default:
+      return renderNode(node);
   }
 }
 
@@ -1009,20 +1176,20 @@ function renderCall(node: CallNode): string {
 
   // Special, common shapes get tailored prose.
   if (lower === 'histogram_quantile' && args.length >= 2) {
-    const phi = renderNode(args[0]);
-    const inner = renderNode(args[1]);
     const pct = percentLabel(args[0]);
-    return `estimates the ${pct} from a histogram, where ${inner} (using ${phi} as the target quantile)`;
+    // A literal φ is already spelled out in the label ("p95 (the 95% quantile)").
+    const phi = pct === 'requested quantile' ? ` (using ${renderNested(args[0])} as the target quantile)` : '';
+    return `estimates the ${pct} from a histogram whose buckets are ${renderNested(args[1])}${phi}`;
   }
   if (lower === 'label_replace' && args.length >= 1) {
-    return `takes ${renderNode(args[0])} and derives a new label from an existing one using a regular expression`;
+    return `takes ${renderNested(args[0])} and derives a new label from an existing one using a regular expression`;
   }
   if (lower === 'label_join' && args.length >= 1) {
-    return `takes ${renderNode(args[0])} and joins several label values into one new label`;
+    return `takes ${renderNested(args[0])} and joins several label values into one new label`;
   }
 
   const known = RANGE_FUNCS[lower] ?? INSTANT_FUNCS[lower];
-  const argText = args.length ? joinList(args.map(renderNode)) : 'no arguments';
+  const argText = args.length ? joinList(args.map(renderNested)) : 'no arguments';
 
   if (known) {
     // Read as "<verb phrase> of <inner>".
@@ -1036,11 +1203,11 @@ function renderCall(node: CallNode): string {
 function renderAgg(node: AggNode): string {
   const lower = node.name.toLowerCase();
   const verb = AGG_OPS[lower] ?? `aggregates with \`${node.name}\``;
-  const inner = renderNode(node.arg);
+  const inner = renderNested(node.arg);
   const group = groupingClause(node.grouping, node.labels, lower);
 
   if (AGG_WITH_PARAM.has(lower) && node.param) {
-    const p = renderNode(node.param);
+    const p = renderNested(node.param);
     if (lower === 'topk' || lower === 'bottomk' || lower === 'limitk') {
       const k = node.param.type === 'number' ? node.param.text : p;
       return `${verb.replace(/\bk\b/, k)}${group}, taken from ${inner}`;
@@ -1066,7 +1233,7 @@ function renderAgg(node: AggNode): string {
  */
 function renderOperand(n: Node, parentOp: string, side: 'left' | 'right'): string {
   const inner = n.type === 'paren' ? n.expr : n;
-  if (inner.type !== 'binary') return renderNode(n);
+  if (inner.type !== 'binary') return renderNested(n);
 
   const explicitlyGrouped = n.type === 'paren';
   const differentPrecedence = PRECEDENCE[inner.op] !== PRECEDENCE[parentOp];
@@ -1163,7 +1330,7 @@ function buildBreakdown(node: Node): ExplainPart[] {
               : `A range vector: all samples within the last ${humanDuration(n.range)}.`,
           );
         }
-        if (n.offset) push(`offset ${n.offset}`, `Shifts the lookup back in time by ${humanDuration(n.offset)}.`);
+        if (n.offset) push(`offset ${n.offset}`, `Shifts the lookup ${offsetReading(n.offset)}.`);
         if (n.at) push(`@ ${n.at}`, `Pins evaluation to ${atReading(n.at)}.`);
         break;
       }
@@ -1299,9 +1466,88 @@ export function explain(query: string): ExplainResult {
 
   // A balance warning is non-fatal once we have an explanation; surface it as a
   // soft error so the playground can still show the (best-effort) reading.
+  // A query Prometheus would reject is reported, never explained as valid.
   const result: ExplainResult = { explanation, breakdown };
-  if (balanceError) result.error = balanceError;
+  const error = balanceError ?? checkSemantics(node);
+  if (error) result.error = error;
   return result;
+}
+
+type ValueType = 'range vector' | 'instant vector' | 'scalar' | 'string';
+
+/** The PromQL value type an expression evaluates to (enough for argument checks). */
+function valueType(n: Node): ValueType {
+  switch (n.type) {
+    case 'number':
+      return 'scalar';
+    case 'string':
+      return 'string';
+    case 'selector':
+      return n.range ? 'range vector' : 'instant vector';
+    case 'paren':
+      return n.range ? 'range vector' : valueType(n.expr);
+    case 'unary':
+      return valueType(n.expr);
+    case 'call':
+      return SCALAR_FUNCS.has(n.name.toLowerCase()) ? 'scalar' : 'instant vector';
+    case 'binary':
+      return valueType(n.left) === 'scalar' && valueType(n.right) === 'scalar' ? 'scalar' : 'instant vector';
+    case 'agg':
+      return 'instant vector';
+  }
+}
+
+/** Levenshtein distance, for "did you mean" on a misspelt function name. */
+function editDistance(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/**
+ * The checks Prometheus makes after parsing that would otherwise be explained
+ * as if the query were valid: unknown function names and a non-range argument
+ * where a range vector is required. Returns the first error, or null.
+ */
+function checkSemantics(node: Node): string | null {
+  switch (node.type) {
+    case 'paren':
+    case 'unary':
+      return checkSemantics(node.expr);
+    case 'binary':
+      return checkSemantics(node.left) ?? checkSemantics(node.right);
+    case 'agg':
+      return (node.param && checkSemantics(node.param)) ?? checkSemantics(node.arg);
+    case 'call': {
+      const lower = node.name.toLowerCase();
+      if (!(lower in RANGE_FUNCS) && !(lower in INSTANT_FUNCS)) {
+        const names = [...Object.keys(RANGE_FUNCS), ...Object.keys(INSTANT_FUNCS)];
+        const best = names
+          .map((f) => [f, editDistance(lower, f)] as const)
+          .sort((x, y) => x[1] - y[1])[0];
+        const hint = best && best[1] <= 2 ? ` — did you mean ${best[0]}()?` : '';
+        return `unknown function with name "${node.name}"${hint}`;
+      }
+      const idx = RANGE_ARG_INDEX[lower];
+      const arg = idx === undefined ? undefined : node.args[idx];
+      if (arg && valueType(arg) !== 'range vector') {
+        return `expected type range vector in call to function "${node.name}", got ${valueType(arg)}`;
+      }
+      for (const a of node.args) {
+        const err = checkSemantics(a);
+        if (err) return err;
+      }
+      return null;
+    }
+    default:
+      return null;
+  }
 }
 
 /** Best-effort bracket-balance check (parentheses, braces, square brackets). */

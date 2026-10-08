@@ -379,9 +379,10 @@ function directiveRules(ctx: RuleContext): void {
           severity: 'info',
           line: last.line,
           directive: key,
-          title: `${key}= appears ${times(assigned.length)} — systemd appends, so both run in order.`,
+          title: `${key}= appears ${times(assigned.length)} — systemd appends, so ${key === 'OnCalendar' ? 'the timer fires on whichever schedule elapses next' : 'both run in order'}.`,
           detail:
-            `${key}= is a list directive: repeating it adds to the list instead of replacing it. ` +
+            `${key}= is a list directive: repeating it adds to the list instead of replacing it` +
+            (key === 'OnCalendar' ? ', and the timer fires whenever any listed schedule elapses. ' : '. ') +
             'Assigning it an empty value would reset the list.',
         });
       } else {

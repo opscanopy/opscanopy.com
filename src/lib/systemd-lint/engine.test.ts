@@ -1837,3 +1837,12 @@ describe('examples', () => {
     expect(r.kind).toBe('socket');
   });
 });
+
+describe('repeated OnCalendar wording', () => {
+  it('describes a union, not an order', () => {
+    const r = lint('[Timer]\nOnCalendar=*-*-* 01:00\nOnCalendar=Mon..Fri *-*-* 09:00\n');
+    const f = find(r, 'repeated-list-directive');
+    expect(f.title).not.toMatch(/in order/);
+    expect(f.detail).toMatch(/any listed schedule/);
+  });
+});

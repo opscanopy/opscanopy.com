@@ -138,3 +138,18 @@ describe('encodeState()', () => {
     });
   });
 });
+
+describe('run() — hints for ex-PCRE patterns', () => {
+  it('explains the missing inline (?i) flag', () => {
+    const r = run('(?i)error', 'gm', 'Error');
+    expect(r.valid).toBe(false);
+    expect(r.error).toContain('no inline (?i)');
+  });
+  it('hints to enable u for \\p{L} and not when u is set', () => {
+    expect(run('\\p{L}+', 'gm', 'abc').notice).toContain('u flag');
+    expect(run('\\p{L}+', 'gmu', 'abc').notice).toBeUndefined();
+  });
+  it('no longer blocks (foo|bar)+', () => {
+    expect(run('(foo|bar)+', 'g', 'foobar').valid).toBe(true);
+  });
+});

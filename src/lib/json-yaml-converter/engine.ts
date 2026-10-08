@@ -33,6 +33,7 @@ import { base64UrlDecode, base64UrlEncode } from '../codec';
 import {
   YAML_SEMANTICS,
   describeJsonError,
+  hasComplexKey,
   describeYamlError,
   detectFormat,
   findUnsafeIntegers,
@@ -88,7 +89,9 @@ function failure(
   detected: DetectedFormat,
   diagnostics: Diagnostic[],
 ): ConvertResult {
-  return { ok: false, direction, output: '', diagnostics, stats: { ...NO_STATS }, detected };
+  // Nothing was converted, so notes and warnings about the conversion would be false.
+  const errors = diagnostics.filter((d) => d.severity === 'error');
+  return { ok: false, direction, output: '', diagnostics: errors, stats: { ...NO_STATS }, detected };
 }
 
 /** `'a', 'b' and 'c'` — for the quoting notes. */
@@ -179,9 +182,18 @@ function yamlToJson(
   try {
     docs = loadAll(text);
   } catch (err) {
-    return failure('yaml-to-json', detected, [...diagnostics, describeYamlError(err)]);
+    return failure('yaml-to-json', detected, [...diagnostics, describeYamlError(err, text)]);
   }
 
+  if (hasComplexKey(masked)) {
+    diagnostics.push({
+      id: 'complex-key-flattened',
+      severity: 'warning',
+      message:
+        'A mapping key is a sequence or mapping, which JSON cannot express. It was flattened ' +
+        'to a string (a sequence joins its items with commas), so the key text changed.',
+    });
+  }
   if (hasComments(masked)) {
     diagnostics.push({
       id: 'comments-dropped',

@@ -175,3 +175,20 @@ describe('format — invalid input returns an error instead of throwing', () => 
     expect(format(null).valid).toBe(false);
   });
 });
+
+describe('specific parse errors', () => {
+  it.each([
+    ['00:1a:2b:3c:4d', /Found 10 hex digits, need 12/],
+    ['00:1a:2b:3c:4d:5e:6f', /Found 14 hex digits, need 12/],
+    ['00:1g:2b:3c:4d:5e', /“g” is not a hex digit/],
+    ['00:1a:2b:3c:4d:5e 02:00:00:00:00:01', /2 addresses/],
+    ['00:1a:2b:3c:4d:5e\n02:00:00:00:00:01', /2 addresses/],
+    ['00:1a:2b:3c:4d:5e, 02:00:00:00:00:01', /2 addresses/],
+    ['00:1a:2b:3c:4d:5e;02:00:00:00:00:01', /2 addresses/],
+    ['00:1a:2b:ff:fe:3c:4d:5e', /EUI-64/],
+  ])('%s', (input, re) => {
+    const r = format(input);
+    expect(r.valid).toBe(false);
+    expect(r.error).toMatch(re);
+  });
+});

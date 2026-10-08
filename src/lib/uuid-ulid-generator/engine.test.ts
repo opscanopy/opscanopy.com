@@ -311,3 +311,34 @@ describe('secure randomness enforcement', () => {
     expect(typeof u.error).toBe('string');
   });
 });
+
+describe('inspectUuid — review fixes', () => {
+  it('decodes the v7 timestamp', () => {
+    expect(inspectUuid('018f2a3c-7b5d-7c3e-9a1b-0123456789ab').timestamp).toBe(new Date(0x018f2a3c7b5d).toISOString());
+  });
+  it('decodes the v1 timestamp (RFC 4122 example)', () => {
+    expect(inspectUuid('6ba7b810-9dad-11d1-80b4-00c04fd430c8').timestamp).toBe('1998-02-04T22:13:53.151Z');
+  });
+  it('decodes v6 to the same instant as the matching v1', () => {
+    expect(inspectUuid('1d19dad6-ba7b-6810-80b4-00c04fd430c8').timestamp).toBe('1998-02-04T22:13:53.151Z');
+  });
+  it('has no timestamp for v4', () => {
+    expect(inspectUuid('550e8400-e29b-41d4-a716-446655440000').timestamp).toBeUndefined();
+  });
+  it('accepts bare hex, braces and urn:uuid:', () => {
+    for (const i of [
+      '550e8400e29b41d4a716446655440000',
+      '{550E8400-E29B-41D4-A716-446655440000}',
+      'urn:uuid:550e8400-e29b-41d4-a716-446655440000',
+    ]) {
+      const r = inspectUuid(i);
+      expect(r.valid).toBe(true);
+      expect(r.version).toBe(4);
+    }
+  });
+  it('names the bad Crockford letter in an invalid ULID', () => {
+    const r = inspectUuid('01ARZ3NDEKTSV4RRFFQ69G5FAU');
+    expect(r.valid).toBe(false);
+    expect(r.error).toContain('Crockford');
+  });
+});

@@ -78,6 +78,9 @@ export function slugify(input: string, opts: SlugifyOptions): SlugifyResult {
   // 1. Decompose to NFKD and strip every combining mark (all diacritic classes).
   s = s.normalize('NFKD').replace(/\p{M}+/gu, '');
 
+  // Letters/digits outside ASCII that no rule above could transliterate.
+  const untransliterated = (s.match(/[^\x00-\x7f]/gu) ?? []).filter((c) => /[\p{L}\p{N}]/u.test(c)).length;
+
   // 2. Optional lowercasing.
   if (opts.lowercase) s = s.toLowerCase();
 
@@ -103,7 +106,13 @@ export function slugify(input: string, opts: SlugifyOptions): SlugifyResult {
 
   const truncated = s !== collapsed;
   if (truncated) notes.push(`Truncated to fit the ${max}-character limit.`);
-  if (collapsed.length === 0) {
+  if (untransliterated > 0) {
+    notes.push(
+      collapsed.length === 0
+        ? "Only Latin letters can be transliterated — this title's characters (e.g. Cyrillic, Greek, CJK, Arabic) were dropped."
+        : `${untransliterated} non-Latin character${untransliterated === 1 ? '' : 's'} could not be transliterated and ${untransliterated === 1 ? 'was' : 'were'} dropped.`,
+    );
+  } else if (collapsed.length === 0) {
     notes.push('No slug characters — the title has no letters or digits.');
   }
 

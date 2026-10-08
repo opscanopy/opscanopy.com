@@ -59,6 +59,10 @@ const ACCESS_PATTERNS: RegExp[] = [
   /import\.meta\.env\??\.([A-Za-z_][A-Za-z0-9_]*)/g,
   /import\.meta\.env\??(?:\.)?\[\s*["'`]([A-Za-z_][A-Za-z0-9_]*)["'`]\s*\]/g,
 
+  // Bun: Bun.env.X / Bun.env["X"]
+  /Bun\.env\??\.([A-Za-z_][A-Za-z0-9_]*)/g,
+  /Bun\.env\??(?:\.)?\[\s*["'`]([A-Za-z_][A-Za-z0-9_]*)["'`]\s*\]/g,
+
   // Deno: Deno.env.get("X")
   /Deno\.env\.get\(\s*["'`]([A-Za-z_][A-Za-z0-9_]*)["'`]\s*\)/g,
 
@@ -71,8 +75,8 @@ const ACCESS_PATTERNS: RegExp[] = [
   /ENV\[\s*["'`]([A-Za-z_][A-Za-z0-9_]*)["'`]\s*\]/g,
   /ENV\.fetch\(\s*["'`]([A-Za-z_][A-Za-z0-9_]*)["'`]/g,
 
-  // Go: os.Getenv("X")  (also covers os.LookupEnv via the Getenv form is most common)
-  /os\.Getenv\(\s*["'`]([A-Za-z_][A-Za-z0-9_]*)["'`]\s*\)/g,
+  // Go: os.Getenv("X") / os.LookupEnv("X")
+  /os\.(?:Getenv|LookupEnv)\(\s*["'`]([A-Za-z_][A-Za-z0-9_]*)["'`]\s*\)/g,
 
   // Java: System.getenv("X")
   /System\.getenv\(\s*["'`]([A-Za-z_][A-Za-z0-9_]*)["'`]\s*\)/g,
@@ -118,7 +122,7 @@ const ACCESS_PATTERNS: RegExp[] = [
  * match rather than mis-capturing.
  */
 const ENV_DESTRUCTURE =
-  /\b(?:const|let|var)\s*\{([^}]*)\}\s*=\s*(?:process\.env|import\.meta\.env)\b/g;
+  /\b(?:const|let|var)\s*\{([^}]*)\}\s*=\s*(?:process\.env|import\.meta\.env|Bun\.env)\b/g;
 
 /**
  * One entry of a destructuring binding list, as it appears before the `,` split.
@@ -142,6 +146,52 @@ const BINDING_KEY = /^["'`]?([A-Za-z_][A-Za-z0-9_]*)["'`]?[ \t]*(?:[:=]|$)/;
  * lines never match because they lack a leading identifier + `=`.
  */
 const ENV_LINE = /^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)[ \t]*=/;
+
+/**
+ * Blank out comments so dead code is not reported as a read. Handles `/* … *\/`,
+ * `// …` and `# …` across the pasted languages, conservatively: a marker only
+ * counts outside quotes and at line start or after whitespace (so URLs,
+ * `${X#prefix}`, `$#` and `/*` globs like `$DIR/*` survive), and `#` must be
+ * followed by whitespace, `!`, `#` or end of line, so a JS private field
+ * (`#key = process.env.X`) is kept. An unclosed `/*` or quote strips nothing
+ * further. Every miss errs toward "used", never toward dropping a real read.
+ * ponytail: lexer-free heuristic; `#comment` with no space and Python `x // y`
+ * followed by a read are the known edges.
+ */
+function stripComments(code: string): string {
+  let out = '';
+  let quote = '';
+  for (let i = 0; i < code.length; i++) {
+    const c = code[i];
+    if (quote) {
+      out += c;
+      if (c === '\\') out += code[++i] ?? '';
+      else if (c === quote || (c === '\n' && quote !== '`')) quote = '';
+      continue;
+    }
+    const atBoundary = i === 0 || /\s/.test(code[i - 1]);
+    if (atBoundary && c === '/' && code[i + 1] === '*') {
+      const end = code.indexOf('*/', i + 2);
+      if (end !== -1) {
+        out += code.slice(i, end + 2).replace(/[^\n]/g, ' ');
+        i = end + 1;
+        continue;
+      }
+    }
+    if (atBoundary && ((c === '/' && code[i + 1] === '/') || (c === '#' && /^(?:[\s!#]|$)/.test(code[i + 1] ?? '')))) {
+      while (i < code.length && code[i] !== '\n') i++;
+      out += '\n';
+      continue;
+    }
+    if (c === '\\') {
+      out += c + (code[++i] ?? '');
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') quote = c;
+    out += c;
+  }
+  return out;
+}
 
 /** Sort + de-duplicate a list of names for stable, deterministic output. */
 function uniqueSorted(values: Iterable<string>): string[] {
@@ -176,8 +226,9 @@ function collectDestructuredVars(code: string, used: Set<string>): void {
  * supported languages) is found regardless of surrounding syntax. Dynamic,
  * non-literal accesses simply do not match and are therefore ignored.
  */
-function collectUsedVars(code: string): string[] {
+function collectUsedVars(raw: string): string[] {
   const used = new Set<string>();
+  const code = stripComments(raw);
 
   for (const pattern of ACCESS_PATTERNS) {
     // Reset lastIndex defensively: these are module-level globals reused across

@@ -107,6 +107,13 @@ export function run(pattern: string, flags: string, text: string): RegexResult {
     re = new RegExp(pattern, withGlobal(flags ?? ''));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    // Ex-PCRE users: JavaScript has no inline flag groups.
+    const inline = /^\(\?([imsx]+)\)/.exec(pattern);
+    if (inline) {
+      return invalid(
+        `${message} JavaScript has no inline (?${inline[1]}) flags; tick the matching flag (i, m, s) instead.`,
+      );
+    }
     return invalid(message);
   }
 
@@ -184,6 +191,9 @@ export function run(pattern: string, flags: string, text: string): RegexResult {
   }
   if (cappedAtMax) {
     notices.push(`Stopped after the first ${MAX_MATCHES.toLocaleString('en-US')} matches.`);
+  }
+  if (!fullUnicode && /\\[pP]\{/.test(pattern)) {
+    notices.push('\\p{...} needs the u flag; without it, it matches the literal text "p{...}".');
   }
   if (notices.length > 0) result.notice = notices.join(' ');
 

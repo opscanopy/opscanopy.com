@@ -6,7 +6,8 @@
  * CPU is normalised to MILLICORES: a trailing "m" means milli ("500m" → 500),
  * a bare number is whole cores ("1" → 1000, "2.5" → 2500).
  * MEMORY is normalised to BYTES: binary suffixes Ki/Mi/Gi/Ti/Pi use 1024^n,
- * decimal suffixes k/K/M/G/T/P use 1000^n, and a plain integer is bytes.
+ * decimal suffixes k/M/G/T/P/E use 1000^n, "m" is milli, "129e6" is a decimal
+ * exponent, and a plain integer is bytes (sub-byte values round up, as the API).
  *
  * Pure + browser-safe; never throws on user input — an unparseable field yields
  * { valid:false, error } that names the offending field, and a missing limit is
@@ -61,11 +62,20 @@ function parseCpu(raw: string): number | null {
   if (/m$/.test(s)) {
     const n = Number(s.slice(0, -1));
     if (!Number.isFinite(n) || n < 0) return null;
-    return Math.round(n);
+    return ceilMilli(n);
   }
   const n = Number(s);
   if (!Number.isFinite(n) || n < 0) return null;
-  return Math.round(n * 1000);
+  return ceilMilli(n * 1000);
+}
+
+/**
+ * Kubernetes rounds CPU UP to 1m precision (MilliValue ceils), so 0.0001 is
+ * 1m, never 0m. Snap to 1e-6 first so float noise (1.1 * 1000 =
+ * 1100.0000000000002) does not ceil an exact value up by one.
+ */
+function ceilMilli(milli: number): number {
+  return Math.ceil(Math.round(milli * 1e6) / 1e6);
 }
 
 /**
@@ -86,6 +96,12 @@ function parseMem(raw: string): bigint | null {
   const dec = /^(\d+(?:\.\d+)?)([kMGTPE])$/.exec(s);
   if (dec) return scale(dec[1], DECIMAL[dec[2]]);
 
+  // Milli suffix ("1m" = 0.001 bytes — legal, and almost always a typo for
+  // 1Mi; calculate() warns) and decimal exponent ("129e6"). A bare "E" was
+  // taken as exa above, so only E followed by digits reaches here.
+  const pow = /^(\d+(?:\.\d+)?)(?:(m)|[eE]([+-]?\d{1,3}))$/.exec(s);
+  if (pow) return pow10Bytes(pow[1], pow[2] ? -3 : Number(pow[3]));
+
   // Plain integer = bytes.
   if (/^\d+$/.test(s)) return BigInt(s);
 
@@ -98,6 +114,19 @@ function scale(magnitude: string, unit: bigint): bigint {
   if (!Number.isFinite(n) || n < 0) return -1n; // sentinel; callers treat <0 as parsed
   if (/^\d+$/.test(magnitude)) return BigInt(magnitude) * unit;
   return BigInt(Math.round(n * Number(unit)));
+}
+
+/**
+ * Exact magnitude × 10^exp in bytes, rounded UP like Quantity.Value(), so a
+ * sub-byte quantity reads as 1 byte rather than vanishing.
+ */
+function pow10Bytes(magnitude: string, exp: number): bigint {
+  const [int, frac = ''] = magnitude.split('.');
+  const e = exp - frac.length;
+  const digits = BigInt(int + frac);
+  if (e >= 0) return digits * 10n ** BigInt(e);
+  const d = 10n ** BigInt(-e);
+  return (digits + d - 1n) / d;
 }
 
 /** Parse the replica count: a positive integer, defaulting to 1 when blank. */
@@ -205,10 +234,14 @@ export function calculate(input: K8sInput): K8sResult {
 
   // ── Warnings (advisory; never fatal) ──────────────────────────────────────
   if (cpuRequest !== null && cpuLimit !== null && cpuLimit < cpuRequest) {
-    warnings.push('CPU limit is below the CPU request — the pod may be throttled or rejected.');
+    warnings.push('CPU limit is below the CPU request — Kubernetes will reject this pod.');
   }
   if (memRequest !== null && memLimit !== null && memLimit < memRequest) {
     warnings.push('Memory limit is below the memory request — Kubernetes will reject this pod.');
+  }
+  for (const [field, raw] of [['memRequest', memRequestRaw], ['memLimit', memLimitRaw]]) {
+    const m = /^(.*)m$/.exec(raw);
+    if (m) warnings.push(`${field} "${raw}" is ${m[1]} × 0.001 bytes (m means milli) — did you mean ${m[1]}Mi?`);
   }
   if (cpuRequest !== null && cpuLimit === null) {
     warnings.push('No CPU limit set — the pod can burst to use all available node CPU.');

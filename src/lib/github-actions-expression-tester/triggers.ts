@@ -238,6 +238,20 @@ function evaluateWorkflowTrigger(
   const paths = toStringArray(block.paths);
   const pathsIgnore = toStringArray(block['paths-ignore']);
 
+  // GitHub rejects a workflow that sets a filter and its -ignore twin on the
+  // same event, so it never runs at all.
+  for (const [inc, exc] of [
+    ['branches', 'branches-ignore'],
+    ['tags', 'tags-ignore'],
+    ['paths', 'paths-ignore'],
+  ] as const) {
+    if (block[inc] !== undefined && block[exc] !== undefined) {
+      const reason = `on.${eventKey} sets both ${inc} and ${exc}; GitHub rejects the workflow, so nothing runs. Use ${inc} with ! patterns instead.`;
+      trace.push({ filter: exc, outcome: 'excluded', reason });
+      return { triggered: false, reason, trace };
+    }
+  }
+
   // A tags: filter is just as much a "ref filter" for a BRANCH push as a
   // branches: filter is for a tag push — it is the thing that blocks it. Leaving
   // tags out of this on the branch side made the summary claim "no filters".

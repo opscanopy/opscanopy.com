@@ -143,6 +143,7 @@ const INCLUDE_SENSITIVE_IDS = new Set<string>([
   'needs-unknown-job',
   'dependencies-unknown-job',
   'stage-not-declared',
+  'reference-unknown-target',
 ]);
 
 /** Appended to a softened finding's detail so the reason is explicit. */
@@ -425,6 +426,7 @@ export function validate(yamlText: string): ValidateResult {
     for (const jobId of [...jobIds, ...templateIds]) {
       checkJob(jobId, root[jobId], root, jobIds, templateIds, stageNames, declaredStages, lines, lineIndex, add);
     }
+    checkReferences(root, root, lines, add);
     if (jobIds.length === 0) {
       add({
         id: 'no-jobs',
@@ -695,13 +697,13 @@ function checkJob(
   }
 
   // (3) `needs` must reference jobs that exist.
-  checkNeeds(jobId, job, jobIds, lines, jobLine, toLine, add);
+  checkNeeds(jobId, job, jobIds, root, stageNames, lines, jobLine, toLine, add);
 
   // (4) `dependencies` must reference jobs that exist.
   checkDependencies(jobId, job, jobIds, lines, jobLine, toLine, add);
 
   // (5) `extends` must reference an existing job or hidden `.template`.
-  checkExtends(jobId, job, jobIds, templateIds, lines, jobLine, toLine, add);
+  checkExtends(jobId, job, root, jobIds, templateIds, lines, jobLine, toLine, add);
 
   // (6) `when` must be one of the allowed values.
   if (job.when !== undefined && job.when !== null) {
@@ -730,7 +732,35 @@ function checkJob(
       remediation: 'Make `rules:` a list, e.g. `- if: \'$CI_COMMIT_BRANCH == "main"\'`.',
     });
   }
-  if (job.only !== undefined || job.except !== undefined) {
+  if (Array.isArray(job.rules)) {
+    let from = jobLine;
+    for (const rule of job.rules) {
+      if (!isRecord(rule) || typeof rule.if !== 'string') continue;
+      const ruleLine = findLine(lines, (l) => /^\s+(-\s+)?if\s*:/.test(l), from, toLine);
+      if (ruleLine !== undefined) from = ruleLine + 1;
+      const err = rulesIfError(rule.if);
+      if (!err) continue;
+      add({
+        id: 'rules-if-invalid',
+        severity: 'error',
+        title: `Job “${jobId}” has a \`rules:if\` with invalid expression syntax.`,
+        detail: `GitLab reports “rules:if invalid expression syntax” for \`${rule.if}\`: ${err}. Expressions use $VARIABLES, quoted strings, /patterns/ and null, joined by ==, !=, =~, !~, && and ||.`,
+        line: ruleLine ?? jobLine,
+        remediation: 'Compare with `==` (not `=`), e.g. `if: $CI_COMMIT_BRANCH == "main"`.',
+      });
+    }
+  }
+  const legacy = (['only', 'except'] as const).filter((k) => job[k] !== undefined);
+  if (legacy.length > 0 && job.rules !== undefined && job.rules !== null) {
+    add({
+      id: 'rules-with-only-except',
+      severity: 'error',
+      title: `Job “${jobId}” combines \`rules\` with \`${legacy.join('`/`')}\`.`,
+      detail: `GitLab rejects the pipeline: “config key may not be used with \`rules\`: ${legacy.join(', ')}”.`,
+      line: findLine(lines, (l) => /^\s+(only|except)\s*:/.test(l), jobLine, toLine),
+      remediation: 'Express the only/except conditions as `rules:` entries and delete `only`/`except`.',
+    });
+  } else if (legacy.length > 0) {
     add({
       id: 'legacy-only-except',
       severity: 'info',
@@ -751,6 +781,8 @@ function checkNeeds(
   jobId: string,
   job: PipelineJob,
   jobIds: string[],
+  root: Record<string, unknown>,
+  stageNames: Set<string>,
   lines: string[],
   jobLine: number | undefined,
   toLine: number | undefined,
@@ -758,6 +790,14 @@ function checkNeeds(
 ): void {
   if (!Array.isArray(job.needs)) return; // `needs:` may also be a map form; only validate the simple list
   const known = new Set(jobIds);
+  // Stage position of a job (no `stage:` means the implicit `test`); -1 when
+  // the stage is undeclared or not a string — that is reported elsewhere.
+  const order = ['.pre', ...[...stageNames].filter((s) => s !== '.pre' && s !== '.post'), '.post'];
+  const stageIndex = (id: string): number => {
+    const s = resolveEffectiveJob(id, root).stage ?? 'test';
+    return typeof s === 'string' ? order.indexOf(s) : -1;
+  };
+  const ownIndex = isHidden(jobId) ? -1 : stageIndex(jobId);
   for (const need of job.needs) {
     // A cross-project (`project:`) or upstream-pipeline (`pipeline:`) need names
     // a job in ANOTHER pipeline. Its `job:` will never be a local job id, so
@@ -779,6 +819,19 @@ function checkNeeds(
         detail: 'Every entry in `needs:` must name a job that exists in the same pipeline. GitLab errors if a needed job is missing.',
         line: findLine(lines, (l) => /^\s+needs\s*:/.test(l), jobLine, toLine),
         remediation: `Define a “${target}” job, or remove it from this job's \`needs:\`.`,
+      });
+      continue;
+    }
+    // A need may sit in the same stage (GitLab 14.2+) or an earlier one, never a later one.
+    const targetIndex = stageIndex(target);
+    if (ownIndex >= 0 && targetIndex > ownIndex) {
+      add({
+        id: 'needs-later-stage',
+        severity: 'error',
+        title: `Job “${jobId}” needs “${target}”, which runs in a later stage (“${order[targetIndex]}”).`,
+        detail: `GitLab rejects the pipeline: a job can only need jobs in its own stage (“${order[ownIndex]}”) or an earlier one.`,
+        line: findLine(lines, (l) => /^\s+needs\s*:/.test(l), jobLine, toLine) ?? jobLine,
+        remediation: `Move “${target}” to an earlier stage, move “${jobId}” later, or drop the need.`,
       });
     }
   }
@@ -810,9 +863,102 @@ function checkDependencies(
   }
 }
 
+/**
+ * Every `!reference [key, sub, …]` must resolve to a value in this file. A key
+ * missing below a node that has its own `extends:` is not reported — it may be
+ * inherited.
+ */
+function checkReferences(
+  node: unknown,
+  root: Record<string, unknown>,
+  lines: string[],
+  add: (f: Finding) => void,
+): void {
+  if (isReferenceTag(node)) {
+    const path = Array.isArray(node.path) ? node.path.map(String) : [];
+    let cur: unknown = root;
+    for (const key of path) {
+      if (!isRecord(cur)) return; // resolves into something we do not model
+      if (!(key in cur)) {
+        if (cur !== root && cur.extends !== undefined) return;
+        const ref = `[${path.join(', ')}]`;
+        add({
+          id: 'reference-unknown-target',
+          severity: 'error',
+          title: `\`!reference ${ref}\` points at “${key}”, which is not defined.`,
+          detail: 'GitLab fails to resolve a `!reference` whose job, template or key does not exist in the configuration.',
+          line: findLine(lines, (l) => l.includes('!reference') && l.includes(path[0] ?? '')),
+          remediation: 'Fix the path, or define the referenced key (hidden templates start with a dot).',
+        });
+        return;
+      }
+      cur = cur[key];
+    }
+    return;
+  }
+  if (Array.isArray(node)) for (const v of node) checkReferences(v, root, lines, add);
+  else if (isRecord(node)) for (const v of Object.values(node)) checkReferences(v, root, lines, add);
+}
+
+/**
+ * GitLab's `rules:if` grammar: `$VAR` / `${VAR}`, "…" / '…' strings, `/re/flags`
+ * patterns and `null`, joined by == != =~ !~ && || and parentheses. Returns an
+ * error message, or null when the expression is well-formed.
+ */
+function rulesIfError(expr: string): string | null {
+  const re =
+    /\s+|(\$\{\w+\}|\$\w+|"[^"]*"|'[^']*'|\/(?:\\.|[^/\\])*\/[a-z]*|null\b)|(==|!=|=~|!~|&&|\|\||\(|\))|(.)/gy;
+  const toks: Array<{ k: 'v' | 'op'; s: string }> = [];
+  for (const m of expr.matchAll(re)) {
+    if (m[3] !== undefined) return `unexpected “${m[3]}” at position ${m.index + 1}`;
+    if (m[1] !== undefined) toks.push({ k: 'v', s: m[1] });
+    else if (m[2] !== undefined) toks.push({ k: 'op', s: m[2] });
+  }
+  let i = 0;
+  const peek = () => toks[i]?.s;
+  const fail = () => (i < toks.length ? `unexpected “${toks[i].s}”` : 'unexpected end of expression');
+  // or := and ('||' and)* ; and := cmp ('&&' cmp)* ; cmp := primary (op primary)?
+  const primary = (): string | null => {
+    if (peek() === '(') {
+      i++;
+      const e = or();
+      if (e) return e;
+      if (peek() !== ')') return fail();
+      i++;
+      return null;
+    }
+    if (toks[i]?.k !== 'v') return fail();
+    i++;
+    return null;
+  };
+  const cmp = (): string | null => {
+    const e = primary();
+    if (e) return e;
+    if (['==', '!=', '=~', '!~'].includes(peek() ?? '')) {
+      i++;
+      return primary();
+    }
+    return null;
+  };
+  const chain = (op: string, next: () => string | null) => (): string | null => {
+    let e = next();
+    while (!e && peek() === op) {
+      i++;
+      e = next();
+    }
+    return e;
+  };
+  const and = chain('&&', cmp);
+  const or = chain('||', and);
+  const err = or();
+  if (err) return err;
+  return i < toks.length ? fail() : null;
+}
+
 function checkExtends(
   jobId: string,
   job: PipelineJob,
+  root: Record<string, unknown>,
   jobIds: string[],
   templateIds: string[],
   lines: string[],
@@ -834,6 +980,28 @@ function checkExtends(
     return;
   }
   const known = new Set([...jobIds, ...templateIds]);
+
+  // A chain that leads back to this job: GitLab reports a circular dependency.
+  const cycle = (function walk(id: string, path: string[]): string[] | null {
+    for (const next of extendsTargets(isRecord(root[id]) ? root[id].extends : undefined)) {
+      if (next === jobId) return [...path, next];
+      if (path.includes(next)) continue;
+      const found = walk(next, [...path, next]);
+      if (found) return found;
+    }
+    return null;
+  })(jobId, [jobId]);
+  if (cycle) {
+    add({
+      id: 'extends-circular',
+      severity: 'error',
+      title: `Job “${jobId}” has a circular \`extends\`: ${cycle.join(' → ')}.`,
+      detail: 'GitLab rejects the pipeline with “circular dependency detected in `extends`”.',
+      line: findLine(lines, (l) => /^\s+extends\s*:/.test(l), jobLine, toLine) ?? jobLine,
+      remediation: 'Break the loop so the `extends:` chain ends at a template that extends nothing.',
+    });
+  }
+
   for (const target of targets) {
     if (!known.has(target)) {
       add({

@@ -292,3 +292,37 @@ describe('memory suffixes match the Kubernetes grammar', () => {
     }
   });
 });
+
+/** 2026-10-07 persona review: quantities the API accepts must not be called invalid. */
+describe('review fixes (2026-10-07)', () => {
+  it('accepts a decimal-exponent memory quantity (129e6)', () => {
+    const r = calculate({ memRequest: '129e6' });
+    expect(r.valid).toBe(true);
+    expect(row(r, 'Memory request (per pod)')).toContain('129000000 bytes');
+  });
+
+  it('still reads a bare E as exa, not an exponent', () => {
+    const r = calculate({ memRequest: '1E' });
+    expect(row(r, 'Memory request (per pod)')).toContain('1000000000000000000 bytes');
+  });
+
+  it('parses memory "1m" as millibytes and warns it is probably a typo for 1Mi', () => {
+    const r = calculate({ memRequest: '1m', memLimit: '128Mi' });
+    expect(r.valid).toBe(true);
+    expect(r.warnings.some((w) => /0\.001 bytes/.test(w) && /1Mi/.test(w))).toBe(true);
+  });
+
+  it('rounds sub-millicore CPU up to 1m, as Kubernetes does', () => {
+    const r = calculate({ cpuRequest: '0.0001' });
+    expect(row(r, 'CPU request (per pod)')).toBe('1m (0.001 cores)');
+  });
+
+  it('does not inflate exact CPU values through float error', () => {
+    expect(row(calculate({ cpuRequest: '1.1' }), 'CPU request (per pod)')).toBe('1100m (1.1 cores)');
+  });
+
+  it('says a CPU limit below its request will be rejected', () => {
+    const r = calculate({ cpuRequest: '1', cpuLimit: '500m' });
+    expect(r.warnings).toContain('CPU limit is below the CPU request — Kubernetes will reject this pod.');
+  });
+});

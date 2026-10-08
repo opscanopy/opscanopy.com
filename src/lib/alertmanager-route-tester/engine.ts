@@ -38,7 +38,7 @@
  */
 
 import yaml from 'js-yaml';
-import { checkRegexSafety, MAX_REGEX_TEXT } from '../regex-safety';
+import { checkRegexSafety, MAX_REGEX_TEXT, re2UnsupportedSyntax } from '../regex-safety';
 import type {
   Grouping,
   Matcher,
@@ -290,9 +290,9 @@ function unquote(raw: string): string | null {
 
 /**
  * Collect every matcher on a route node from all three sources, in declaration
- * priority (match → match_re → matchers). Unparseable `matchers:` strings are
- * recorded in `warnings` and skipped (Alertmanager would reject the config, but
- * we degrade gracefully so the rest of the walk still runs).
+ * priority (match → match_re → matchers). Every problem pushed to `warnings` is
+ * one Alertmanager refuses to load, so `validateTree` reports them as errors
+ * before the walk runs.
  */
 function collectMatchers(route: RawRoute, warnings: string[]): Matcher[] {
   const out: Matcher[] = [];
@@ -317,7 +317,7 @@ function collectMatchers(route: RawRoute, warnings: string[]): Matcher[] {
   if (Array.isArray(route.matchers)) {
     for (const m of route.matchers) {
       if (typeof m !== 'string') {
-        warnings.push(`Ignored a non-string matcher entry: ${scalarToString(m)}.`);
+        warnings.push(`Matcher entry ${scalarToString(m)} is not a string.`);
         continue;
       }
       collectFromMatcherEntry(m, out, warnings);
@@ -345,7 +345,7 @@ function matchScalar(name: string, val: unknown, warnings: string[]): string {
     typeof val !== 'boolean'
   ) {
     warnings.push(
-      `match value for \`${name}\` is not a scalar; this is invalid Alertmanager config and will not match as written.`,
+      `match value for \`${name}\` is not a scalar.`,
     );
   }
   return scalarToString(val);
@@ -362,7 +362,7 @@ function matchScalar(name: string, val: unknown, warnings: string[]): string {
  * report a receiver the real Alertmanager would never pick. Braces are
  * therefore stripped (when present) and the body is ALWAYS split.
  *
- * Unparseable fragments are reported and skipped.
+ * Unparseable fragments are reported (as load errors, see validateTree).
  */
 function collectFromMatcherEntry(entry: string, out: Matcher[], warnings: string[]): void {
   const trimmed = entry.trim();
@@ -374,14 +374,14 @@ function collectFromMatcherEntry(entry: string, out: Matcher[], warnings: string
     .filter((f) => f !== '');
 
   if (fragments.length === 0) {
-    warnings.push(`Could not parse matcher "${trimmed}"; it was skipped.`);
+    warnings.push(`Could not parse matcher "${trimmed}".`);
     return;
   }
 
   for (const f of fragments) {
     const parsed = parseMatcherString(f);
     if (parsed) out.push(parsed);
-    else warnings.push(`Could not parse matcher "${f}"; it was skipped.`);
+    else warnings.push(`Could not parse matcher "${f}".`);
   }
 }
 
@@ -550,6 +550,66 @@ function resolveRoot(doc: unknown): { route: RawRoute } | { error: string } {
     error:
       'No `route:` block found. Paste a full Alertmanager config or a bare route object (with `receiver`, `routes`, `match`/`matchers`, …).',
   };
+}
+
+/* ────────────────────────────────────────────────────────────────────────── *
+ *  Load-time validation — what Alertmanager refuses before routing anything.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/** The keys of Alertmanager's `Route` struct; its YAML unmarshal is strict. */
+const ROUTE_KEYS = new Set([
+  'receiver',
+  'group_by',
+  'continue',
+  'match',
+  'match_re',
+  'matchers',
+  'mute_time_intervals',
+  'active_time_intervals',
+  'routes',
+  'group_wait',
+  'group_interval',
+  'repeat_interval',
+]);
+
+/** Prometheus `model.ParseDuration`: unit-ordered y w d h m s ms, or `0`. */
+const DURATION_RE = /^(?:0|(?:\d+y)?(?:\d+w)?(?:\d+d)?(?:\d+h)?(?:\d+m)?(?:\d+s)?(?:\d+ms)?)$/;
+
+/**
+ * Walk the WHOLE tree (Alertmanager validates every route at load, reached or
+ * not) and collect the errors that stop it loading: unknown keys, bad
+ * durations, unparseable matchers, regexes RE2 rejects, and matchers on the
+ * root. Simulating a walk over such a config would show a route the real
+ * Alertmanager can never take — an unparseable matcher dropped here turned its
+ * route into a catch-all.
+ */
+function validateTree(node: RawRoute, isRoot: boolean, where: string, errors: string[]): void {
+  for (const key of Object.keys(node)) {
+    if (!ROUTE_KEYS.has(key)) errors.push(`${where}: unknown field \`${key}\`.`);
+  }
+  for (const key of ['group_wait', 'group_interval', 'repeat_interval'] as const) {
+    const v = node[key];
+    if (v === undefined || v === null) continue;
+    const s = scalarToString(v);
+    if (!DURATION_RE.test(s) || s === '') {
+      errors.push(`${where}: \`${key}: ${s}\` is not a valid duration (use e.g. 30s, 5m, 4h).`);
+    }
+  }
+  const problems: string[] = [];
+  const matchers = collectMatchers(node, problems);
+  for (const p of problems) errors.push(`${where}: ${p}`);
+  for (const m of matchers) {
+    if (m.op !== '=~' && m.op !== '!~') continue;
+    const bad = re2UnsupportedSyntax(m.value);
+    if (bad) errors.push(`${where}: regex "${m.value}" on \`${m.name}\` uses ${bad}.`);
+  }
+  if (isRoot && (matchers.length > 0 || problems.length > 0)) {
+    errors.push('root route must not have any matchers.');
+  }
+  const children = Array.isArray(node.routes) ? node.routes : [];
+  children.forEach((child, i) => {
+    if (isRecord(child)) validateTree(child as RawRoute, false, `${where} → route #${i + 1}`, errors);
+  });
 }
 
 /* ────────────────────────────────────────────────────────────────────────── *
@@ -733,6 +793,17 @@ export function matchRoute(
     return { ok: false, error: resolved.error, warnings: [] };
   }
   const root = resolved.route;
+
+  // 2b. Refuse a config Alertmanager itself would refuse to load.
+  const loadErrors: string[] = [];
+  validateTree(root, true, 'root', loadErrors);
+  if (loadErrors.length > 0) {
+    return {
+      ok: false,
+      error: `Alertmanager would refuse to load this config: ${loadErrors.join(' ')}`,
+      warnings: [],
+    };
+  }
 
   const warnings: string[] = [];
 

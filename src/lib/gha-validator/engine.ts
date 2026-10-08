@@ -40,6 +40,7 @@ interface WorkflowStep {
   with?: Record<string, unknown>;
   name?: unknown;
   id?: unknown;
+  if?: unknown;
 }
 
 interface WorkflowJob {
@@ -48,6 +49,7 @@ interface WorkflowJob {
   steps?: unknown;
   permissions?: unknown;
   needs?: unknown;
+  if?: unknown;
 }
 
 /**
@@ -851,6 +853,28 @@ function checkJob(
     });
   }
 
+  // The needs context only holds the jobs listed under `needs:`; any other
+  // needs.<job> silently expands to an empty string (actionlint flags it too).
+  const listed = new Set(toStringList(job.needs).map((d) => d.toLowerCase()));
+  const unlisted = new Set<string>();
+  for (const m of expressionText(job).matchAll(/(?<![\w.-])needs\.([A-Za-z_][\w-]*)/g)) {
+    if (!listed.has(m[1].toLowerCase())) unlisted.add(m[1]);
+  }
+  for (const dep of unlisted) {
+    add({
+      id: 'needs-ref-not-listed',
+      severity: 'warning',
+      title: `Job “${jobId}” reads \`needs.${dep}\`, but “${dep}” is not listed in its \`needs:\`.`,
+      detail:
+        'The `needs` context only contains the jobs named under `needs:`. Any other `needs.<job>` reference expands to an empty string, and the job does not wait for that job to finish.',
+      line: findLine(lines, (l) => l.includes(`needs.${dep}`), jobLine) ?? jobLine,
+      remediation: `Add \`${dep}\` to \`needs:\` for job “${jobId}”.`,
+    });
+  }
+
+  // `secrets` is not an available context in a job-level `if:`.
+  checkSecretsInIf(`Job “${jobId}”`, job.if, findJobChildLine(lines, jobLine, 'if') ?? jobLine, add);
+
   // `strategy:` is legal on BOTH runner jobs and reusable-workflow calls, so it
   // is checked before the reusable branch returns.
   checkStrategy(jobId, job, lines, jobLine, add);
@@ -904,6 +928,7 @@ function checkJob(
       return;
     }
     const step = rawStep as WorkflowStep;
+    checkSecretsInIf(`Step ${idx + 1} in job “${jobId}”`, step.if, stepLine, add);
     const usesDeclared = Object.prototype.hasOwnProperty.call(step, 'uses');
     const hasUses = typeof step.uses === 'string' && step.uses.trim() !== '';
     const hasRun = typeof step.run === 'string' && step.run.trim() !== '';
@@ -941,6 +966,38 @@ function checkJob(
         remediation: 'Add a `run:` command or a `uses:` action reference to the step.',
       });
     }
+  });
+}
+
+/** The expression text a value hands to the evaluator: an `if:` is an
+ *  expression whole, any other string only inside its `${{ }}` spans. */
+function expressionText(v: unknown, key = ''): string {
+  if (typeof v === 'string') {
+    return key === 'if' ? v : [...v.matchAll(/\$\{\{([\s\S]*?)\}\}/g)].map((m) => m[1]).join('\n');
+  }
+  if (Array.isArray(v)) return v.map((x) => expressionText(x)).join('\n');
+  if (isRecord(v)) return Object.entries(v).map(([k, x]) => expressionText(x, k)).join('\n');
+  return '';
+}
+
+/** `secrets` is not in the context-availability list for a job or step `if:`;
+ *  the runner fails the workflow with "Unrecognized named-value: 'secrets'". */
+function checkSecretsInIf(
+  where: string,
+  cond: unknown,
+  line: number | undefined,
+  add: (f: Finding) => void,
+): void {
+  if (typeof cond !== 'string' || !/(?<![\w.-])secrets\s*[.[]/.test(cond)) return;
+  add({
+    id: 'secrets-in-if',
+    severity: 'error',
+    title: `${where} reads \`secrets\` in its \`if:\`, where that context is not available.`,
+    detail:
+      'GitHub does not expose the `secrets` context to `if:` conditions, so the run fails with "Unrecognized named-value: \'secrets\'".',
+    line,
+    remediation:
+      "Map the secret into `env:` (e.g. `env: { TOKEN: ${{ secrets.TOKEN }} }`) and test `env.TOKEN != ''` in the `if:` instead.",
   });
 }
 

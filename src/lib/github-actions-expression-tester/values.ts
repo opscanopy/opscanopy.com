@@ -84,8 +84,14 @@ export function looseEquals(a: GhaValue, b: GhaValue): boolean {
   return na === nb;
 }
 
-/** `< > <= >=` — always coerce to number; any NaN result ⇒ false. */
+/** `< > <= >=` — two strings compare ordinally, ignoring case (the runner's
+ *  OrdinalIgnoreCase); anything else coerces to number; any NaN ⇒ false. */
 export function compare(a: GhaValue, op: '<' | '>' | '<=' | '>=', b: GhaValue): boolean {
+  if (typeof a === 'string' && typeof b === 'string') {
+    const ua = a.toUpperCase();
+    const ub = b.toUpperCase();
+    return op === '<' ? ua < ub : op === '>' ? ua > ub : op === '<=' ? ua <= ub : ua >= ub;
+  }
   const na = castToNumber(a);
   const nb = castToNumber(b);
   if (Number.isNaN(na) || Number.isNaN(nb)) return false;

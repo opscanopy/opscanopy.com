@@ -156,7 +156,7 @@ function describeResult(ast: Expr, value: GhaValue): string {
       lead += 'compares two values for equality, and ';
       break;
     case 'cmp':
-      lead += 'compares two values numerically, and ';
+      lead += 'compares two values (two strings character by character, ignoring case; anything else numerically), and ';
       break;
     case 'not':
       lead += 'negates its operand, and ';

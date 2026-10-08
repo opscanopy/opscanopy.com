@@ -20,7 +20,11 @@
 import type { ExprWarning } from './types';
 import { parse } from './expr-parser';
 
-const SPAN_RE = /\$\{\{[\s\S]*?\}\}/g;
+/** One ${{ }} span. A `}}` inside a single-quoted literal does not close it
+ *  (`''` escapes fall out of the alternation: two adjacent literals). A `'`
+ *  with no closing quote after it is an ordinary character, so an unterminated
+ *  literal still forms a span and reaches the parser's error. */
+export const SPAN_RE = /\$\{\{((?:'[^']*'|'(?![^']*')|[^'])*?)\}\}/g;
 
 /** Analyse a full `if:` value. Returns a warning when the footgun is present. */
 export function analyzeIfCondition(raw: string): ExprWarning | null {

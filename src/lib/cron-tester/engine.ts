@@ -26,7 +26,9 @@
  * Cron semantics honored:
  *   - Day-of-week accepts both 0 and 7 for Sunday.
  *   - When BOTH day-of-month and day-of-week are restricted (neither is "*"),
- *     a date matches if EITHER field matches (the Vixie-cron OR rule).
+ *     a date matches if EITHER field matches (the Vixie-cron OR rule) — unless
+ *     either field STARTS with "*" (e.g. "*\/2"): Vixie cron and cronie set
+ *     DOM_STAR/DOW_STAR on that first character and then require BOTH.
  */
 
 import type { CronResult, CronFields } from './types';
@@ -93,6 +95,8 @@ interface FieldSpec {
   set: Set<number>;
   /** True when the field was a bare wildcard ("*") with no step. */
   isWildcard: boolean;
+  /** True when the field text starts with "*" (cron's DOM_STAR/DOW_STAR flag). */
+  star: boolean;
 }
 
 /** Per-field bounds and the named-token alias maps used during parsing. */
@@ -264,7 +268,7 @@ function parseField(raw: string, def: FieldDef): FieldSpec | string {
   }
 
   const sorted = Array.from(values).sort((x, y) => x - y);
-  return { values: sorted, set: new Set(sorted), isWildcard };
+  return { values: sorted, set: new Set(sorted), isWildcard, star: token.startsWith('*') };
 }
 
 /** Resolve a numeric or 3-letter named token to an integer, or null if bad. */
@@ -514,8 +518,9 @@ function describe(p: ParsedCron): string {
   const dowRestricted = !p.dayOfWeek.isWildcard;
 
   if (domRestricted && dowRestricted) {
+    const join = dayOr(p) ? 'or on' : 'and only on';
     parts.push(
-      `on ${describeDayOfMonth(p.dayOfMonth)} of the month, or on ${describeDayOfWeek(p.dayOfWeek)}`,
+      `on ${describeDayOfMonth(p.dayOfMonth)} of the month, ${join} ${describeDayOfWeek(p.dayOfWeek)}`,
     );
   } else if (dowRestricted) {
     parts.push(`on ${describeDayOfWeek(p.dayOfWeek)}`);
@@ -563,18 +568,22 @@ function matches(p: ParsedCron, w: WallTime): boolean {
   if (!p.hour.set.has(w.hour)) return false;
   if (!p.month.set.has(w.month)) return false;
 
-  const domRestricted = !p.dayOfMonth.isWildcard;
-  const dowRestricted = !p.dayOfWeek.isWildcard;
+  return dayMatches(p, w);
+}
+
+/**
+ * Vixie cron / cronie day rule: OR when both day fields are restricted and
+ * neither starts with "*"; otherwise AND (a bare "*" matches every day, so
+ * AND then reduces to the other field).
+ */
+function dayOr(p: ParsedCron): boolean {
+  return !p.dayOfMonth.star && !p.dayOfWeek.star;
+}
+
+function dayMatches(p: ParsedCron, w: WallTime): boolean {
   const domHit = p.dayOfMonth.set.has(w.day);
   const dowHit = p.dayOfWeek.set.has(w.weekday);
-
-  if (domRestricted && dowRestricted) {
-    // OR semantics: either field matching is enough.
-    return domHit || dowHit;
-  }
-  if (domRestricted) return domHit;
-  if (dowRestricted) return dowHit;
-  return true; // both wildcards
+  return dayOr(p) ? domHit || dowHit : domHit && dowHit;
 }
 
 /**
@@ -662,16 +671,7 @@ const DST_MARGIN_MIN = 120;
  */
 function dateCouldMatch(p: ParsedCron, w: WallTime): boolean {
   if (!p.month.set.has(w.month)) return false;
-
-  const domRestricted = !p.dayOfMonth.isWildcard;
-  const dowRestricted = !p.dayOfWeek.isWildcard;
-  const domHit = p.dayOfMonth.set.has(w.day);
-  const dowHit = p.dayOfWeek.set.has(w.weekday);
-
-  if (domRestricted && dowRestricted) return domHit || dowHit;
-  if (domRestricted) return domHit;
-  if (dowRestricted) return dowHit;
-  return true;
+  return dayMatches(p, w);
 }
 
 /* ------------------------------------------------------------------------- *

@@ -49,3 +49,9 @@ describe('round-trip', () => {
     expect(parseHashValue('k', buildHashValue('k', value))).toBe(value.trim());
   });
 });
+
+describe("buildHashValue lone surrogates", () => {
+  it("does not throw on a lone surrogate", () => {
+    expect(parseHashValue("t", buildHashValue("t", "ab\uD83Dcd"))).toBe("ab\uFFFDcd");
+  });
+});

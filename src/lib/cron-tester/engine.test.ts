@@ -267,3 +267,27 @@ describe('day-jump across a DST boundary — regression', () => {
     }
   });
 });
+
+describe('day-of-month / day-of-week: a field starting with "*" means AND (Vixie/cronie DOM_STAR)', () => {
+  const from = '2026-10-08T00:00:00Z';
+  const iso = (secs: number[]) => secs.map((s) => new Date(s * 1000).toISOString().slice(0, 10));
+
+  it('0 0 */2 * 1 fires only on odd-numbered days that are Mondays', () => {
+    expect(iso(nextRunEpochSeconds('0 0 */2 * 1', 5, from, { timeZone: 'UTC' }))).toEqual([
+      '2026-10-19', '2026-11-09', '2026-11-23', '2026-12-07', '2026-12-21',
+    ]);
+    expect(matchesAt('0 0 */2 * 1', new Date('2026-10-09T00:00:00Z'), { timeZone: 'UTC' })).toBe(false);
+  });
+
+  it('describes the AND, not an OR', () => {
+    const d = explain('0 0 */2 * 1', { timeZone: 'UTC' }).description;
+    expect(d).not.toMatch(/or on Monday/);
+    expect(d).toMatch(/only on Monday/);
+  });
+
+  it('keeps the OR rule when neither field starts with "*"', () => {
+    expect(iso(nextRunEpochSeconds('0 0 13 * 5', 2, from, { timeZone: 'UTC' }))).toEqual([
+      '2026-10-09', '2026-10-13',
+    ]);
+  });
+});

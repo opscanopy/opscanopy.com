@@ -29,7 +29,7 @@ export function parseHashValue(key: string, rawHash: string): string | null {
 }
 
 export function buildHashValue(key: string, value: string): string {
-  return `#${key}=${encodeURIComponent(value)}`;
+  return `#${key}=${encodeURIComponent(value.toWellFormed?.() ?? value)}`;
 }
 
 export interface HashState {

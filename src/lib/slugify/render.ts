@@ -41,7 +41,8 @@ export function errorHtml(message: string, isAlert = false): string {
 export function resultHtml(result: SlugifyResult, _opts: SlugifyOptions): string {
   if (result.slug.length === 0) {
     // Valid input but nothing slug-worthy survived (e.g. only symbols).
-    return '<div class="slug-card"><div class="slug-note">No slug characters — the title has no letters or digits.</div></div>';
+    const msg = result.notes?.[0] ?? 'No slug characters — the title has no letters or digits.';
+    return `<div class="slug-card"><div class="slug-note">${escapeHtml(msg)}</div></div>`;
   }
 
   const noteHtml =
