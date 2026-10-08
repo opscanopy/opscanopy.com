@@ -6,6 +6,7 @@
  * Gated by src/data/variants/variants.test.ts.
  */
 import type { Faq } from '../tool-faqs';
+import indexableJson from './indexable.json';
 
 export interface VariantSection {
   heading: string;
@@ -41,3 +42,11 @@ export function variantPaths<T extends ToolVariant>(list: T[], param: string) {
 export function siblings<T extends ToolVariant>(list: T[], slug: string): T[] {
   return list.filter((v) => v.slug !== slug);
 }
+
+/**
+ * Only these variant slugs are indexable (the rest are noindex,follow and out of
+ * the sitemap: Google declined them as near-duplicates). Locale chmod copies are
+ * always noindex. astro.config.mjs reads the same JSON for the sitemap filter.
+ */
+export const indexable: Record<string, string[]> = indexableJson;
+export const isIndexable = (tool: string, slug: string) => indexable[tool]?.includes(slug) ?? false;

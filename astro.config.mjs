@@ -37,6 +37,17 @@ try {
 } catch {
   console.warn('[sitemap] thin-tags.generated.json not found — all tag pages stay listed.');
 }
+// Programmatic variant pages outside the keep-list are noindex (see
+// src/data/variants/indexable.json, the single source the pages also read);
+// every locale copy of a variant (only chmod has them) is noindex.
+/** @type {Record<string, string[]>} */
+const VARIANT_KEEP = require('./src/data/variants/indexable.json');
+/** @param {string} path */
+const isNoindexVariant = (path) => {
+  const m = path.match(/^(\/(?:de|es|fr|pt-br))?\/([^/]+)\/([^/]+)\/$/);
+  if (!m || !(m[2] in VARIANT_KEEP)) return false;
+  return Boolean(m[1]) || !VARIANT_KEEP[m[2]].includes(m[3]);
+};
 const THIN_TAG_PATHS = new Set(THIN_TAGS.thin.map((t) => `/blog/tag/${t}/`));
 
 // https://astro.build/config
@@ -85,7 +96,8 @@ export default defineConfig({
         // Thin tag pages (fewer than `threshold` posts) are noindex — see
         // THIN_TAG_PATHS above. Keeping them listed would advertise URLs we
         // simultaneously ask Google to ignore.
-        !THIN_TAG_PATHS.has(new URL(page).pathname),
+        !THIN_TAG_PATHS.has(new URL(page).pathname) &&
+        !isNoindexVariant(new URL(page).pathname),
       // The page's real last-modified date (git commit dates for tools and
       // listing/info pages, frontmatter dates for posts and guides), or no
       // <lastmod> at all when none is known — see scripts/lastmod-core.mjs.
