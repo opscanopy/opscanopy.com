@@ -569,3 +569,11 @@ describe('summary approximation marker', () => {
     expect(convert('1 KiB').summary).toMatch(/^1 KiB = 1.?024 bytes$/);
   });
 });
+
+describe('sub-byte note wording', () => {
+  it('0.0000001 B says ≈ 0 bytes in the note, like the summary', () => {
+    const r = convert('0.0000001 B');
+    expect(r.summary).toContain('≈ 0 bytes');
+    expect(r.notes.join(' ')).toContain('≈ 0 bytes');
+  });
+});

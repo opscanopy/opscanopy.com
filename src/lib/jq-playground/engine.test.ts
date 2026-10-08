@@ -622,9 +622,8 @@ describe('guards — the engine never throws and never freezes on hostile input'
     expect(unboundedRiskHint('..|numbers')).toBeNull();
     const hint = unboundedRiskHint('repeat(.+1)');
     expect(hint).toBe(
-      'This program can generate an unbounded stream (repeat/range(infinite)). jq runs ' +
-        'synchronously in this tab, so a filter that never ends will freeze the page until you ' +
-        'reload — wrap it in limit(n; …) or first(…).',
+      'This program can generate an unbounded stream (repeat/range(infinite)). A filter that ' +
+        'never ends is stopped after 3 s — wrap it in limit(n; …) or first(…).',
     );
     expect(unboundedRiskHint('[range(infinite)]')).toBe(hint);
   });
@@ -639,7 +638,7 @@ describe('guards — the engine never throws and never freezes on hostile input'
       'recurse(.field) keeps recursing after it reaches the end: .field on the last node is ' +
       'null, and null.field is null again, forever — adding ? does not stop it. Collected ' +
       '([…], length, last) it exhausts jq’s memory and aborts after a second or two; left ' +
-      'streaming it freezes this tab until you reload. Write recurse(.field?; . != null) instead.';
+      'streaming it never ends and is stopped after 3 s. Write recurse(.field?; . != null) instead.';
     expect(unboundedRiskHint('[recurse(.next) | .id]')).toBe(hint);
     expect(unboundedRiskHint('[recurse(.next?) | .id]')).toBe(hint);
     expect(unboundedRiskHint('[recurse(.a.b)]')).toBe(hint);

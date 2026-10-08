@@ -151,6 +151,27 @@ describe('explain() — rejects what Prometheus rejects', () => {
     expect(err).toMatch(/rate\(\)/);
   });
 
+  it('rejects unary minus on a range vector', () => {
+    expect(explain('rate(-x[5m])').error).toBe(
+      'unary expression only allowed on expressions of type scalar or instant vector, got range vector',
+    );
+  });
+
+  it('still accepts unary minus on an instant vector or scalar', () => {
+    for (const q of ['-x', '-rate(x[5m])', '-(1)', 'rate(x[5m]) * -1']) {
+      expect(explain(q).error, q).toBeUndefined();
+    }
+  });
+
+  it('returns no explanation or breakdown alongside an error', () => {
+    for (const q of ['', 'rate(http_requests_total)', 'rate(-x[5m])', 'sum(rate(x[5m])', 'rates(x[5m])']) {
+      const r = explain(q);
+      expect(r.error, q).toBeTruthy();
+      expect(r.explanation, q).toBe('');
+      expect(r.breakdown, q).toEqual([]);
+    }
+  });
+
   it('reports an invalid duration as a duration error', () => {
     expect(explain('rate(x_total[5x])').error).toMatch(/“5x” is not a valid duration/);
   });

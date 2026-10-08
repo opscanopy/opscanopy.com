@@ -28,8 +28,8 @@ export interface ExplainPart {
 export interface ExplainResult {
   /**
    * Present only when the input could not be meaningfully explained (e.g. an
-   * empty query, or unbalanced brackets). When set, `explanation` still holds a
-   * safe, human-readable fallback so the UI can render a message either way.
+   * empty query, or unbalanced brackets). When set, `explanation` is empty and
+   * `breakdown` is `[]`: the error is the whole result.
    */
   error?: string;
   /** A plain-English, inside-out reading of the whole query (period-terminated). */

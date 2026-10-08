@@ -137,6 +137,7 @@ export function inspectResultHtml(value: string, res: InspectResult): string {
     rows.push({ k: 'Format', v: 'UUID (8-4-4-4-12 hex)' });
     if (typeof res.version === 'number') rows.push({ k: 'Version', v: String(res.version) });
     if (res.variant) rows.push({ k: 'Variant', v: res.variant });
+    if (res.timestamp) rows.push({ k: 'Timestamp', v: res.timestamp, mono: true, copy: true });
   } else {
     rows.push({ k: 'Format', v: 'Crockford base32 ULID (26 chars)' });
     if (res.timestamp) rows.push({ k: 'Timestamp', v: res.timestamp, mono: true, copy: true });
