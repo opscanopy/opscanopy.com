@@ -214,3 +214,11 @@ describe('targeted units', () => {
     expect(res.workflowTriggered).toBe(false);
   });
 });
+
+describe('operator legend', () => {
+  it('does not call < <= > >= numeric-only', () => {
+    const r = evaluateExpression("'a' < 'B'", defaultContext());
+    const row = r.breakdown.find((p) => p.token === '<');
+    expect(row?.meaning).toMatch(/string/i);
+  });
+});
