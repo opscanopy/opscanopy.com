@@ -756,3 +756,62 @@ describe('bundled examples produce their documented findings', () => {
     expect(ids(r.findings).sort()).toEqual(['invalid-when', 'rules-not-list']);
   });
 });
+
+describe('validate() — 2026-10 review regressions', () => {
+  it('only + rules in one job is an error', () => {
+    const r = validate('stages: [build, test]\na:\n  stage: build\n  script: [x]\n  only: [main]\n  rules:\n    - if: $CI_COMMIT_BRANCH\n');
+    const f = r.findings.filter((x) => x.id === 'rules-with-only-except');
+    expect(f).toHaveLength(1);
+    expect(f[0].severity).toBe('error');
+    expect(f[0].title).toContain('only');
+  });
+
+  it('needs on a job in a later stage is an error', () => {
+    const r = validate('stages: [build, test]\na: {stage: build, needs: [b], script: [x]}\nb: {stage: test, script: [y]}\n');
+    const f = r.findings.filter((x) => x.id === 'needs-later-stage');
+    expect(f).toHaveLength(1);
+    expect(f[0].severity).toBe('error');
+  });
+
+  it('needs on a job in the same or an earlier stage is fine', () => {
+    const r = validate('stages: [build, test]\na: {stage: test, needs: [b, c], script: [x]}\nb: {stage: build, script: [y]}\nc: {stage: test, script: [z]}\n');
+    expect(ids(r.findings)).not.toContain('needs-later-stage');
+  });
+
+  it('circular extends and a !reference to a missing key are errors', () => {
+    const r = validate('.a: {extends: .b, script: [a]}\n.b: {extends: .a}\njob:\n  extends: .a\n  script:\n    - !reference [.nope, script]\n');
+    expect(r.findings.filter((x) => x.id === 'extends-circular').map((x) => x.title).join()).toMatch(/\.a.*\.b|\.b.*\.a/);
+    const ref = r.findings.filter((x) => x.id === 'reference-unknown-target');
+    expect(ref).toHaveLength(1);
+    expect(ref[0].title).toContain('.nope');
+    expect(ref[0].line).toBe(6);
+  });
+
+  it('a !reference to an existing key is fine', () => {
+    const r = validate('.setup:\n  script: [echo hi]\njob:\n  script:\n    - !reference [.setup, script]\n');
+    expect(ids(r.findings)).not.toContain('reference-unknown-target');
+    expect(r.summary.errors).toBe(0);
+  });
+
+  it('rules:if with a single = is invalid expression syntax', () => {
+    const r = validate('build:\n  script: [x]\n  rules:\n    - if: $CI_COMMIT_BRANCH = "main"\n');
+    const f = r.findings.filter((x) => x.id === 'rules-if-invalid');
+    expect(f).toHaveLength(1);
+    expect(f[0].severity).toBe('error');
+    expect(f[0].line).toBe(4);
+  });
+
+  it('accepts valid rules:if expressions', () => {
+    for (const expr of [
+      '$CI_COMMIT_BRANCH',
+      '$CI_COMMIT_BRANCH == "main"',
+      "$CI_COMMIT_BRANCH != 'main' && $CI_PIPELINE_SOURCE == \"push\"",
+      '$CI_COMMIT_TAG =~ /^v\\d+\\.\\d+$/i || ($X == null && ${Y})',
+      '$CI_COMMIT_MESSAGE !~ /skip/ ',
+      '$A == $B',
+    ]) {
+      const r = validate(`build:\n  script: [x]\n  rules:\n    - if: '${expr.replace(/'/g, "''")}'\n`);
+      expect(ids(r.findings), expr).not.toContain('rules-if-invalid');
+    }
+  });
+});
