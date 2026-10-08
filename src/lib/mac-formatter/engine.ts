@@ -23,12 +23,14 @@ function join(bytes: number[], sep: string, upper: boolean): string {
 
 /** Say which way a rejected input is wrong: bad digit, several addresses, or wrong length. */
 function diagnose(trimmed: string, hex: string): string {
+  // A list separated by , or ; is several addresses, not a bad digit.
+  const listed = hex.replace(/[,;]/g, '');
+  if (listed.length > 12 && listed.length % 12 === 0 && /^[0-9a-fA-F]+$/.test(listed) && /[\s,;]/.test(trimmed)) {
+    return `Looks like ${listed.length / 12} addresses (${listed.length} hex digits) — paste one MAC address at a time.`;
+  }
   const bad = hex.match(/[^0-9a-fA-F]/);
   if (bad) return `“${bad[0]}” is not a hex digit (0–9, a–f). Expected 12 hex digits, e.g. 00:1a:2b:3c:4d:5e.`;
   const n = hex.length;
-  if (n > 12 && n % 12 === 0 && /[\s,;]/.test(trimmed)) {
-    return `Looks like ${n / 12} addresses (${n} hex digits) — paste one MAC address at a time.`;
-  }
   if (n === 16) return 'Found 16 hex digits — that is a 64-bit EUI-64, not a 48-bit MAC. Expected 12 hex digits.';
   return `Found ${n} hex digit${n === 1 ? '' : 's'}, need 12 for a 48-bit MAC address, e.g. 00:1a:2b:3c:4d:5e.`;
 }

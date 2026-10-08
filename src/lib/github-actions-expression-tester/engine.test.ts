@@ -181,6 +181,11 @@ describe('conflicting filter pairs', () => {
 });
 
 describe('targeted units', () => {
+  it('an unterminated quote inside ${{ }} is still one span, not a literal if:', () => {
+    const r = evaluateIfCondition("${{ github.actor == 'x }}");
+    expect(r.warnings.map((w) => w.id)).not.toContain('literal-if-always-true');
+  });
+
   it('&& returns the right operand (not a boolean)', () => {
     expect(evaluateExpression("'a' && 'b'").value).toBe('b');
   });
