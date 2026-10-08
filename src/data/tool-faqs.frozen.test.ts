@@ -20,6 +20,7 @@ import {
   MAX_DIAGNOSTICS_TOTAL,
   MAX_INPUT_CHARS as GRAFANA_MAX_INPUT,
 } from '../lib/grafana-dashboard-validator/engine';
+import { JQ_RUN_TIMEOUT_MS } from '../lib/jq-playground/engine';
 import { RULE_SEVERITY } from '../lib/grafana-dashboard-validator/rules';
 import { GRAFANA_RULES_VERSION, KNOWN_SCHEMA_VERSION, RULE_IDS } from '../lib/grafana-dashboard-validator/types';
 
@@ -64,6 +65,14 @@ describe('grafana-dashboard-validator FAQ numbers match the engine', () => {
         expect(text, `${n} missing in ${lang}`).toContain(String(n));
       }
       expect(text).toContain(GRAFANA_RULES_VERSION);
+    });
+  }
+});
+
+describe('jq-playground FAQ quotes the worker timeout', () => {
+  for (const lang of LOCALES) {
+    it(`${lang}: names the ${JQ_RUN_TIMEOUT_MS / 1000}-second stop, not a tab freeze`, () => {
+      expect(joined('jq-playground', lang)).toMatch(new RegExp(`\\b${JQ_RUN_TIMEOUT_MS / 1000} (seconds|Sekunden|segundos|secondes)`));
     });
   }
 });

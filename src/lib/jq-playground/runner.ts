@@ -71,13 +71,15 @@ export function createJqRunner(spawn: () => WorkerLike, wasmURL: string, timeout
         const msg = data as WorkerReply;
         if (msg.type === 'ready') resolve(msg.version);
         else if (msg.type === 'load-error') {
-          kill();
+          if (worker === w) kill();
           reject(new Error(msg.message));
         } else if (msg.type === 'result' && pending?.id === msg.id) pending.finish(msg.result);
       };
       // The worker script itself failed (blocked, 404) or threw outside runJq.
       w.onerror = (event) => {
         event.preventDefault();
+        // A worker already replaced must not kill its successor or fail its run.
+        if (worker !== w) return;
         const message = event.message || 'the jq worker failed';
         kill();
         reject(new Error(message));

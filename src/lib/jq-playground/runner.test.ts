@@ -121,4 +121,22 @@ describe('createJqRunner', () => {
     expect((result as JqErr).error).toContain('fetch failed');
     expect(spawned).toHaveLength(2);
   });
+
+  it('ignores a late error from a worker it already replaced', async () => {
+    const { spawn, spawned } = fakeSpawn();
+    const runner = createJqRunner(spawn, '');
+    void runner.run('repeat(.)', '{}', {});
+    await vi.advanceTimersByTimeAsync(JQ_RUN_TIMEOUT_MS);
+    let settled: JqRunResult | null = null;
+    void runner.run('.', '1', {}).then((r) => (settled = r));
+    await vi.advanceTimersByTimeAsync(0);
+    spawned[0].onerror?.({ preventDefault() {}, message: 'late' } as ErrorEvent);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBeNull();
+    expect(spawned[1].terminated).toBe(false);
+    const run = spawned[1].posted.find((m) => m.type === 'run')!;
+    spawned[1].reply({ type: 'result', id: run.id, result: okResult });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(okResult);
+  });
 });
