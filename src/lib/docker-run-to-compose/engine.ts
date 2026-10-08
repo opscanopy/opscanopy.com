@@ -190,6 +190,8 @@ interface ServiceModel {
   command?: string[];
   ports: string[];
   volumes: string[];
+  tmpfs: string[];
+  read_only?: boolean;
   environment: string[];
   env_file: string[];
   restart?: string;
@@ -220,6 +222,7 @@ function emptyModel(): ServiceModel {
   return {
     ports: [],
     volumes: [],
+    tmpfs: [],
     environment: [],
     env_file: [],
     networks: [],
@@ -368,14 +371,22 @@ function applyFlag(flag: ParsedFlag, m: ServiceModel, warnings: string[]): void 
     // ── volumes / mounts ─────────────────────────────────────────────────────
     case 'v':
     case 'volume':
-      if (v) m.volumes.push(v);
+      if (v) m.volumes.push(composePath(v, warnings));
       return;
     case 'mount':
       if (v) {
-        const vol = mountToVolume(v);
-        if (vol) m.volumes.push(vol);
+        const tmp = mountToTmpfs(v);
+        const vol = tmp ? null : mountToVolume(v);
+        if (tmp) m.tmpfs.push(tmp);
+        else if (vol) m.volumes.push(composePath(vol, warnings));
         else warnings.push(`Could not map --mount "${v}" to a volume; review it manually.`);
       }
+      return;
+    case 'tmpfs':
+      if (v) m.tmpfs.push(v);
+      return;
+    case 'read-only':
+      m.read_only = true;
       return;
 
     // ── environment ──────────────────────────────────────────────────────────
@@ -405,7 +416,9 @@ function applyFlag(flag: ParsedFlag, m: ServiceModel, warnings: string[]): void 
     case 'network':
     case 'net':
       if (v) {
-        if (v === 'host' || v === 'none') m.network_mode = v;
+        // Built-in modes are `network_mode`; listed under `networks:` Compose
+        // would demand a top-level declaration of a network it cannot create.
+        if (v === 'host' || v === 'none' || v === 'bridge' || v.startsWith('container:')) m.network_mode = v;
         else m.networks.push(v);
       }
       return;
@@ -523,6 +536,58 @@ function mountToVolume(spec: string): string | null {
   return readOnly ? `${base}:ro` : base;
 }
 
+/**
+ * A `--mount type=tmpfs,destination=/run,tmpfs-size=64m,tmpfs-mode=1770` as
+ * the `/run:size=64m,mode=1770` string Compose's `tmpfs:` (and `--tmpfs`)
+ * take. Null for any other mount type: a tmpfs written as a volume entry
+ * becomes an anonymous DISK volume, so RAM-only scratch space would persist.
+ */
+function mountToTmpfs(spec: string): string | null {
+  let isTmpfs = false;
+  let target = '';
+  const opts: string[] = [];
+  for (const p of spec.split(',')) {
+    const [rawKey, ...rest] = p.split('=');
+    const key = rawKey.trim();
+    const val = rest.join('=').trim();
+    if (key === 'type') isTmpfs = val === 'tmpfs';
+    else if (key === 'target' || key === 'destination' || key === 'dst') target = val;
+    else if (key === 'tmpfs-size') opts.push(`size=${val}`);
+    else if (key === 'tmpfs-mode') opts.push(`mode=${val}`);
+  }
+  if (!isTmpfs || !target) return null;
+  return opts.length ? `${target}:${opts.join(',')}` : target;
+}
+
+/**
+ * Compose does no command substitution, so `$(pwd)` / `` `pwd` `` in a mount
+ * source would be read as a volume NAME. Rewrite it to `.`, which Compose
+ * resolves against the project (compose file) directory, and say so.
+ */
+function composePath(vol: string, warnings: string[]): string {
+  if (!/\$\(pwd\)|`pwd`/.test(vol)) return vol;
+  const note =
+    '`$(pwd)` was rewritten to `.` — Compose does no command substitution and resolves `.` against the compose file\'s directory.';
+  if (!warnings.includes(note)) warnings.push(note);
+  return vol.replace(/\$\(pwd\)|`pwd`/g, '.');
+}
+
+/**
+ * Error text for a `-p` spec with a port outside 0–65535 (docker run refuses
+ * it), else null. Only the last two `:` segments are ports — the rest is a
+ * host IP — and a non-numeric segment (e.g. `${PORT}`) is left alone.
+ */
+function invalidPort(spec: string): string | null {
+  for (const seg of spec.replace(/\/[a-z]+$/i, '').split(':').slice(-2)) {
+    for (const n of seg.split('-')) {
+      if (/^\d+$/.test(n) && Number(n) > 65535) {
+        return `Invalid port ${n} in \`-p ${spec}\` — ports must be between 1 and 65535.`;
+      }
+    }
+  }
+  return null;
+}
+
 /* ────────────────────────────────────────────────────────────────────────── *
  *  Hand-rolled deterministic YAML emitter.
  *
@@ -592,6 +657,8 @@ function emitYaml(m: ServiceModel): string {
   // be read as a sexagesimal number by YAML 1.1 parsers), so force-quote them.
   if (m.ports.length) list('ports', m.ports, true);
   if (m.volumes.length) list('volumes', m.volumes);
+  if (m.tmpfs.length) list('tmpfs', m.tmpfs);
+  if (m.read_only) push('read_only: true');
   if (m.environment.length) list('environment', m.environment);
   if (m.env_file.length) list('env_file', m.env_file);
   if (m.networks.length) list('networks', m.networks);
@@ -628,6 +695,25 @@ function emitYaml(m: ServiceModel): string {
       lines.push(`${I}  retries: ${retries}`);
     }
     if (m.healthStartPeriod) lines.push(`${I}  start_period: ${scalar(m.healthStartPeriod)}`);
+  }
+
+  // A named volume (`pgdata:/data`, not a path) must be declared at the top
+  // level, or `docker compose config` rejects the file as an undefined volume.
+  // Names are 2+ chars, so a drive letter (`C:/x`) never qualifies.
+  const named = new Set(
+    m.volumes
+      .map((v) => v.split(':'))
+      .filter((p) => p.length > 1 && /^[A-Za-z0-9][A-Za-z0-9_.-]+$/.test(p[0]))
+      .map((p) => p[0]),
+  );
+  if (named.size) {
+    lines.push('volumes:');
+    for (const n of named) lines.push(`  ${scalar(n)}: {}`);
+  }
+  // Same rule for a user network (`--network backend`).
+  if (m.networks.length) {
+    lines.push('networks:');
+    for (const n of new Set(m.networks)) lines.push(`  ${scalar(n)}: {}`);
   }
 
   return lines.join('\n') + '\n';
@@ -685,6 +771,9 @@ export function runToCompose(cmd: string): RunToComposeResult {
     const model = emptyModel();
     for (const flag of flags) applyFlag(flag, model, warnings);
 
+    const badPort = model.ports.map(invalidPort).find((e) => e !== null);
+    if (badPort) return { ok: false, warnings, error: badPort };
+
     if (positionals.length === 0) {
       return {
         ok: false,
@@ -723,7 +812,8 @@ const COMPOSE_ONLY_KEYS: Record<string, string> = {
 
 /** Coerce a YAML scalar to a string; numbers/booleans become their text form. */
 function strOf(v: unknown): string {
-  if (typeof v === 'string') return v;
+  // `$$` is Compose's escape for a literal `$`; docker run has no such escape.
+  if (typeof v === 'string') return v.replace(/\$\$/g, '$');
   if (typeof v === 'number' || typeof v === 'boolean') return String(v);
   return '';
 }
@@ -887,7 +977,24 @@ export function composeToRun(yamlText: string): ComposeToRunResult {
 
     for (const p of toMappingItems(service.ports, longPortToShort, 'port', warnings))
       parts.push('-p', shellQuote(p));
-    for (const vol of toMappingItems(service.volumes, longVolumeToShort, 'volume', warnings))
+    // A long-form `type: tmpfs` volume is RAM, not a disk volume: --tmpfs.
+    const isTmpfs = (x: unknown) => isRecord(x) && x.type === 'tmpfs';
+    const vols = Array.isArray(service.volumes) ? service.volumes : [];
+    for (const t of vols.filter(isTmpfs) as Record<string, unknown>[]) {
+      const target = strOf(t.target);
+      if (!target) continue;
+      const o = isRecord(t.tmpfs) ? t.tmpfs : {};
+      const opts: string[] = [];
+      if (o.size !== undefined) opts.push(`size=${strOf(o.size)}`);
+      if (o.mode !== undefined) opts.push(`mode=${strOf(o.mode)}`);
+      parts.push('--tmpfs', shellQuote(opts.length ? `${target}:${opts.join(',')}` : target));
+    }
+    for (const t of toItems(service.tmpfs)) parts.push('--tmpfs', shellQuote(t));
+    if (service.read_only === true) parts.push('--read-only');
+    const diskVols = Array.isArray(service.volumes)
+      ? service.volumes.filter((x) => !isTmpfs(x))
+      : service.volumes;
+    for (const vol of toMappingItems(diskVols, longVolumeToShort, 'volume', warnings))
       parts.push('-v', shellQuote(vol));
     for (const env of toItems(service.environment)) parts.push('-e', shellQuote(env));
     for (const f of toItems(service.env_file)) parts.push('--env-file', shellQuote(f));
