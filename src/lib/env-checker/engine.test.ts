@@ -378,3 +378,33 @@ describe('bundled examples still produce their documented drift', () => {
     expect(r.unusedInExample).toEqual(['UNUSED_TOKEN']);
   });
 });
+
+/** 2026-10-07 persona review. */
+describe('review fixes (2026-10-07)', () => {
+  it('ignores reads inside /* */, # and // comments', () => {
+    const code =
+      '/* process.env.BLOCK_COMMENTED */\n# os.getenv("PY_COMMENTED")\n// const c = process.env.COMMENTED_OUT;';
+    expect(check(code, '').usedVars).toEqual([]);
+  });
+
+  it('keeps reads before a trailing comment and comment markers inside strings', () => {
+    const code = [
+      'const a = process.env.LIVE_A; // process.env.DEAD_A',
+      'url = "http://" + os.getenv("LIVE_B")  # os.getenv("DEAD_B")',
+      'const c = "/* not a comment */" + process.env.LIVE_C;',
+      'echo "# $LIVE_D" ${LIVE_E#prefix}',
+      'class K { #key = process.env.LIVE_F; }',
+      '  #priv = process.env.LIVE_G;',
+    ].join('\n');
+    expect(check(code, '').usedVars).toEqual(['LIVE_A', 'LIVE_B', 'LIVE_C', 'LIVE_D', 'LIVE_E', 'LIVE_F', 'LIVE_G']);
+  });
+
+  it('detects Go os.LookupEnv', () => {
+    const code = 'package main\nimport "os"\nfunc main() { y, ok := os.LookupEnv("GO_LOOKUP"); _ = y; _ = ok }';
+    expect(check(code, 'GO_ONLY=\n').missingInExample).toEqual(['GO_LOOKUP']);
+  });
+
+  it('detects Bun.env', () => {
+    expect(check('const b = Bun.env.BUN_KEY;', '').missingInExample).toEqual(['BUN_KEY']);
+  });
+});

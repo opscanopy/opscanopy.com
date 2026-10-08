@@ -545,3 +545,81 @@ describe('encodeState — pure output', () => {
     expect(hash.slice('#s='.length)).not.toMatch(/[+/=]/);
   });
 });
+
+/** 2026-10-07 persona review: outputs `docker compose config` rejects or misreads. */
+describe('review fixes (2026-10-07)', () => {
+  type Doc = { services: Record<string, Record<string, unknown>>; volumes?: Record<string, unknown> };
+
+  it('declares named volumes at the top level', () => {
+    const r = runToCompose('docker run -v pgdata:/var/lib/postgresql/data postgres:16');
+    expect(r.ok).toBe(true);
+    expect((load(r.yaml!) as Doc).volumes).toEqual({ pgdata: {} });
+  });
+
+  it('does not declare bind mounts, relative paths or drive letters as named volumes', () => {
+    const r = runToCompose('docker run -v /data:/a -v ./src:/b -v C:/x:/c -v /anon nginx');
+    expect(load(r.yaml!)).not.toHaveProperty('volumes');
+  });
+
+  it('declares user networks at the top level and keeps built-in modes in network_mode', () => {
+    const r = runToCompose('docker run --network backend nginx');
+    expect((load(r.yaml!) as Doc & { networks?: unknown }).networks).toEqual({ backend: {} });
+    const svc = (load(runToCompose('docker run --network bridge nginx').yaml!) as Doc).services.app;
+    expect(svc.network_mode).toBe('bridge');
+    expect(svc.networks).toBeUndefined();
+  });
+
+  it('maps a tmpfs --mount to tmpfs, keeping its size', () => {
+    const r = runToCompose('docker run --mount type=tmpfs,destination=/run,tmpfs-size=64m postgres:16');
+    const svc = (load(r.yaml!) as Doc).services.app;
+    expect(svc.tmpfs).toEqual(['/run:size=64m']);
+    expect(svc.volumes).toBeUndefined();
+  });
+
+  it('maps --tmpfs and --read-only instead of skipping them', () => {
+    const r = runToCompose('docker run --read-only --tmpfs /tmp:size=64m nginx');
+    const svc = (load(r.yaml!) as Doc).services.app;
+    expect(svc.tmpfs).toEqual(['/tmp:size=64m']);
+    expect(svc.read_only).toBe(true);
+    expect(r.warnings).toEqual([]);
+  });
+
+  it('maps a long-form tmpfs volume back to --tmpfs, not -v', () => {
+    const r = composeToRun(
+      'services:\n  web:\n    image: postgres:16\n    volumes:\n      - type: tmpfs\n        target: /run\n        tmpfs:\n          size: 64m\n',
+    );
+    expect(r.command).toContain('--tmpfs /run:size=64m');
+    expect(r.command).not.toContain(' -v ');
+  });
+
+  it('carries tmpfs and read_only over to docker run', () => {
+    const r = composeToRun('services:\n  web:\n    image: nginx\n    tmpfs: [/tmp]\n    read_only: true\n');
+    expect(r.command).toContain('--tmpfs /tmp');
+    expect(r.command).toContain('--read-only');
+  });
+
+  it('rewrites $(pwd) to a compose-relative path with a note', () => {
+    const r = runToCompose('docker run -v "$(pwd)":/app:ro node:20');
+    expect(r.yaml).toContain('- .:/app:ro');
+    expect(r.yaml).not.toContain('$(pwd)');
+    expect(r.warnings.some((w) => w.includes('$(pwd)'))).toBe(true);
+  });
+
+  it('unescapes compose $$ when going to docker run', () => {
+    const r = composeToRun(
+      'services:\n  web:\n    image: alpine\n    command: ["sh", "-c", "echo $$HOME && sleep 1"]\n',
+    );
+    expect(r.command).toContain("sh -c 'echo $HOME && sleep 1'");
+  });
+
+  it('rejects an out-of-range port', () => {
+    expect(runToCompose('docker run -p 99999:80 nginx')).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('99999'),
+    });
+    expect(runToCompose('docker run -p 80:70000 nginx').ok).toBe(false);
+    expect(
+      runToCompose('docker run -p 127.0.0.1:8080:80/udp -p 8000-8010:8000-8010 -p [::1]:53:53 nginx').ok,
+    ).toBe(true);
+  });
+});

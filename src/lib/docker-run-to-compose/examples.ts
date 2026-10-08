@@ -53,6 +53,8 @@ const postgres: DockerExample = {
       - POSTGRES_PASSWORD=secret
       - POSTGRES_DB=app
     restart: unless-stopped
+volumes:
+  pgdata: {}
 `,
 };
 
@@ -121,6 +123,8 @@ const app: DockerExample = {
       - NET_ADMIN
     cap_drop:
       - ALL
+networks:
+  backend: {}
 `,
 };
 
