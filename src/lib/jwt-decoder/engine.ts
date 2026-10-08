@@ -292,6 +292,11 @@ function buildClaims(payload: Record<string, unknown>, nowMs: number): ClaimRow[
   return rows;
 }
 
+/** Trim, and drop a pasted `Authorization: Bearer ` / `Bearer ` prefix. */
+export function stripBearer(token: string | undefined): string {
+  return (token ?? '').trim().replace(/^(?:authorization\s*:\s*)?bearer\s+/i, '');
+}
+
 /**
  * Decode (do NOT verify) a compact JWT. Splits on ".", requires exactly three
  * parts, base64url-decodes and JSON-parses the header and payload, then surfaces
@@ -299,7 +304,7 @@ function buildClaims(payload: Record<string, unknown>, nowMs: number): ClaimRow[
  * claims, and lint warnings. Never throws.
  */
 export function decode(token: string, nowMs?: number): JwtResult {
-  const s = (token ?? '').trim();
+  const s = stripBearer(token);
   if (s.length === 0) return bad(ERR_EMPTY);
 
   const parts = s.split('.');
@@ -386,7 +391,7 @@ export async function verify(
     return { status: 'unsupported', detail: 'Web Crypto is unavailable in this environment.' };
   }
 
-  const s = (token ?? '').trim();
+  const s = stripBearer(token);
   const parts = s.split('.');
   if (parts.length !== 3) {
     return { status: 'error', detail: 'Not a three-part JWT; nothing to verify.' };

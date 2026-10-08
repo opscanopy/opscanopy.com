@@ -40,6 +40,11 @@ export function lintToken(
   if (!('exp' in payload)) {
     warnings.push('No exp claim: this token has no expiry and is valid indefinitely.');
   } else {
+    if (typeof payload.exp !== 'number') {
+      warnings.push(
+        'exp is not a JSON number: RFC 7519 requires a NumericDate, and libraries such as PyJWT and jsonwebtoken reject it.',
+      );
+    }
     const exp = Number(payload.exp);
     if (Number.isFinite(exp) && exp * 1000 > nowMs + YEAR_MS) {
       warnings.push(
