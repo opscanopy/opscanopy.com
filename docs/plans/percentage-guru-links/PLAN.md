@@ -135,3 +135,18 @@ the sentence to the English entry only; the de/es/fr/pt-br pages do not get the 
 
 If any of those five OpsCanopy URLs is ever renamed, tell the Percentage Guru side; its tests do
 not fetch external hosts and would not notice.
+
+## What shipped (2026-10-08)
+
+Three of the six placements, by decision after an SEO review: links between two sites with one
+owner pass little authority, so only placements a reader would genuinely use were kept.
+
+- **Shipped:** Day 61 (as written), Day 86 (figures changed to the lesson's own 900 MB → 360 MB,
+  still exactly 60%), Day 47 (re-pointed to `/percentage-change-calculator`, because Percentage Guru's
+  `/percentage-increase-calculator` links to Day 47 and an exact page-to-page pair is the most
+  visible link-exchange pattern).
+- **Dropped:** Day 38 (1% of 20,000 needs no calculator), the Kubernetes Resource Calculator (a money
+  page, and "70% of allocatable" is not an established Kubernetes rule), Day 60 (the only latency
+  mention is in an FAQ answer, which rule 1 excludes).
+
+Do not add the dropped ones back without revisiting that reasoning.
