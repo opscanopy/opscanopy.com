@@ -348,11 +348,26 @@ function parseCall(text: string): { fn: string; body: string } | null {
   return { fn: m[1], body: t.slice(openIdx + 1, close) };
 }
 
-/** Pull a trailing `[5m]` (or `[1h:]`) range off a selector body. */
-function splitRange(body: string): { sel: string; range: string | null } {
-  const m = body.match(/\[([^\]]*)\]\s*$/);
-  if (!m || m.index === undefined) return { sel: body.trim(), range: null };
-  return { sel: body.slice(0, m.index).trim(), range: m[1].trim() };
+/**
+ * Pull a trailing `[5m]` (or `[1h:]`) range, plus an optional `offset 1d` after
+ * it, off a selector body. Both languages spell `<sel>[range] offset <dur>`, so
+ * the offset is returned ready to re-emit (` offset 1d`, or '').
+ */
+function splitRange(body: string): { sel: string; range: string | null; offset: string } {
+  const m = body.match(/\[([^\]]*)\]\s*(?:offset\s+(-?[0-9a-z]+))?\s*$/i);
+  if (!m || m.index === undefined) return { sel: body.trim(), range: null, offset: '' };
+  return {
+    sel: body.slice(0, m.index).trim(),
+    range: m[1].trim(),
+    offset: m[2] ? ` offset ${m[2]}` : '',
+  };
+}
+
+/** Both languages reject a range function with no `[range]`; never invent one. */
+function missingRange(lang: string, fn: string): { error: string } {
+  return {
+    error: `${fn}() needs a [range] on its selector — ${lang} rejects it without one (e.g. ${fn}(… [5m])).`,
+  };
 }
 
 /**
@@ -385,6 +400,16 @@ function splitLeadingArg(body: string): { arg: string; rest: string } | null {
 
 /** Translate the inner range-expression of a LogQL query to PromQL. */
 function logqlRangeToPromql(text: string, notes: string[]): string | { error: string } {
+  // LogQL lets an unwrapped range aggregation carry its own grouping
+  // (`quantile_over_time(…) by (host)`); PromQL range functions cannot.
+  const grouped = text.match(/\)\s*((?:by|without)\s*\([^)]*\))\s*$/);
+  if (grouped && grouped.index !== undefined) {
+    text = text.slice(0, grouped.index + 1);
+    notes.push(
+      `Dropped the range-aggregation grouping “${grouped[1]}” — PromQL range functions take no ` +
+        'by/without clause. Wrap the result in an aggregation (e.g. max by (…) (…)) if you need it.',
+    );
+  }
   const call = parseCall(text);
   if (!call) {
     return {
@@ -406,11 +431,8 @@ function logqlRangeToPromql(text: string, notes: string[]): string | { error: st
 
   const { lead, body } = takeLeadingScalar(call.fn, call.body, notes);
 
-  const { sel: selBody, range } = splitRange(body);
-  if (!range) {
-    notes.push('No [range] was found on the LogQL selector; defaulted to [5m].');
-  }
-  const rangeText = range || '5m';
+  const { sel: selBody, range, offset } = splitRange(body);
+  if (!range) return missingRange('Loki', call.fn);
 
   const extracted = extractSelector(selBody);
   if (extracted && 'error' in extracted) return extracted;
@@ -419,6 +441,14 @@ function logqlRangeToPromql(text: string, notes: string[]): string | { error: st
   }
 
   const { selector, after } = extracted;
+
+  const unwrap = after.match(/\|\s*unwrap\s+(?:(?:duration_seconds|duration|bytes)\(\s*([A-Za-z0-9_]+)\s*\)|([A-Za-z0-9_]+))/);
+  if (unwrap) {
+    notes.push(
+      `“unwrap ${unwrap[1] ?? unwrap[2]}” makes an extracted log label the sample value. PromQL samples ` +
+        'are already numbers — point the query at a metric that records that value.',
+    );
+  }
 
   // LogQL pipeline stages (line filters, parsers, label filters) live after the
   // selector and have no PromQL analog — surface them, then drop.
@@ -437,7 +467,7 @@ function logqlRangeToPromql(text: string, notes: string[]): string | { error: st
   );
 
   const matcherText = renderMatchers(selector.matchers);
-  return `${map.fn}(${lead}${matcherText}[${rangeText}])`;
+  return `${map.fn}(${lead}${matcherText}[${range}]${offset})`;
 }
 
 /**
@@ -506,11 +536,8 @@ function promqlRangeToLogql(text: string, notes: string[]): string | { error: st
 
   const { lead, body } = takeLeadingScalar(call.fn, call.body, notes);
 
-  const { sel: selBody, range } = splitRange(body);
-  if (!range) {
-    notes.push('No [range] was found on the PromQL selector; defaulted to [5m].');
-  }
-  const rangeText = range || '5m';
+  const { sel: selBody, range, offset } = splitRange(body);
+  if (!range) return missingRange('Prometheus', call.fn);
 
   const extracted = extractSelector(selBody);
   if (extracted && 'error' in extracted) return extracted;
@@ -537,7 +564,7 @@ function promqlRangeToLogql(text: string, notes: string[]): string | { error: st
   }
 
   const streamSel = promqlSelectorToLogqlStream(selector, notes);
-  return `${map.fn}(${lead}${streamSel} [${rangeText}])`;
+  return `${map.fn}(${lead}${streamSel} [${range}]${offset})`;
 }
 
 /**

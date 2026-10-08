@@ -88,6 +88,49 @@ describe('convert() — nothing is dropped silently', () => {
   });
 });
 
+describe('convert() — range and offset are kept, never invented', () => {
+  it('keeps [1h] offset 1d going LogQL -> PromQL', () => {
+    const r = convert('logql-to-promql', 'count_over_time({job="sshd"}[1h] offset 1d)');
+    expect(r.error).toBeUndefined();
+    expect(r.output).toBe('count_over_time({job="sshd"}[1h] offset 1d)');
+    expect(r.notes.join(' ')).not.toMatch(/defaulted|Dropped the LogQL pipeline/);
+  });
+
+  it('keeps the offset going PromQL -> LogQL', () => {
+    const r = convert('promql-to-logql', 'rate(http_requests_total{job="api"}[5m] offset 1h)');
+    expect(r.error).toBeUndefined();
+    expect(r.output).toContain('[5m] offset 1h)');
+  });
+
+  it('rejects a LogQL range aggregation with no [range]', () => {
+    const r = convert('logql-to-promql', 'rate({job="x"})');
+    expect(r.output).toBe('');
+    expect(r.error).toMatch(/range/i);
+  });
+
+  it('rejects a PromQL range function with no [range]', () => {
+    const r = convert('promql-to-logql', 'rate(http_requests_total)');
+    expect(r.output).toBe('');
+    expect(r.error).toMatch(/range/i);
+  });
+});
+
+describe('convert() — unwrap range aggregations', () => {
+  const q = 'quantile_over_time(0.99, {job="nginx"} | json | unwrap request_time [5m]) by (host)';
+
+  it('converts a grouped unwrap query instead of failing to recognise it', () => {
+    const r = convert('logql-to-promql', q);
+    expect(r.error).toBeUndefined();
+    expect(r.output).toBe('quantile_over_time(0.99, {job="nginx"}[5m])');
+  });
+
+  it('explains the unwrap and the dropped grouping in the notes', () => {
+    const notes = convert('logql-to-promql', q).notes.join(' ');
+    expect(notes).toMatch(/unwrap request_time/);
+    expect(notes).toMatch(/by \(host\)/);
+  });
+});
+
 describe('convert() — quantile_over_time keeps its quantile argument', () => {
   it('preserves the quantile going LogQL -> PromQL', () => {
     const r = convert(
