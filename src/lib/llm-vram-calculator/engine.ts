@@ -48,7 +48,7 @@ export function kvCacheGiB(layers: number, kvHeads: number, headDim: number, con
   return (2 * layers * kvHeads * headDim * context * 2) / GIB;
 }
 
-const clamp = (n: number, { min, max }: { min: number; max: number }) => Math.min(max, Math.max(min, n));
+const outside = (n: number, { min, max }: { min: number; max: number }) => n < min || n > max;
 
 export function estimate(input: VramInput): VramResult {
   const quant = QUANTS.find((q) => q.id === input.quant);
@@ -73,10 +73,17 @@ export function estimate(input: VramInput): VramResult {
   if (typeof input.context !== 'number' || !Number.isFinite(input.context))
     return { ...base, error: 'Context length must be a number of tokens, e.g. 8192.' };
 
-  const params = clamp(input.params, LIMITS.params);
-  const context = Math.round(clamp(input.context, LIMITS.context));
+  if (outside(input.params, LIMITS.params))
+    return { ...base, error: `Enter a parameter count between ${LIMITS.params.min} and ${LIMITS.params.max} billion.` };
+  if (outside(input.context, LIMITS.context))
+    return { ...base, error: `Enter a context length between ${LIMITS.context.min} and ${LIMITS.context.max.toLocaleString('en-US')} tokens.` };
+
+  const params = input.params;
+  const context = Math.round(input.context);
 
   const preset = input.preset && input.preset !== 'custom' ? presetBySlug(input.preset) : undefined;
+  if (preset && context > preset.maxContext)
+    return { ...base, error: `${preset.name} supports ${preset.maxContext.toLocaleString('en-US')} tokens; ${context.toLocaleString('en-US')} exceeds its trained context.` };
   const shape = preset ?? nearestPreset(params);
   const arch = {
     layers: shape.layers,

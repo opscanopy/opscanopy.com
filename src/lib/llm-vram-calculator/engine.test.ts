@@ -59,13 +59,19 @@ describe('estimate', () => {
     expect(estimate({ params: 13, quant: 'q8_0', context: 4096 }).arch.estimated).toBe(true);
   });
 
-  it('clamps to LIMITS', () => {
-    const r = estimate({ params: 9999, quant: 'fp16', context: 10_000_000 });
-    expect(r.params).toBe(LIMITS.params.max);
-    expect(r.context).toBe(LIMITS.context.max);
-    const lo = estimate({ params: 0, quant: 'fp16', context: 1 });
-    expect(lo.params).toBe(LIMITS.params.min);
-    expect(lo.context).toBe(LIMITS.context.min);
+  it('rejects out-of-range, empty, zero and negative input instead of clamping', () => {
+    const bad = (params: number, context: number, preset?: string) =>
+      estimate({ params, quant: 'fp16', context, preset });
+    for (const [p, c] of [[1000, 8192], [0, 8192], [-1, 8192], [0.05, 8192], [8, 2_000_000], [8, 131073], [8, 0], [8, -5], [8, 100]] as const) {
+      expect(bad(p, c), `${p}/${c}`).toMatchObject({ valid: false, error: expect.any(String) });
+    }
+    expect(bad(1000, 8192).error).toContain('between 0.1 and 405');
+    expect(bad(8, 2_000_000).error).toContain('512 and 131,072');
+    // Gemma 2 9B is trained for 8,192 tokens only
+    expect(bad(9, 32768, 'gemma-2-9b')).toMatchObject({ valid: false, error: expect.stringContaining('8,192') });
+    expect(bad(9, 8192, 'gemma-2-9b').valid).toBe(true);
+    expect(estimate({ params: LIMITS.params.min, quant: 'fp16', context: LIMITS.context.min }).valid).toBe(true);
+    expect(estimate({ params: LIMITS.params.max, quant: 'fp16', context: LIMITS.context.max }).valid).toBe(true);
   });
 
   it('returns a specific error on non-finite input', () => {
