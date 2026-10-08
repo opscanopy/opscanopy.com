@@ -76,6 +76,7 @@ export function resultHtml(result: TimeResult, { clientOnlyLabels }: RenderOptio
   return (
     '<div class="ts-card">' +
     `<div class="ts-title"><span class="ts-title__badge">${escapeHtml(detected || 'parsed')}</span><span>${escapeHtml(badge)}</span></div>` +
+    (result.notes ?? []).map((n) => `<p class="ts-note">${escapeHtml(n)}</p>`).join('') +
     rowsHtml +
     '</div>'
   );

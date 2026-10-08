@@ -20,6 +20,8 @@ export interface TimeResult {
    */
   detected?: string;
   rows: TimeRow[];
+  /** Caveats about how an ambiguous input was read (timezone, date order). */
+  notes?: string[];
 }
 
 /** A runnable example for the picker. */

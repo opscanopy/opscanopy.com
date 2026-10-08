@@ -192,7 +192,7 @@ function sentence(text: string): string {
  * rest fall through to js-yaml's `reason`, which is short and decent, wrapped
  * in a sentence with a line reference.
  */
-export function describeYamlError(err: unknown): Diagnostic {
+export function describeYamlError(err: unknown, source = ''): Diagnostic {
   const e = asYamlError(err);
   const reason = typeof e.reason === 'string' ? e.reason : '';
   const line = typeof e.mark?.line === 'number' ? e.mark.line + 1 : undefined;
@@ -266,6 +266,23 @@ export function describeYamlError(err: unknown): Diagnostic {
     };
   }
 
+  // `msg: hello: world` — js-yaml calls the second ": " bad indentation, but the
+  // indentation is fine; a plain scalar just cannot contain ": ".
+  if (/bad indentation of a mapping entry/i.test(reason) && line !== undefined) {
+    const src = source.split('\n')[line - 1] ?? '';
+    if (/^\s*(-\s+)?[^\s#'"\[{|>&*!:][^#:]*:\s+[^\s#'"\[{|>&*!][^#]*:(\s|$)/.test(src)) {
+      return {
+        id: 'yaml-parse-error',
+        severity: 'error',
+        line,
+        column,
+        message:
+          `A plain value cannot contain ": " — at line ${line}, column ${column}. ` +
+          'Wrap the value in quotes, e.g. msg: "hello: world".',
+      };
+    }
+  }
+
   const detail = reason.length > 0 ? sentence(reason) : 'This is not valid YAML';
   return {
     id: 'yaml-parse-error',
@@ -296,7 +313,7 @@ export function describeJsonError(err: unknown, source: string): Diagnostic {
   if (!Number.isFinite(position) || position < 0) position = 0;
 
   const suffix =
-    detectFormat(source) === 'yaml'
+    detectFormat(source) === 'yaml' && !/^\s*\/[/*]/.test(source)
       ? ' This looks like YAML, not JSON — switch the direction to convert it.'
       : '';
 
@@ -341,7 +358,7 @@ export function describeJsonError(err: unknown, source: string): Diagnostic {
     const { line, column } = offsetToLineCol(source, position);
     return build(
       `JSON does not allow comments — found "${twoChars}" at line ${line}, column ${column}. ` +
-        'Strip the comment, or convert the file as YAML instead, where comments are legal.',
+        'Strip the comment and convert again.',
       position,
     );
   }
@@ -393,6 +410,11 @@ export function describeJsonError(err: unknown, source: string): Diagnostic {
  */
 
 /** True when the text carries at least one `#` comment outside a quoted span. */
+/** A flow collection used as a mapping key (`? [x,y]` or `[x,y]: c`); JSON has no such key. */
+export function hasComplexKey(masked: string): boolean {
+  return /^\s*\?\s*[\[{]/m.test(masked) || /^\s*[\[{][^\n]*[\]}]\s*:(\s|$)/m.test(masked);
+}
+
 export function hasComments(masked: string): boolean {
   for (const line of masked.split('\n')) {
     const hash = line.indexOf('#');
