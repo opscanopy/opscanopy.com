@@ -232,7 +232,7 @@ export function convert(input: string): ConvertResult {
   const notes = [...parsed.notes, ...unitNotes(parsed)];
   if (!wholeBytes) {
     notes.push(
-      `${detection.normalized} is ${bytesCell.display} bytes — not a whole number of bytes. ` +
+      `${detection.normalized} is ${bytesCell.approx ? '≈ ' : ''}${bytesCell.display} bytes — not a whole number of bytes. ` +
         'Nothing on disk is a fraction of a byte; the exact value is kept here so the conversion stays reversible.',
     );
   }

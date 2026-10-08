@@ -252,7 +252,7 @@ function buildBreakdown(ast: Expr, ctx: EvalContext): ExprPart[] {
       case 'cmp':
         rows.push({
           token: node.op,
-          meaning: 'numeric comparison — both operands are coerced to a number first',
+          meaning: 'comparison — two strings compare case-insensitively; other types are coerced to numbers first',
         });
         walk(node.left, false);
         walk(node.right, false);
