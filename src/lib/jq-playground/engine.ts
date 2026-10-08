@@ -55,6 +55,13 @@ export const MAX_OUTPUT_CHARS = 400_000;
 /** Most stderr lines kept as notices. */
 export const MAX_NOTICES = 20;
 /**
+ * Wall-clock budget for one run in the playground's Web Worker (`runner.ts`).
+ * Past it the worker is terminated and respawned: a streaming generator such
+ * as `repeat(.)` never aborts on its own. Long enough that a collected one
+ * (`[repeat(1)]`, ~1-2 s) still reaches jq's own, more specific abort.
+ */
+export const JQ_RUN_TIMEOUT_MS = 3_000;
+/**
  * Above this much stdout the `-r` reconstruction skips its cross-check (it
  * would mean joining a second multi-megabyte copy). The rows still come from
  * jq's own JSON-mode values, so they stay exact — only the belt-and-braces
@@ -120,7 +127,7 @@ export function getJq(init?: JqLoadInit): Promise<JqHandle> {
  * Called after an Emscripten `abort()` — a non-terminating filter whose stream
  * is COLLECTED exhausts jq's WebAssembly heap and aborts (verified: `[repeat(1)]`
  * throws after ~1.7 s, `[recurse(.next?)]` after ~2-3 s). A bare, streaming
- * generator does NOT abort: it blocks the tab until reload.
+ * generator does NOT abort: only `runner.ts`'s timeout stops it.
  * Empirically the module keeps working afterwards, but "empirically" is not a
  * guarantee about a heap that just ran out, so the next run starts clean. The
  * `.wasm` itself comes from the HTTP cache, so re-instantiation is cheap.
@@ -535,23 +542,22 @@ const EMPTY_PROGRAM_MESSAGE =
   'Enter a jq program — "." is the identity filter and a fine start.';
 
 export const UNBOUNDED_HINT =
-  'This program can generate an unbounded stream (repeat/range(infinite)). jq runs ' +
-  'synchronously in this tab, so a filter that never ends will freeze the page until you ' +
-  'reload — wrap it in limit(n; …) or first(…).';
+  'This program can generate an unbounded stream (repeat/range(infinite)). A filter that ' +
+  `never ends is stopped after ${JQ_RUN_TIMEOUT_MS / 1000} s — wrap it in limit(n; …) or first(…).`;
 
 /**
  * MEASURED, not assumed: only the shapes whose stream is COLLECTED abort. On jq
  * 1.8.2 in this repo `[repeat(1)]` aborts after ~1.7 s and `[recurse(.a)]` after
  * ~2 s, because the array being built exhausts the WebAssembly heap. A bare
  * `repeat(1)` or `recurse(.a)` just streams to stdout and was still running
- * after 40 s in node (150 s in Chrome) — it freezes the tab until reload. The
+ * after 40 s in node (150 s in Chrome) — only the worker timeout stops it. The
  * hint must not promise an abort it cannot deliver.
  */
 export const RECURSE_HINT =
   'recurse(.field) keeps recursing after it reaches the end: .field on the last node is null, ' +
   'and null.field is null again, forever — adding ? does not stop it. Collected ([…], length, ' +
-  'last) it exhausts jq’s memory and aborts after a second or two; left streaming it freezes ' +
-  'this tab until you reload. Write recurse(.field?; . != null) instead.';
+  'last) it exhausts jq’s memory and aborts after a second or two; left streaming it never ends ' +
+  `and is stopped after ${JQ_RUN_TIMEOUT_MS / 1000} s. Write recurse(.field?; . != null) instead.`;
 
 /**
  * `recurse(f)` where `f` is a bare field path — the shape that walks off the end

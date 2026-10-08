@@ -22,9 +22,9 @@
  * persistent card with a Retry button — `getJq()` clears its memo on rejection
  * precisely so Retry can work.
  *
- * Errors write into the `#jq-error` slot ABOVE the output cards and dim them;
- * they never replace them, so the last good answer stays readable while a
- * filter is being fixed.
+ * Errors write into the `#jq-error` slot and CLEAR the output cards: outputs
+ * from an earlier program under a new program's error read as its answer.
+ * Partial outputs jq emitted before failing travel with the error report.
  *
  * UX contract (CLAUDE.md): ONE ~220ms debounce, a ~600ms calm-error hold
  * before anything goes red, per-row copy + `data-copy-all` + `data-copy-link`,
@@ -36,13 +36,15 @@
  *
  * Runtime contract (all lazy-imported inside the boot closure so neither
  * CodeMirror nor the WASM glue touches the page-shell path):
- *   ../lib/jq-playground/engine     → configureJq, getJq, runJq, unboundedRiskHint
+ *   ../lib/jq-playground/engine     → unboundedRiskHint
+ *   ../lib/jq-playground/runner     → createJqRunner (jq runs in worker.ts, with a kill timeout)
  *   ../lib/jq-playground/hash       → encodeState, decodeState
  *   ../lib/jq-playground/examples   → examples: JqExample[]
  *   ../lib/playground-kit/cm-theme  → plate
  *   jq-wasm/jq.wasm?url             → the hashed same-origin WASM asset
  */
 import { examples } from '../lib/jq-playground/examples';
+import { JQ_RUN_TIMEOUT_MS } from '../lib/jq-playground/engine';
 import { okHtml, okSummary, LOADING_HTML } from '../lib/jq-playground/render';
 import type { JqOk } from '../lib/jq-playground/types';
 import seedFixture from '../lib/jq-playground/fixtures/example-1.out.json';
@@ -150,15 +152,15 @@ const FLAGS = [
         A jq <strong class="font-medium text-body">filter</strong> produces a
         <strong class="font-medium text-body">stream</strong> of results, not one value: each card
         below is one output, exactly as jq would print it on its own line. Input is capped at 2 MB,
-        and a filter that never terminates (an unguarded <span class="code-mono">repeat</span>) will
-        freeze this tab until you reload it.
+        and a filter that never terminates (an unguarded <span class="code-mono">repeat</span>) is
+        stopped after {JQ_RUN_TIMEOUT_MS / 1000} seconds.
       </p>
       <SnapshotBar prefix="jq" />
     </div>
 
     {/* ── Result — the L2 instrument; the live summary reads out in the
-        figure cap's actions slot. Errors write into #jq-error above the
-        cards (and dim them), never over them. ─────────────────────────── */}
+        figure cap's actions slot. Errors write into #jq-error and clear
+        the stale cards below. ──────────────────────────────────────────── */}
     <ResultPanel slug="jq-playground" prefix="jq" summary={seedSummary} split>
       <Fragment slot="actions">
         <CopyButton kind="link" id="jq-share" />
@@ -591,11 +593,9 @@ const FLAGS = [
   type ShareState = JqShareState;
   type Example = { id: string; label: string; program: string; input: string; flags: Flags };
   type EngineModule = {
-    configureJq: (init: { wasmURL?: string }) => void;
-    getJq: (init?: { wasmURL?: string }) => Promise<{ readonly version: string }>;
-    runJq: (program: string, input: string, options?: Partial<Flags>) => Promise<RunResult>;
     unboundedRiskHint: (program: string) => string | null;
   };
+  type Runner = ReturnType<typeof import('../lib/jq-playground/runner').createJqRunner>;
   type HashModule = {
     encodeState: (state: ShareState) => string;
     decodeState: (hash?: string) => ShareState | null;
@@ -706,7 +706,7 @@ const FLAGS = [
     let engine: EngineModule;
     let hashApi: HashModule;
     let examples: Example[] = [];
-    let wasmURL = '';
+    let runner: Runner;
     let EditorState: typeof import('@codemirror/state').EditorState;
     let EditorViewCtor: typeof import('@codemirror/view').EditorView;
     let keymap: typeof import('@codemirror/view').keymap;
@@ -724,6 +724,7 @@ const FLAGS = [
     try {
       const [
         engineMod,
+        runnerMod,
         hashMod,
         examplesMod,
         wasmMod,
@@ -734,6 +735,7 @@ const FLAGS = [
         themeMod,
       ] = await Promise.all([
         import('../lib/jq-playground/engine'),
+        import('../lib/jq-playground/runner'),
         import('../lib/jq-playground/hash'),
         import('../lib/jq-playground/examples'),
         // The `?url` form is the ONLY supported way to get this asset: Vite
@@ -752,7 +754,16 @@ const FLAGS = [
       engine = engineMod as unknown as EngineModule;
       hashApi = hashMod as unknown as HashModule;
       examples = normaliseExamples((examplesMod as { examples?: unknown }).examples);
-      wasmURL = String((wasmMod as { default?: unknown }).default ?? '');
+      const wasmURL = String((wasmMod as { default?: unknown }).default ?? '');
+      // jq runs in a module worker, so a filter that never terminates is
+      // killed after JQ_RUN_TIMEOUT_MS instead of freezing the tab.
+      runner = runnerMod.createJqRunner(
+        () =>
+          new Worker(new URL('../lib/jq-playground/worker.ts', import.meta.url), {
+            type: 'module',
+          }),
+        wasmURL,
+      );
       ({ EditorState } = stateMod);
       ({ EditorView: EditorViewCtor, keymap, lineNumbers, highlightActiveLine } = viewMod);
       ({ history: cmHistory, defaultKeymap, historyKeymap, indentWithTab } = commandsMod);
@@ -861,12 +872,8 @@ const FLAGS = [
               setActiveChip(null);
               clearTimers();
               // The unbounded-risk warning has to be painted on the DOC CHANGE,
-              // not inside evaluate(): jq runs synchronously and `await getJq()`
-              // is already resolved by then, so evaluate() blocks the main thread
-              // on the same microtask checkpoint that wrote the warning — the
-              // browser never gets a frame, and for a filter that never returns
-              // the warning is never seen at all. Painting it here gives it the
-              // whole debounce window.
+              // not inside evaluate(), so it is on screen for the whole debounce
+              // window before the run starts (and before any timeout fires).
               if (label === PROGRAM_LABEL) applyRiskHint(u.state.doc.toString());
               evalTimer = window.setTimeout(() => evaluate('type'), DEBOUNCE_MS);
             }),
@@ -1009,15 +1016,15 @@ const FLAGS = [
     }
 
     /**
-     * Errors go ABOVE the cards, into #jq-error, and the cards stay — dimmed —
-     * so the last good answer is still readable while the filter is fixed.
-     * Partial outputs from the failed run travel with the error report.
+     * Errors go into #jq-error and the previous cards are cleared. Partial
+     * outputs from the failed run travel with the error report.
      */
     function renderErr(result: Err, isAlert: boolean): void {
       const withRetry = result.errorKind === 'engine' && !engineReady;
       errorSlot!.innerHTML = errHtml(result, isAlert, withRetry);
       bindRows(errorSlot!, result.partialOutputs);
-      resultsBox!.setAttribute('data-stale', '');
+      // The previous outputs answered a different program: drop them.
+      resultsBox!.innerHTML = '';
     }
 
     function showError(result: Err, source: EvalSource): void {
@@ -1071,8 +1078,8 @@ const FLAGS = [
       }
 
       const seq = ++runSeq;
-      void engine
-        .runJq(program, input, flags)
+      void runner
+        .run(program, input, flags)
         .then((result) => {
           if (seq !== runSeq) return; // a newer run superseded this one
           if (result.ok) {
@@ -1275,10 +1282,9 @@ const FLAGS = [
       if (engineReady) return;
       if (userInitiated) renderLoading();
       try {
-        engine.configureJq({ wasmURL });
-        const handle = await engine.getJq({ wasmURL });
+        const version = await runner.load();
         engineReady = true;
-        versionBadge!.textContent = handle.version;
+        versionBadge!.textContent = version;
         versionBadge!.hidden = false;
         // The seed evaluation — deliberately `'seed'`, so it writes no hash and
         // records no last-input even though it happens after boot.
