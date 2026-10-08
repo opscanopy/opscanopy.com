@@ -7,7 +7,7 @@
  * no finding to copy. (That also makes the E2E suite's per-row copy assertion
  * reachable on first paint.) The rest walk down the severity ladder:
  *
- *   1. kitchen-sink   — 21 of the 22 rules fire at once.
+ *   1. kitchen-sink   — 21 of the 23 rules fire at once.
  *   2. clean-v41      — the same job done right: zero findings.
  *   3. legacy-v27     — a real Grafana-6-era dashboard: migrations only, no errors.
  *   4. undefined-var  — one error, the single most common import failure.

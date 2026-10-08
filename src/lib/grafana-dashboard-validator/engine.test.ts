@@ -10,7 +10,7 @@
  *   1. public API surface (version constant, rule catalog, never-throws shape)
  *   2. the nine parser edge cases from the plan
  *   3. a CLEAN baseline that must produce ZERO diagnostics — which is the
- *      "does not fire" case for all twenty-two rules at once — then one firing
+ *      "does not fire" case for all twenty-three rules at once — then one firing
  *      case per rule, plus the targeted negatives that are easy to regress
  *      (`$1` in a regex, `-- Mixed --`, an EXPANDED row, a text panel with no
  *      queries, `$__rate_interval`, an Angular-plugin panel with a core
@@ -60,7 +60,7 @@ function all(result: LintResult, id: RuleId): Diagnostic[] {
  * A dashboard with nothing wrong: uid set, id null, titled, schemaVersion 41,
  * one typed panel with a { type, uid } datasource, a real gridPos and a query,
  * a sane time range and refresh. Every rule must be silent on it — that is the
- * negative case for all twenty-two at once.
+ * negative case for all twenty-three at once.
  */
 function clean(): Json {
   return {
@@ -107,9 +107,10 @@ describe('public API', () => {
     // The plan's prose says "21 rules total" but NAMES twenty-two (its
     // "19 original" is a miscount of a twenty-item list). Every named rule is
     // implemented rather than one being silently dropped, so this is the real
-    // count and the page derives its own copy from RULE_IDS.length.
-    expect(RULE_IDS).toHaveLength(22);
-    expect(new Set(RULE_IDS).size).toBe(22);
+    // count and the page derives its own copy from RULE_IDS.length. The 23rd,
+    // duplicate-refid, was added after a review found it missing.
+    expect(RULE_IDS).toHaveLength(23);
+    expect(new Set(RULE_IDS).size).toBe(23);
     expect(RULE_IDS[0]).toBe('no-uid');
     expect(RULE_IDS).toContain('panel-no-type');
     expect(RULE_IDS).toContain('panel-zero-size');
@@ -328,7 +329,7 @@ describe('parser', () => {
 /* ── 3. the rules ─────────────────────────────────────────────────────────── */
 
 describe('the clean baseline', () => {
-  it('produces zero diagnostics — the negative case for all 22 rules at once', () => {
+  it('produces zero diagnostics — the negative case for all 23 rules at once', () => {
     const result = lint(clean());
     expect(result.ok).toBe(true);
     expect(result.diagnostics).toEqual([]);
@@ -421,6 +422,40 @@ describe('rule: duplicate-panel-id', () => {
       'Renumber one of them. Ids only have to be unique inside the dashboard, and Grafana keys ' +
         'panel links, "View panel" URLs and repeats by id.',
     );
+  });
+});
+
+describe('rule: duplicate-refid', () => {
+  it('fires on the second query sharing a refId in one panel', () => {
+    const dashboard = mutated((d) => {
+      firstPanel(d).targets = [
+        { refId: 'A', expr: 'up' },
+        { refId: 'A', expr: 'up' },
+      ];
+    });
+    const d = one(lint(dashboard), 'duplicate-refid');
+    expect(d.severity).toBe('error');
+    expect(d.path).toBe('panels[0].targets[1].refId');
+    expect(d.panelTitle).toBe('Requests');
+  });
+
+  it('is silent on distinct refIds and on the same refId in different panels', () => {
+    const dashboard = mutated((d) => {
+      firstPanel(d).targets = [
+        { refId: 'A', expr: 'up' },
+        { refId: 'B', expr: 'up' },
+        { expr: 'no refId' },
+      ];
+      (d.panels as Json[]).push({
+        id: 2,
+        type: 'stat',
+        title: 'Errors',
+        datasource: { type: 'prometheus', uid: 'prom-main' },
+        gridPos: { h: 8, w: 12, x: 12, y: 0 },
+        targets: [{ refId: 'A', expr: 'up' }],
+      });
+    });
+    expect(all(lint(dashboard), 'duplicate-refid')).toEqual([]);
   });
 });
 
@@ -1228,14 +1263,15 @@ describe('realistic fixtures (the example chips)', () => {
     }
   });
 
-  it('the boot seed (kitchen sink) fires 21 of the 22 rules', () => {
+  it('the boot seed (kitchen sink) fires 21 of the 23 rules', () => {
     const result = lintDashboard(examples[0].json);
     expect(examples[0].id).toBe('kitchen-sink');
     const fired = new Set(ids(result));
     const missing = RULE_IDS.filter((id) => !fired.has(id));
     // schema-version-unknown cannot co-fire with schema-version-old: the
-    // dashboard's schemaVersion is 27, which is old, not unknown.
-    expect(missing).toEqual(['schema-version-unknown']);
+    // dashboard's schemaVersion is 27, which is old, not unknown. The seed
+    // predates duplicate-refid and is left unchanged so the SSR seed is stable.
+    expect(missing).toEqual(['schema-version-unknown', 'duplicate-refid']);
     expect(result.summary).toEqual({ errors: 7, warnings: 12, infos: 3 });
     expect(result.stats).toEqual({
       schemaVersion: 27,

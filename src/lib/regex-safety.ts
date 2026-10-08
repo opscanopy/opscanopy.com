@@ -180,3 +180,49 @@ export function checkRegexSafety(pattern: string): RegexSafetyResult {
 
   return { safe: true };
 }
+
+/**
+ * The first construct in `pattern` that Go's RE2 (`regexp/syntax`) refuses to
+ * compile but a JavaScript RegExp happily accepts, or null. Tools that simulate
+ * Prometheus/Alertmanager must report these as config errors: the real binary
+ * fails to load the config, so evaluating them with JS semantics shows a
+ * verdict that can never happen.
+ *
+ * Covers lookaround / atomic groups (`(?=`, `(?!`, `(?<=`, `(?<!`, `(?>`) and
+ * backreferences (`\1`–`\9`, `\k<name>`). Go reads `\1`–`\7` followed by an
+ * octal digit as an octal escape, so `\101` is NOT flagged.
+ */
+export function re2UnsupportedSyntax(pattern: string): string | null {
+  let inClass = false;
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i];
+    if (c === '\\') {
+      const n = pattern[i + 1] ?? '';
+      if (/[89]/.test(n) || (/[1-7]/.test(n) && !/[0-7]/.test(pattern[i + 2] ?? ''))) {
+        return `\`\\${n}\` (a backreference) is not supported by RE2 — Go's regexp rejects it as an invalid escape sequence`;
+      }
+      if (n === 'k' && pattern[i + 2] === '<') {
+        return '`\\k<…>` (a named backreference) is not supported by RE2 — Go\'s regexp rejects it as an invalid escape sequence';
+      }
+      i++;
+      continue;
+    }
+    if (inClass) {
+      if (c === ']') inClass = false;
+      continue;
+    }
+    if (c === '[') {
+      inClass = true;
+      if (pattern[i + 1] === '^') i++;
+      if (pattern[i + 1] === ']') i++; // a leading `]` is a literal
+      continue;
+    }
+    if (c === '(') {
+      const m = /^\(\?(?:=|!|<=|<!|>)/.exec(pattern.slice(i));
+      if (m) {
+        return `\`${m[0]}\` (lookaround or atomic group) is not supported by RE2 — Go's regexp rejects it with "invalid or unsupported Perl syntax"`;
+      }
+    }
+  }
+  return null;
+}

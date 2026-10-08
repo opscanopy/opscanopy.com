@@ -773,3 +773,14 @@ describe('bundled examples', () => {
     expect(o.job).toBe('api');
   });
 });
+
+describe('applyRelabel — RE2-only syntax', () => {
+  it('a lookahead Prometheus rejects is an error, not a JS-evaluated keep', () => {
+    const res = applyRelabel(
+      "- source_labels: [job]\n  regex: '(?!node).*'\n  action: keep",
+      'job="api"\n\njob="node"',
+    );
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain('(?!');
+  });
+});

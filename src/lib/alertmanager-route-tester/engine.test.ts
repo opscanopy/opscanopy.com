@@ -311,7 +311,7 @@ describe('matchRoute — robustness (never throws)', () => {
     expect(r.ok).toBe(false);
   });
 
-  it('malformed matcher strings are skipped with a warning, not a throw', () => {
+  it('malformed matcher strings are a load error, not a throw', () => {
     const TREE = `
 route:
   receiver: 'default'
@@ -322,11 +322,10 @@ route:
         - team="a"
 `;
     const r = matchRoute(TREE, 'team=a');
-    expect(r.ok).toBe(true);
-    // The unparseable matcher is dropped; the valid team="a" still applies and
-    // (since it is the only surviving matcher) the child matches.
-    expect(r.matches![0].receiver).toBe('child');
-    expect(r.warnings.some((w) => /Could not parse matcher/i.test(w))).toBe(true);
+    // Alertmanager refuses to load the config, so no route may be reported.
+    expect(r.ok).toBe(false);
+    expect(r.matches).toBeUndefined();
+    expect(r.error).toMatch(/Could not parse matcher "this is not a matcher"/);
   });
 
   it('label lines without = are reported and skipped', () => {
@@ -375,20 +374,18 @@ route:
     expect(r.matches![0].receiver).toBe('child');
   });
 
-  it('a malformed matcher on a terminal node warns exactly once (no duplicate)', () => {
-    // The child both fails to match (so the parent terminates) AND is the node
-    // recorded as terminal here. Its single bad matcher must warn ONCE, not
-    // twice (the matcher array is computed once and reused).
+  it('a malformed matcher on a terminal node is reported exactly once (no duplicate)', () => {
     const TREE = `
 route:
   receiver: 'default'
-  matchers:
-    - 'this is not a matcher'
+  routes:
+    - receiver: 'child'
+      matchers:
+        - 'this is not a matcher'
 `;
     const r = matchRoute(TREE, 'team=a');
-    expect(r.ok).toBe(true);
-    const parseWarnings = r.warnings.filter((w) => /Could not parse matcher/i.test(w));
-    expect(parseWarnings).toHaveLength(1);
+    expect(r.ok).toBe(false);
+    expect(r.error!.match(/Could not parse matcher/g)).toHaveLength(1);
   });
 });
 
@@ -434,7 +431,7 @@ route:
     expect(miss.matches![0].receiver).toBe('default');
   });
 
-  it('a non-scalar match value emits a warning rather than silently failing', () => {
+  it('a non-scalar match value is a load error rather than silently failing', () => {
     const TREE = `
 route:
   receiver: 'default'
@@ -444,11 +441,8 @@ route:
         team: [a, b]
 `;
     const r = matchRoute(TREE, 'team=a');
-    expect(r.ok).toBe(true);
-    // It still degrades gracefully (does not match the corrupted "a,b" value)…
-    expect(r.matches![0].receiver).toBe('default');
-    // …but the problem is now surfaced.
-    expect(r.warnings.some((w) => /not a scalar/i.test(w))).toBe(true);
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/not a scalar/i);
   });
 });
 
@@ -707,5 +701,56 @@ route:
     expect(matchRoute(T, 'msg=a,b').warnings.some((w) => /Could not parse matcher/i.test(w))).toBe(
       false,
     );
+  });
+});
+
+describe('matchRoute — configs Alertmanager refuses to load are errors, not matches', () => {
+  it('an unparseable matcher is a load error, never a catch-all route', () => {
+    const r = matchRoute(
+      "route:\n  receiver: default\n  routes:\n    - receiver: a\n      matchers: ['severity critical']",
+      'alertname=X\nseverity=critical',
+    );
+    expect(r.ok).toBe(false);
+    expect(r.matches).toBeUndefined();
+    expect(r.error).toContain('severity critical');
+  });
+
+  it('an unknown route key (typo) and an invalid duration are load errors', () => {
+    const r = matchRoute(
+      'route:\n  receiver: default\n  group_wait: 30x\n  routes:\n    - receiver: a\n      matchres: [severity="critical"]',
+      'alertname=X\nseverity=info',
+    );
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain('matchres');
+    expect(r.error).toContain('30x');
+  });
+
+  it('matchers on the root route are a load error', () => {
+    const r = matchRoute('route:\n  receiver: default\n  matchers: [env="prod"]', 'env=prod');
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/root route must not have any matchers/i);
+  });
+
+  it('a regex RE2 rejects (lookahead, backreference) is a load error', () => {
+    const look = matchRoute(
+      "route:\n  receiver: default\n  routes:\n    - receiver: a\n      matchers: ['severity=~\"(?!info).*\"']",
+      'severity=critical',
+    );
+    expect(look.ok).toBe(false);
+    expect(look.error).toContain('(?!');
+    const backref = matchRoute(
+      "route:\n  receiver: default\n  routes:\n    - receiver: a\n      match_re:\n        x: '(a)\\1'",
+      'x=aa',
+    );
+    expect(backref.ok).toBe(false);
+    expect(backref.error).toContain('\\1');
+  });
+
+  it('valid durations, time-interval keys and RE2 octal escapes still load', () => {
+    const r = matchRoute(
+      "route:\n  receiver: default\n  group_wait: 1h30m\n  repeat_interval: 0\n  routes:\n    - receiver: a\n      mute_time_intervals: [nights]\n      match_re:\n        x: 'a\\101'",
+      'x=aA',
+    );
+    expect(r.ok).toBe(true);
   });
 });

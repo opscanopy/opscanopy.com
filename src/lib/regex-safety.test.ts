@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkRegexSafety } from './regex-safety';
+import { checkRegexSafety, re2UnsupportedSyntax } from './regex-safety';
 
 /**
  * This heuristic gates three tools (regex-log-tester, alertmanager-route-tester,
@@ -56,6 +56,19 @@ describe('checkRegexSafety — plain patterns are unaffected', () => {
   for (const p of ['ERROR', '^\\d{4}-\\d{2}-\\d{2}', 'GET|POST', '[a-z]+', '\\bwarn\\b']) {
     it(`allows ${p}`, () => {
       expect(checkRegexSafety(p).safe).toBe(true);
+    });
+  }
+});
+
+describe('re2UnsupportedSyntax — flags what Go regexp refuses', () => {
+  for (const p of ['(?!info).*', '(?=a)b', 'a(?<=b)', 'a(?<!b)', '(?>a)', '(a)\\1', '\\9', '(?<n>a)\\k<n>']) {
+    it(`flags ${p}`, () => {
+      expect(re2UnsupportedSyntax(p)).not.toBeNull();
+    });
+  }
+  for (const p of ['(?i)diskfull', '(?P<host>[a-z]+)', '(?<host>a)', 'a\\101', '[(?!]', '\\(?!', '(?:a|b)', 'a\\.b']) {
+    it(`allows ${p}`, () => {
+      expect(re2UnsupportedSyntax(p)).toBeNull();
     });
   }
 });
