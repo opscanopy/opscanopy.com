@@ -1413,20 +1413,17 @@ function finishSentence(clause: string): string {
 /**
  * Explain a PromQL query in plain English with a token-by-token breakdown.
  *
- * Never throws on user input. An empty query, or one the parser cannot finish,
- * returns an `error` together with a best-effort `explanation` so the UI always
- * has something to show. Output is deterministic for a given input.
+ * Never throws on user input. An empty query, one the parser cannot finish, or
+ * one Prometheus would reject returns only an `error` (empty `explanation` and
+ * `breakdown`) — an invalid query is never explained as if it were valid.
+ * Output is deterministic for a given input.
  */
 export function explain(query: string): ExplainResult {
   const raw = typeof query === 'string' ? query : '';
   const trimmed = raw.trim();
 
   if (trimmed === '') {
-    return {
-      error: 'Enter a PromQL query to explain.',
-      explanation: 'Paste a PromQL query above — for example a rate over a range, or a sum aggregation — and its meaning will appear here.',
-      breakdown: [],
-    };
+    return { error: 'Enter a PromQL query to explain.', explanation: '', breakdown: [] };
   }
 
   // Quick structural sanity check: balanced brackets. Reported, not thrown.
@@ -1442,13 +1439,12 @@ export function explain(query: string): ExplainResult {
   }
 
   if (node === null) {
-    return {
-      error: balanceError ?? parseError ?? 'Could not parse this PromQL query.',
-      explanation:
-        'OpsCanopy could not fully parse this query. Check for balanced brackets, matching quotes, and a complete expression, then try again.',
-      breakdown: [],
-    };
+    return { error: balanceError ?? parseError ?? 'Could not parse this PromQL query.', explanation: '', breakdown: [] };
   }
+
+  // A query Prometheus would reject is reported, never explained as valid.
+  const error = balanceError ?? checkSemantics(node);
+  if (error) return { error, explanation: '', breakdown: [] };
 
   let explanation: string;
   let breakdown: ExplainPart[];
@@ -1457,20 +1453,10 @@ export function explain(query: string): ExplainResult {
     breakdown = buildBreakdown(node);
   } catch {
     // Rendering should never fail, but stay safe per the never-throw contract.
-    return {
-      error: 'Could not produce an explanation for this query.',
-      explanation: 'This query parsed, but OpsCanopy could not render a clear explanation for it.',
-      breakdown: [],
-    };
+    return { error: 'Could not produce an explanation for this query.', explanation: '', breakdown: [] };
   }
 
-  // A balance warning is non-fatal once we have an explanation; surface it as a
-  // soft error so the playground can still show the (best-effort) reading.
-  // A query Prometheus would reject is reported, never explained as valid.
-  const result: ExplainResult = { explanation, breakdown };
-  const error = balanceError ?? checkSemantics(node);
-  if (error) result.error = error;
-  return result;
+  return { explanation, breakdown };
 }
 
 type ValueType = 'range vector' | 'instant vector' | 'scalar' | 'string';
@@ -1518,8 +1504,14 @@ function editDistance(a: string, b: string): number {
 function checkSemantics(node: Node): string | null {
   switch (node.type) {
     case 'paren':
-    case 'unary':
       return checkSemantics(node.expr);
+    case 'unary': {
+      const t = valueType(node.expr);
+      if (t !== 'scalar' && t !== 'instant vector') {
+        return `unary expression only allowed on expressions of type scalar or instant vector, got ${t}`;
+      }
+      return checkSemantics(node.expr);
+    }
     case 'binary':
       return checkSemantics(node.left) ?? checkSemantics(node.right);
     case 'agg':
