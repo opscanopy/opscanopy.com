@@ -562,3 +562,10 @@ describe('data-size — examples', () => {
     expect(examples.filter((e) => e.rate.length > 0)).toHaveLength(1);
   });
 });
+
+describe('summary approximation marker', () => {
+  it('says ≈ when the bytes cell is rounded', () => {
+    expect(convert('0.0000001 B').summary).toMatch(/ ≈ 0 bytes$/);
+    expect(convert('1 KiB').summary).toMatch(/^1 KiB = 1.?024 bytes$/);
+  });
+});

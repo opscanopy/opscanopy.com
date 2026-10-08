@@ -10,8 +10,6 @@ import { ipv6Compress } from '../ip-core';
 import type { MacResult, MacRow } from './types';
 
 const ERR_EMPTY = 'Enter a MAC address, e.g. 00:1a:2b:3c:4d:5e or 001a.2b3c.4d5e.';
-const ERR_PARSE =
-  'Not a valid 48-bit MAC address. Expected 12 hex digits, e.g. 00:1a:2b:3c:4d:5e.';
 
 /** Render six bytes joined by `sep`, in the requested case. */
 function join(bytes: number[], sep: string, upper: boolean): string {
@@ -23,6 +21,18 @@ function join(bytes: number[], sep: string, upper: boolean): string {
     .join(sep);
 }
 
+/** Say which way a rejected input is wrong: bad digit, several addresses, or wrong length. */
+function diagnose(trimmed: string, hex: string): string {
+  const bad = hex.match(/[^0-9a-fA-F]/);
+  if (bad) return `“${bad[0]}” is not a hex digit (0–9, a–f). Expected 12 hex digits, e.g. 00:1a:2b:3c:4d:5e.`;
+  const n = hex.length;
+  if (n > 12 && n % 12 === 0 && /[\s,;]/.test(trimmed)) {
+    return `Looks like ${n / 12} addresses (${n} hex digits) — paste one MAC address at a time.`;
+  }
+  if (n === 16) return 'Found 16 hex digits — that is a 64-bit EUI-64, not a 48-bit MAC. Expected 12 hex digits.';
+  return `Found ${n} hex digit${n === 1 ? '' : 's'}, need 12 for a 48-bit MAC address, e.g. 00:1a:2b:3c:4d:5e.`;
+}
+
 export function format(input: string): MacResult {
   const trimmed = (input ?? '').trim();
   if (trimmed.length === 0) return { valid: false, error: ERR_EMPTY, rows: [] };
@@ -32,7 +42,7 @@ export function format(input: string): MacResult {
   const hex = withoutPrefix.replace(/[\s:.\-]/g, '');
 
   if (!/^[0-9a-fA-F]{12}$/.test(hex)) {
-    return { valid: false, error: ERR_PARSE, rows: [] };
+    return { valid: false, error: diagnose(trimmed, hex), rows: [] };
   }
 
   // Parse to 6 bytes.

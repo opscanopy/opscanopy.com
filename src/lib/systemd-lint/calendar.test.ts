@@ -351,3 +351,16 @@ describe('validateOnCalendar — never throws, always specific', () => {
     }
   });
 });
+
+describe('validateOnCalendar: impossible dates', () => {
+  it('flags a month/day no calendar has, accepts Feb 29', () => {
+    for (const bad of ['*-02-31 00:00:00', '*-04-31', '02-30', '2026-06-31']) {
+      const r = validateOnCalendar(bad);
+      expect(r.valid).toBe(false);
+      expect(r.error).toMatch(/never elapses/);
+    }
+    expect(validateOnCalendar('*-02-29').valid).toBe(true);
+    expect(validateOnCalendar('*-01-31').valid).toBe(true);
+    expect(validateOnCalendar('*-02~03').valid).toBe(true);
+  });
+});
