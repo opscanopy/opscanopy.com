@@ -160,3 +160,19 @@ describe('uuid-ulid-generator/render — escaping and shared bits', () => {
     expect(generateErrorHtml('x')).toContain('Could not generate');
   });
 });
+
+describe('uuid-ulid-generator/render — inspector Timestamp row for time-based UUIDs', () => {
+  const row = (id: string) => {
+    const html = inspectResultHtml(id, inspectUuid(id));
+    return />Timestamp<\/span>.*?is-mono">([^<]+)</.exec(html)?.[1];
+  };
+  it('shows it for v1 (1998-02-04T22:13:53.151Z), v6 and v7', () => {
+    expect(row('6ba7b810-9dad-11d1-80b4-00c04fd430c8')).toBe('1998-02-04T22:13:53.151Z');
+    expect(row('1ee2f2b4-8d0a-6b5c-8000-0123456789ab')).toMatch(/^\d{4}-\d\d-\d\dT.*Z$/);
+    expect(row('018f2a3c-7b5d-7c3e-9a1b-0123456789ab')).toMatch(/^\d{4}-\d\d-\d\dT.*Z$/);
+  });
+  it('omits it for v4 and Nil', () => {
+    expect(row('550e8400-e29b-41d4-a716-446655440000')).toBeUndefined();
+    expect(row('00000000-0000-0000-0000-000000000000')).toBeUndefined();
+  });
+});
