@@ -184,3 +184,20 @@ describe('slugify() — non-decomposing Latin letters transliterate', () => {
     expect(slug('Hello World')).toBe('hello-world');
   });
 });
+
+describe('non-Latin input', () => {
+  const o = { separator: '-' as const, lowercase: true, maxLength: 60 };
+  it('does not claim a Cyrillic or CJK title has no letters', () => {
+    for (const t of ['Привет мир', '你好 世界']) {
+      const r = slugify(t, o);
+      expect(r.slug).toBe('');
+      expect(r.notes?.join(' ')).toMatch(/Only Latin letters/);
+      expect(r.notes?.join(' ')).not.toMatch(/no letters or digits/);
+    }
+  });
+  it('notes dropped characters in mixed-script titles', () => {
+    expect(slugify('Привет world', o).notes?.[0]).toBe('6 non-Latin characters could not be transliterated and were dropped.');
+    expect(slugify('Grüße aus 東京', o).notes?.[0]).toMatch(/^2 non-Latin/);
+    expect(slugify('Café au lait', o).notes).toBeUndefined();
+  });
+});

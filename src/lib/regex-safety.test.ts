@@ -72,3 +72,20 @@ describe('re2UnsupportedSyntax — flags what Go regexp refuses', () => {
     });
   }
 });
+
+describe('checkRegexSafety — review fixes', () => {
+  it('flags an unescaped dot used as a "separator" after a repeated class', () => {
+    expect(checkRegexSafety('^(([a-z])+.)+[A-Z]([a-z])+$').safe).toBe(false);
+  });
+  it('still allows an escaped-dot separator', () => {
+    expect(checkRegexSafety('(\\d+\\.)+').safe).toBe(true);
+  });
+  for (const p of ['(foo|bar)+', '(?:GET|POST)+']) {
+    it(`allows disjoint literal alternation ${p}`, () => {
+      expect(checkRegexSafety(p).safe).toBe(true);
+    });
+  }
+  it('still flags overlapping alternation', () => {
+    expect(checkRegexSafety('(a|ab)*').safe).toBe(false);
+  });
+});

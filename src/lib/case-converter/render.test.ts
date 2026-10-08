@@ -61,3 +61,9 @@ describe('buildCopyAll', () => {
     expect(text).toContain('snake_case: user_profile_id');
   });
 });
+
+describe('summaryText singular', () => {
+  it('says 1 word', () => {
+    expect(summaryText(convertCases('a'))).toBe('11 cases · 1 word');
+  });
+});
