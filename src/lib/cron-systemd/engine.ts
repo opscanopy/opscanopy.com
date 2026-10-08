@@ -206,6 +206,24 @@ function parseField(raw: string, spec: FieldSpec): ParsedField | { error: string
   return { raw: field, parts, isWildcard };
 }
 
+/** Expand a parsed field to the set of values it matches. */
+function expandField(field: ParsedField, spec: FieldSpec): Set<number> {
+  const out = new Set<number>();
+  for (const part of field.parts) {
+    if (part.kind === 'single') out.add(part.value);
+    else {
+      const from = part.kind === 'all' ? spec.min : part.from;
+      const to = part.kind === 'all' ? spec.max : (part.to ?? spec.max);
+      const step = part.kind === 'step' ? part.step : 1;
+      for (let v = from; v <= to; v += step) out.add(v);
+    }
+  }
+  return out;
+}
+
+/** Longest month length, Jan..Dec (February counts its leap-year 29th). */
+const MONTH_DAYS = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
 /* ────────────────────────────────────────────────────────────────────────
  * Field → OnCalendar fragment rendering
  * ──────────────────────────────────────────────────────────────────────── */
@@ -369,7 +387,9 @@ function renderTimer(
     '',
     '[Timer]',
     timerLine,
-    'Persistent=true',
+    // Persistent= only applies to OnCalendar=; on a monotonic (OnBootSec=)
+    // timer systemd ignores it and the unit validator flags it.
+    ...(timerLine.startsWith('OnCalendar=') ? ['Persistent=true'] : []),
     `Unit=${unitName}.service`,
     '',
     '[Install]',
@@ -379,13 +399,14 @@ function renderTimer(
 }
 
 /** Render the oneshot `.service` unit body. */
-function renderService(description: string, command: string): string {
+function renderService(description: string, command: string, user: string | null): string {
   return [
     '[Unit]',
     `Description=${description}`,
     '',
     '[Service]',
     'Type=oneshot',
+    ...(user ? [`User=${user}`] : []),
     `ExecStart=${command}`,
     '',
   ].join('\n');
@@ -530,11 +551,23 @@ export function convert(
 
   // cron quirk: when BOTH day-of-month and day-of-week are restricted, cron runs
   // on the UNION (either matches). systemd OnCalendar treats them as an AND
-  // (both must match). Warn so the user knows the semantics differ.
-  if (!domF.isWildcard && !dowF.isWildcard) {
+  // (both must match). Warn so the user knows the semantics differ. A field
+  // starting with "*" (e.g. "*/2") makes Vixie cron / cronie AND them too.
+  if (!domF.raw.startsWith('*') && !dowF.raw.startsWith('*')) {
     notes.push(
       'Cron runs when day-of-month OR day-of-week matches, but systemd requires BOTH to match. ' +
         'If you need the OR behaviour, split this into two timers.',
+    );
+  }
+
+  // A day-of-month that no selected month has (Feb 30/31, Apr 31…) gives a
+  // timer that never elapses; systemd accepts it without complaint.
+  const days = expandField(domF, FIELD_SPECS[2]);
+  const months = expandField(monF, FIELD_SPECS[3]);
+  if (![...months].some((m) => [...days].some((d) => d <= MONTH_DAYS[m - 1]))) {
+    notes.push(
+      'This date never occurs (no selected month has that day), so the timer will never fire — ' +
+        '“systemd-analyze calendar” reports it as never elapsing. Check the day-of-month and month fields.',
     );
   }
 
@@ -577,8 +610,28 @@ interface FinalizeArgs {
 function finalize(args: FinalizeArgs): SystemdResult {
   const { unitName, timerLine, onCalendarDisplay, commandWasGiven, notes } = args;
   let command = args.command.trim();
+  let user: string | null = null;
 
   if (commandWasGiven && command) {
+    // /etc/crontab and /etc/cron.d lines carry a user column before the
+    // command. "root" is unambiguous (no program is called that), so it moves
+    // to User=; any other user-shaped word before an absolute path only gets a
+    // warning, since "nice /usr/bin/x" has the same shape.
+    const userCol = /^([a-z_][a-z0-9_-]*\$?)\s+(\/\S.*)$/.exec(command);
+    if (userCol && userCol[1] === 'root') {
+      user = 'root';
+      command = userCol[2];
+      notes.push(
+        '“root” looks like the user column of an /etc/crontab or /etc/cron.d line, so it was moved to User=root ' +
+          'and left out of ExecStart. For a system timer you can also drop User= — system units run as root by default.',
+      );
+    } else if (userCol) {
+      notes.push(
+        `“${userCol[1]}” may be the user column of an /etc/crontab or /etc/cron.d line. If so, remove it from ` +
+          `ExecStart and add User=${userCol[1]} to the [Service] section.`,
+      );
+    }
+
     // Note how the command was interpreted: cron runs commands via /bin/sh, so
     // shell features (pipes, redirects, env, &&) need wrapping for systemd.
     if (/[|&;<>$`(){}*?]/.test(command)) {
@@ -621,7 +674,7 @@ function finalize(args: FinalizeArgs): SystemdResult {
 
   const description = `${unitName} (converted from crontab)`;
   const timerUnit = renderTimer(unitName, description, timerLine);
-  const serviceUnit = renderService(description, command);
+  const serviceUnit = renderService(description, command, user);
 
   return {
     valid: true,
