@@ -40,6 +40,14 @@ export const LIMITS = {
 // IAM matches the service prefix case-insensitively (S3:GetObject is accepted), so allow either case here.
 const ACTION_RE = /^[A-Za-z0-9-]+:[A-Za-z0-9*?]+$/;
 const SID_RE = /^[A-Za-z0-9]+$/;
+// `prefix:name[/tag]`. The prefix may be a host (token.actions.githubusercontent.com:sub) or an
+// OIDC provider path; a tag key after `/` may contain spaces.
+const COND_KEY_RE = /^[A-Za-z0-9._/-]+:[^\s<>"][^<>"]*$/;
+const NUMBER_RE = /^-?\d+(\.\d+)?$/;
+const DATE_RE = /^(\d+|\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?)$/;
+const IP_KEYS = ['aws:sourceip', 'aws:vpcsourceip'];
+// The web identity providers IAM accepts by name in a Federated principal; anything else needs an IdP ARN.
+const WEB_IDPS = ['cognito-identity.amazonaws.com', 'www.amazon.com', 'graph.facebook.com', 'accounts.google.com'];
 
 const one = (xs: string[]): string | string[] => (xs.length === 1 ? xs[0] : xs);
 
@@ -112,6 +120,11 @@ function validate(kind: PolicyKind, statements: Statement[], catalog?: Catalog):
     for (const a of [...actions, ...notActions]) {
       if (a !== '*' && !ACTION_RE.test(a)) err(i, `${n}: "${a}" is not an action; use service:Action, e.g. s3:GetObject.`);
     }
+    if (kind === 'trust') {
+      // IAM: "AssumeRole policy may only specify STS AssumeRole actions."
+      const bad = actions.filter((a) => !/^sts:/i.test(a));
+      if (bad.length) err(i, `${n}: ${bad.join(', ')} cannot appear in a trust policy; it may list only sts: actions such as sts:AssumeRole.`);
+    }
 
     const resources = s.resources ?? [];
     const notResources = s.notResources ?? [];
@@ -122,6 +135,12 @@ function validate(kind: PolicyKind, statements: Statement[], catalog?: Catalog):
       if (!resources.length && !notResources.length) err(i, `${n}: add at least one resource ARN (or "*").`);
       for (const r of [...resources, ...notResources]) {
         if (r !== '*' && !r.startsWith('arn:')) err(i, `${n}: resource "${r}" must be an ARN (arn:…) or "*".`);
+        else if (r !== '*') {
+          const parts = r.split(':');
+          if (parts.length < 6 || !parts[1] || !parts[2] || !parts.slice(5).join(':')) {
+            err(i, `${n}: "${r}" has no resource part; an ARN is arn:partition:service:region:account:resource.`);
+          }
+        }
       }
     }
 
@@ -130,7 +149,17 @@ function validate(kind: PolicyKind, statements: Statement[], catalog?: Catalog):
       if (principals.length) err(i, `${n}: an identity-based policy cannot have a Principal; the identity it is attached to is the principal.`);
     } else {
       if (!principals.length) err(i, `${n}: a ${kind === 'trust' ? 'trust' : 'bucket'} policy statement needs a Principal.`);
-      for (const p of principals) if (p.type !== '*' && !p.ids.length) err(i, `${n}: the ${p.type} principal has no identifiers.`);
+      for (const p of principals) {
+        if (p.type !== '*' && !p.ids.length) err(i, `${n}: the ${p.type} principal has no identifiers.`);
+        for (const id of p.type === '*' ? [] : p.ids) {
+          if (p.type === 'AWS' && id !== '*' && !/^\d{12}$/.test(id) && !id.startsWith('arn:')) {
+            err(i, `${n}: "${id}" is not a valid AWS principal; use a 12-digit account ID or an ARN.`);
+          }
+          if (p.type === 'Federated' && id !== '*' && !id.startsWith('arn:') && !WEB_IDPS.includes(id)) {
+            err(i, `${n}: Federated principal "${id}" needs an identity provider ARN (arn:aws:iam::<account>:oidc-provider/… or saml-provider/…).`);
+          }
+        }
+      }
     }
 
     const conditions = s.conditions ?? [];
@@ -142,6 +171,17 @@ function validate(kind: PolicyKind, statements: Statement[], catalog?: Catalog):
       const k = `${c.op}\u0000${c.key}`;
       if (seen.has(k)) err(i, `${n}: ${c.op} on ${c.key} appears twice; put both values in one condition.`);
       seen.add(k);
+      // Type checks, as IAM Access Analyzer makes them: legal JSON that can never match.
+      if (c.key && !COND_KEY_RE.test(c.key)) warn(i, `${n}: "${c.key}" is not a condition key; keys look like aws:SourceIp or s3:prefix.`);
+      const base = c.op.replace(/^(?:ForAllValues|ForAnyValue):/, '').replace(/IfExists$/, '');
+      if (base.startsWith('String') && IP_KEYS.includes(c.key.toLowerCase())) {
+        warn(i, `${n}: ${c.op} compares ${c.key} as literal text, so a CIDR range never matches; use IpAddress or NotIpAddress.`);
+      }
+      for (const v of c.values) {
+        if (v.includes('${')) continue; // policy variable, resolved at request time
+        if (base.startsWith('Numeric') && !NUMBER_RE.test(v)) warn(i, `${n}: "${v}" is not a number, so ${c.op} on ${c.key} never matches.`);
+        if (base.startsWith('Date') && !DATE_RE.test(v)) warn(i, `${n}: "${v}" is not an ISO 8601 date or epoch time, so ${c.op} on ${c.key} never matches.`);
+      }
     }
 
     if (s.effect !== 'Allow') return;
@@ -151,6 +191,9 @@ function validate(kind: PolicyKind, statements: Statement[], catalog?: Catalog):
     if (star.length) warn(i, `${n}: ${star.join(', ')} allows every action${star.includes('*') ? ' in every service' : ' in the service'}; list the actions you need.`);
     if (kind === 's3-bucket' && principals.some((p) => p.type === '*' || p.ids.includes('*')) && !conditions.length) {
       warn(i, `${n}: Principal "*" with no Condition makes this statement public to anyone on the internet.`);
+    }
+    if (kind === 'trust' && principals.some((p) => p.type === '*' || p.ids.includes('*')) && !conditions.length) {
+      err(i, `${n}: Principal "*" with no Condition lets any AWS principal in any account assume this role; add a Condition such as aws:PrincipalOrgID or sts:ExternalId.`);
     }
     if (catalog) {
       const pm = new Set<string>();
@@ -163,6 +206,22 @@ function validate(kind: PolicyKind, statements: Statement[], catalog?: Catalog):
           const name = `${a.split(':')[0]}:${x.n}`;
           if (x.l === 'Permissions management') pm.add(name);
           if (kind === 'identity' && resources.includes('*') && x.r.length && (x.l === 'Write' || x.l === 'Permissions management')) scoped.add(name);
+        }
+        // The classic S3 mistake: a bucket action on object ARNs (bucket/*) or the reverse grants nothing.
+        if (/[*?]/.test(a) || !/^s3:/i.test(a) || m.length !== 1) continue;
+        const r = m[0].r;
+        const onBucket = r.includes('bucket');
+        const onObject = r.includes('object');
+        if (!onBucket && !onObject) continue;
+        const s3 = resources.filter((x) => /^arn:[^:]+:s3:::./.test(x));
+        if (!s3.length || s3.length !== resources.length) continue;
+        const fits = s3.some((x) => {
+          const rest = x.slice(x.indexOf(':::') + 3);
+          if (rest.includes('/')) return onObject;
+          return /[*?]/.test(rest) || onBucket;
+        });
+        if (!fits) {
+          warn(i, `${n}: ${a} acts on ${onBucket ? 'bucket ARNs (arn:aws:s3:::bucket-name)' : 'object ARNs (arn:aws:s3:::bucket-name/*)'}, not on the listed resources, so this grant has no effect.`);
         }
       }
       const list = (xs: Set<string>) => {

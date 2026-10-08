@@ -88,7 +88,7 @@ describe('grammar errors', () => {
   });
   it('bucket and trust policies need a Principal with identifiers', () => {
     expect(errors(buildPolicy('s3-bucket', [ok]))[0]).toMatch(/needs a Principal/);
-    expect(errors(buildPolicy('trust', [{ ...ok, resources: [] }]))[0]).toMatch(/trust policy statement needs a Principal/);
+    expect(errors(buildPolicy('trust', [{ ...ok, actions: ['sts:AssumeRole'], resources: [] }]))[0]).toMatch(/trust policy statement needs a Principal/);
     expect(errors(buildPolicy('s3-bucket', [{ ...ok, principals: [{ type: 'AWS', ids: [] }] }]))[0]).toMatch(/no identifiers/);
   });
   it('trust policies cannot have a Resource', () => {
@@ -332,5 +332,66 @@ describe('catalogue helpers', () => {
   });
   it('every fixture resource type an action names exists', () => {
     for (const s of Object.values(cat.services)) for (const a of s.actions) for (const r of a.r) expect(arnTemplate(cat, s.prefix, r).length, `${s.prefix}:${a.n} → ${r}`).toBeGreaterThan(0);
+  });
+});
+
+describe('2026-10-07 review fixes', () => {
+  const trust = (extra: Partial<Statement>, actions = ['sts:AssumeRole']): Statement => ({ effect: 'Allow', actions, resources: [], ...extra });
+
+  it('errors on a trust policy anyone can assume (Principal "*", no Condition)', () => {
+    for (const principals of [[{ type: '*' as const, ids: [] }], [{ type: 'AWS' as const, ids: ['*'] }]]) {
+      const r = buildPolicy('trust', [trust({ principals })], cat);
+      expect(r.valid).toBe(false);
+      expect(errors(r).join('\n')).toMatch(/any AWS principal.*assume this role/);
+      // A Condition (e.g. aws:PrincipalOrgID) narrows it.
+      const ok = buildPolicy('trust', [trust({ principals, conditions: [{ op: 'StringEquals', key: 'aws:PrincipalOrgID', values: ['o-abc123'] }] })], cat);
+      expect(errors(ok)).toEqual([]);
+    }
+  });
+
+  it('errors on non-STS actions in a trust policy', () => {
+    const principals = [{ type: 'Service' as const, ids: ['ec2.amazonaws.com'] }];
+    const r = buildPolicy('trust', [trust({ principals }, ['s3:ListBucket', 's3:GetObject'])], cat);
+    expect(errors(r).join('\n')).toMatch(/s3:ListBucket, s3:GetObject.*only sts: actions/);
+    expect(errors(buildPolicy('trust', [trust({ principals }, ['sts:AssumeRole', 'sts:TagSession'])], cat))).toEqual([]);
+  });
+
+  it('type-checks condition operators, values and keys', () => {
+    const cond = (op: string, key: string, value: string) =>
+      warns(buildPolicy('identity', [allow(['s3:ListBucket'], ['arn:aws:s3:::b'], { conditions: [{ op, key, values: [value] }] })], cat)).join('\n');
+    expect(cond('StringEquals', 'aws:SourceIp', '10.0.0.0/8')).toMatch(/aws:SourceIp.*IpAddress/);
+    expect(cond('NumericLessThan', 's3:max-keys', 'ten')).toMatch(/"ten" is not a number/);
+    expect(cond('DateLessThan', 'aws:CurrentTime', 'tomorrow')).toMatch(/"tomorrow" is not an ISO 8601 date/);
+    expect(cond('StringEquals', 'not a key <b>x</b>', 'v')).toMatch(/is not a condition key/);
+    // Well-formed ones stay quiet.
+    expect(cond('IpAddress', 'aws:SourceIp', '10.0.0.0/8')).toBe('');
+    expect(cond('NumericLessThanIfExists', 's3:max-keys', '10')).toBe('');
+    expect(cond('DateLessThan', 'aws:CurrentTime', '2026-12-31T00:00:00Z')).toBe('');
+    expect(cond('StringEquals', 'aws:ResourceTag/Cost Center', 'ops')).toBe('');
+    expect(cond('StringLike', 'token.actions.githubusercontent.com:sub', 'repo:o/r:*')).toBe('');
+  });
+
+  it('errors on malformed principal identifiers', () => {
+    const p = (type: 'AWS' | 'Federated', id: string) =>
+      errors(buildPolicy('trust', [trust({ principals: [{ type, ids: [id] }], conditions: [{ op: 'StringEquals', key: 'sts:ExternalId', values: ['x'] }] })], cat)).join('\n');
+    expect(p('AWS', '12345')).toMatch(/"12345" is not a valid AWS principal/);
+    expect(p('Federated', 'token.actions.githubusercontent.com')).toMatch(/needs an identity provider ARN/);
+    expect(p('AWS', '123456789012')).toBe('');
+    expect(p('AWS', 'arn:aws:iam::123456789012:role/x')).toBe('');
+    expect(p('Federated', 'arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com')).toBe('');
+    expect(p('Federated', 'cognito-identity.amazonaws.com')).toBe('');
+  });
+
+  it('warns when an S3 action does not apply to any of its resources (bucket vs object ARN)', () => {
+    const w = (actions: string[], resources: string[]) => warns(buildPolicy('identity', [allow(actions, resources)], cat)).join('\n');
+    expect(w(['s3:ListBucket'], ['arn:aws:s3:::example-bucket/*'])).toMatch(/s3:ListBucket acts on bucket ARNs/);
+    expect(w(['s3:GetObject'], ['arn:aws:s3:::example-bucket'])).toMatch(/s3:GetObject acts on object ARNs/);
+    // The correct pairing, and the common combined statement, stay quiet.
+    expect(w(['s3:ListBucket', 's3:GetObject'], ['arn:aws:s3:::example-bucket', 'arn:aws:s3:::example-bucket/*'])).toBe('');
+    expect(w(['s3:GetObject'], ['arn:aws:s3:::example-*'])).toBe('');
+  });
+
+  it('errors on an ARN with an empty resource', () => {
+    expect(errors(buildPolicy('identity', [allow(['s3:ListBucket'], ['arn:aws:s3:::'])], cat)).join('\n')).toMatch(/"arn:aws:s3:::" has no resource part/);
   });
 });
