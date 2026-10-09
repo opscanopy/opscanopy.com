@@ -85,7 +85,7 @@ if (d.faqs?.length) jsonLd.push(faqPageLd(d.faqs));
           <li aria-hidden="true">/</li>
           <li><a href="/cheatsheets/" class="hover:text-ink">Cheat sheets</a></li>
           <li aria-hidden="true">/</li>
-          <li class="text-body" aria-current="page">{d.command}</li>
+          <li class="text-body" aria-current="page">{d.title}</li>
         </ol>
       </nav>
     </Fragment>
@@ -125,6 +125,7 @@ if (d.faqs?.length) jsonLd.push(faqPageLd(d.faqs));
       >
         <Content />
       </div>
+      <p class="sr-only" aria-live="polite" data-cheatsheet-status></p>
 
       <aside class="measure-wide mt-12 rounded-xl border border-brand/30 bg-brand/5 p-6">
         <p class="eyebrow text-brand-strong">Try it</p>
@@ -155,7 +156,7 @@ if (d.faqs?.length) jsonLd.push(faqPageLd(d.faqs));
           {
             d.sources.map((s) => (
               <li>
-                <a href={s.url} class="link-inline" rel="noopener">
+                <a href={s.url} class="link-inline">
                   {s.title}
                 </a>
               </li>
@@ -186,7 +187,7 @@ if (d.faqs?.length) jsonLd.push(faqPageLd(d.faqs));
     padding: 8px 12px;
     text-align: left;
     vertical-align: top;
-    border-bottom: 1px solid var(--color-hairline);
+    border-bottom: 1px solid var(--color-hairline-muted);
   }
   .cheatsheet th {
     color: var(--color-ink);
@@ -196,20 +197,108 @@ if (d.faqs?.length) jsonLd.push(faqPageLd(d.faqs));
   .cheatsheet td:first-child {
     width: 50%;
   }
-  .cheatsheet td code {
-    overflow-wrap: anywhere;
+  /* Commands wrap only at real spaces, never mid-flag (the global inline-code
+     rule breaks `anywhere`). Each one is a click-to-copy target (script below). */
+  .cheatsheet td:first-child code {
+    white-space: pre-wrap;
+    overflow-wrap: normal;
+    word-break: normal;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+    cursor: copy;
+  }
+  .cheatsheet td:first-child code > span {
+    white-space: nowrap;
+  }
+  .cheatsheet td:first-child code[data-copied] {
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+  }
+  /* Phones: stack each row, command on its own full-width line; a command
+     longer than the column scrolls inside its chip instead of wrapping. */
+  @media (max-width: 639px) {
+    .cheatsheet thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+    .cheatsheet table,
+    .cheatsheet tbody {
+      display: block;
+    }
+    .cheatsheet tr {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 4px;
+      padding-block: 12px;
+      border-bottom: 1px solid var(--color-hairline-muted);
+    }
+    .cheatsheet td {
+      display: block;
+      padding: 0;
+      border: 0;
+    }
+    .cheatsheet td:first-child {
+      width: auto;
+    }
+    .cheatsheet td:first-child code {
+      display: block;
+      white-space: pre;
+      overflow-x: auto;
+    }
   }
 </style>
 
 <script>
   import { wireCodeCopy } from '../../lib/code-copy';
+  import { copyTextToClipboard } from '../../lib/clipboard';
 
   const root = document.querySelector<HTMLElement>('.cheatsheet');
   if (root) {
-    wireCodeCopy(root, {
+    const labels = {
       copy: root.dataset.copyLabel ?? 'Copy',
       copied: root.dataset.copiedLabel ?? 'Copied',
       aria: root.dataset.copyAria ?? 'Copy code to clipboard',
+    };
+    wireCodeCopy(root, labels);
+
+    // Table commands (inline code, so no fenced-block Copy button): the chip
+    // itself copies on click, Enter or Space; one live region announces it.
+    const status = document.querySelector<HTMLElement>('[data-cheatsheet-status]');
+    root.querySelectorAll<HTMLElement>('td:first-child code').forEach((code) => {
+      // Chrome breaks after a hyphen (" -|dates"), so each space-separated
+      // token becomes a nowrap span: lines wrap only at real spaces. The text,
+      // and so what is copied or selected, is unchanged.
+      // ponytail: client-side, so without JS a desktop row can still break after "-"; move to a rehype step if that matters.
+      code.replaceChildren(
+        ...(code.textContent ?? '').split(/( )/).map((part) => {
+          if (part === ' ' || !part) return part;
+          const span = document.createElement('span');
+          span.textContent = part;
+          return span;
+        }),
+      );
+      code.tabIndex = 0;
+      code.setAttribute('role', 'button');
+      code.title = labels.aria;
+      let timer: number | undefined;
+      const copy = async () => {
+        if (!(await copyTextToClipboard(code.textContent ?? ''))) return;
+        code.dataset.copied = 'true';
+        if (status) status.textContent = labels.copied;
+        window.clearTimeout(timer);
+        timer = window.setTimeout(() => {
+          delete code.dataset.copied;
+          if (status) status.textContent = '';
+        }, 2000);
+      };
+      code.addEventListener('click', copy);
+      code.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        void copy();
+      });
     });
   }
 </script>

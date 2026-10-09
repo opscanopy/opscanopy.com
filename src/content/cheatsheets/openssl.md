@@ -1,6 +1,6 @@
 ---
 title: OpenSSL cheat sheet
-seoTitle: OpenSSL Cheat Sheet — keys, CSRs, certificates, s_client, PKCS#12
+seoTitle: OpenSSL Cheat Sheet — keys, CSRs, certs, s_client, PKCS#12
 description: OpenSSL 3 commands for keys, CSRs, self-signed certificates, checking a live TLS endpoint, format conversion and hashing, each one run before publishing.
 command: openssl
 verifiedWith: OpenSSL 3.6.3

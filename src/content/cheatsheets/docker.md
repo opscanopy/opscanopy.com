@@ -73,7 +73,7 @@ Have a long `docker run` line you want to keep? Paste it into the [Docker Run to
 | `docker inspect web` | Full JSON for a container, image, volume or network. |
 | `docker inspect -f '{{.State.Status}}' web` | Pull one field out with a Go template. |
 | `docker cp web:/etc/nginx/nginx.conf .` | Copy a file out of a container; swap the arguments to copy in. |
-| `docker diff web` | Files added (A), changed (C) or deleted (D) since the container started. |
+| `docker diff web` | Files added (A), changed (C) or deleted (D) since the container was created from its image. |
 
 ## Start, stop and remove
 

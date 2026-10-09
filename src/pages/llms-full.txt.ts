@@ -2,8 +2,8 @@
  * /llms-full.txt — the whole site as one plain-Markdown document.
  *
  * `/llms.txt` is a map (titles and links); this is the territory. An assistant
- * that fetches this file has the full prose of every guide and blog post, the
- * complete About / Security / Privacy pages, and a record for every tool — no
+ * that fetches this file has the full prose of every guide, blog post and cheat
+ * sheet, the complete About / Security / Privacy pages, and a record for every tool — no
  * crawl required, and no JavaScript, which matters because AI crawlers do not
  * execute it.
  *

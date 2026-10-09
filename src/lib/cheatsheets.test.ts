@@ -41,6 +41,8 @@ const guideSlugs = new Set(
     .flatMap((d) => readdirSync(join(GUIDES, d)).filter((f) => f.endsWith('.md')).map((f) => f.replace(/\.md$/, ''))),
 );
 const sheetSlugs = new Set(sheets.map((s) => s.slug));
+/** Link targets: a draft sheet is not built, so a link to it is a 404. */
+const liveSheetSlugs = new Set(sheets.filter((s) => !s.fm.draft).map((s) => s.slug));
 
 /** Official references only — a cheat sheet that cites another cheat sheet is a copy of a copy. */
 const OFFICIAL_HOSTS = [
@@ -84,6 +86,13 @@ describe('cheat sheets', () => {
         expect(+(s.fm.updatedDate as Date)).toBeGreaterThanOrEqual(+(s.fm.pubDate as Date));
       });
 
+      it('<title> fits 60 chars and the description 160', () => {
+        // Layout.astro only appends " · OpsCanopy" when the result still fits 60.
+        const title = (s.fm.seoTitle ?? s.fm.title) as string;
+        expect(title.length, title).toBeLessThanOrEqual(60);
+        expect((s.fm.description as string).length).toBeLessThanOrEqual(160);
+      });
+
       it('relatedTools are live tool slugs', () => {
         const rel = s.fm.relatedTools as string[];
         expect(rel.length).toBeGreaterThan(0);
@@ -109,7 +118,7 @@ describe('cheat sheets', () => {
           const ok =
             (parts.length === 1 && toolSlugs.has(parts[0])) ||
             (parts.length === 3 && parts[0] === 'learn' && parts[1] === 'guides' && guideSlugs.has(parts[2])) ||
-            (parts[0] === 'cheatsheets' && (parts.length === 1 || sheetSlugs.has(parts[1])));
+            (parts[0] === 'cheatsheets' && (parts.length === 1 || liveSheetSlugs.has(parts[1])));
           expect(ok, href).toBe(true);
         }
       });
@@ -148,6 +157,10 @@ describe('cheat sheets', () => {
     const fence = /```json\n([\s\S]*?)```/.exec(sheet.body);
     const input = fence?.[1] ?? '';
     const examples = [...sheet.body.matchAll(/`(jq [^`]+)`/g)].map((m) => m[1].replace(/\\\|/g, '|'));
+    /** Outputs the page states, from rows whose explanation ends ": `X`." (e.g. "Sum a field: `6`."). */
+    const stated = new Map(
+      [...sheet.body.matchAll(/^\| `(jq [^`]+)` \|[^\n]*: `([^`]+)`\. \|$/gm)].map((m) => [m[1].replace(/\\\|/g, '|'), m[2]]),
+    );
 
     it('has a sample document and a few dozen examples', () => {
       expect(() => JSON.parse(input)).not.toThrow();
@@ -168,8 +181,13 @@ describe('cheat sheets', () => {
         });
         expect(r.ok ? '' : r.error, ex).toBe('');
         expect(r.ok && r.outputs.length > 0, `${ex} printed nothing`).toBe(true);
+        if (r.ok && stated.has(ex)) expect(r.outputs.join('\n'), ex).toBe(stated.get(ex));
       });
     }
+
+    it('checks the outputs the page states', () => {
+      expect([...stated.values()]).toEqual(['"prod-eu"', 'prod-eu', '"worker"', '3', '6']);
+    });
 
     it('every SKIP entry is still on the page', () => {
       for (const s of SKIP) expect(examples, s).toContain(s);

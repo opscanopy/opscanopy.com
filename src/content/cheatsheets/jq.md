@@ -139,7 +139,7 @@ jq never edits the file itself. To save a change, write to a temporary file and 
 | `jq -r '.cluster \| @base64' services.json` | Base64-encode a value; `@base64d` decodes. |
 | `jq -r '.cluster as $c \| .services[] \| "\($c)/\(.name)"' services.json` | Keep an outer value in a variable while walking inside. |
 | `jq -r '.updated \| fromdate \| strftime("%Y-%m-%d")' services.json` | Parse an ISO 8601 timestamp and reformat it. |
-| `jq -r '.services[] \| try (.image \| split(":")[1] \| tonumber) catch "not a number"' services.json` | Handle an error per item instead of stopping. |
+| `jq -r '.services[] \| try (.labels.tier \| ascii_upcase) catch "no tier"' services.json` | Handle an error per item instead of stopping: `web` has no `tier`, so it prints `no tier` between `BACKEND` and `BATCH`. |
 
 ## Several inputs, or none
 
