@@ -1,0 +1,74 @@
+name: GSC sync
+
+# Search Console housekeeping on the same service account as the weekly report:
+# re-submit the sitemap when Google's copy is older than the live one, then
+# inspect the highest-priority sitemap URLs and commit the ranked "request
+# indexing" list to reports/gsc/<date>.md. Google has no API for the request
+# step itself, so the report is the hand-off: open the top ten in the UI.
+#
+# Required secrets: GCP_SA_KEY, GSC_SITE_URL (already set for seo-report.yml).
+# The service account needs Full access on the property for URL inspection.
+
+on:
+  schedule:
+    # Thursdays 06:00 UTC — mid-week, after Monday's report and the usual
+    # Tuesday/Wednesday content merges have deployed.
+    - cron: '0 6 * * 4'
+  workflow_dispatch:
+    inputs:
+      newest:
+        description: 'How many sitemap URLs to inspect (daily quota is 2,000)'
+        type: number
+        default: 40
+      submit:
+        description: 'Re-submit sitemap-index.xml if Google has an older copy'
+        type: boolean
+        default: true
+      force:
+        description: 'Re-submit the sitemap even if Google already has the current one'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gsc-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      # Zero dependencies — no npm ci. The script reads the LIVE sitemap, so no
+      # build either.
+      - name: Sync
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+          GSC_SITE_URL: ${{ secrets.GSC_SITE_URL }}
+        run: |
+          DATE=$(date -u +%F)
+          node scripts/gsc-sync.mjs all \
+            ${{ (github.event_name == 'schedule' || inputs.submit) && '--submit' || '' }} \
+            ${{ inputs.force && '--force' || '' }} \
+            --newest ${{ inputs.newest || 40 }} \
+            --out "reports/gsc/$DATE.md"
+
+      - name: Commit report
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add reports/gsc
+          if git diff --staged --quiet; then
+            echo "No new report content."
+          else
+            git commit -m "chore(seo): Search Console sync report"
+            git push
+          fi

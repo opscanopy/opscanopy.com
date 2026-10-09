@@ -433,6 +433,18 @@ For runtime verification of playground changes (tests can't see the DOM), `.clau
 
 **Sitemap `<lastmod>` is a content date or absent — never the build clock.** Until 2026-09-26, 94 hub/info URLs fell back to the build time, so every deploy claimed they changed. `scripts/lastmod-core.mjs` (pure, unit-tested in `src/lib/sitemap-lastmod.test.ts`) derives a git date per route, hubs from the newest item they list; `scripts/check-sitemap-lastmod.mjs` (postbuild) fails on any `<lastmod>` with a time of day.
 
+**Search Console automation runs on one service account** (`opscanopy-seo-reporter@…`,
+key under the gitignored `.secrets/` locally as `GCP_SA_KEY_FILE` in `.env`, and as the
+`GCP_SA_KEY` secret in CI; `scripts/google-sa.mjs` resolves both). `scripts/seo-report.mjs`
+(Mondays) is the query report; `scripts/gsc-sync.mjs` (pure core `gsc-sync-core.mjs`,
+tests `src/lib/gsc-sync.test.ts`) is the write side: `sitemaps --submit` re-submits
+`sitemap-index.xml` when Google's copy predates the live `<lastmod>` (run after every
+deploy with `--soft`, and Thursdays by `gsc-sync.yml`), and `inspect` ranks un-crawled
+sitemap URLs into a "Request indexing" list in `reports/gsc/<date>.md` — English content
+pages before hubs before localized copies, capped at the UI's ~10/day. There is no API
+for that last step, and the Indexing API is off-limits for ordinary pages. Never read the
+email or key id into a variable — the JSON is the whole credential.
+
 **`src/data/versions.ts`** — vendor versions quoted in page copy (today: `JQ_VERSION`, parsed from the `jq-wasm` pin in `package.json`). Page prose must read a version from here, never type it; the homepage proof strip does. Build-time only — never import it from a playground `<script>`; the jq badge keeps reading `jq.version` off the loaded binary.
 
 **`src/data/tools.ts`** — the tool registry. `liveTools` (filtered view) drives every tool listing. Flip `status: 'planned' → 'live'` when shipping.
