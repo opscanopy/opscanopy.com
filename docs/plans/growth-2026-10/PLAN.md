@@ -1,10 +1,12 @@
 # OpsCanopy growth plan — authority first
 
 Date: 2026-10-09. For: the owner (who submits, posts and decides everything below by hand).
+Line numbers are as of main `d3e26cc`. PR #83 and the embed PR shift some of them (`CLAUDE.md`,
+`src/layouts/Layout.astro`, `astro.config.mjs`), so `CLAUDE.md` is cited by section heading.
 
 OpsCanopy does not have a page-count problem. It has an authority problem. The 2026-10-03 SEO
-report shows Domain Rating 0 (`reports/seo/2026-10-03.md:14`), 6 clicks and 24 impressions in 28
-days, down from 47 (`reports/seo/2026-10-03.md:10-11`), and of a 21-URL indexation sample only `/`
+report shows Domain Rating 0 (`reports/seo/2026-10-03.md:14`), 24 impressions in 28 days (down
+from 47) and clicks flat at 6 (`reports/seo/2026-10-03.md:10-11`), and of a 21-URL indexation sample only `/`
 is indexed: 15 are "Crawled - currently not indexed" and 5 are unknown to Google
 (`reports/seo/2026-10-03.md:55-57`). The report's own guidance applies: when differentiated tools
 come back "Crawled - currently not indexed", "the constraint is authority and on-page work will
@@ -29,7 +31,8 @@ localized pages, then (later, and only if the numbers move) a directory hub, new
 4. **Write list entries yourself.** awesome-selfhosted bans machine/LLM-generated submissions
    outright (line 121 of its data repo's CONTRIBUTING.md,
    https://github.com/awesome-selfhosted/awesome-selfhosted-data/blob/master/CONTRIBUTING.md)
-   and its PR template asks a human to confirm the submission was done by a human (line 13).
+   and its PR template asks a human to confirm the submission was done by a human (line 9 of
+   https://github.com/awesome-selfhosted/awesome-selfhosted-data/blob/master/.github/PULL_REQUEST_TEMPLATE.md).
    awesome-sysadmin's wording is narrower: "Machine/LLM-generated contributions, that do not
    respect project guidelines are not allowed and will result in a ban" (line 93 of
    https://github.com/awesome-foss/awesome-sysadmin-data/blob/master/CONTRIBUTING.md). For both,
@@ -46,7 +49,7 @@ localized pages, then (later, and only if the numbers move) a directory hub, new
 | # | Step | When | Owner action |
 |---|---|---|---|
 | 1 | Authority: distribution list | now | Show HN once, AlternativeTo, then dated list entries |
-| 2 | AI-answer shaping | now, two PRs in this batch | Review and merge "PR: cheat sheets" and "PR: embed widget" |
+| 2 | AI-answer shaping | now, two PRs in this batch | Review and merge PR #83 (cheat sheets) and "PR: embed widget" (not yet opened) |
 | 3 | Localized dilution | decide on the trigger date | Pick (a), (b) or (c) in section 5 |
 | 4 | Directory hub | later | Nothing until its gate passes |
 | 5 | New tools | ongoing, filtered | Apply the three-question filter |
@@ -68,24 +71,25 @@ in 28 days. Two things follow:
 Already done: the GitHub repo has its homepage set and 6 topics. It has 1 star and was created
 2026-06-07. Releases: v1.0.0 on 2026-09-04 and v1.1.0 on 2026-09-22. The licence is MIT
 (`LICENSE:1`), and self-hosting with Docker is documented (`README.md:139-166`). There is no
-CHANGELOG.
+`CHANGELOG.md` in the repo, but the site has a public changelog at /changelog/
+(`src/pages/changelog.astro`, linked from the footer).
 
 ### Verified submission list (checked 2026-10-09)
 
 | Target | How to submit | Key rules | Qualifies today? | Action |
 |---|---|---|---|---|
-| awesome-devops.xyz | It is wmariuss/awesome-devops (repo homepage http://awesome-devops.xyz; the site is built from its README.md). PR editing README.md, one tool per PR; a bot and an AI reviewer check it | Maintained, active within 2 years. A tool **with** a public repo needs an OSS licence, ≥100 stars and 6 months of history; the domain-age path is only for tools without a repo. No tracking parameters. Entry ends with a pricing tag. The bot also checks forks, contributors and signs of inflated stars | No: 1 star. 6 months of history is reached 2026-12-07 | PR #501 is still open (created 2026-07-27, updated 2026-09-04, 0 comments, 0 reviews). Do not open a second PR. If #501 is closed, resubmit only after the repo has ≥100 stars, with the tag `oss` |
-| techiescamp/devops-tools | PR to README.md, `* **[Tool Name](URL)** (License Type): description` inside the category's `<details>` block | Format and the "What to Avoid" list only | On paper, yes | **Skip.** Dormant: last push 2024-10-24, ≥10 open PRs (oldest 2025-05-30) and none merged, last 3 closed PRs (#30, #27, #26) closed unmerged. Same lesson as sdras/awesome-actions (`marketing/distribution/awesome-list-prs.md:16-23`) |
-| awesome-sysadmin | PR to awesome-foss/awesome-sysadmin-data adding `software/<name>.yml` (the main repo takes no PRs); an issue is the alternative | Free software; first release >12 months ago; maintained; install docs; not already on awesome-selfhosted; not your own project unless it has a healthy ecosystem with a few contributors; the submitter must say whether and how long they have used it | No: first release 2026-09-04, own project, weak fit | Do not self-submit. Earliest 2027-09-04, and only by a third-party user. A listing here and one on awesome-selfhosted exclude each other |
-| awesome-selfhosted | PR to awesome-selfhosted/awesome-selfhosted-data adding `software/<name>.yml` (format in its `.github/ISSUE_TEMPLATE/addition.md`) | FOSS licence; first release >4 months ago; maintained; install docs; not on awesome-sysadmin; human-only submission; excludes cloud-dependent software, libraries, PaaS and plain Dockerization | Not yet: MIT and Docker docs are fine, and the **Miscellaneous** category already lists IT-Tools (`software/it-tools-by-sharevb.yml`, the sharevb fork), OmniTools and CyberChef. First release 2026-09-04 | Submit on or after **2027-01-04**. The owner writes the entry. A CHANGELOG is optional but makes the "maintained" check easier |
+| awesome-devops.xyz | It is wmariuss/awesome-devops (repo homepage http://awesome-devops.xyz; the site is built from its README.md). PR editing README.md, one tool per PR; a bot and an AI reviewer check it | Maintained, active within 2 years. A tool **with** a public repo needs an OSS licence, ≥100 stars and 6 months of history; the domain-age path is only for tools without a repo. No tracking parameters. Entry ends with a pricing tag. The bot also checks forks, contributors and signs of inflated stars | No: 1 star. 6 months of history is reached 2026-12-07 | PR #501 is still open (created 2026-07-27, updated 2026-09-04, 0 comments, 0 reviews) and now has merge conflicts (`mergeable: CONFLICTING`, checked 2026-10-09). Leave it, or close it yourself; do not rebase it onto a list it no longer qualifies for, and do not open a second PR. If #501 is closed, resubmit only after the repo has ≥100 stars, with the tag `oss` |
+| techiescamp/devops-tools | PR to README.md, `* **[Tool Name](URL)** (License Type): description` inside the category's `<details>` block | Format and the "What to Avoid" list only | On paper, yes | **Skip.** Dormant: last push 2024-10-24, 17 open PRs (oldest #20, 2024-05-01) and none merged, last 3 closed PRs (#30, #27, #26) closed unmerged. Same lesson as sdras/awesome-actions (`marketing/distribution/awesome-list-prs.md:16-23`) |
+| awesome-sysadmin | PR to awesome-foss/awesome-sysadmin-data adding `software/<name>.yml` (the main repo takes no PRs); an issue is the alternative | Free software; first release >12 months ago; maintained; install docs; not already on awesome-selfhosted; not your own project unless it has a healthy ecosystem with a few contributors; the submitter must say whether and how long they have used it (the 12-month, own-project and usage rules are lines 19, 12 and 33 of the data repo's `.github/PULL_REQUEST_TEMPLATE.md`; the 12-month rule is also line 57 of `.github/ISSUE_TEMPLATE/addition.md`) | No: first release 2026-09-04, own project, weak fit | Do not self-submit. Earliest 2027-09-04, and only by a third-party user. A listing here and one on awesome-selfhosted exclude each other |
+| awesome-selfhosted | PR to awesome-selfhosted/awesome-selfhosted-data adding `software/<name>.yml` (format in its `.github/ISSUE_TEMPLATE/addition.md`) | FOSS licence; first release >4 months ago; maintained; install docs; not on awesome-sysadmin; human-only submission; excludes cloud-dependent software, libraries, PaaS and plain Dockerization | Not yet: MIT and Docker docs are fine, and the **Miscellaneous** category already lists IT-Tools (`software/it-tools-by-sharevb.yml`, the sharevb fork), OmniTools and CyberChef. First release 2026-09-04 | Submit on or after **2027-01-04**. The owner writes the entry. Point it at https://opscanopy.com/changelog/ as evidence for the "maintained" check; no `CHANGELOG.md` is needed |
 | AlternativeTo | Create an account, "Suggest new application", then add it as an alternative to crontab.guru (`marketing/distribution/submissions.md:120-187`) | 7-day account age before submitting; no links in descriptions; no upvote drives; links are `rel="nofollow noopener"` (repo notes) | *Unverified*: the site returns 403 to automated fetches, so rules and the account's state could not be checked | Owner checks the account. Fix the tool count in the copy first (see section 10) |
 | Product Hunt | Submit, New Product, paste the URL (producthunt.com/launch); makers may post their own product | No direct upvote asks, no vote trading, no paid boosts; relaunch allowed for a significant new version | Yes (no existing product page) | Low priority. Launch only **after "PR: embed widget" is merged and deployed**, so the launch has something new. Link rel and 2026 rule changes *unverified* |
-| Show HN | Normal submission titled "Show HN: …" (news.ycombinator.com/showhn.html) | Something people can try without signing up; non-trivial; personally worked on; the author is around to discuss; HN dedupes URLs, so one shot per URL (`marketing/distribution/show-hn.md:6`) | Yes: no OpsCanopy submissions found on HN | **Highest-value single action.** Post one differentiated tool, the GitHub Actions Expression Tester (`marketing/distribution/show-hn.md:29`), on a weekday, after the embed PR is merged and deployed. Prepared replies: `marketing/distribution/hn-comment-prep.md`. The owner writes every reply. HN's stance on AI-written text *unverified* |
+| Show HN | Normal submission titled "Show HN: …" (news.ycombinator.com/showhn.html) | Something people can try without signing up; non-trivial; personally worked on; the author is around to discuss; HN dedupes URLs, so one shot per URL (`marketing/distribution/show-hn.md:6`) | Yes: no OpsCanopy submissions found on HN | **Highest-value single action.** Post one differentiated tool, the GitHub Actions Expression Tester (`marketing/distribution/show-hn.md:29`), on a weekday, now. It is not gated on the embed PR: that tool is not in the embed set, so waiting gains it nothing, and the prepared copy is about it. Prepared replies: `marketing/distribution/hn-comment-prep.md`. The owner writes every reply. HN's stance on AI-written text *unverified* |
 
 Also still prepared and unsent: a Console.dev email and a Changelog News submission
 (`marketing/distribution/submissions.md:8-118`). Their current acceptance rules are *unverified*.
 
-**Order:** Show HN (after the embed PR) → AlternativeTo → Product Hunt → awesome-selfhosted on
+**Order:** Show HN (now) → AlternativeTo → Product Hunt → awesome-selfhosted on
 2027-01-04 → awesome-devops only once the star gate is met. Console.dev and Changelog whenever
 convenient.
 
@@ -96,24 +100,29 @@ What is already in place: every major AI crawler is explicitly allowed. The `AI_
 Claude-SearchBot, Claude-User, anthropic-ai, PerplexityBot, Perplexity-User, Google-Extended,
 Applebot-Extended, CCBot and others, and nothing is disallowed (`src/pages/robots.txt.ts:63-66`).
 `/llms.txt` and `/llms-full.txt` exist and are generated from the same registries as the site
-(`CLAUDE.md:430`).
+(`CLAUDE.md`, "Site config" section).
 
 Actions, in this batch:
 
-- **"PR: cheat sheets"** (open in this same batch, not merged). An English-only cheat-sheet hub
-  with a first set of dense, hand-checked reference pages, linked to the matching tools and
+- **"PR: cheat sheets"** (PR #83, open, not merged). An English-only hub at `/cheatsheets/`
+  with a first set of dense, hand-checked reference pages: **docker, openssl and jq**; kubectl
+  and systemctl-journalctl come in a second batch. The pages are linked to the matching tools and
   included in `llms.txt`, `llms-full.txt`, the sitemap and search. These are answer-shaped
   pages: the kind of content an assistant quotes and links.
-- **"PR: embed widget"** (open in this same batch, not merged). Embeddable tool pages with a
-  followed "Powered by OpsCanopy" link back to the tool, plus a copyable embed snippet on the
-  tool pages. Embeds are the one channel in this plan that can earn *followed* links. Note that
-  this PR relaxes `frame-ancestors 'none'` (`public/_headers:92`) for the embed pages only; the
+- **"PR: embed widget"** (in this batch, not yet opened). `/embed/<tool>/` pages for four tools:
+  **cron-expression-tester, subnet-calculator, chmod-calculator and llm-vram-calculator**, plus a
+  copyable embed snippet on those tool pages. The backlink that counts is the plain
+  `<a href=…/tool/>Tool</a> by OpsCanopy` line the snippet places **below** the iframe
+  (`src/lib/embeds.ts:34` in the embed PR). The "Powered by OpsCanopy" link inside the frame sits
+  on OpsCanopy's own noindex page and passes the host page nothing. Embedders can delete the
+  outside line, so ask them to keep it and count only domains where it survives. Embeds are the
+  one channel in this plan that can earn *followed* links. Note that this PR relaxes `frame-ancestors 'none'` (`public/_headers:92`) for the embed pages only; the
   rest of the site stays unframeable.
 
 Ongoing:
 
 - Keep `SITE_INTRO` (`src/pages/llms.txt.ts:32`) in step with `public/_headers`. They must be
-  edited together (`CLAUDE.md:430`).
+  edited together (`CLAUDE.md`, "Site config" section).
 - Set up Bing Webmaster Tools if not done yet (`docs/seo-setup.md:203`). Bing is the bigger search
   source today and likely feeds ChatGPT search *(inference, unverified)*.
 
@@ -130,7 +139,7 @@ section 9.
 ## 5. Owner decision — localized dilution
 
 **Facts.** 326 of the 646 zero-impression sitemap URLs (≈50%) are localized copies. All four
-localized URLs in the indexation sample (`/de/`, `/es/`, `/fr/`, `/pt-br/subnet-calculator/`) are
+localized URLs in the indexation sample (`/{de,es,fr,pt-br}/subnet-calculator/`) are
 "Crawled - currently not indexed" (`reports/seo/2026-10-03.md:50-53`). The localized pages that
 drew any impressions are few (`reports/seo/2026-10-03.md:83-89`): the `/de/`, `/es/` and `/fr/`
 homes with 3 each, and three `www.` rows without a trailing slash — `www.opscanopy.com/es/` (1),
@@ -153,7 +162,8 @@ through the existing `noindex: 'follow'` prop (`src/components/SEO.astro:28-29,1
 `src/layouts/Layout.astro:31-32`). Reverting is emptying the list.
 
 **Caveat.** English pages declare hreflang alternates pointing at their localized copies, in the
-page markup (`src/components/SEO.astro`) and in the sitemap (`astro.config.mjs:104-119`). A
+page markup (`src/components/SEO.astro`) and in the sitemap (the sitemap integration's `i18n` option, `astro.config.mjs:80`; x-default
+is added at `astro.config.mjs:104-119`). A
 noindexed copy must also be dropped from its hreflang group (`noAlternates` / `availableLocales`,
 `src/layouts/Layout.astro:38`); otherwise the site advertises URLs it asks Google to ignore —
 the same mistake the thin-tags comment warns about (`astro.config.mjs:96-98`).
@@ -223,7 +233,7 @@ the owner signs off the privacy changes below.
   The comment at `public/_headers:22-24` says `connect-src` enforces "your input never leaves
   the browser"; widening it weakens that guarantee.
 - `public/_headers:81`, the Permissions-Policy, which sets `browsing-topics=()`.
-- `src/pages/llms.txt.ts:32`, `SITE_INTRO`, edited together with `_headers` (`CLAUDE.md:430`).
+- `src/pages/llms.txt.ts:32`, `SITE_INTRO`, edited together with `_headers` (`CLAUDE.md`, "Site config" section).
 - `src/layouts/Layout.astro:136-151`, Consent Mode, which denies every `ad_*` signal everywhere.
 - `src/lib/consent.ts` and its test: a home-made analytics-only toggle, not a TCF consent
   platform.
@@ -246,8 +256,8 @@ on them.
 | Indexation | English tool pages indexed, out of the 10 in the sample (`reports/seo/2026-10-03.md:35-44`) | 0 of 10 | 2026-11-09: ≥2. 2027-01-09: ≥5 | Fewer than 3 on 2026-12-09 with the localized sample still not indexed → section 5 decision (same trigger, same definition) |
 | AI answers | Sessions from chatgpt.com + copilot.com + perplexity.ai + claude.ai in 28 days (GA4) | 106 | 2026-11-09: ≥106. 2027-01-09: ≥200 | Below 80 in two reports running → check robots, `llms.txt` and Bing indexing before adding content |
 | Show HN | Points, referral sessions that week, follow-on links | Not posted | 7 days after posting | Never repost the same URL |
-| Cheat sheets ("PR: cheat sheets", open) | Cheat-sheet pages indexed; AI referrals landing on them | 0 (not merged) | 2027-01-09: ≥2 indexed | 0 indexed on 2027-01-09 → stop writing new sheets |
-| Embeds ("PR: embed widget", open) | External domains embedding or linking the tools via the embed (Ahrefs RDs, GA4 referrals) | 0 (not merged) | 2027-01-09: ≥3 domains | 0 → do not extend beyond the first tool set |
+| Cheat sheets (PR #83, open) | Cheat-sheet pages indexed, out of the 4 URLs in #83 (hub, docker, openssl, jq); AI referrals landing on them | 0 (not merged) | 2027-01-09: ≥2 of 4 indexed | 0 indexed on 2027-01-09 → stop writing new sheets |
+| Embeds ("PR: embed widget", not yet opened) | External domains that keep the snippet's link below the iframe (Ahrefs RDs); click-throughs from the in-frame link (GA4 sessions with `utm_source=embed`) | 0 (not merged) | 2027-01-09: ≥3 domains | 0 → do not extend beyond the four tools |
 | Ads | Monthly pageviews (GA4) | ≈488 sessions in 28 days; pageviews unknown | Monthly | Nothing before 50,000 pageviews a month; AdSense only after privacy sign-off |
 
 If any listing site turns out to give a *followed* link, note it in the report; the rendered
@@ -268,10 +278,12 @@ pass:
   the 100-star rule. The list's star count in the note (4,303) is now 4,414.
 - `docs/seo-setup.md:255` calls awesome-list links "real followed" links. That contradicts
   `marketing/distribution/awesome-list-prs.md:25-30`, which is correct: GitHub nofollows them.
-- `marketing/distribution/submissions.md` gives two tool counts. The current count is 39
-  (`README.md:5,29`). "39" at `marketing/distribution/submissions.md:149` is right; "29" at
-  `marketing/distribution/submissions.md:22,41,51,59,157` is wrong and must be fixed before any of
-  that copy is sent.
+- The tool count is **42**: 42 tools in `src/data/tools.ts` have `status: 'live'` (`liveTools`,
+  `src/data/tools.ts:937`), and the live site says "42 tools" (checked 2026-10-09). Stale copies:
+  "39" in `README.md:5,29`, "39" in the GitHub repo description, "39" at
+  `marketing/distribution/submissions.md:149` and "29" at
+  `marketing/distribution/submissions.md:22,41,51,59,157`. Fix them all before any of that copy is
+  sent, ideally reading the count from `liveTools` where the copy is generated.
 
 ## Not in this plan, on purpose
 
@@ -295,5 +307,5 @@ pass:
 
 ## Status
 
-Plan only. Nothing above has been submitted, posted or changed. The cheat-sheet and embed work
-are open PRs in this same batch, under review, not live.
+Plan only. Nothing above has been submitted, posted or changed. The cheat sheets are PR #83
+(open, under review); the embed PR is not yet opened. Neither is live.
