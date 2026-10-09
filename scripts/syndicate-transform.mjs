@@ -98,3 +98,17 @@ function stripHtmlComments(md) {
     .join('')
     .replace(/^\s+/, '');
 }
+
+/**
+ * Canonical URL as a dedupe key: trailing slash dropped, so
+ * `https://opscanopy.com/blog/x/` and `…/blog/x` compare equal.
+ *
+ * WHY: title matching alone misses posts retitled on the site after they were
+ * syndicated. The 2026-10-09 dry run queued five such posts for a second dev.to
+ * copy (debug-alertmanager-routing, how-alertmanager-routing-works,
+ * docker-run-vs-compose, prometheus-relabel-configs-explained,
+ * x509-certificate-signed-by-unknown-authority); every one already carried the
+ * same canonical_url on dev.to.
+ * @param {string | null | undefined} url
+ */
+export const canonicalKey = (url) => (url || '').trim().replace(/\/+$/, '');

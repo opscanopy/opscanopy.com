@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { transformForDevto, ogImagePath } from '../../scripts/syndicate-transform.mjs';
+import { transformForDevto, ogImagePath, canonicalKey } from '../../scripts/syndicate-transform.mjs';
 
 const ORIGIN = 'https://opscanopy.com';
 
@@ -124,5 +124,19 @@ describe('transformForDevto', () => {
     expect(out.body).not.toContain('<!-- note -->');
     expect(out.body).toContain('Hello  world.');
     expect(out.body).toContain('```html\n<!-- keep me -->\n```');
+  });
+});
+
+describe('canonicalKey', () => {
+  it('treats trailing-slash variants as the same post, so a retitled post is not re-queued', () => {
+    const live = new Set([canonicalKey(`${ORIGIN}/blog/debug-alertmanager-routing/`)]);
+    expect(live.has(canonicalKey(`${ORIGIN}/blog/debug-alertmanager-routing`))).toBe(true);
+    expect(live.has(canonicalKey(`${ORIGIN}/blog/debug-alertmanager-routing/`))).toBe(true);
+    expect(live.has(canonicalKey(`${ORIGIN}/blog/how-alertmanager-routing-works/`))).toBe(false);
+  });
+
+  it('maps a missing canonical to an empty key that the caller filters out', () => {
+    expect(canonicalKey(null)).toBe('');
+    expect(canonicalKey(undefined)).toBe('');
   });
 });

@@ -32,7 +32,7 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { transformForDevto } from './syndicate-transform.mjs';
+import { transformForDevto, canonicalKey } from './syndicate-transform.mjs';
 
 const SITE = 'https://opscanopy.com';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -360,6 +360,9 @@ function foremTarget({ name, host, username }) {
       const arr = await res.json();
       // Stash timestamps for the cadence guard; the runner reads them separately.
       this._published = arr.map((a) => a.published_at).filter(Boolean);
+      // Canonicals too: titles drift when a post is retitled on the site, the
+      // canonical_url never does (see canonicalKey).
+      this._canonicals = new Set(arr.map((a) => canonicalKey(a.canonical_url)).filter(Boolean));
       return arr.map((a) => a.title);
     },
     publishedTimestamps() {
@@ -637,6 +640,7 @@ for (const target of TARGETS) {
 
   const pending = eligible.filter((p) => {
     if (localSlugs.has(p.slug)) return false;
+    if (target._canonicals?.has(canonicalKey(p.canonical))) return false;
     return byUrl ? !live.has(p.canonical.replace(/\/$/, '')) : !alreadyPublished(p.title, live);
   });
 
