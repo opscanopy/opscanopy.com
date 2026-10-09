@@ -66,6 +66,7 @@ on a command intended as a preview. Dry-run first, read it, then re-run with
 | 2026-09-02 | 1 | 2 | Normal. 2-day gap both. Last error-string post; held the two guides back on Show HN day. |
 | 2026-09-07 | 1 | 1 | AIF-C01 study guide (guide + its 65-q mock). 5-day gap. Targeted via --only, not queue order. |
 | 2026-09-18 | 1 | 2 | Networking guide. 11-day gap. dev.to queue down to 1 (DevOps Projects). |
+| 2026-10-09 | 2 | 2 | Base64-is-not-encryption + chmod-command-linux (both targets). 13-day gap. Dry run queued 5 posts already on dev.to under their old titles; `syndicate.mjs` now also dedupes on canonical_url. (dev.to shows 2 posts on 2026-09-26 that this log never recorded.) |
 
 ## Current state
 
