@@ -12,6 +12,7 @@
  * English only, deliberately: the localized trees are translations of the same
  * content, and listing 5x the URLs would dilute the map rather than enrich it.
  */
+import { getCollection } from 'astro:content';
 import { site } from '../data/site';
 import { liveTools } from '../data/tools';
 import { tracks } from '../data/learn';
@@ -45,6 +46,9 @@ export const SITE_INTRO: readonly string[] = [
 export async function GET(): Promise<Response> {
   const posts = await getPostsForLocale('en');
   const guides = await getGuidesForLocale('en');
+  const cheatsheets = (await getCollection('cheatsheets', (e) => !e.data.draft)).sort(
+    (a, b) => a.data.order - b.data.order,
+  );
 
   const out: string[] = [];
   const push = (...l: string[]) => out.push(...l);
@@ -78,6 +82,12 @@ export async function GET(): Promise<Response> {
   push('## Guides', '');
   for (const g of guides) {
     push(`- [${g.entry.data.title}](${site.url}/learn/guides/${g.slug}/): ${g.entry.data.description}`);
+  }
+
+  push('', '## Cheat sheets', '');
+  push(`- [All cheat sheets](${site.url}/cheatsheets/): one-page command references, each verified against a named release and its official docs.`);
+  for (const c of cheatsheets) {
+    push(`- [${c.data.title}](${site.url}/cheatsheets/${c.id}/): ${c.data.description}`);
   }
 
   push('', '## Roadmaps', '');

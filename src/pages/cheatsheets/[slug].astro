@@ -1,0 +1,215 @@
+---
+/**
+ * /cheatsheets/<slug>/ — one command reference page.
+ *
+ * English only (`/cheatsheets` is in ENGLISH_ONLY_SECTIONS). The body is the
+ * Markdown entry from the `cheatsheets` collection; rehype-chapters skips these
+ * files, so the tables are not split into "Section X of Y" chapters. The
+ * editorial rules (official sources, destructive markers, runnable jq examples)
+ * are gated by src/lib/cheatsheets.test.ts.
+ */
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+import Shell from '../../components/Shell.astro';
+import PageHero from '../../components/PageHero.astro';
+import FaqList from '../../components/FaqList.astro';
+import { site } from '../../data/site';
+import { tools } from '../../data/tools';
+import { useTranslations } from '../../i18n/utils';
+import { breadcrumbLd, faqPageLd, techArticleLd } from '../../lib/jsonld';
+
+export async function getStaticPaths() {
+  const sheets = await getCollection('cheatsheets', (e) => !e.data.draft);
+  return sheets.map((entry) => ({ params: { slug: entry.id }, props: { entry } }));
+}
+
+interface Props {
+  entry: CollectionEntry<'cheatsheets'>;
+}
+const { entry } = Astro.props;
+const d = entry.data;
+const { Content, headings } = await render(entry);
+const t = useTranslations('en');
+
+const canonical = `/cheatsheets/${entry.id}/`;
+const url = `${site.url}${canonical}`;
+const isoPublished = d.pubDate.toISOString();
+const isoModified = d.updatedDate.toISOString();
+const updatedLabel = d.updatedDate.toLocaleDateString('en-US', {
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+  timeZone: 'UTC',
+});
+
+const jump = headings.filter((h) => h.depth === 2);
+const relatedTools = d.relatedTools.map((s) => {
+  const tool = tools.find((x) => x.slug === s);
+  if (!tool) throw new Error(`cheatsheets/${entry.id}: unknown relatedTools slug "${s}"`);
+  return tool;
+});
+
+const jsonLd: Record<string, unknown>[] = [
+  techArticleLd({
+    headline: d.title,
+    description: d.description,
+    url,
+    datePublished: isoPublished,
+    dateModified: isoModified,
+    keywords: `${d.command}, cheat sheet, commands`,
+    author: site.person,
+  }),
+  breadcrumbLd([
+    { name: 'Home', item: `${site.url}/` },
+    { name: 'Cheat sheets', item: `${site.url}/cheatsheets/` },
+    { name: d.title, item: url },
+  ]),
+];
+if (d.faqs?.length) jsonLd.push(faqPageLd(d.faqs));
+---
+
+<Shell
+  title={d.seoTitle ?? d.title}
+  description={d.description}
+  canonical={canonical}
+  type="article"
+  publishedTime={isoPublished}
+  modifiedTime={isoModified}
+  jsonLd={jsonLd}
+  noAlternates
+>
+  <PageHero variant="hub" class="bg-canvas-soft">
+    <Fragment slot="breadcrumb">
+      <nav aria-label="Breadcrumb">
+        <ol role="list" class="caption flex flex-wrap items-center gap-x-1.5 text-mute">
+          <li><a href="/" class="hover:text-ink">Home</a></li>
+          <li aria-hidden="true">/</li>
+          <li><a href="/cheatsheets/" class="hover:text-ink">Cheat sheets</a></li>
+          <li aria-hidden="true">/</li>
+          <li class="text-body" aria-current="page">{d.command}</li>
+        </ol>
+      </nav>
+    </Fragment>
+    {d.title}
+    <Fragment slot="lede">{d.description}</Fragment>
+    <Fragment slot="meta">
+      <span>By <a href="/about/" class="link-inline">{site.person.name}</a></span>
+      <span>Verified against {d.verifiedWith}</span>
+      <span>Updated <time datetime={isoModified.slice(0, 10)}>{updatedLabel}</time></span>
+    </Fragment>
+  </PageHero>
+
+  <section class="bg-canvas">
+    <div class="container-page py-12 sm:py-16">
+      {
+        jump.length > 1 && (
+          <nav aria-label="On this page" class="measure-wide mb-10">
+            <p class="eyebrow mb-3 text-mute">On this page</p>
+            <ul role="list" class="flex flex-wrap gap-2">
+              {jump.map((h) => (
+                <li>
+                  <a href={`#${h.slug}`} class="chip">
+                    {h.text}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        )
+      }
+
+      <div
+        class="rich-text cheatsheet measure-wide"
+        data-copy-label={t('blog.copyCode')}
+        data-copied-label={t('blog.copiedCode')}
+        data-copy-aria={t('blog.copyCodeAriaLabel')}
+      >
+        <Content />
+      </div>
+
+      <aside class="measure-wide mt-12 rounded-xl border border-brand/30 bg-brand/5 p-6">
+        <p class="eyebrow text-brand-strong">Try it</p>
+        <p class="body-md mt-2 text-pretty text-ink">Try the same ideas on your own input with these free, browser-based tools.</p>
+        <ul role="list" class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {
+            relatedTools.map((tool) => (
+              <li>
+                <a
+                  href={`/${tool.slug}/`}
+                  class="card group flex flex-col p-4 transition-[transform,box-shadow] duration-150 ease-out hover:-translate-y-0.5 hover:shadow-soft motion-reduce:transform-none"
+                >
+                  <span class="body-sm font-semibold text-ink group-hover:text-brand-strong">{tool.name}</span>
+                  <span class="mt-1 text-[13px] text-mute">{tool.tagline}</span>
+                </a>
+              </li>
+            ))
+          }
+        </ul>
+      </aside>
+
+      <section class="measure-wide mt-12" aria-labelledby="sources-heading">
+        <h2 id="sources-heading" class="display-sm text-ink">Sources</h2>
+        <p class="body-sm mt-2 text-pretty text-body">
+          Every command above was checked against these official references and against {d.verifiedWith}.
+        </p>
+        <ul role="list" class="body-sm mt-4 flex flex-col gap-2">
+          {
+            d.sources.map((s) => (
+              <li>
+                <a href={s.url} class="link-inline" rel="noopener">
+                  {s.title}
+                </a>
+              </li>
+            ))
+          }
+        </ul>
+        <p class="body-sm mt-8">
+          <a href="/cheatsheets/" class="link-inline font-medium">All cheat sheets</a>
+        </p>
+      </section>
+    </div>
+  </section>
+
+  {d.faqs?.length ? <FaqList faqs={d.faqs} align="left" /> : null}
+</Shell>
+
+<style is:global>
+  /* Cheat-sheet tables. Site-wide Markdown tables are unstyled (only the
+     .table-scroll wrapper is), so these rules are scoped to .cheatsheet. */
+  .cheatsheet table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 15px;
+    line-height: 22px;
+  }
+  .cheatsheet th,
+  .cheatsheet td {
+    padding: 8px 12px;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--color-hairline);
+  }
+  .cheatsheet th {
+    color: var(--color-ink);
+    font-weight: 600;
+    border-bottom-color: var(--color-hairline-strong);
+  }
+  .cheatsheet td:first-child {
+    width: 50%;
+  }
+  .cheatsheet td code {
+    overflow-wrap: anywhere;
+  }
+</style>
+
+<script>
+  import { wireCodeCopy } from '../../lib/code-copy';
+
+  const root = document.querySelector<HTMLElement>('.cheatsheet');
+  if (root) {
+    wireCodeCopy(root, {
+      copy: root.dataset.copyLabel ?? 'Copy',
+      copied: root.dataset.copiedLabel ?? 'Copied',
+      aria: root.dataset.copyAria ?? 'Copy code to clipboard',
+    });
+  }
+</script>

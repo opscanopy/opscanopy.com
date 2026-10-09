@@ -69,6 +69,7 @@ const footer = [
       { href: '/learn', label: 'All guides' },
       { href: '/mission-90/', label: '90 Days DevOps' },
       { href: '/tests', label: 'Practice tests' },
+      { href: '/cheatsheets', label: 'Cheat sheets' },
       { href: '/learn/roadmaps/devops', label: 'DevOps roadmap' },
       { href: '/learn/guides/linux-for-devops', label: 'Linux for DevOps' },
       { href: '/learn/guides/docker-for-devops', label: 'Docker for DevOps' },

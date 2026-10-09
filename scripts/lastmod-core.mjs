@@ -189,6 +189,8 @@ export function routes(inv) {
     ['/mission-90/setup/', 'src/pages/mission-90/setup.astro', [], []],
     ['/mission-90/missions/', 'src/pages/mission-90/missions/index.astro', [], []],
     ['/tests/', 'src/pages/tests/index.astro', [], []],
+    // Hub dated from the newest sheet it lists (`?? []`: older inventories lack the key).
+    ['/cheatsheets/', 'src/pages/cheatsheets/index.astro', [], (inv.cheatsheets ?? []).map((s) => s.day)],
   ];
   for (const [path, page, files, days] of single) out.push({ path, locale: en, page, files, days });
 
