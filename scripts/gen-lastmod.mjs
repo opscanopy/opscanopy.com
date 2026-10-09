@@ -128,6 +128,26 @@ try {
   console.warn(`gen-lastmod: could not read guides (${err.code ?? err.message})`);
 }
 
+// ── Cheat sheets (English only, flat directory) ───────────────────────────────
+// `updatedDate` is required by the collection schema, so every sheet is dated.
+let sheetCount = 0;
+const cheatsheets = [];
+try {
+  const sheetDir = join(ROOT, 'src/content/cheatsheets');
+  for (const file of await readdir(sheetDir)) {
+    if (!file.endsWith('.md')) continue;
+    const src = await readFile(join(sheetDir, file), 'utf8');
+    if (fmDraft(src)) continue;
+    const day = fmDate(src, 'updatedDate');
+    if (!day) continue;
+    map[`/cheatsheets/${basename(file, '.md')}/`] = toIso(day);
+    cheatsheets.push({ slug: basename(file, '.md'), day });
+    sheetCount++;
+  }
+} catch (err) {
+  console.warn(`gen-lastmod: could not read cheat sheets (${err.code ?? err.message})`);
+}
+
 // ── Mission 90 day pages ──────────────────────────────────────────────────────
 // Only 6 of the 90 days set `updatedDate`, so prefer it where present and fall
 // back to the file's last commit date.
@@ -194,6 +214,7 @@ const inv = {
   tools,
   posts,
   guides,
+  cheatsheets,
   missionDays,
   roadmaps,
   missions,
@@ -216,6 +237,6 @@ Object.assign(map, routeMap);
 await writeFile(OUT_FILE, JSON.stringify(map, null, 2) + '\n', 'utf8');
 console.log(
   `gen-lastmod: wrote ${Object.keys(map).length} entries ` +
-    `(${postCount} post pages, ${guideCount} guides, ${dayCount} mission days, ` +
+    `(${postCount} post pages, ${guideCount} guides, ${sheetCount} cheat sheets, ${dayCount} mission days, ` +
     `${Object.keys(routeMap).length} listing/info pages) to src/data/lastmod.generated.json`,
 );

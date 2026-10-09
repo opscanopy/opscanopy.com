@@ -56,7 +56,7 @@ const ENGLISH_ONLY_PROTECTED = [
   '/learn/guides/docker-for-devops/',
 ];
 /** Mirrors ENGLISH_ONLY_SECTIONS / ENGLISH_ONLY_FILES in src/i18n/paths.ts. */
-const ENGLISH_ONLY_SECTIONS = ['/learn', '/mission-90', '/changelog', '/tests'];
+const ENGLISH_ONLY_SECTIONS = ['/learn', '/mission-90', '/changelog', '/tests', '/cheatsheets'];
 const ENGLISH_ONLY_FILES = ['/rss.xml'];
 /**
  * Mirrors socialLinks in src/lib/site-links.ts (footer: true), which reads

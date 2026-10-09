@@ -62,6 +62,33 @@ const guides = defineCollection({
   }),
 });
 
+/** Command cheat sheets at /cheatsheets/<slug>/ — English only, flat directory.
+ *  Editorial rules (official sources, destructive markers, runnable jq) are
+ *  gated by src/lib/cheatsheets.test.ts. */
+const cheatsheets = defineCollection({
+  loader: glob({ pattern: '*.md', base: './src/content/cheatsheets' }),
+  schema: z.object({
+    /** The H1. */
+    title: z.string(),
+    /** The <title>, when it should differ from the H1. */
+    seoTitle: z.string().optional(),
+    /** Meta description and the hero lede. */
+    description: z.string().max(160),
+    /** Short command name for the hub, llms.txt and tool cross-links ("docker"). */
+    command: z.string(),
+    /** What every command was checked against, e.g. "Docker CLI 29.6.2". */
+    verifiedWith: z.string(),
+    pubDate: z.coerce.date(),
+    updatedDate: z.coerce.date(),
+    order: z.number(),
+    /** Tool slugs for the "Try it" block; each must be a live tool. */
+    relatedTools: z.array(z.string()).min(1),
+    sources: z.array(z.object({ title: z.string(), url: z.string().url() })).min(2),
+    faqs: z.array(z.object({ q: z.string(), a: z.string() })).max(4).optional(),
+    draft: z.boolean().default(false),
+  }),
+});
+
 /** One "quick check" question — a sibling of interviewQA, optional and
  *  progressive: a day with no `check` field is exactly as valid as one with
  *  1-3 questions. `answerIndex` is refined against THIS question's own
@@ -137,4 +164,4 @@ const practiceTestQuestions = defineCollection({
     }),
 });
 
-export const collections = { blog, guides, mission90Days, practiceTestQuestions };
+export const collections = { blog, guides, cheatsheets, mission90Days, practiceTestQuestions };

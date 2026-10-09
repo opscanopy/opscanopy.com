@@ -2,8 +2,8 @@
  * /llms-full.txt — the whole site as one plain-Markdown document.
  *
  * `/llms.txt` is a map (titles and links); this is the territory. An assistant
- * that fetches this file has the full prose of every guide and blog post, the
- * complete About / Security / Privacy pages, and a record for every tool — no
+ * that fetches this file has the full prose of every guide, blog post and cheat
+ * sheet, the complete About / Security / Privacy pages, and a record for every tool — no
  * crawl required, and no JavaScript, which matters because AI crawlers do not
  * execute it.
  *
@@ -15,6 +15,7 @@
  * from since 2026-09-22). KNOWN GAP: each page's "why this exists" prose is
  * still inline markup in src/pages/<slug>.astro and is not reachable here.
  */
+import { getCollection } from 'astro:content';
 import { site } from '../data/site';
 import { liveTools, categoryToSlug } from '../data/tools';
 import { getToolUpdatedAt } from '../data/tool-meta';
@@ -51,6 +52,9 @@ function stripHeroImage(body: string): string {
 export async function GET(): Promise<Response> {
   const posts = await getPostsForLocale('en');
   const guides = await getGuidesForLocale('en');
+  const cheatsheets = (await getCollection('cheatsheets', (e) => !e.data.draft)).sort(
+    (a, b) => a.data.order - b.data.order,
+  );
 
   const out: string[] = [];
   const push = (...l: string[]): void => void out.push(...l);
@@ -113,6 +117,27 @@ export async function GET(): Promise<Response> {
       g.entry.data.description,
       '',
       stripHeroImage(g.entry.body ?? ''),
+      '',
+    );
+  }
+
+  push('---', '', '# Cheat sheets', '');
+  for (const c of cheatsheets) {
+    push(
+      `## ${c.data.title}`,
+      '',
+      `URL: ${site.url}/cheatsheets/${c.id}/`,
+      `Verified against: ${c.data.verifiedWith}`,
+      '',
+      c.data.description,
+      '',
+      (c.body ?? '').trim(),
+      '',
+      ...(c.data.faqs?.length
+        ? ['### Questions and answers', '', ...c.data.faqs.flatMap((f) => [`**${f.q}**`, '', f.a, ''])]
+        : []),
+      'Sources:',
+      ...c.data.sources.map((s) => `- ${s.title}: ${s.url}`),
       '',
     );
   }

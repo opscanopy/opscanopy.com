@@ -65,7 +65,8 @@ function pager(index, total, sections) {
 }
 
 export default function rehypeChapters() {
-  return (tree) => {
+  /** @param {any} tree @param {any} file */
+  return (tree, file) => {
     // Astro assigns heading ids AFTER user rehype plugins, so they aren't present
     // yet. Assign them here with the same library (github-slugger) over every
     // heading in document order, so our pager hrefs match Astro's final ids and
@@ -79,6 +80,10 @@ export default function rehypeChapters() {
       if (node.children) for (const c of node.children) assignIds(c);
     };
     assignIds(tree);
+
+    // Cheat sheets are lookup tables, not chapters: no "Section X of Y" meta or
+    // pagers (ids are still assigned above, so the "On this page" links work).
+    if (/[\\/]content[\\/]cheatsheets[\\/]/.test(String(file?.path ?? file?.history?.[0] ?? ''))) return;
 
     const children = tree.children;
 

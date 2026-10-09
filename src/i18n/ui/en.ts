@@ -84,6 +84,7 @@ const en = {
   'crosslinks.postsHeading': 'Read more about this',
   'crosslinks.learnNewTo': 'New to {track}?',
   'crosslinks.learnCta': 'Read the {track} guide',
+  'crosslinks.cheatsheetCta': 'Command reference: the {name}',
 
   // Command palette (Ctrl/⌘+K)
   'palette.dialogLabel': 'Command palette',
