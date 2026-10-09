@@ -17,6 +17,7 @@
 //
 // Auth: one Google Cloud service account, used for both APIs.
 //   GCP_SA_KEY         the service-account JSON, verbatim (whole file)
+//   GCP_SA_KEY_FILE    or a path to it (local runs; see scripts/google-sa.mjs)
 //   GSC_SITE_URL       e.g. "sc-domain:opscanopy.com" or "https://opscanopy.com/"
 //   GA4_PROPERTY_ID    numeric property id (NOT the G-XXXX measurement id)
 //
@@ -33,67 +34,28 @@
 // is two POSTs.
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { createSign } from 'node:crypto';
+import { loadServiceAccount, accessToken, loadEnvFile } from './google-sa.mjs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+loadEnvFile(); // local runs: GSC_SITE_URL / GA4_PROPERTY_ID / GCP_SA_KEY_FILE from .env
 const SITE_URL = process.env.GSC_SITE_URL ?? 'sc-domain:opscanopy.com';
 const GA4_PROPERTY = process.env.GA4_PROPERTY_ID;
-const SA_RAW = process.env.GCP_SA_KEY;
-
 // Report window. GSC data lags ~2 days, so end the window there rather than
 // today — otherwise the most recent days read as a fake traffic collapse.
 const LAG_DAYS = 2;
 const WINDOW_DAYS = 28;
 
-if (!SA_RAW) {
-  console.error('GCP_SA_KEY is not set — cannot query Search Console.');
-  process.exit(1);
-}
-
-let sa;
-try {
-  sa = JSON.parse(SA_RAW);
-} catch {
-  console.error('GCP_SA_KEY is not valid JSON. Paste the whole service-account file.');
-  process.exit(1);
-}
-
 // ── Auth ──────────────────────────────────────────────────────────────────────
-function b64url(input) {
-  return Buffer.from(input).toString('base64url');
+// Shared with gsc-sync.mjs: GCP_SA_KEY (CI secret, verbatim JSON) or
+// GCP_SA_KEY_FILE (a local path under .secrets/, read via .env).
+const { sa, reason: saReason } = loadServiceAccount();
+if (!sa) {
+  console.error(`Cannot query Search Console: ${saReason}.`);
+  process.exit(1);
 }
-
-async function getAccessToken(scopes) {
-  const now = Math.floor(Date.now() / 1000);
-  const header = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
-  const claim = b64url(
-    JSON.stringify({
-      iss: sa.client_email,
-      scope: scopes.join(' '),
-      aud: 'https://oauth2.googleapis.com/token',
-      iat: now,
-      exp: now + 3600,
-    }),
-  );
-  const signer = createSign('RSA-SHA256');
-  signer.update(`${header}.${claim}`);
-  const signature = signer.sign(sa.private_key, 'base64url');
-
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-      assertion: `${header}.${claim}.${signature}`,
-    }),
-  });
-  if (!res.ok) {
-    throw new Error(`Token exchange failed (HTTP ${res.status}): ${await res.text()}`);
-  }
-  return (await res.json()).access_token;
-}
+const getAccessToken = (scopes) => accessToken(sa, scopes);
 
 function isoDay(offsetDays) {
   const d = new Date(Date.now() - offsetDays * 86_400_000);

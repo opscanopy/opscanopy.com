@@ -155,6 +155,31 @@ It must match **exactly**, including the trailing slash. GitHub secret →
 
 ---
 
+### Running the Google scripts locally
+
+Save the downloaded key under `.secrets/` (gitignored) and point `.env` at it —
+the file already carries the `client_email`, so nothing else is needed:
+
+```
+GCP_SA_KEY_FILE=.secrets/opscanopy-seo-<keyid>.json
+GSC_SITE_URL=sc-domain:opscanopy.com
+GA4_PROPERTY_ID=541492201
+```
+
+Then `npm run seo:check-auth -- .secrets/<file>.json` to prove access,
+`npm run seo:report` for the weekly report, and:
+
+| Command | What it does |
+|---|---|
+| `node scripts/gsc-sync.mjs sitemaps` | Google's view of the sitemap: last fetch, submitted → indexed counts, and whether a re-submit is due |
+| `npm run gsc:sync` | re-submit the sitemap if due, then inspect the 40 highest-priority URLs and print the **Request indexing** list |
+| `npm run gsc:inspect -- --paths /x/ /y/` | inspect specific pages (new posts, a fixed canonical) |
+
+The same runs in CI: `deploy.yml` re-submits the sitemap after every deploy
+(never fails a deploy), and `gsc-sync.yml` runs Thursdays and on dispatch,
+committing `reports/gsc/<date>.md`. The one step Google keeps manual is the
+**Request indexing** button, about ten a day — the report ranks which ten.
+
 ## Step 7 — Grant it access in GA4 (2 min) · Optional
 
 Skip this and the report still works — it just won't include traffic-by-source.
