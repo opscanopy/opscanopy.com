@@ -110,6 +110,8 @@ When you move a query between the two languages, walk these in order:
 4. **Re-check `rate` semantics.** Decide whether you mean per-second line count (Loki) or counter rate (Prometheus). They are not the same number.
 5. **Accept that some things won’t map.** `histogram_quantile` over native Prometheus histograms, counter `resets()`, and recording-rule-backed series have no clean LogQL form — and free-text line filters have no PromQL form.
 
+One failure no translation fixes: if the dashboard you paste the query into came from an export, its panels can still point at a placeholder such as `${DS_LOKI}` instead of a real datasource, and every panel reports [`Datasource ${DS_LOKI} was not found`](/blog/grafana-datasource-was-not-found/) whatever the query says.
+
 ## Translate it without the guesswork
 
 Holding both dialects in your head at once is exactly the kind of context-switching that produces silent bugs — a `rate` that means the wrong thing, a missing `unwrap`, a selector that compiles but matches nothing. The **LogQL ↔ PromQL Helper** does the mechanical part for you: paste a query in either language, get the closest equivalent in the other, plus explicit notes on what mapped cleanly and what couldn’t. It runs entirely in your browser — your queries never leave the device — so you can sanity-check a translation before it lands in a dashboard or an alert rule.

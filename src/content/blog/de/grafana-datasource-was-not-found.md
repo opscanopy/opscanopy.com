@@ -1,8 +1,7 @@
 ---
 title: "Datasource ${DS_PROMETHEUS} was not found: Ursachen & Fixes"
 description: "Warum provisionierte Grafana-Dashboards Datasource ${DS_PROMETHEUS} was not found melden, wie jq jeden Platzhalter findet und welche vier Fixes CI überstehen."
-pubDate: 2026-10-19
-draft: true
+pubDate: 2026-10-23
 tags: ["observability", "prometheus"]
 lang: de
 translationOf: "grafana-datasource-was-not-found"

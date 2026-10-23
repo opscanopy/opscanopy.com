@@ -115,6 +115,7 @@ In plain English: **the p99 request latency per route over the last 5 minutes.**
 - **Dropping `le`.** `histogram_quantile` needs the `le` label intact, so your `by (...)` clause must include it.
 - **Comparisons filter, they don’t just colour.** `rate(...)[5m]) > 0` doesn’t return booleans — it *drops* every series where the condition is false. That’s how you build alert expressions.
 - **Instant vs range mismatch.** Passing an instant vector where a function wants a range vector (or vice versa) is the most common parse error. If a function complains, check your brackets.
+- **Debugging a query that never ran.** If every panel on a dashboard is empty and says `Datasource ${DS_PROMETHEUS} was not found`, the PromQL is not the problem: the dashboard JSON still holds an export placeholder where a datasource uid should be. [That error has its own walkthrough](/blog/grafana-datasource-was-not-found/).
 
 ## Decode any query in seconds
 

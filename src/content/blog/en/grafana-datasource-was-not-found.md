@@ -1,8 +1,7 @@
 ---
 title: "Datasource ${DS_PROMETHEUS} was not found: causes and fixes"
 description: "Why provisioned Grafana dashboards say Datasource ${DS_PROMETHEUS} was not found, how to find every placeholder with jq, and four fixes that survive CI."
-pubDate: 2026-10-19
-draft: true
+pubDate: 2026-10-23
 tags: ["observability", "prometheus"]
 relatedTool:
   name: "Grafana Dashboard Validator"
