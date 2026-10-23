@@ -252,8 +252,9 @@ them gets the account banned:
 
 1. **A Show HN post** for your strongest single tool (AlertLint or the GitHub
    Actions Expression Tester — the most differentiated, least commoditised).
-2. **Pull requests to `awesome-devops` / `awesome-sre` lists** — real followed
-   links from high-authority repos, and LLMs read those lists heavily.
+2. **Pull requests to `awesome-devops` / `awesome-sre` lists** — links from high-authority repos that LLMs read heavily. They are
+   `nofollow` (GitHub sets it on every README link), so their value is reach and
+   referral visits, not PageRank.
 3. **One genuine Reddit comment a week** in r/devops or r/kubernetes, linking a
    tool only where it actually answers the question. Reddit is weighted
    unusually heavily in both LLM training data and live retrieval.

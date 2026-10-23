@@ -1,9 +1,14 @@
 # Awesome-list pull requests
 
-## Status: 1 submitted, 3 rejected as bad fits
+## Status: 1 submitted and closed, 3 rejected as bad fits
 
-**[wmariuss/awesome-devops#501](https://github.com/wmariuss/awesome-devops/pull/501)** — open.
-+1 line, 0 deletions, mergeable, in Productivity Tools.
+**[wmariuss/awesome-devops#501](https://github.com/wmariuss/awesome-devops/pull/501)** — closed
+unmerged by the maintainer on 2026-10-22: "still a very new site … the list favours tools with an
+established track record and visible adoption", with an invitation to come back with a new PR once
+it is more established. The list's current rules for a tool with a public repo are an OSS licence,
+≥100 stars and 6 months of history (6 months is reached 2026-12-07; the repo had 2 stars on
+2026-10-23). Do not resubmit before the star gate is met; the next entry needs a pricing tag
+(`oss`). See `docs/plans/growth-2026-10/PLAN.md`, section 2.
 
 I originally planned two PRs from a shortlist I had not actually inspected.
 Checking each list against the API changed the answer. Star counts and, more
@@ -204,8 +209,13 @@ books, talks and articles, and its "SRE Tools" section links to *other curated
 lists* rather than to individual tools. An entry would be off-pattern and
 likely closed. Not worth spending a first impression on.
 
-**`awesome-selfhosted`** — explicitly for software you host yourself. OpsCanopy
-is a hosted site. It would be closed immediately and correctly.
+**`awesome-selfhosted`** — explicitly for software you host yourself. *Corrected
+2026-10-23:* this once said OpsCanopy, as a hosted site, would be closed outright. That
+is outdated: the repo documents a Docker self-hosting setup (`README.md`, "Self-hosting"),
+and comparable browser toolboxes (IT-Tools, OmniTools, CyberChef) are listed under
+Miscellaneous. It qualifies once the first release is 4 months old, i.e. from
+**2027-01-04**; the owner writes the entry by hand (the list bans LLM-written
+submissions).
 
 ---
 

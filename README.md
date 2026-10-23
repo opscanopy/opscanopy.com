@@ -2,7 +2,7 @@
 
 **A canopy of free, private, browser-based tools for platform & DevOps engineers.**
 
-🌐 **[opscanopy.com](https://opscanopy.com)** · 39 tools · no signup · no servers · MIT licensed
+🌐 **[opscanopy.com](https://opscanopy.com)** · 42 tools · no signup · no servers · MIT licensed
 
 [![Deploy](https://github.com/opscanopy/opscanopy.com/actions/workflows/deploy.yml/badge.svg)](https://github.com/opscanopy/opscanopy.com/actions/workflows/deploy.yml)
 [![CodeQL](https://github.com/opscanopy/opscanopy.com/actions/workflows/codeql.yml/badge.svg)](https://github.com/opscanopy/opscanopy.com/actions/workflows/codeql.yml)
@@ -26,7 +26,7 @@ your data to go.
 
 ## What's inside
 
-**39 tools across 12 categories.** Every one runs entirely in your browser.
+**42 tools across 13 categories.** Every one runs entirely in your browser.
 
 #### Observability
 
@@ -64,6 +64,7 @@ your data to go.
 
 | Tool | What it does |
 | :--- | :--- |
+| **[AWS IAM Policy Generator](https://opscanopy.com/aws-iam-policy-generator/)** | Build least-privilege IAM and S3 bucket policies — JSON and Terraform, with size limits and warnings. |
 | **[Certificate Decoder & Chain Checker](https://opscanopy.com/certificate-decoder/)** | Decode PEM certificates, check chain order, and verify signatures — in your browser. |
 | **[CVE-Ignore Converter](https://opscanopy.com/cve-ignore-converter/)** | Translate .trivyignore / .grype.yaml / .snyk in one click. |
 | **[Hash Generator](https://opscanopy.com/hash-generator/)** | Compute MD5, SHA-1, SHA-256 and SHA-512 digests of any text — plus HMAC. |
@@ -126,6 +127,13 @@ your data to go.
 | Tool | What it does |
 | :--- | :--- |
 | **[Terraform Plan Summarizer](https://opscanopy.com/terraform-plan-summarizer/)** | Paste terraform plan output, get a summary of adds, changes, destroys and replacements. |
+
+#### AI
+
+| Tool | What it does |
+| :--- | :--- |
+| **[LLM Token Counter](https://opscanopy.com/llm-token-counter/)** | Count GPT tokens offline — o200k_base and cl100k_base, with the exact token boundaries. |
+| **[LLM VRAM Calculator](https://opscanopy.com/llm-vram-calculator/)** | Estimate the GPU memory a local LLM needs — weights, KV cache and runtime overhead, per quantization and context length. |
 
 👉 Or browse the full catalog at **[opscanopy.com/tools](https://opscanopy.com/tools/)**.
 

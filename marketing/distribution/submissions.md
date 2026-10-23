@@ -19,7 +19,7 @@ they will check too:
 | Interesting/useful to developers | Yes |
 | Primary user is a developer | Yes |
 | Self-service signup | **Better than required — no signup at all** |
-| Regular-use tool set | Yes — 29 tools |
+| Regular-use tool set | Yes — 42 tools |
 | Makes me a better developer | Partly — the footgun explanations do |
 | Used by advanced power-users | Yes |
 | High quality | Yes — 1,713 tests, versioned conformance corpus |
@@ -38,7 +38,7 @@ they will check too:
 ### Subject
 
 ```
-Tool submission: OpsCanopy — 29 DevOps utilities that run entirely in the browser
+Tool submission: OpsCanopy — 42 DevOps utilities that run entirely in the browser
 ```
 
 ### Body
@@ -48,7 +48,7 @@ Hi,
 
 I'd like to submit OpsCanopy for consideration: https://opscanopy.com
 
-It's a set of 29 browser-based DevOps utilities — GitHub Actions and GitLab CI
+It's a set of 42 browser-based DevOps utilities — GitHub Actions and GitLab CI
 validators, a GitHub Actions expression and trigger tester, PromQL and LogQL
 explainers, Prometheus relabel and Alertmanager route testers, plus subnet/CIDR,
 cron, JWT and hashing tools.
@@ -56,7 +56,7 @@ cron, JWT and hashing tools.
 The reason it exists, and the thing I'd point you at first:
 
 Every hosted CI validator I could find POSTs your config to a server. A workflow
-file contains internal hostnames, secret names, and repo paths. So all 29 tools
+file contains internal hostnames, secret names, and repo paths. So all 42 tools
 run entirely client-side — no signup, no upload, no account. The engines are plain
 browser code, and the site's CSP restricts outbound connections to the origin plus
 Google Analytics (pageviews only, Consent Mode denied by default). There is no
@@ -146,7 +146,7 @@ links** — URLs go only in the dedicated fields.
 **Short description:**
 
 ```
-39 free DevOps utilities that run entirely in your browser — CI validators, PromQL
+42 free DevOps utilities that run entirely in your browser — CI validators, PromQL
 and LogQL explainers, subnet and CIDR calculators, cron tools and a JWT decoder.
 No signup, nothing uploaded.
 ```
@@ -154,7 +154,7 @@ No signup, nothing uploaded.
 **Long description:**
 
 ```
-OpsCanopy is a collection of 29 browser-based tools for platform and DevOps
+OpsCanopy is a collection of 42 browser-based tools for platform and DevOps
 engineers: GitHub Actions and GitLab CI validators, a GitHub Actions expression
 and trigger tester, PromQL and LogQL explainers, Prometheus relabel and
 Alertmanager route testers, a Docker run to Compose converter, subnet, CIDR and

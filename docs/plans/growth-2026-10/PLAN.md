@@ -309,3 +309,10 @@ pass:
 
 Plan only. Nothing above has been submitted, posted or changed. The cheat sheets are PR #83
 (open, under review); the embed PR is not yet opened. Neither is live.
+
+2026-10-23: cheat sheets (#83) are live since 2026-10-09. Section 10 corrections done: tool
+count 42 in `README.md` (plus the three missing rows and the AI category: 13 categories) and in
+`marketing/distribution/submissions.md`; the awesome-selfhosted and nofollow notes fixed. The
+GitHub repo description still says 39 (owner's call). awesome-devops #501 was closed unmerged
+by the maintainer on 2026-10-22 ("still a very new site", invited back once established) —
+recorded in `marketing/distribution/awesome-list-prs.md`. Show HN and AlternativeTo: not yet.
